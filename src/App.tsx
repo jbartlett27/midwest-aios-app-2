@@ -30,30 +30,30 @@ const INIT_REPS = [
 ];
 
 const INIT_LINE_ITEMS = [
-  { id: "LI001", jobId: "JOB-2026-001", description: "Virco 9000 Series Student Chair (Navy)", vendor: "V001", unitCost: 78.50, unitPrice: 118.00, qtyOrdered: 240, qtyReceived: 240, qtyInvoiced: 240 },
-  { id: "LI002", jobId: "JOB-2026-001", description: "Virco 785 Series Student Desk (Maple/Chrome)", vendor: "V001", unitCost: 142.00, unitPrice: 213.00, qtyOrdered: 240, qtyReceived: 240, qtyInvoiced: 240 },
-  { id: "LI003", jobId: "JOB-2026-001", description: 'Smith System Interchange Wing Desk 24"x30"', vendor: "V002", unitCost: 215.00, unitPrice: 322.50, qtyOrdered: 60, qtyReceived: 60, qtyInvoiced: 60 },
-  { id: "LI004", jobId: "JOB-2026-001", description: "Haskell Rover Mobile Storage Cart", vendor: "V003", unitCost: 489.00, unitPrice: 733.50, qtyOrdered: 12, qtyReceived: 12, qtyInvoiced: 12 },
-  { id: "LI005", jobId: "JOB-2026-001", description: "NPS 6000 Series Folding Chair (Gray)", vendor: "V004", unitCost: 52.00, unitPrice: 78.00, qtyOrdered: 200, qtyReceived: 200, qtyInvoiced: 200 },
-  { id: "LI006", jobId: "JOB-2026-002", description: "Smith System Planner Studio Table 72x30", vendor: "V002", unitCost: 485.00, unitPrice: 727.50, qtyOrdered: 30, qtyReceived: 22, qtyInvoiced: 22 },
-  { id: "LI007", jobId: "JOB-2026-002", description: "MooreCo Essentials Mobile Whiteboard 4x6", vendor: "V007", unitCost: 389.00, unitPrice: 583.50, qtyOrdered: 15, qtyReceived: 15, qtyInvoiced: 0 },
-  { id: "LI008", jobId: "JOB-2026-002", description: "Haskell Ethos Mobile Pedestal", vendor: "V003", unitCost: 312.00, unitPrice: 468.00, qtyOrdered: 30, qtyReceived: 18, qtyInvoiced: 18 },
-  { id: "LI009", jobId: "JOB-2026-002", description: "Virco Zuma Series Rocker Chair", vendor: "V001", unitCost: 165.00, unitPrice: 247.50, qtyOrdered: 60, qtyReceived: 0, qtyInvoiced: 0 },
-  { id: "LI010", jobId: "JOB-2026-002", description: "Brodart Omni Library Shelving 36x84", vendor: "V006", unitCost: 278.00, unitPrice: 417.00, qtyOrdered: 24, qtyReceived: 24, qtyInvoiced: 24 },
-  { id: "LI011", jobId: "JOB-2026-003", description: "Virco Metaphor Series Combo Desk", vendor: "V001", unitCost: 198.00, unitPrice: 297.00, qtyOrdered: 120, qtyReceived: 80, qtyInvoiced: 80 },
-  { id: "LI012", jobId: "JOB-2026-003", description: "NPS Melody Music Chair (Black)", vendor: "V004", unitCost: 86.00, unitPrice: 129.00, qtyOrdered: 50, qtyReceived: 0, qtyInvoiced: 0 },
-  { id: "LI013", jobId: "JOB-2026-003", description: "Datum ThinStak Open Shelf Filing", vendor: "V005", unitCost: 342.00, unitPrice: 513.00, qtyOrdered: 8, qtyReceived: 8, qtyInvoiced: 0 },
-  { id: "LI014", jobId: "JOB-2026-003", description: "Knape & Vogt Heavy Duty Bracket System", vendor: "V008", unitCost: 24.50, unitPrice: 36.75, qtyOrdered: 200, qtyReceived: 200, qtyInvoiced: 200 },
-  { id: "LI015", jobId: "JOB-2026-004", description: "Smith System Flavors Nesting Chair", vendor: "V002", unitCost: 195.00, unitPrice: 292.50, qtyOrdered: 80, qtyReceived: 0, qtyInvoiced: 0 },
-  { id: "LI016", jobId: "JOB-2026-004", description: "MooreCo MediaSpace Multimedia Table", vendor: "V007", unitCost: 625.00, unitPrice: 937.50, qtyOrdered: 10, qtyReceived: 0, qtyInvoiced: 0 },
-  { id: "LI017", jobId: "JOB-2026-004", description: "Haskell Fuzion Instructor Station", vendor: "V003", unitCost: 1250.00, unitPrice: 1875.00, qtyOrdered: 4, qtyReceived: 0, qtyInvoiced: 0 },
+  { id: "LI001", jobId: "JOB-2026-001", description: "Virco 9000 Series Student Chair (Navy)", vendor: "V001", unitCost: 78.50, unitPrice: 118.00, qtyOrdered: 240, qtyReceived: 240, qtyInvoiced: 240, poDate: "2026-01-20", deliveryDate: "2026-03-15", invoiceDate: "2026-03-20" },
+  { id: "LI002", jobId: "JOB-2026-001", description: "Virco 785 Series Student Desk (Maple/Chrome)", vendor: "V001", unitCost: 142.00, unitPrice: 213.00, qtyOrdered: 240, qtyReceived: 240, qtyInvoiced: 240, poDate: "2026-01-20", deliveryDate: "2026-03-15", invoiceDate: "2026-03-20" },
+  { id: "LI003", jobId: "JOB-2026-001", description: 'Smith System Interchange Wing Desk 24"x30"', vendor: "V002", unitCost: 215.00, unitPrice: 322.50, qtyOrdered: 60, qtyReceived: 60, qtyInvoiced: 60, poDate: "2026-01-22", deliveryDate: "2026-04-01", invoiceDate: "2026-04-05" },
+  { id: "LI004", jobId: "JOB-2026-001", description: "Haskell Rover Mobile Storage Cart", vendor: "V003", unitCost: 489.00, unitPrice: 733.50, qtyOrdered: 12, qtyReceived: 12, qtyInvoiced: 12, poDate: "2026-01-25", deliveryDate: "2026-04-10", invoiceDate: "2026-04-15" },
+  { id: "LI005", jobId: "JOB-2026-001", description: "NPS 6000 Series Folding Chair (Gray)", vendor: "V004", unitCost: 52.00, unitPrice: 78.00, qtyOrdered: 200, qtyReceived: 200, qtyInvoiced: 200, poDate: "2026-02-01", deliveryDate: "2026-04-20", invoiceDate: "2026-04-25" },
+  { id: "LI006", jobId: "JOB-2026-002", description: "Smith System Planner Studio Table 72x30", vendor: "V002", unitCost: 485.00, unitPrice: 727.50, qtyOrdered: 30, qtyReceived: 22, qtyInvoiced: 22, poDate: "2026-02-10", deliveryDate: "2026-04-15", invoiceDate: "2026-04-20" },
+  { id: "LI007", jobId: "JOB-2026-002", description: "MooreCo Essentials Mobile Whiteboard 4x6", vendor: "V007", unitCost: 389.00, unitPrice: 583.50, qtyOrdered: 15, qtyReceived: 15, qtyInvoiced: 0, poDate: "2026-02-12", deliveryDate: "2026-05-01", invoiceDate: "" },
+  { id: "LI008", jobId: "JOB-2026-002", description: "Haskell Ethos Mobile Pedestal", vendor: "V003", unitCost: 312.00, unitPrice: 468.00, qtyOrdered: 30, qtyReceived: 18, qtyInvoiced: 18, poDate: "2026-02-15", deliveryDate: "2026-05-10", invoiceDate: "2026-05-15" },
+  { id: "LI009", jobId: "JOB-2026-002", description: "Virco Zuma Series Rocker Chair", vendor: "V001", unitCost: 165.00, unitPrice: 247.50, qtyOrdered: 60, qtyReceived: 0, qtyInvoiced: 0, poDate: "2026-02-15", deliveryDate: "", invoiceDate: "" },
+  { id: "LI010", jobId: "JOB-2026-002", description: "Brodart Omni Library Shelving 36x84", vendor: "V006", unitCost: 278.00, unitPrice: 417.00, qtyOrdered: 24, qtyReceived: 24, qtyInvoiced: 24, poDate: "2026-02-18", deliveryDate: "2026-04-28", invoiceDate: "2026-05-02" },
+  { id: "LI011", jobId: "JOB-2026-003", description: "Virco Metaphor Series Combo Desk", vendor: "V001", unitCost: 198.00, unitPrice: 297.00, qtyOrdered: 120, qtyReceived: 80, qtyInvoiced: 80, poDate: "2026-03-01", deliveryDate: "2026-05-15", invoiceDate: "2026-05-20" },
+  { id: "LI012", jobId: "JOB-2026-003", description: "NPS Melody Music Chair (Black)", vendor: "V004", unitCost: 86.00, unitPrice: 129.00, qtyOrdered: 50, qtyReceived: 0, qtyInvoiced: 0, poDate: "2026-03-05", deliveryDate: "", invoiceDate: "" },
+  { id: "LI013", jobId: "JOB-2026-003", description: "Datum ThinStak Open Shelf Filing", vendor: "V005", unitCost: 342.00, unitPrice: 513.00, qtyOrdered: 8, qtyReceived: 8, qtyInvoiced: 0, poDate: "2026-03-05", deliveryDate: "2026-05-20", invoiceDate: "" },
+  { id: "LI014", jobId: "JOB-2026-003", description: "Knape & Vogt Heavy Duty Bracket System", vendor: "V008", unitCost: 24.50, unitPrice: 36.75, qtyOrdered: 200, qtyReceived: 200, qtyInvoiced: 200, poDate: "2026-03-08", deliveryDate: "2026-04-25", invoiceDate: "2026-04-30" },
+  { id: "LI015", jobId: "JOB-2026-004", description: "Smith System Flavors Nesting Chair", vendor: "V002", unitCost: 195.00, unitPrice: 292.50, qtyOrdered: 80, qtyReceived: 0, qtyInvoiced: 0, poDate: "", deliveryDate: "", invoiceDate: "" },
+  { id: "LI016", jobId: "JOB-2026-004", description: "MooreCo MediaSpace Multimedia Table", vendor: "V007", unitCost: 625.00, unitPrice: 937.50, qtyOrdered: 10, qtyReceived: 0, qtyInvoiced: 0, poDate: "", deliveryDate: "", invoiceDate: "" },
+  { id: "LI017", jobId: "JOB-2026-004", description: "Haskell Fuzion Instructor Station", vendor: "V003", unitCost: 1250.00, unitPrice: 1875.00, qtyOrdered: 4, qtyReceived: 0, qtyInvoiced: 0, poDate: "", deliveryDate: "", invoiceDate: "" },
 ];
 
 const INIT_JOBS = [
-  { id: "JOB-2026-001", name: "Lincoln USD Summer Refresh", customer: "C001", salesRep: "S001", phase: "Invoiced", createdDate: "2026-01-15", dueDate: "2026-06-01", notes: "Full classroom furniture refresh for 12 elementary classrooms. Summer install window.", paymentStatus: "paid" },
-  { id: "JOB-2026-002", name: "Midwest Tech STEM Lab Build-Out", customer: "C002", salesRep: "S001", phase: "In Progress", createdDate: "2026-02-03", dueDate: "2026-07-15", notes: "New STEM lab + library media center. Multi-vendor job — partial shipments expected.", paymentStatus: "partial" },
-  { id: "JOB-2026-003", name: "Oakwood Elementary ADA Compliance", customer: "C003", salesRep: "S002", phase: "In Progress", createdDate: "2026-02-20", dueDate: "2026-08-01", notes: "ADA-compliant furniture replacements across 3 buildings. Music room + admin offices.", paymentStatus: "unpaid" },
-  { id: "JOB-2026-004", name: "Heritage Academy New Classroom Wing", customer: "C004", salesRep: "S003", phase: "Quoting", createdDate: "2026-03-05", dueDate: "2026-09-01", notes: "Brand new wing — 4 classrooms, 1 media room. Awaiting final budget approval from board.", paymentStatus: "unpaid" },
+  { id: "JOB-2026-001", name: "Lincoln USD Summer Refresh", customer: "C001", salesRep: "S001", phase: "Invoiced", createdDate: "2026-01-15", startDate: "2026-01-20", endDate: "2026-05-28", dueDate: "2026-06-01", notes: "Full classroom furniture refresh for 12 elementary classrooms. Summer install window.", paymentStatus: "paid" },
+  { id: "JOB-2026-002", name: "Midwest Tech STEM Lab Build-Out", customer: "C002", salesRep: "S001", phase: "In Progress", createdDate: "2026-02-03", startDate: "2026-02-10", endDate: "", dueDate: "2026-07-15", notes: "New STEM lab + library media center. Multi-vendor job — partial shipments expected.", paymentStatus: "partial" },
+  { id: "JOB-2026-003", name: "Oakwood Elementary ADA Compliance", customer: "C003", salesRep: "S002", phase: "In Progress", createdDate: "2026-02-20", startDate: "2026-03-01", endDate: "", dueDate: "2026-08-01", notes: "ADA-compliant furniture replacements across 3 buildings. Music room + admin offices.", paymentStatus: "unpaid" },
+  { id: "JOB-2026-004", name: "Heritage Academy New Classroom Wing", customer: "C004", salesRep: "S003", phase: "Quoting", createdDate: "2026-03-05", startDate: "", endDate: "", dueDate: "2026-09-01", notes: "Brand new wing — 4 classrooms, 1 media room. Awaiting final budget approval from board.", paymentStatus: "unpaid" },
 ];
 
 // ─── ICONS ───────────────────────────────────────────────────
@@ -118,8 +118,31 @@ function usePrintOverlay() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MAIN APP — Supabase-backed
+// MAIN APP — Supabase-backed with Auth
 // ═══════════════════════════════════════════════════════════════
+
+// ─── CONFIRM DIALOG ──────────────────────────────────────────
+function useConfirm() {
+  const [state, setState] = useState(null);
+  const confirm = (message) => new Promise(resolve => setState({ message, resolve }));
+  const ConfirmDialog = () => {
+    if (!state) return null;
+    const respond = (val) => { state.resolve(val); setState(null); };
+    return (
+      <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 99999, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => respond(false)}>
+        <div onClick={e => e.stopPropagation()} style={{ background: "#12141b", border: "1px solid #1e2130", borderRadius: 12, padding: 24, maxWidth: 400, width: "90%" }}>
+          <div style={{ fontSize: 15, fontWeight: 600, color: "#f5f5f4", marginBottom: 16 }}>{state.message}</div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button onClick={() => respond(false)} style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #2a2d37", background: "#1e2130", color: "#e8e6e3", fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+            <button onClick={() => respond(true)} style={{ padding: "8px 16px", borderRadius: 8, border: "none", background: "#ef4444", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Delete</button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+  return { confirm, ConfirmDialog };
+}
+
 export default function MidwestAIOS() {
   const [page, setPage] = useState("dashboard");
   const [jobs, setJobs] = useState(INIT_JOBS);
@@ -137,6 +160,9 @@ export default function MidwestAIOS() {
   const [qbConfig, setQbConfig] = useState({connected:false, clientId:"", clientSecret:"", realmId:"", accessToken:"", refreshToken:""});
   const [dbStatus, setDbStatus] = useState("connecting");
   const { triggerPrint, PrintOverlay } = usePrintOverlay();
+  const { confirm, ConfirmDialog } = useConfirm();
+  const [globalSearch, setGlobalSearch] = useState("");
+  const [dateFilter, setDateFilter] = useState("all"); // all, month, quarter, ytd
 
   const notify = (msg, type="success") => { setNotification({msg,type}); setTimeout(()=>setNotification(null),3500); };
 
@@ -198,7 +224,8 @@ export default function MidwestAIOS() {
     setLineItems(p => [...p, newItem]);
     db.saveLineItem(newItem);
   };
-  const deleteLineItem = id => {
+  const deleteLineItem = async (id) => {
+    if (!await confirm("Delete this line item? This cannot be undone.")) return;
     setLineItems(p => p.filter(li => li.id !== id));
     db.deleteLineItem(id);
   };
@@ -213,17 +240,17 @@ export default function MidwestAIOS() {
     setReps(p => { const updated = p.map(r => r.id===id ? {...r,...u} : r); const rep = updated.find(r=>r.id===id); if(rep) db.saveRep(rep); return updated; });
   };
   const addRep = rep => { const newRep = {...rep, id: "S-"+uid()}; setReps(p => [...p, newRep]); db.saveRep(newRep); };
-  const deleteRep = id => { setReps(p => p.filter(r => r.id !== id)); db.deleteRep(id); };
+  const deleteRep = async (id) => { if (!await confirm("Delete this sales rep? Their jobs will be unassigned.")) return; setReps(p => p.filter(r => r.id !== id)); db.deleteRep(id); };
   const addCustomer = c => { const nc = {...c, id: "C-"+uid()}; setCustomers(p => [...p, nc]); db.saveCustomer(nc); };
   const updateCustomer = (id, u) => {
     setCustomers(p => { const updated = p.map(c => c.id===id ? {...c,...u} : c); const cust = updated.find(c=>c.id===id); if(cust) db.saveCustomer(cust); return updated; });
   };
-  const deleteCustomer = id => { setCustomers(p => p.filter(c => c.id !== id)); db.deleteCustomer(id); };
+  const deleteCustomer = async (id) => { if (!await confirm("Delete this customer? Their jobs will be unlinked.")) return; setCustomers(p => p.filter(c => c.id !== id)); db.deleteCustomer(id); };
   const addVendor = v => { const nv = {...v, id: "V-"+uid()}; setVendors(p => [...p, nv]); db.saveVendor(nv); };
   const updateVendor = (id, u) => {
     setVendors(p => { const updated = p.map(v => v.id===id ? {...v,...u} : v); const ven = updated.find(v=>v.id===id); if(ven) db.saveVendor(ven); return updated; });
   };
-  const deleteVendor = id => { setVendors(p => p.filter(v => v.id !== id)); db.deleteVendor(id); };
+  const deleteVendor = async (id) => { if (!await confirm("Delete this vendor? Line items will be unlinked.")) return; setVendors(p => p.filter(v => v.id !== id)); db.deleteVendor(id); };
 
   const navItems = [
     {id:"dashboard",label:"Command Center",icon:"dashboard"},
@@ -239,13 +266,14 @@ export default function MidwestAIOS() {
     {id:"qbsetup",label:"QuickBooks",icon:"settings"},
   ];
 
-  const ctx = {jobs,setJobs,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,setPage:p=>{setPage(p);setMobileMenuOpen(false)},brainQuery,setBrainQuery,brainLoading,setBrainLoading,qbConfig,setQbConfig,triggerPrint,dbStatus};
+  const ctx = {jobs,setJobs,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,setPage:p=>{setPage(p);setMobileMenuOpen(false)},brainQuery,setBrainQuery,brainLoading,setBrainLoading,qbConfig,setQbConfig,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter};
 
   return (
     <div style={{display:"flex",height:"100vh",width:"100vw",fontFamily:"'DM Sans','Satoshi',sans-serif",background:"#0a0c10",color:"#e8e6e3",overflow:"hidden"}}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
       {notification&&<div style={{position:"fixed",top:24,right:24,zIndex:9999,background:notification.type==="success"?"#059669":"#ef4444",color:"#fff",padding:"12px 20px",borderRadius:8,fontSize:13,fontWeight:500,boxShadow:"0 8px 32px rgba(0,0,0,0.4)",animation:"slideIn 0.3s ease",maxWidth:"calc(100vw - 48px)"}}>{notification.msg}</div>}
       <PrintOverlay />
+      <ConfirmDialog />
 
       {/* Mobile hamburger */}
       <button onClick={()=>setMobileMenuOpen(!mobileMenuOpen)} className="mobile-menu-btn" style={{display:"none",position:"fixed",top:12,left:12,zIndex:10001,width:40,height:40,borderRadius:8,background:"#12141b",border:"1px solid #1e2130",cursor:"pointer",alignItems:"center",justifyContent:"center",color:"#c8a25c"}}><I n={mobileMenuOpen?"close":"dashboard"} s={20}/></button>
@@ -311,17 +339,33 @@ export default function MidwestAIOS() {
 // ═══════════════════════════════════════════════════════════════
 // DASHBOARD
 // ═══════════════════════════════════════════════════════════════
-function Dashboard({jobs,lineItems,reps,vendors,getJobFinancials,getJobItems,setPage,setSelectedJob}){
-  const totalRev = jobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
-  const totalCost = jobs.reduce((s,j)=>s+getJobFinancials(j.id).totalCost,0);
-  const avgMargin = jobs.length?jobs.reduce((s,j)=>s+getJobFinancials(j.id).margin,0)/jobs.length:0;
-  const activeJobs = jobs.filter(j=>j.phase==="In Progress").length;
-  const totalOrdered = lineItems.reduce((s,i)=>s+i.qtyOrdered,0);
-  const totalReceived = lineItems.reduce((s,i)=>s+i.qtyReceived,0);
-  const pendingDel = lineItems.filter(i=>i.qtyReceived<i.qtyOrdered).length;
-  const pendingInv = lineItems.filter(i=>i.qtyReceived>i.qtyInvoiced).length;
+function Dashboard({jobs,lineItems,reps,vendors,getJobFinancials,getJobItems,setPage,setSelectedJob,dateFilter,setDateFilter}){
+  // Date filtering
+  const now = new Date();
+  const filterJob = (j) => {
+    if (dateFilter === "all") return true;
+    const d = new Date(j.createdDate);
+    if (isNaN(d.getTime())) return true;
+    if (dateFilter === "month") return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    if (dateFilter === "quarter") { const q = Math.floor(now.getMonth() / 3); const jq = Math.floor(d.getMonth() / 3); return jq === q && d.getFullYear() === now.getFullYear(); }
+    if (dateFilter === "ytd") return d.getFullYear() === now.getFullYear();
+    return true;
+  };
+  const filtered = jobs.filter(filterJob);
+  const fLineItems = lineItems.filter(li => filtered.some(j => j.id === li.jobId));
+  
+  const totalRev = filtered.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
+  const totalCost = filtered.reduce((s,j)=>s+getJobFinancials(j.id).totalCost,0);
+  const avgMargin = filtered.length?filtered.reduce((s,j)=>s+getJobFinancials(j.id).margin,0)/filtered.length:0;
+  const activeJobs = filtered.filter(j=>j.phase==="In Progress").length;
+  const totalOrdered = fLineItems.reduce((s,i)=>s+i.qtyOrdered,0);
+  const totalReceived = fLineItems.reduce((s,i)=>s+i.qtyReceived,0);
+  const pendingDel = fLineItems.filter(i=>i.qtyReceived<i.qtyOrdered).length;
+  const pendingInv = fLineItems.filter(i=>i.qtyReceived>i.qtyInvoiced).length;
 
-  return <div style={{animation:"fadeUp 0.4s"}}><div style={{marginBottom:28}}><div style={{display:"flex",alignItems:"center",gap:12,marginBottom:8}}><h1 style={{fontSize:28,fontWeight:800,color:"#f5f5f4",letterSpacing:-1}}>Command Center</h1><div style={{padding:"4px 10px",background:"#059669",borderRadius:20,fontSize:10,fontWeight:700,color:"#fff",letterSpacing:0.5}}>LIVE</div></div><p style={{fontSize:14,color:"#6b7280"}}>Midwest Educational Furnishings — Real-time operational intelligence</p></div>
+  return <div style={{animation:"fadeUp 0.4s"}}><div style={{marginBottom:28}}><div style={{display:"flex",alignItems:"center",gap:12,marginBottom:8,flexWrap:"wrap"}}><h1 style={{fontSize:28,fontWeight:800,color:"#f5f5f4",letterSpacing:-1}}>Command Center</h1><div style={{padding:"4px 10px",background:"#059669",borderRadius:20,fontSize:10,fontWeight:700,color:"#fff",letterSpacing:0.5}}>LIVE</div>
+    <div style={{marginLeft:"auto",display:"flex",gap:4,background:"#12141b",padding:3,borderRadius:8}}>{[["all","All Time"],["ytd","YTD"],["quarter","Quarter"],["month","Month"]].map(([v,l])=> <button key={v} onClick={()=>setDateFilter(v)} style={{padding:"5px 12px",borderRadius:6,border:"none",cursor:"pointer",background:dateFilter===v?"#c8a25c":"transparent",color:dateFilter===v?"#0a0c10":"#6b7280",fontSize:11,fontWeight:dateFilter===v?600:400,fontFamily:"inherit"}}>{l}</button>)}</div>
+  </div><p style={{fontSize:14,color:"#6b7280"}}>Midwest Educational Furnishings — {dateFilter==="all"?"All time":dateFilter==="ytd"?"Year to date":dateFilter==="quarter"?"This quarter":"This month"} · {filtered.length} jobs</p></div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16,marginBottom:24}}>
       <StatCard label="Pipeline Revenue" value={fmt(totalRev)} sub={`${jobs.length} total jobs`} icon="chart" color="#c8a25c"/>
       <StatCard label="Active Jobs" value={activeJobs} sub={`${jobs.filter(j=>j.phase==="Quoting").length} quoting`} icon="briefcase" color="#2563eb"/>
@@ -363,6 +407,8 @@ function JobsPage(ctx){
   return <div style={{animation:"fadeUp 0.4s"}}>
     <Header title="Job Records" sub="Central hub — single source of truth for every project" action={<div style={{display:"flex",gap:8}}><Btn onClick={()=>setNewCust(true)} v="secondary"><I n="plus" s={14}/> New Customer</Btn><Btn onClick={()=>setShowNewJob(true)}><I n="plus" s={14}/> New Job</Btn></div>}/>
 
+    <input value={ctx.globalSearch} onChange={e=>ctx.setGlobalSearch(e.target.value)} placeholder="Search jobs, customers, reps..." style={{...inputStyle,marginBottom:16,maxWidth:400,background:"#12141b",border:"1px solid #1e2130",padding:"10px 14px",fontSize:14}}/>
+
     {newCust&&<Card style={{marginBottom:20,border:"1px solid #2563eb30"}}><div style={{fontSize:14,fontWeight:700,marginBottom:16,color:"#2563eb"}}>Add New Customer</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:12,marginBottom:12}}>{[["name","Name"],["contact","Contact"],["email","Email"],["phone","Phone"]].map(([k,l])=><div key={k}><label style={{fontSize:11,color:"#6b7280",display:"block",marginBottom:4}}>{l}</label><input value={custForm[k]} onChange={e=>setCustForm({...custForm,[k]:e.target.value})} style={inputStyle}/></div>)}</div><div style={{display:"flex",gap:8}}><Btn onClick={()=>{if(custForm.name){addCustomer(custForm);setNewCust(false);setCustForm({name:"",contact:"",email:"",phone:"",type:"K-12 District"});notify("Customer added")}}}>Add Customer</Btn><Btn v="secondary" onClick={()=>setNewCust(false)}>Cancel</Btn></div></Card>}
 
     {showNewJob&&<Card style={{marginBottom:20,border:"1px solid #c8a25c30"}}><div style={{fontSize:14,fontWeight:700,marginBottom:16,color:"#c8a25c"}}>Create New Job Record</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:12}}><div><label style={{fontSize:11,color:"#6b7280",display:"block",marginBottom:4}}>Job Name</label><input value={newJob.name} onChange={e=>setNewJob({...newJob,name:e.target.value})} placeholder="e.g., Lincoln USD Media Center" style={inputStyle}/></div><div><label style={{fontSize:11,color:"#6b7280",display:"block",marginBottom:4}}>Customer</label><select value={newJob.customer} onChange={e=>setNewJob({...newJob,customer:e.target.value})} style={inputStyle}>{customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div><div><label style={{fontSize:11,color:"#6b7280",display:"block",marginBottom:4}}>Sales Rep</label><select value={newJob.salesRep} onChange={e=>setNewJob({...newJob,salesRep:e.target.value})} style={inputStyle}>{reps.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></div></div><div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:12,marginBottom:16}}><div><label style={{fontSize:11,color:"#6b7280",display:"block",marginBottom:4}}>Due Date</label><input type="date" value={newJob.dueDate} onChange={e=>setNewJob({...newJob,dueDate:e.target.value})} style={inputStyle}/></div><div><label style={{fontSize:11,color:"#6b7280",display:"block",marginBottom:4}}>Notes</label><input value={newJob.notes} onChange={e=>setNewJob({...newJob,notes:e.target.value})} placeholder="Project details..." style={inputStyle}/></div></div><div style={{display:"flex",gap:8}}><Btn onClick={handleCreateJob}>Create Job Record</Btn><Btn v="secondary" onClick={()=>setShowNewJob(false)}>Cancel</Btn></div></Card>}
@@ -377,7 +423,7 @@ function JobsPage(ctx){
       {header:"Margin",render:r=>{const m=getJobFinancials(r.id).margin;return <span style={{color:m>=30?"#059669":"#d97706"}}>{pct(m)}</span>}},
       {header:"POs",render:r=><Badge label={getJobPOStatus(r.id).replace("_"," ")} color={statusColor(getJobPOStatus(r.id))}/>},
       {header:"Invoice",render:r=><Badge label={getJobInvStatus(r.id).replace("_"," ")} color={statusColor(getJobInvStatus(r.id))}/>},
-    ]} data={jobs} onRowClick={r=>setSelectedJob(r.id)}/>
+    ]} data={jobs.filter(j => { const s = (ctx.globalSearch||"").toLowerCase(); if (!s) return true; const c = customers.find(c=>c.id===j.customer)?.name||""; const r = reps.find(r=>r.id===j.salesRep)?.name||""; return j.name.toLowerCase().includes(s)||j.id.toLowerCase().includes(s)||c.toLowerCase().includes(s)||r.toLowerCase().includes(s)||j.phase.toLowerCase().includes(s); })} onRowClick={r=>setSelectedJob(r.id)}/>
   </div>;
 }
 
@@ -673,13 +719,35 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,brain
     setBrainQuery("");
     setHistory(p => [...p, { role: "user", content: q }]);
     setBrainLoading(true);
-    setTimeout(() => {
-      const answer = buildAnswer(q);
-      setHistory(p => [...p, { role: "assistant", content: answer }]);
-      setBrainLoading(false);
-    }, 400);
+    
+    // Try AI API (Claude or OpenAI)
+    const claudeKey = localStorage.getItem('mw_claude_key');
+    const openaiKey = localStorage.getItem('mw_openai_key');
+    const apiKey = claudeKey || openaiKey;
+    const provider = claudeKey ? 'claude' : openaiKey ? 'openai' : null;
+    
+    if (apiKey && provider) {
+      const snap = `VENDORS(${vendors.length}):${vendors.map(v=>v.name+'('+v.category+') '+v.contact+' '+v.email+' '+v.phone).join('; ')}. CUSTOMERS(${customers.length}):${customers.map(c=>c.name+'('+c.type+') '+c.contact).join('; ')}. REPS(${reps.length}):${reps.map(r=>r.name+' '+r.territory+' '+(r.commissionRate*100).toFixed(1)+'% '+r.tier).join('; ')}. JOBS(${jobs.length}):${jobs.map(j=>{const f=getJobFinancials(j.id);return j.name+' '+j.phase+' $'+f.totalRevenue.toFixed(0)+' margin:'+f.margin.toFixed(1)+'% '+f.totalReceived+'/'+f.totalOrdered+'delivered '+j.paymentStatus+' start:'+j.startDate+' due:'+j.dueDate}).join('; ')}. PENDING_DELIVERY:${lineItems.filter(i=>i.qtyReceived<i.qtyOrdered).length} READY_TO_INVOICE:${lineItems.filter(i=>i.qtyReceived>i.qtyInvoiced).length}`;
+      const sysMsg = 'You are the Midwest Brain for Midwest Educational Furnishings, a 14yr educational furniture company in Indiana. Answer from the live data below. Use **bold** headers and bullet points. Be concise and specific with real numbers.\n\nDATA:\n'+snap;
+      
+      const callAI = provider === 'claude'
+        ? fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1024,system:sysMsg,messages:[{role:'user',content:q}]})}).then(r=>r.json()).then(d=>d.content?.[0]?.text||'No response')
+        : fetch('https://api.openai.com/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+apiKey},body:JSON.stringify({model:'gpt-4o',max_tokens:1024,messages:[{role:'system',content:sysMsg},{role:'user',content:q}]})}).then(r=>r.json()).then(d=>d.choices?.[0]?.message?.content||'No response');
+      
+      callAI.then(answer=>{setHistory(p=>[...p,{role:"assistant",content:answer}]);setBrainLoading(false);})
+      .catch(()=>{const answer=buildAnswer(q);setHistory(p=>[...p,{role:"assistant",content:answer}]);setBrainLoading(false);});
+    } else {
+      setTimeout(()=>{const answer=buildAnswer(q);setHistory(p=>[...p,{role:"assistant",content:answer}]);setBrainLoading(false);},400);
+    }
   };
-  return <div style={{animation:"fadeUp 0.4s",display:"flex",flexDirection:"column",height:"calc(100vh - 48px)"}}><Header title="Midwest Brain" sub="14 years of institutional knowledge — queryable by any team member"/>
+  // AI API key management
+  const [showApiKey,setShowApiKey]=useState(false);
+  const [claudeKeyInput,setClaudeKeyInput]=useState(()=>localStorage.getItem('mw_claude_key')||'');
+  const [openaiKeyInput,setOpenaiKeyInput]=useState(()=>localStorage.getItem('mw_openai_key')||'');
+  const saveKeys=()=>{if(claudeKeyInput)localStorage.setItem('mw_claude_key',claudeKeyInput);else localStorage.removeItem('mw_claude_key');if(openaiKeyInput)localStorage.setItem('mw_openai_key',openaiKeyInput);else localStorage.removeItem('mw_openai_key');notify(claudeKeyInput||openaiKeyInput?'AI key saved — Brain is now powered by '+(claudeKeyInput?'Claude':'ChatGPT'):'Keys cleared — using local mode');setShowApiKey(false)};
+  const activeProvider = localStorage.getItem('mw_claude_key') ? 'Claude API' : localStorage.getItem('mw_openai_key') ? 'ChatGPT API' : 'Local mode';
+  return <div style={{animation:"fadeUp 0.4s",display:"flex",flexDirection:"column",height:"calc(100vh - 48px)"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:20}}><div><h2 style={{fontSize:22,fontWeight:700,color:"#f5f5f4",marginBottom:4,letterSpacing:-0.5}}>Midwest Brain</h2><p style={{fontSize:13,color:"#6b7280"}}>{activeProvider}{' · '}14 years of institutional knowledge</p></div><Btn v="secondary" onClick={()=>setShowApiKey(!showApiKey)} style={{fontSize:11}}><I n="settings" s={14}/> {showApiKey?'Hide':'AI Setup'}</Btn></div>
+    {showApiKey&&<Card style={{marginBottom:12,border:"1px solid #c8a25c30"}}><div style={{fontSize:13,fontWeight:600,color:"#c8a25c",marginBottom:8}}>AI API Keys (Claude or ChatGPT — only one needed)</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:8}}><div><label style={{fontSize:11,color:"#6b7280",display:"block",marginBottom:4}}>Claude API Key (Anthropic)</label><input type="password" value={claudeKeyInput} onChange={e=>setClaudeKeyInput(e.target.value)} placeholder="sk-ant-..." style={inputStyle}/></div><div><label style={{fontSize:11,color:"#6b7280",display:"block",marginBottom:4}}>OpenAI API Key (ChatGPT)</label><input type="password" value={openaiKeyInput} onChange={e=>setOpenaiKeyInput(e.target.value)} placeholder="sk-..." style={inputStyle}/></div></div><div style={{display:"flex",gap:8}}><Btn onClick={saveKeys}>Save</Btn><Btn v="secondary" onClick={()=>{setClaudeKeyInput('');setOpenaiKeyInput('');localStorage.removeItem('mw_claude_key');localStorage.removeItem('mw_openai_key');notify('Keys cleared')}}>Clear All</Btn></div><div style={{fontSize:11,color:"#4b5563",marginTop:6}}>Claude: console.anthropic.com · OpenAI: platform.openai.com/api-keys · Keys stay in your browser only. If both are set, Claude takes priority.</div></Card>}
     <Card style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",padding:0}}>
       <div style={{flex:1,overflow:"auto",padding:20}}>{history.map((msg,i)=><div key={i} style={{marginBottom:16,maxWidth:"80%",marginLeft:msg.role==="user"?"auto":0}}><div style={{padding:"12px 16px",borderRadius:12,background:msg.role==="user"?"#c8a25c":msg.role==="system"?"#1e213044":"#1a1d27",color:msg.role==="user"?"#0a0c10":"#d1d5db",fontSize:13,lineHeight:1.6,whiteSpace:"pre-wrap"}}>{msg.content.split("**").map((part,pi)=>pi%2===1?<strong key={pi} style={{color:msg.role==="user"?"#0a0c10":"#f5f5f4"}}>{part}</strong>:part)}</div><div style={{fontSize:10,color:"#4b5563",marginTop:4,textAlign:msg.role==="user"?"right":"left"}}>{msg.role==="user"?"You":"Midwest Brain"}</div></div>)}{brainLoading&&<div style={{padding:"12px 16px",background:"#1a1d27",borderRadius:12,maxWidth:"80%",fontSize:13,color:"#6b7280"}}><span style={{animation:"pulse 1.5s infinite"}}>Searching operational data...</span></div>}</div>
       <div style={{padding:16,borderTop:"1px solid #1e2130",display:"flex",gap:8}}><input value={brainQuery} onChange={e=>setBrainQuery(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleQuery()} placeholder="Ask anything — vendors, pricing, job status, commissions..." style={{flex:1,padding:"10px 16px",background:"#1a1d27",border:"1px solid #2a2d37",borderRadius:8,color:"#e8e6e3",fontSize:13,outline:"none",fontFamily:"inherit"}}/><Btn onClick={handleQuery} style={{padding:"10px 20px"}}><I n="send" s={14}/> Ask</Btn></div>
@@ -696,6 +764,7 @@ function DirectoryPage({vendors,customers,reps,updateVendor,addVendor,deleteVend
   const [form,setForm]=useState({});
   const [adding,setAdding]=useState(false);
   const [sort,setSort]=useState("name");
+  const [dirSearch,setDirSearch]=useState("");
 
   const startEdit=(item)=>{setEditId(item.id);setForm({...item});setAdding(false)};
   const startAdd=()=>{setAdding(true);setEditId(null);
@@ -728,12 +797,15 @@ function DirectoryPage({vendors,customers,reps,updateVendor,addVendor,deleteVend
   // render helper (NOT a React component — prevents remount/focus loss on each keystroke)
   const field = (k, l, type) => <div key={k}><label style={{fontSize:11,color:"#6b7280",display:"block",marginBottom:4}}>{l}</label>{type==="select-tier"?<select value={form[k]||""} onChange={e=>setForm(prev=>({...prev,[k]:e.target.value}))} style={inputStyle}>{["Associate","Mid-Level","Senior"].map(t=><option key={t}>{t}</option>)}</select>:<input type={type||"text"} value={form[k]==null?"":form[k]} onChange={e=>setForm(prev=>({...prev,[k]:e.target.value}))} style={inputStyle}/>}</div>;
 
-  const sortedVendors=[...vendors].sort((a,b)=>(a[sort]||"").toString().localeCompare((b[sort]||"").toString()));
-  const sortedCustomers=[...customers].sort((a,b)=>(a[sort]||"").toString().localeCompare((b[sort]||"").toString()));
-  const sortedReps=[...reps].sort((a,b)=>(a[sort]||"").toString().localeCompare((b[sort]||"").toString()));
+  const sortedVendors=[...vendors].filter(v=>{const s=dirSearch.toLowerCase();return !s||v.name.toLowerCase().includes(s)||v.contact.toLowerCase().includes(s)||v.category.toLowerCase().includes(s)||v.email.toLowerCase().includes(s)}).sort((a,b)=>(a[sort]||"").toString().localeCompare((b[sort]||"").toString()));
+  const sortedCustomers=[...customers].filter(c=>{const s=dirSearch.toLowerCase();return !s||c.name.toLowerCase().includes(s)||c.contact.toLowerCase().includes(s)||c.type.toLowerCase().includes(s)||c.email.toLowerCase().includes(s)}).sort((a,b)=>(a[sort]||"").toString().localeCompare((b[sort]||"").toString()));
+  const sortedReps=[...reps].filter(r=>{const s=dirSearch.toLowerCase();return !s||r.name.toLowerCase().includes(s)||r.territory.toLowerCase().includes(s)||r.tier.toLowerCase().includes(s)||r.email.toLowerCase().includes(s)}).sort((a,b)=>(a[sort]||"").toString().localeCompare((b[sort]||"").toString()));
 
   return <div style={{animation:"fadeUp 0.4s"}}><Header title="Directory" sub="Manage all vendors, customers, and sales reps — edit, add, sort" action={<Btn onClick={startAdd}><I n="plus" s={14}/> Add {tab==="vendors"?"Vendor":tab==="customers"?"Customer":"Sales Rep"}</Btn>}/>
-    <div style={{display:"flex",gap:4,marginBottom:20,background:"#12141b",padding:4,borderRadius:10,width:"fit-content"}}>{[["vendors","Vendors ("+vendors.length+")"],["customers","Customers ("+customers.length+")"],["reps","Sales Reps ("+reps.length+")"]].map(([id,label])=><button key={id} onClick={()=>{setTab(id);setEditId(null);setAdding(false);setSort("name")}} style={{padding:"8px 16px",borderRadius:8,border:"none",cursor:"pointer",background:tab===id?"#c8a25c":"transparent",color:tab===id?"#0a0c10":"#6b7280",fontSize:13,fontWeight:tab===id?600:400,fontFamily:"inherit"}}>{label}</button>)}</div>
+    <div style={{display:"flex",gap:12,marginBottom:20,alignItems:"center",flexWrap:"wrap"}}>
+      <div style={{display:"flex",gap:4,background:"#12141b",padding:4,borderRadius:10}}>{[["vendors","Vendors ("+vendors.length+")"],["customers","Customers ("+customers.length+")"],["reps","Sales Reps ("+reps.length+")"]].map(([id,label])=><button key={id} onClick={()=>{setTab(id);setEditId(null);setAdding(false);setSort("name");setDirSearch("")}} style={{padding:"8px 16px",borderRadius:8,border:"none",cursor:"pointer",background:tab===id?"#c8a25c":"transparent",color:tab===id?"#0a0c10":"#6b7280",fontSize:13,fontWeight:tab===id?600:400,fontFamily:"inherit"}}>{label}</button>)}</div>
+      <input value={dirSearch} onChange={e=>setDirSearch(e.target.value)} placeholder={"Search "+tab+"..."} style={{...inputStyle,maxWidth:260,background:"#12141b",border:"1px solid #1e2130",padding:"8px 14px"}}/>
+    </div>
 
     {(adding||editId)&&<Card style={{marginBottom:16,border:"1px solid #c8a25c30"}}><div style={{fontSize:14,fontWeight:700,marginBottom:12,color:"#c8a25c"}}>{adding?"Add New":"Edit"} {tab==="vendors"?"Vendor":tab==="customers"?"Customer":"Sales Rep"}</div>
       {tab==="vendors"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:12}}>{field("name","Company Name")}{field("contact","Contact Person")}{field("email","Email")}{field("phone","Phone")}{field("category","Category")}{field("address","Address")}</div>}
