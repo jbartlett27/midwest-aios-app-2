@@ -81,6 +81,7 @@ const Bar = ({value,max,color="#c8a25c",height=6}) => <div style={{width:"100%",
 const Tbl = ({columns,data,onRowClick}) => <div style={{overflowX:"auto",borderRadius:10,border:"1px solid #1e2130"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}><thead><tr style={{background:"#12141b"}}>{columns.map((c,i)=><th key={i} style={{padding:"10px 14px",textAlign:"left",fontWeight:600,color:"#6b7280",fontSize:11,textTransform:"uppercase",letterSpacing:0.8,borderBottom:"1px solid #1e2130"}}>{c.header}</th>)}</tr></thead><tbody>{data.map((row,ri)=><tr key={row.id||ri} onClick={()=>onRowClick?.(row)} style={{cursor:onRowClick?"pointer":"default",transition:"background 0.15s"}} onMouseEnter={e=>e.currentTarget.style.background="#16182144"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>{columns.map((c,ci)=><td key={ci} style={{padding:"10px 14px",borderBottom:"1px solid #1a1d2710",color:"#d1d5db"}}>{c.render?c.render(row):row[c.key]}</td>)}</tr>)}</tbody></table></div>;
 
 import { db } from './supabase';
+import CsvUploadPage from './CsvUpload';
 
 // ─── PDF EXPORT: zero dependencies, works everywhere ─────────
 function usePrintOverlay() {
@@ -228,6 +229,7 @@ export default function MidwestAIOS() {
     {id:"dashboard",label:"Command Center",icon:"dashboard"},
     {id:"jobs",label:"Job Records",icon:"briefcase"},
     {id:"directory",label:"Directory",icon:"users"},
+    {id:"dataimport",label:"Data Import",icon:"download"},
     {id:"deliveries",label:"Delivery Tracker",icon:"truck"},
     {id:"documents",label:"PO & Invoices",icon:"file"},
     {id:"commissions",label:"Commissions",icon:"dollar"},
@@ -269,10 +271,11 @@ export default function MidwestAIOS() {
 
       {/* MAIN */}
       <div style={{flex:1,overflow:"auto",background:"#0a0c10"}}>
-        <div style={{maxWidth:1400,margin:"0 auto",padding:"24px 32px"}}>
+        <div className="main-content" style={{maxWidth:1400,margin:"0 auto",padding:"24px 32px"}}>
           {page==="dashboard"&&<Dashboard {...ctx}/>}
           {page==="jobs"&&<JobsPage {...ctx}/>}
           {page==="directory"&&<DirectoryPage {...ctx}/>}
+          {page==="dataimport"&&<CsvUploadPage {...ctx} db={db}/>}
           {page==="deliveries"&&<DeliveryPage {...ctx}/>}
           {page==="documents"&&<DocumentsPage {...ctx}/>}
           {page==="commissions"&&<CommissionsPage {...ctx}/>}
@@ -288,11 +291,17 @@ export default function MidwestAIOS() {
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
         *{box-sizing:border-box;margin:0;padding:0}
         ::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#2a2d37;border-radius:3px}
-        input,textarea,select{font-family:'DM Sans',sans-serif}
+        input,textarea,select{font-family:'DM Sans',sans-serif;font-size:16px!important}
+        button{-webkit-tap-highlight-color:transparent}
         @media(max-width:768px){
           .sidebar{position:fixed!important;left:-260px!important;top:0!important;bottom:0!important;width:240px!important;min-width:240px!important;z-index:10000!important;transition:left 0.3s ease!important}
           .sidebar.open{left:0px!important}
           .mobile-menu-btn{display:flex!important}
+          .main-content{padding:16px 12px!important;padding-top:56px!important}
+          h1{font-size:22px!important}
+          h2{font-size:18px!important}
+          table{font-size:11px!important}
+          th,td{padding:8px 6px!important;white-space:nowrap}
         }
       `}</style>
     </div>
@@ -580,17 +589,95 @@ function SalesPortalPage({jobs,reps,customers,getJobFinancials}){
 // MIDWEST BRAIN
 // ═══════════════════════════════════════════════════════════════
 function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,brainQuery,setBrainQuery,brainLoading,setBrainLoading}){
-  const [history,setHistory]=useState([{role:"system",content:"Welcome to the Midwest Brain. Ask me about vendors, pricing, job status, commissions, or any operational question."}]);
-  const handleQuery=()=>{if(!brainQuery.trim())return;const q=brainQuery.trim().toLowerCase();setBrainQuery("");setHistory(p=>[...p,{role:"user",content:brainQuery.trim()}]);setBrainLoading(true);
-    setTimeout(()=>{let r="";
-      if(q.includes("virco")||q.includes("chair")||q.includes("desk"))r=`**Virco Inc.** — Primary classroom furniture vendor for 11 years.\n\n• Standard discount: 42% off list\n• Volume threshold: $15K+ orders get 3% freight allowance\n• Lead time: 4-6 weeks standard\n• Contact: Mark Thompson (800-448-4726)\n• Partial-ships frequently on orders over 100 units`;
-      else if(q.includes("commission")||q.includes("sales"))r=`**Commission Structure (Live Data):**\n\n${reps.map(rep=>{const rv=jobs.filter(j=>j.salesRep===rep.id).reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);return`• ${rep.name} (${rep.tier}): ${(rep.commissionRate*100).toFixed(1)}% — ${fmt(rv)} pipeline — ${fmt(rv*rep.commissionRate)} projected commission`}).join("\n")}`;
-      else if(q.includes("job")||q.includes("status")||q.includes("active"))r=`**Active Jobs (${jobs.length}):**\n\n${jobs.map(j=>{const f=getJobFinancials(j.id);return`• **${j.name}** (${j.id}): ${j.phase} — ${fmt(f.totalRevenue)} — Delivery: ${fmtN(f.totalReceived)}/${fmtN(f.totalOrdered)} units`}).join("\n")}`;
-      else if(q.includes("partial")||q.includes("shipment")||q.includes("delivery"))r=`**Partial Shipment Protocol:**\n\n1. Update Delivery Tracker with exact quantities received\n2. System auto-calculates outstanding per line item\n3. Partial invoice drafted for delivered items only\n\n**Current:** ${lineItems.filter(i=>i.qtyReceived<i.qtyOrdered).length} items awaiting delivery`;
-      else if(q.includes("customer")||q.includes("school")||q.includes("district"))r=`**Customer Base:**\n\n${customers.map(c=>`• ${c.name} (${c.type}) — ${c.contact}`).join("\n")}\n\n98% revenue from K-12. Target 30-35% margin for districts.`;
-      else r=`I can help with that. Try asking about:\n• Vendor pricing and discounts\n• Current job status\n• Commission structure (live)\n• Partial shipment protocols\n• Customer history`;
-      setHistory(p=>[...p,{role:"assistant",content:r}]);setBrainLoading(false);
-    },800);
+  const [history,setHistory]=useState([{role:"system",content:"Welcome to the Midwest Brain. I query your live database — real vendors, real jobs, real numbers. Ask me anything."}]);
+  
+  const buildAnswer = (q) => {
+    const ql = q.toLowerCase();
+    
+    // ─── VENDOR QUERIES ────────────────────────────────────
+    const matchedVendor = vendors.find(v => ql.includes(v.name.toLowerCase().split(' ')[0].toLowerCase()));
+    if (matchedVendor || ql.includes("vendor")) {
+      if (matchedVendor) {
+        const vendorItems = lineItems.filter(li => li.vendor === matchedVendor.id);
+        const totalSpend = vendorItems.reduce((s, i) => s + i.unitCost * i.qtyOrdered, 0);
+        const jobIds = [...new Set(vendorItems.map(i => i.jobId))];
+        const avgCost = vendorItems.length ? totalSpend / vendorItems.reduce((s, i) => s + i.qtyOrdered, 0) : 0;
+        return `**${matchedVendor.name}**\n\nContact: ${matchedVendor.contact}\nEmail: ${matchedVendor.email}\nPhone: ${matchedVendor.phone}\nCategory: ${matchedVendor.category}\nAddress: ${matchedVendor.address || 'Not set'}\n\n**History from your data:**\n• Total spend: ${fmt(totalSpend)}\n• ${vendorItems.length} line items across ${jobIds.length} jobs\n• Average unit cost: ${fmt(avgCost)}\n• Jobs: ${jobIds.map(id => jobs.find(j => j.id === id)?.name || id).join(', ')}`;
+      }
+      return `**All Vendors (${vendors.length}):**\n\n${vendors.map(v => { const spend = lineItems.filter(li => li.vendor === v.id).reduce((s, i) => s + i.unitCost * i.qtyOrdered, 0); return `• **${v.name}** (${v.category}) — ${fmt(spend)} total spend — ${v.contact}`; }).join('\n')}`;
+    }
+    
+    // ─── CUSTOMER QUERIES ──────────────────────────────────
+    const matchedCust = customers.find(c => ql.includes(c.name.toLowerCase().split(' ')[0].toLowerCase()));
+    if (matchedCust || ql.includes("customer") || ql.includes("school") || ql.includes("district")) {
+      if (matchedCust) {
+        const custJobs = jobs.filter(j => j.customer === matchedCust.id);
+        const totalRev = custJobs.reduce((s, j) => s + getJobFinancials(j.id).totalRevenue, 0);
+        const avgMargin = custJobs.length ? custJobs.reduce((s, j) => s + getJobFinancials(j.id).margin, 0) / custJobs.length : 0;
+        return `**${matchedCust.name}** (${matchedCust.type})\n\nContact: ${matchedCust.contact}\nEmail: ${matchedCust.email}\nPhone: ${matchedCust.phone}\nAddress: ${matchedCust.address || 'Not set'}\n\n**History:**\n• ${custJobs.length} jobs — ${fmt(totalRev)} total revenue\n• Average margin: ${pct(avgMargin)}\n• Jobs: ${custJobs.map(j => `${j.name} (${j.phase})`).join(', ')}`;
+      }
+      return `**All Customers (${customers.length}):**\n\n${customers.map(c => { const rev = jobs.filter(j => j.customer === c.id).reduce((s, j) => s + getJobFinancials(j.id).totalRevenue, 0); return `• **${c.name}** (${c.type}) — ${fmt(rev)} revenue — ${c.contact}`; }).join('\n')}`;
+    }
+    
+    // ─── COMMISSION QUERIES ────────────────────────────────
+    if (ql.includes("commission") || ql.includes("sales rep") || ql.includes("rep")) {
+      return `**Commission Structure (Live Data):**\n\n${reps.map(rep => { const rv = jobs.filter(j => j.salesRep === rep.id).reduce((s, j) => s + getJobFinancials(j.id).totalRevenue, 0); const paidRv = jobs.filter(j => j.salesRep === rep.id && j.paymentStatus === 'paid').reduce((s, j) => s + getJobFinancials(j.id).totalRevenue, 0); return `• **${rep.name}** (${rep.tier}) — ${(rep.commissionRate * 100).toFixed(1)}% rate\n  Pipeline: ${fmt(rv)} — Earned: ${fmt(paidRv * rep.commissionRate)} — Projected: ${fmt(rv * rep.commissionRate)}`; }).join('\n\n')}\n\n**Total pipeline:** ${fmt(jobs.reduce((s, j) => s + getJobFinancials(j.id).totalRevenue, 0))}`;
+    }
+    
+    // ─── JOB QUERIES ───────────────────────────────────────
+    if (ql.includes("job") || ql.includes("status") || ql.includes("active") || ql.includes("project")) {
+      const byPhase = {};
+      jobs.forEach(j => { byPhase[j.phase] = (byPhase[j.phase] || 0) + 1; });
+      return `**Jobs (${jobs.length} total):**\n\n${Object.entries(byPhase).map(([phase, count]) => `• ${phase}: ${count}`).join('\n')}\n\n${jobs.map(j => { const f = getJobFinancials(j.id); return `• **${j.name}** (${j.id})\n  ${j.phase} — ${fmt(f.totalRevenue)} — ${fmtN(f.totalReceived)}/${fmtN(f.totalOrdered)} delivered — ${j.paymentStatus}`; }).join('\n\n')}`;
+    }
+    
+    // ─── MARGIN QUERIES ────────────────────────────────────
+    if (ql.includes("margin") || ql.includes("profit") || ql.includes("profitab")) {
+      const margins = jobs.map(j => ({ name: j.name, ...getJobFinancials(j.id) }));
+      const avgMargin = margins.reduce((s, m) => s + m.margin, 0) / margins.length;
+      const best = margins.sort((a, b) => b.margin - a.margin)[0];
+      const worst = margins.sort((a, b) => a.margin - b.margin)[0];
+      return `**Margin Analysis (Live Data):**\n\n• Average margin across all jobs: **${pct(avgMargin)}**\n• Best margin: **${best?.name}** at ${pct(best?.margin || 0)}\n• Lowest margin: **${worst?.name}** at ${pct(worst?.margin || 0)}\n• Total profit: ${fmt(margins.reduce((s, m) => s + m.totalRevenue - m.totalCost, 0))}\n\n${margins.sort((a, b) => b.margin - a.margin).map(m => `• ${m.name}: ${pct(m.margin)} margin — ${fmt(m.totalRevenue)} revenue`).join('\n')}`;
+    }
+    
+    // ─── DELIVERY QUERIES ──────────────────────────────────
+    if (ql.includes("delivery") || ql.includes("partial") || ql.includes("shipment") || ql.includes("outstanding")) {
+      const pending = lineItems.filter(i => i.qtyReceived < i.qtyOrdered);
+      const totalOrd = lineItems.reduce((s, i) => s + i.qtyOrdered, 0);
+      const totalRcv = lineItems.reduce((s, i) => s + i.qtyReceived, 0);
+      return `**Delivery Status (Live Data):**\n\n• Overall: ${fmtN(totalRcv)} / ${fmtN(totalOrd)} units received (${pct(totalOrd ? totalRcv / totalOrd * 100 : 0)})\n• ${pending.length} line items still pending\n\n**Outstanding items:**\n${pending.map(i => { const job = jobs.find(j => j.id === i.jobId); const vendor = vendors.find(v => v.id === i.vendor); return `• ${i.description} — ${fmtN(i.qtyOrdered - i.qtyReceived)} outstanding — ${vendor?.name || 'Unknown'} — ${job?.name || 'Unknown job'}`; }).join('\n')}`;
+    }
+    
+    // ─── INVOICE QUERIES ───────────────────────────────────
+    if (ql.includes("invoice") || ql.includes("billing") || ql.includes("receivable")) {
+      const uninvoiced = lineItems.filter(i => i.qtyReceived > i.qtyInvoiced);
+      const uninvTotal = uninvoiced.reduce((s, i) => s + i.unitPrice * (i.qtyReceived - i.qtyInvoiced), 0);
+      return `**Invoice Status (Live Data):**\n\n• ${uninvoiced.length} line items received but not yet invoiced\n• Uninvoiced value: **${fmt(uninvTotal)}**\n\n**Ready to invoice:**\n${uninvoiced.map(i => { const job = jobs.find(j => j.id === i.jobId); return `• ${i.description} — ${fmtN(i.qtyReceived - i.qtyInvoiced)} units × ${fmt(i.unitPrice)} = ${fmt(i.unitPrice * (i.qtyReceived - i.qtyInvoiced))} — ${job?.name || ''}`; }).join('\n')}`;
+    }
+    
+    // ─── REVENUE / FINANCIAL QUERIES ───────────────────────
+    if (ql.includes("revenue") || ql.includes("financial") || ql.includes("money") || ql.includes("total")) {
+      const totalRev = jobs.reduce((s, j) => s + getJobFinancials(j.id).totalRevenue, 0);
+      const totalCost = jobs.reduce((s, j) => s + getJobFinancials(j.id).totalCost, 0);
+      const byRep = reps.map(r => ({ name: r.name, rev: jobs.filter(j => j.salesRep === r.id).reduce((s, j) => s + getJobFinancials(j.id).totalRevenue, 0) }));
+      return `**Financial Overview (Live Data):**\n\n• Total pipeline revenue: **${fmt(totalRev)}**\n• Total cost: ${fmt(totalCost)}\n• Total profit: **${fmt(totalRev - totalCost)}**\n• Average margin: ${pct(jobs.reduce((s, j) => s + getJobFinancials(j.id).margin, 0) / jobs.length)}\n\n**Revenue by Rep:**\n${byRep.map(r => `• ${r.name}: ${fmt(r.rev)}`).join('\n')}\n\n**By Payment Status:**\n• Paid: ${fmt(jobs.filter(j => j.paymentStatus === 'paid').reduce((s, j) => s + getJobFinancials(j.id).totalRevenue, 0))}\n• Partial: ${fmt(jobs.filter(j => j.paymentStatus === 'partial').reduce((s, j) => s + getJobFinancials(j.id).totalRevenue, 0))}\n• Unpaid: ${fmt(jobs.filter(j => j.paymentStatus === 'unpaid').reduce((s, j) => s + getJobFinancials(j.id).totalRevenue, 0))}`;
+    }
+    
+    // ─── DEFAULT ───────────────────────────────────────────
+    return `I have access to your full database with **${jobs.length} jobs**, **${vendors.length} vendors**, **${customers.length} customers**, **${reps.length} reps**, and **${lineItems.length} line items**.\n\nTry asking:\n• "Show me all vendors" or "Tell me about Virco"\n• "What are our margins?"\n• "Commission breakdown"\n• "What's outstanding for delivery?"\n• "Revenue overview"\n• "Uninvoiced items"\n• "Tell me about Lincoln" (any customer name)\n• "Active job status"`;
+  };
+
+  const handleQuery = () => {
+    if (!brainQuery.trim()) return;
+    const q = brainQuery.trim();
+    setBrainQuery("");
+    setHistory(p => [...p, { role: "user", content: q }]);
+    setBrainLoading(true);
+    setTimeout(() => {
+      const answer = buildAnswer(q);
+      setHistory(p => [...p, { role: "assistant", content: answer }]);
+      setBrainLoading(false);
+    }, 400);
   };
   return <div style={{animation:"fadeUp 0.4s",display:"flex",flexDirection:"column",height:"calc(100vh - 48px)"}}><Header title="Midwest Brain" sub="14 years of institutional knowledge — queryable by any team member"/>
     <Card style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",padding:0}}>
