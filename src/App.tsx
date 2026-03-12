@@ -6,27 +6,27 @@ import { useState, useEffect } from "react";
 // ═══════════════════════════════════════════════════════════════
 
 const INIT_VENDORS = [
-  { id: "V001", name: "Virco Inc.", contact: "Mark Thompson", email: "mark@virco.com", phone: "(800) 448-4726", category: "Classroom Furniture", address: "2027 Harpers Way, Torrance, CA 90501" },
-  { id: "V002", name: "Smith System", contact: "Janet Lee", email: "janet@smithsystem.com", phone: "(800) 328-1061", category: "Collaborative Tables", address: "1714 E 14th St, Plano, TX 75074" },
-  { id: "V003", name: "Haskell Education", contact: "Brian Wu", email: "brian@haskelleducation.com", phone: "(800) 334-8988", category: "Storage & Media", address: "1 Haskell Dr, Pittsburgh, PA 15205" },
-  { id: "V004", name: "National Public Seating", contact: "Diane Russo", email: "diane@nps.com", phone: "(800) 235-5912", category: "Seating & Staging", address: "901 Janesville Ave, Fort Atkinson, WI 53538" },
-  { id: "V005", name: "Datum Filing Systems", contact: "Carlos Mendez", email: "carlos@datumfiling.com", phone: "(800) 828-8265", category: "Filing & Storage", address: "7251 Standard Dr, Hanover, MD 21076" },
-  { id: "V006", name: "Brodart Co.", contact: "Lisa Chen", email: "lisa@brodart.com", phone: "(888) 820-4377", category: "Library Furnishings", address: "500 Arch St, Williamsport, PA 17701" },
-  { id: "V007", name: "MooreCo", contact: "Steve Park", email: "steve@mooreco.com", phone: "(800) 749-2258", category: "Whiteboards & AV", address: "2885 Lorraine Ave, Temple, TX 76501" },
-  { id: "V008", name: "Knape & Vogt", contact: "Amy Ross", email: "amy@kv.com", phone: "(800) 253-1561", category: "Shelving & Hardware", address: "2700 Oak Industrial Dr, Grand Rapids, MI 49505" },
+  { id: "V001", name: "Virco Inc.", contact: "Sales Dept", email: "sales@virco.com", phone: "(800) 448-4726", category: "Classroom Furniture", address: "2027 Harpers Way, Torrance, CA 90501", discountRate: 0.42, discountType: "percentage", discountNotes: "42% off list. Volume 15K+ gets 3% freight allowance." },
+  { id: "V002", name: "Smith System", contact: "Sales Dept", email: "info@smithsystem.com", phone: "(800) 328-1061", category: "Collaborative Tables", address: "1714 E 14th St, Plano, TX 75074", discountRate: 0.38, discountType: "percentage", discountNotes: "38% off list standard. 40% on orders over $25K." },
+  { id: "V003", name: "Haskell Education", contact: "Sales Dept", email: "info@haskelleducation.com", phone: "(800) 334-8988", category: "Storage & Media", address: "1 Haskell Dr, Pittsburgh, PA 15205", discountRate: 0.35, discountType: "percentage", discountNotes: "35% off list. Free freight on $10K+." },
+  { id: "V004", name: "National Public Seating", contact: "Sales Dept", email: "info@nps.com", phone: "(800) 235-5912", category: "Seating & Staging", address: "901 Janesville Ave, Fort Atkinson, WI 53538", discountRate: 0.40, discountType: "percentage", discountNotes: "40% off list. 45% on seating orders 200+ units." },
+  { id: "V005", name: "KI", contact: "Sales Dept", email: "info@ki.com", phone: "(800) 424-2432", category: "Education & Office", address: "1330 Bellevue St, Green Bay, WI 54302", discountRate: 0.45, discountType: "percentage", discountNotes: "45% off list. Project pricing available on $50K+." },
+  { id: "V006", name: "MooreCo", contact: "Sales Dept", email: "info@mooreco.com", phone: "(800) 749-2258", category: "Whiteboards & AV", address: "2885 Lorraine Ave, Temple, TX 76501", discountRate: 0.36, discountType: "percentage", discountNotes: "36% off list standard." },
+  { id: "V007", name: "Jonti-Craft", contact: "Sales Dept", email: "info@jonti-craft.com", phone: "(800) 543-4149", category: "Early Childhood", address: "171 Highway 68, Wabasso, MN 56293", discountRate: 0.40, discountType: "percentage", discountNotes: "40% off list. Free freight on $5K+." },
+  { id: "V008", name: "Bretford", contact: "Sales Dept", email: "info@bretford.com", phone: "(800) 521-9614", category: "Technology Furniture", address: "11000 Seymour Ave, Franklin Park, IL 60131", discountRate: 0.38, discountType: "percentage", discountNotes: "38% off list. Tech cart orders get additional 5% on 50+ units." },
 ];
 
 const INIT_CUSTOMERS = [
-  { id: "C001", name: "Lincoln Unified School District", contact: "Dr. Sarah Mitchell", email: "smitchell@lincoln-usd.edu", phone: "(317) 555-0142", type: "K-12 District", address: "1400 Pioneer Blvd, Lincoln, IN 46250" },
-  { id: "C002", name: "Midwest Technical College", contact: "Robert Graves", email: "rgraves@midwesttech.edu", phone: "(317) 555-0198", type: "Community College", address: "8700 College Way, Indianapolis, IN 46220" },
-  { id: "C003", name: "Oakwood Elementary Consortium", contact: "Patricia Dunn", email: "pdunn@oakwood-k12.org", phone: "(317) 555-0234", type: "K-12 District", address: "220 Oakwood Ave, Carmel, IN 46032" },
-  { id: "C004", name: "Heritage Academy Charter", contact: "James Whitfield", email: "jwhitfield@heritage-academy.org", phone: "(317) 555-0301", type: "Charter School", address: "505 Heritage Dr, Fishers, IN 46038" },
+  { id: "C001", name: "Naperville CUSD 203", contact: "Facilities Director", email: "facilities@naperville203.org", phone: "(630) 420-6300", type: "K-12 District", address: "203 W Hillside Rd, Naperville, IL 60540" },
+  { id: "C002", name: "Elmhurst CUSD 205", contact: "Purchasing Dept", email: "purchasing@elmhurst205.org", phone: "(630) 617-2300", type: "K-12 District", address: "162 S York St, Elmhurst, IL 60126" },
+  { id: "C003", name: "Milwaukee Public Schools", contact: "Procurement Office", email: "procurement@milwaukee.k12.wi.us", phone: "(414) 475-8001", type: "K-12 District", address: "5225 W Vliet St, Milwaukee, WI 53208" },
+  { id: "C004", name: "College of DuPage", contact: "Facilities & Planning", email: "facilities@cod.edu", phone: "(630) 942-2800", type: "Community College", address: "425 Fawell Blvd, Glen Ellyn, IL 60137" },
 ];
 
 const INIT_REPS = [
-  { id: "S001", name: "Tom Bartlett", email: "tom@midwestfurnishings.com", territory: "Central Indiana", commissionRate: 0.06, tier: "Senior" },
-  { id: "S002", name: "Rachel Kim", email: "rachel@midwestfurnishings.com", territory: "Northern Indiana", commissionRate: 0.05, tier: "Associate" },
-  { id: "S003", name: "David Chen", email: "david@midwestfurnishings.com", territory: "Southern Indiana", commissionRate: 0.055, tier: "Mid-Level" },
+  { id: "S001", name: "Jim Harris", email: "jharris@mwfurnishings.com", territory: "Illinois", commissionRate: 0.06, tier: "Regional Sales Manager" },
+  { id: "S002", name: "Jim Lindner", email: "jlindner@mwfurnishings.com", territory: "Wisconsin", commissionRate: 0.06, tier: "Regional Sales Manager" },
+  { id: "S003", name: "Jackie Biller", email: "jbiller@mwfurnishings.com", territory: "Wisconsin", commissionRate: 0.05, tier: "Sales Development Manager" },
 ];
 
 const INIT_LINE_ITEMS = [
@@ -561,7 +561,7 @@ function DeliveryPage({jobs,lineItems,vendors,getItemStatus,updateLineItem,notif
       {header:"Received",render:r=>fmtN(r.qtyReceived)},
       {header:"Outstanding",render:r=><span style={{fontWeight:600,color:"#d97706",fontFamily:"'DM Mono',monospace"}}>{fmtN(r.qtyOrdered-r.qtyReceived)}</span>},
       {header:"Progress",render:r=><div style={{width:100}}><Bar value={r.qtyReceived} max={r.qtyOrdered} color={r.qtyReceived>0?"#d97706":"#2a2d37"} height={5}/></div>},
-      {header:"",render:r=><Btn v="ghost" style={{fontSize:11,padding:"4px 10px"}} onClick={e=>{e.stopPropagation();setReceiveModal(r)}}>Receive</Btn>},
+      {header:"",render:r=><div style={{display:"flex",gap:4}}><Btn v="ghost" style={{fontSize:11,padding:"4px 10px"}} onClick={e=>{e.stopPropagation();setReceiveModal(r)}}>Receive</Btn>{r.qtyOrdered-r.qtyReceived>0&&<Btn v="secondary" style={{fontSize:10,padding:"3px 8px"}} onClick={e=>{e.stopPropagation();updateLineItem(r.id,{qtyReceived:r.qtyOrdered,deliveryDate:new Date().toISOString().split("T")[0]});notify("Marked complete — all "+fmtN(r.qtyOrdered)+" units received")}}>Complete</Btn>}</div>},
     ]} data={allItems}/>
   </div>;
 }
@@ -578,16 +578,26 @@ function DocumentsPage({jobs,lineItems,vendors,customers,reps,getJobItems,notify
   const genInvoice=job=>{const items=getJobItems(job.id).filter(i=>i.qtyReceived>i.qtyInvoiced);return {customer:customers.find(c=>c.id===job.customer),items,total:items.reduce((s,i)=>s+i.unitPrice*(i.qtyReceived-i.qtyInvoiced),0),job}};
 
   const handleExportPDF=(doc)=>{
+    const isQuote=doc.type==="quote";
     const isPO=doc.type==="po";
-    const name=isPO?doc.data.vendor?.name:doc.data.customer?.name;
-    const addr=isPO?doc.data.vendor?.address:doc.data.customer?.address;
-    const rows=doc.data.items.map(i=>{const q=isPO?i.qtyOrdered:(i.qtyReceived-i.qtyInvoiced);const p=isPO?i.unitCost:i.unitPrice;return '<tr><td>'+i.description+'</td><td style="text-align:right">'+q+'</td><td style="text-align:right">$'+p.toFixed(2)+'</td><td style="text-align:right"><strong>$'+(q*p).toFixed(2)+'</strong></td></tr>';}).join("");
-    triggerPrint((isPO?"PO":"Invoice")+" - "+doc.job.name,
-      '<div class="hdr"><div><div class="co">MIDWEST EDUCATIONAL FURNISHINGS</div><div>123 Commerce Drive, Indianapolis, IN 46204</div></div><div style="text-align:right"><div class="gold" style="font-weight:bold;font-size:14px">'+(isPO?"PURCHASE ORDER":"INVOICE")+'</div><div>Date: '+new Date().toLocaleDateString()+'</div><div>Job: '+doc.job.id+'</div></div></div>'
-      +'<h2>'+(isPO?"Vendor":"Bill To")+': '+name+'</h2>'
+    const isInv=doc.type==="invoice";
+    const docTitle=isQuote?"PROJECT QUOTE":isPO?"PURCHASE ORDER":"INVOICE";
+    const name=isQuote?doc.data.customer?.name:isPO?doc.data.vendor?.name:doc.data.customer?.name;
+    const addr=isQuote?doc.data.customer?.address:isPO?doc.data.vendor?.address:doc.data.customer?.address;
+    const rows=doc.data.items.map(i=>{
+      const q=isQuote?i.qtyOrdered:isPO?i.qtyOrdered:(i.qtyReceived-i.qtyInvoiced);
+      const p=isQuote?i.unitPrice:isPO?i.unitCost:i.unitPrice;
+      return '<tr><td>'+i.description+'</td><td style="text-align:right">'+q+'</td><td style="text-align:right">$'+p.toFixed(2)+'</td><td style="text-align:right"><strong>$'+(q*p).toFixed(2)+'</strong></td></tr>';
+    }).join("");
+    const total=isQuote?doc.data.items.reduce((s,i)=>s+i.unitPrice*i.qtyOrdered,0):doc.data.total;
+    triggerPrint(docTitle+" - "+doc.job.name,
+      '<div class="hdr"><div><div class="co">MIDWEST EDUCATIONAL FURNISHINGS</div><div>Designing Spaces | Building Futures</div><div style="margin-top:4px">(847) 847-1865 · info@mwfurnishings.com · www.mwfurnishings.com</div></div><div style="text-align:right"><div class="gold" style="font-weight:bold;font-size:14px">'+docTitle+'</div><div>Date: '+new Date().toLocaleDateString()+'</div><div>Job: '+doc.job.id+'</div>'+(isQuote?'<div>Valid for 30 days</div>':'')+'</div></div>'
+      +'<h2>'+(isQuote?"Prepared For":isPO?"Vendor":"Bill To")+': '+name+'</h2>'
       +(addr?'<div style="font-size:12px;color:#666;margin-bottom:8px">'+addr+'</div>':'')
-      +'<h2>Job: '+doc.job.name+'</h2>'
-      +'<table><thead><tr><th>Description</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Total</th></tr></thead><tbody>'+rows+'</tbody><tfoot><tr class="total-row"><td colspan="3" style="text-align:right;padding:10px 8px">TOTAL</td><td style="text-align:right;padding:10px 8px">$'+doc.data.total.toFixed(2)+'</td></tr></tfoot></table>'
+      +'<h2>Project: '+doc.job.name+'</h2>'
+      +(doc.job.notes?'<div style="font-size:12px;color:#666;margin-bottom:12px">'+doc.job.notes+'</div>':'')
+      +'<table><thead><tr><th>Description</th><th style="text-align:right">Qty</th><th style="text-align:right">Unit Price</th><th style="text-align:right">Total</th></tr></thead><tbody>'+rows+'</tbody><tfoot><tr class="total-row"><td colspan="3" style="text-align:right;padding:10px 8px">TOTAL</td><td style="text-align:right;padding:10px 8px">$'+total.toFixed(2)+'</td></tr></tfoot></table>'
+      +(isQuote?'<div style="margin-top:24px;padding:16px;background:#f9f8f6;border-radius:8px;font-size:12px;color:#666"><strong>Terms & Conditions:</strong> Quote valid for 30 days from date above. Prices subject to manufacturer availability. Delivery and installation included unless noted. Payment terms: Net 30 from invoice date. Thank you for choosing Midwest Educational Furnishings.</div>':'')
     );
   };
 
@@ -596,23 +606,41 @@ function DocumentsPage({jobs,lineItems,vendors,customers,reps,getJobItems,notify
     setPushing(true);
     try {
       const isPO = doc.type==="po";
-      const endpoint = isPO ? 'https://quickbooks.api.intuit.com/v3/company/'+qbConfig.realmId+'/purchaseorder' : 'https://quickbooks.api.intuit.com/v3/company/'+qbConfig.realmId+'/invoice';
-      const lines = doc.data.items.map((item,idx) => {const qty = isPO ? item.qtyOrdered : (item.qtyReceived - item.qtyInvoiced); const price = isPO ? item.unitCost : item.unitPrice; return { Id: String(idx+1), Amount: qty * price, DetailType: isPO ? "ItemBasedExpenseLineDetail" : "SalesItemLineDetail", Description: item.description }});
-      const resp = await fetch(endpoint + "?minorversion=73", { method: "POST", headers: { "Authorization": "Bearer " + qbConfig.accessToken, "Content-Type": "application/json" }, body: JSON.stringify({ Line: lines }) });
-      if(resp.ok) { notify("Pushed to QuickBooks successfully"); } else { notify("QB Error: " + resp.status,"error"); }
+      const path = isPO ? 'purchaseorder?minorversion=73' : 'invoice?minorversion=73';
+      const lines = doc.data.items.map((item,idx) => {
+        const qty = isPO ? item.qtyOrdered : (item.qtyReceived - item.qtyInvoiced);
+        const price = isPO ? item.unitCost : item.unitPrice;
+        return isPO
+          ? { Id: String(idx+1), Amount: qty * price, DetailType: "ItemBasedExpenseLineDetail", ItemBasedExpenseLineDetail: { ItemRef: { value: "1", name: item.description.slice(0,100) }, Qty: qty, UnitPrice: price }, Description: item.description }
+          : { Id: String(idx+1), Amount: qty * price, DetailType: "SalesItemLineDetail", SalesItemLineDetail: { ItemRef: { value: "1", name: item.description.slice(0,100) }, Qty: qty, UnitPrice: price }, Description: item.description };
+      });
+      const payload = isPO
+        ? { VendorRef: { value: "1", name: doc.data.vendor?.name || "Vendor" }, Line: lines }
+        : { CustomerRef: { value: "1", name: doc.data.customer?.name || "Customer" }, Line: lines };
+      
+      const resp = await fetch('/api/qb-proxy?path=' + encodeURIComponent(path), {
+        method: "POST",
+        headers: { "Authorization": "Bearer " + qbConfig.accessToken, "Content-Type": "application/json", "x-qb-realmid": qbConfig.realmId },
+        body: JSON.stringify(payload),
+      });
+      const data = await resp.json();
+      if(resp.ok) { notify("Pushed to QuickBooks — " + (isPO ? "PO" : "Invoice") + " created"); }
+      else { notify("QB Error: " + (data.Fault?.Error?.[0]?.Message || data.error || resp.status),"error"); }
     } catch(e) { notify("Network error: " + e.message,"error"); }
     setPushing(false);
   };
 
-  return <div style={{animation:"fadeUp 0.4s"}}><Header title="PO & Invoice Engine" sub="Auto-drafted from job records — no re-entry required"/>
-    <div style={{display:"flex",gap:4,marginBottom:20,background:"#12141b",padding:4,borderRadius:10,width:"fit-content"}}>{[["pos","Purchase Orders"],["invoices","Invoices"],["preview","Document Preview"]].map(([id,label])=><button key={id} onClick={()=>setTab(id)} style={{padding:"8px 16px",borderRadius:8,border:"none",cursor:"pointer",background:tab===id?"#c8a25c":"transparent",color:tab===id?"#0a0c10":"#6b7280",fontSize:13,fontWeight:tab===id?600:400,fontFamily:"inherit"}}>{label}</button>)}</div>
+  return <div style={{animation:"fadeUp 0.4s"}}><Header title="PO & Invoice Engine" sub="Quotes, POs, Invoices, Commission Statements — all auto-drafted from job records"/>
+    <div style={{display:"flex",gap:4,marginBottom:20,background:"#12141b",padding:4,borderRadius:10,width:"fit-content"}}>{[["quotes","Quotes"],["pos","Purchase Orders"],["invoices","Invoices"],["preview","Document Preview"]].map(([id,label])=><button key={id} onClick={()=>setTab(id)} style={{padding:"8px 16px",borderRadius:8,border:"none",cursor:"pointer",background:tab===id?"#c8a25c":"transparent",color:tab===id?"#0a0c10":"#6b7280",fontSize:13,fontWeight:tab===id?600:400,fontFamily:"inherit"}}>{label}</button>)}</div>
+
+    {tab==="quotes"&&jobs.map(job=>{const items=getJobItems(job.id);const customer=customers.find(c=>c.id===job.customer);const total=items.reduce((s,i)=>s+i.unitPrice*i.qtyOrdered,0);return <Card key={job.id} style={{marginBottom:16}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}><div><span style={{fontSize:14,fontWeight:700,color:"#f5f5f4"}}>{job.name}</span><span style={{fontSize:12,color:"#6b7280",marginLeft:10}}>{customer?.name} · {items.length} items · {fmt(total)}</span></div><Btn onClick={()=>{setPreviewDoc({type:"quote",data:{customer,items,total,job},job});setTab("preview")}}><I n="file" s={14}/> Generate Quote</Btn></div><Bar value={job.phase==="Quoting"?0.2:job.phase==="In Progress"?0.5:1} max={1} color={statusColor(job.phase)} height={3}/></Card>})}
 
     {tab==="pos"&&jobs.map(job=>{const pos=genPOs(job);return <Card key={job.id} style={{marginBottom:16}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}><div><span style={{fontSize:14,fontWeight:700,color:"#f5f5f4"}}>{job.name}</span><span style={{fontSize:12,color:"#6b7280",marginLeft:10}}>{pos.length} vendor POs</span></div><Btn v="secondary" onClick={()=>{if(pos[0]){setPreviewDoc({type:"po",data:pos[0],job});setTab("preview")}}}><I n="file" s={14}/> View POs</Btn></div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:10}}>{pos.map((po,i)=><div key={i} style={{padding:12,background:"#1a1d27",borderRadius:8,border:"1px solid #1e2130",cursor:"pointer"}} onClick={()=>{setPreviewDoc({type:"po",data:po,job});setTab("preview")}}><div style={{fontSize:13,fontWeight:600,color:"#e8e6e3",marginBottom:4}}>{po.vendor?.name}</div><div style={{fontSize:12,color:"#6b7280"}}>{po.items.length} items</div><div style={{fontSize:14,fontWeight:600,color:"#c8a25c",fontFamily:"'DM Mono',monospace",marginTop:4}}>{fmt(po.total)}</div></div>)}</div></Card>})}
 
     {tab==="invoices"&&jobs.map(job=>{const inv=genInvoice(job);const items=getJobItems(job.id);const invoicedTotal=items.reduce((s,i)=>s+i.unitPrice*i.qtyInvoiced,0);const fullTotal=items.reduce((s,i)=>s+i.unitPrice*i.qtyOrdered,0);return <Card key={job.id} style={{marginBottom:16}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}><div><span style={{fontSize:14,fontWeight:700,color:"#f5f5f4"}}>{job.name}</span></div>{inv.items.length>0&&<Btn onClick={()=>{setPreviewDoc({type:"invoice",data:inv,job});setTab("preview")}}><I n="receipt" s={14}/> Draft Partial Invoice</Btn>}</div><div style={{display:"flex",gap:20,fontSize:12,color:"#6b7280"}}><span>Total: <strong style={{color:"#f5f5f4"}}>{fmt(fullTotal)}</strong></span><span>Invoiced: <strong style={{color:"#059669"}}>{fmt(invoicedTotal)}</strong></span><span>Pending: <strong style={{color:inv.total>0?"#d97706":"#6b7280"}}>{fmt(inv.total)}</strong></span><span>Ready: <strong style={{color:"#c8a25c"}}>{inv.items.length} items</strong></span></div><div style={{marginTop:8}}><Bar value={invoicedTotal} max={fullTotal||1} color="#059669" height={4}/></div></Card>})}
 
-    {tab==="preview"&&previewDoc&&<Card style={{border:"1px solid #c8a25c30"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}><div style={{fontSize:16,fontWeight:700,color:"#c8a25c"}}>{previewDoc.type==="po"?"PURCHASE ORDER":"INVOICE"} — Draft Preview</div><div style={{display:"flex",gap:8}}><Btn onClick={()=>handleExportPDF(previewDoc)}><I n="download" s={14}/> Export PDF</Btn><Btn v={qbConfig.connected?"primary":"secondary"} onClick={()=>qbConfig.connected?pushToQB(previewDoc):setPage("qbsetup")} style={pushing?{opacity:0.6,pointerEvents:"none"}:{}}><I n="send" s={14}/> {pushing?"Pushing...":qbConfig.connected?"Push to QuickBooks":"Connect QB First"}</Btn></div></div>
-      <div style={{background:"#fff",color:"#111",borderRadius:8,padding:32,fontFamily:"'DM Sans',sans-serif"}}><div style={{display:"flex",justifyContent:"space-between",borderBottom:"2px solid #c8a25c",paddingBottom:16,marginBottom:20}}><div><div style={{fontSize:20,fontWeight:800}}>MIDWEST EDUCATIONAL FURNISHINGS</div><div style={{fontSize:12,color:"#666",marginTop:4}}>123 Commerce Drive, Indianapolis, IN 46204</div></div><div style={{textAlign:"right"}}><div style={{fontSize:14,fontWeight:700,color:"#c8a25c",textTransform:"uppercase"}}>{previewDoc.type==="po"?"Purchase Order":"Invoice"}</div><div style={{fontSize:12,color:"#666",marginTop:4}}>Date: {new Date().toLocaleDateString()}</div><div style={{fontSize:12,color:"#666"}}>Job: {previewDoc.job.id}</div></div></div>
+    {tab==="preview"&&previewDoc&&<Card style={{border:"1px solid #c8a25c30"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}><div style={{fontSize:16,fontWeight:700,color:"#c8a25c"}}>{previewDoc.type==="quote"?"PROJECT QUOTE":previewDoc.type==="po"?"PURCHASE ORDER":"INVOICE"} — Draft Preview</div><div style={{display:"flex",gap:8}}><Btn onClick={()=>handleExportPDF(previewDoc)}><I n="download" s={14}/> Export PDF</Btn>{previewDoc.type!=="quote"&&<Btn v={qbConfig.connected?"primary":"secondary"} onClick={()=>qbConfig.connected?pushToQB(previewDoc):setPage("qbsetup")} style={pushing?{opacity:0.6,pointerEvents:"none"}:{}}><I n="send" s={14}/> {pushing?"Pushing...":qbConfig.connected?"Push to QuickBooks":"Connect QB First"}</Btn>}</div></div>
+      <div style={{background:"#fff",color:"#111",borderRadius:8,padding:32,fontFamily:"'DM Sans',sans-serif"}}><div style={{display:"flex",justifyContent:"space-between",borderBottom:"2px solid #c8a25c",paddingBottom:16,marginBottom:20}}><div><div style={{fontSize:20,fontWeight:800}}>MIDWEST EDUCATIONAL FURNISHINGS</div><div style={{fontSize:12,color:"#666",marginTop:4}}>(847) 847-1865 · info@mwfurnishings.com · www.mwfurnishings.com</div></div><div style={{textAlign:"right"}}><div style={{fontSize:14,fontWeight:700,color:"#c8a25c",textTransform:"uppercase"}}>{previewDoc.type==="po"?"Purchase Order":"Invoice"}</div><div style={{fontSize:12,color:"#666",marginTop:4}}>Date: {new Date().toLocaleDateString()}</div><div style={{fontSize:12,color:"#666"}}>Job: {previewDoc.job.id}</div></div></div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:24,marginBottom:24}}><div><div style={{fontSize:11,fontWeight:700,color:"#999",textTransform:"uppercase",marginBottom:4}}>{previewDoc.type==="po"?"Vendor":"Bill To"}</div><div style={{fontSize:13,fontWeight:600}}>{previewDoc.type==="po"?previewDoc.data.vendor?.name:previewDoc.data.customer?.name}</div></div><div><div style={{fontSize:11,fontWeight:700,color:"#999",textTransform:"uppercase",marginBottom:4}}>Job</div><div style={{fontSize:13,fontWeight:600}}>{previewDoc.job.name}</div></div></div>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,marginBottom:20}}><thead><tr style={{borderBottom:"1px solid #ddd"}}><th style={{padding:"8px 4px",textAlign:"left",color:"#666"}}>Description</th><th style={{padding:"8px 4px",textAlign:"right",color:"#666"}}>Qty</th><th style={{padding:"8px 4px",textAlign:"right",color:"#666"}}>Unit Price</th><th style={{padding:"8px 4px",textAlign:"right",color:"#666"}}>Total</th></tr></thead><tbody>{previewDoc.data.items.map((item,i)=>{const qty=previewDoc.type==="po"?item.qtyOrdered:item.qtyReceived-item.qtyInvoiced;const price=previewDoc.type==="po"?item.unitCost:item.unitPrice;return <tr key={i} style={{borderBottom:"1px solid #eee"}}><td style={{padding:"8px 4px"}}>{item.description}</td><td style={{padding:"8px 4px",textAlign:"right"}}>{qty}</td><td style={{padding:"8px 4px",textAlign:"right"}}>{fmt(price)}</td><td style={{padding:"8px 4px",textAlign:"right",fontWeight:600}}>{fmt(qty*price)}</td></tr>})}</tbody><tfoot><tr style={{borderTop:"2px solid #c8a25c"}}><td colSpan="3" style={{padding:"10px 4px",fontWeight:700,textAlign:"right"}}>TOTAL</td><td style={{padding:"10px 4px",fontWeight:700,textAlign:"right",fontSize:14}}>{fmt(previewDoc.data.total)}</td></tr></tfoot></table>
       </div>
@@ -903,17 +931,17 @@ function QBSetupPage({notify,qbConfig,setQbConfig}){
     if(!qbConfig.accessToken||!qbConfig.realmId){notify("Enter Access Token and Realm ID first","error");return}
     setTesting(true);
     try {
-      const resp = await fetch(`https://quickbooks.api.intuit.com/v3/company/${qbConfig.realmId}/companyinfo/${qbConfig.realmId}?minorversion=73`, {
-        headers: { "Authorization": "Bearer " + qbConfig.accessToken, "Accept": "application/json" }
+      const resp = await fetch('/api/qb-proxy?path=' + encodeURIComponent('companyinfo/' + qbConfig.realmId + '?minorversion=73'), {
+        headers: { "Authorization": "Bearer " + qbConfig.accessToken, "x-qb-realmid": qbConfig.realmId, "Accept": "application/json" }
       });
       if(resp.ok){
         const data = await resp.json();
-        const name = data?.CompanyInfo?.CompanyName || "Unknown";
+        const name = data?.CompanyInfo?.CompanyName || "Connected";
         setQbConfig(p=>({...p,connected:true}));
         notify(`Connected to QuickBooks: ${name}`);
       } else {
-        const err = await resp.text();
-        notify(`Connection failed (${resp.status}): ${err.substring(0,120)}`,"error");
+        const data = await resp.json().catch(()=>({}));
+        notify(`Connection failed (${resp.status}): ${data?.Fault?.Error?.[0]?.Message || data?.error || 'Check credentials'}`,"error");
       }
     } catch(e) {
       notify(`Network error: ${e.message}`,"error");
