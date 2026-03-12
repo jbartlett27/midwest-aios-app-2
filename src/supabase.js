@@ -54,23 +54,27 @@ async function deleteRow(table, id) {
 
 const jobToDb = (j) => ({
   id: j.id, name: j.name, customer: j.customer, sales_rep: j.salesRep,
-  phase: j.phase, created_date: j.createdDate, due_date: j.dueDate,
+  phase: j.phase, created_date: j.createdDate, start_date: j.startDate || '',
+  end_date: j.endDate || '', due_date: j.dueDate,
   notes: j.notes, payment_status: j.paymentStatus,
 });
 const jobFromDb = (r) => ({
   id: r.id, name: r.name, customer: r.customer, salesRep: r.sales_rep,
-  phase: r.phase, createdDate: r.created_date, dueDate: r.due_date,
+  phase: r.phase, createdDate: r.created_date, startDate: r.start_date || '',
+  endDate: r.end_date || '', dueDate: r.due_date,
   notes: r.notes, paymentStatus: r.payment_status,
 });
 const liToDb = (li) => ({
   id: li.id, job_id: li.jobId, description: li.description, vendor: li.vendor,
   unit_cost: li.unitCost, unit_price: li.unitPrice, qty_ordered: li.qtyOrdered,
   qty_received: li.qtyReceived, qty_invoiced: li.qtyInvoiced,
+  po_date: li.poDate || '', delivery_date: li.deliveryDate || '', invoice_date: li.invoiceDate || '',
 });
 const liFromDb = (r) => ({
   id: r.id, jobId: r.job_id, description: r.description, vendor: r.vendor,
   unitCost: Number(r.unit_cost), unitPrice: Number(r.unit_price),
   qtyOrdered: r.qty_ordered, qtyReceived: r.qty_received, qtyInvoiced: r.qty_invoiced,
+  poDate: r.po_date || '', deliveryDate: r.delivery_date || '', invoiceDate: r.invoice_date || '',
 });
 const vendorToDb = (v) => ({
   id: v.id, name: v.name, contact: v.contact || '', email: v.email || '',
@@ -129,4 +133,9 @@ export const db = {
     await upsertMany('jobs', initJobs.map(jobToDb));
     await upsertMany('line_items', initLI.map(liToDb));
   },
+  async batchSaveVendors(vs) { return upsertMany('vendors', vs.map(vendorToDb)); },
+  async batchSaveCustomers(cs) { return upsertMany('customers', cs.map(custToDb)); },
+  async batchSaveReps(rs) { return upsertMany('reps', rs.map(repToDb)); },
+  async batchSaveJobs(js) { return upsertMany('jobs', js.map(jobToDb)); },
+  async batchSaveLineItems(lis) { return upsertMany('line_items', lis.map(liToDb)); },
 };
