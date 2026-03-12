@@ -175,9 +175,9 @@ export default function CsvUploadPage({ vendors, customers, reps, jobs, lineItem
     }
 
     try {
-      // Save to Supabase
+      // Batch save to Supabase (single API call instead of one per row)
       if (targetType === 'vendors') {
-        for (const row of rows) { await db.saveVendor(row); }
+        await db.batchSaveVendors(rows);
         setVendors(prev => {
           const ids = new Set(prev.map(v => v.id));
           const newOnes = rows.filter(r => !ids.has(r.id));
@@ -185,7 +185,7 @@ export default function CsvUploadPage({ vendors, customers, reps, jobs, lineItem
           return [...updated, ...newOnes];
         });
       } else if (targetType === 'customers') {
-        for (const row of rows) { await db.saveCustomer(row); }
+        await db.batchSaveCustomers(rows);
         setCustomers(prev => {
           const ids = new Set(prev.map(c => c.id));
           const newOnes = rows.filter(r => !ids.has(r.id));
@@ -193,7 +193,7 @@ export default function CsvUploadPage({ vendors, customers, reps, jobs, lineItem
           return [...updated, ...newOnes];
         });
       } else if (targetType === 'reps') {
-        for (const row of rows) { await db.saveRep(row); }
+        await db.batchSaveReps(rows);
         setReps(prev => {
           const ids = new Set(prev.map(r => r.id));
           const newOnes = rows.filter(r => !ids.has(r.id));
@@ -201,7 +201,7 @@ export default function CsvUploadPage({ vendors, customers, reps, jobs, lineItem
           return [...updated, ...newOnes];
         });
       } else if (targetType === 'jobs') {
-        for (const row of rows) { await db.saveJob(row); }
+        await db.batchSaveJobs(rows);
         setJobs(prev => {
           const ids = new Set(prev.map(j => j.id));
           const newOnes = rows.filter(r => !ids.has(r.id));
@@ -209,7 +209,7 @@ export default function CsvUploadPage({ vendors, customers, reps, jobs, lineItem
           return [...updated, ...newOnes];
         });
       } else if (targetType === 'lineItems') {
-        for (const row of rows) { await db.saveLineItem(row); }
+        await db.batchSaveLineItems(rows);
         setLineItems(prev => {
           const ids = new Set(prev.map(l => l.id));
           const newOnes = rows.filter(r => !ids.has(r.id));
