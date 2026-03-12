@@ -79,10 +79,14 @@ const liFromDb = (r) => ({
 const vendorToDb = (v) => ({
   id: v.id, name: v.name, contact: v.contact || '', email: v.email || '',
   phone: v.phone || '', category: v.category || '', address: v.address || '',
+  discount_rate: v.discountRate || 0, discount_type: v.discountType || 'percentage',
+  discount_notes: v.discountNotes || '',
 });
 const vendorFromDb = (r) => ({
   id: r.id, name: r.name, contact: r.contact || '', email: r.email || '',
   phone: r.phone || '', category: r.category || '', address: r.address || '',
+  discountRate: Number(r.discount_rate) || 0, discountType: r.discount_type || 'percentage',
+  discountNotes: r.discount_notes || '',
 });
 const custToDb = (c) => ({
   id: c.id, name: c.name, contact: c.contact || '', email: c.email || '',
