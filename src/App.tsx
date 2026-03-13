@@ -199,36 +199,26 @@ export default function MidwestAIOS() {
 
   const notify = (msg, type="success") => { setNotification({msg,type}); setTimeout(()=>setNotification(null),3500); };
 
-  const SUPA_URL = "https://kogjthgceejpzxnekprr.supabase.co/rest/v1";
-  const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtvZ2p0aGdjZWVqcHp4bmVrcHJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyODgyODUsImV4cCI6MjA4ODg2NDI4NX0.W0bhVfPNjCPYKzs6KpIeYaXk5epKRbLmDzgSN8NEjHo";
   // ─── LOAD FROM SUPABASE ON MOUNT ───────────────────────────
   useEffect(() => {
     const loadFromDb = async () => {
       try {
-        // Check if we need to reseed (v3 adds 30 vendors + 6 reps + discount fields)
-        // Check reseed flag from Supabase (not localStorage — survives browser clear)
-        let needsReseed = false;
-        try {
-          const flagCheck = await fetch(SUPA_URL+'/rest/v1/reps?id=eq.SEED_FLAG_V5&select=id', {headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY}});
-          const flagData = await flagCheck.json();
-          needsReseed = !flagData || flagData.length === 0;
-        } catch { needsReseed = true; }
-        if (needsReseed) {
-          await db.seed(INIT_JOBS, INIT_LINE_ITEMS, INIT_VENDORS, INIT_CUSTOMERS, INIT_REPS);
-          // Write flag to DB so reseed never happens again
-          try { await fetch(SUPA_URL+'/rest/v1/reps',{method:'POST',headers:{'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'},body:JSON.stringify({id:'SEED_FLAG_V5',name:'_SEED_DONE_',email:'',territory:'',commission_rate:0,tier:'system'})}); } catch {}
-        }
         const data = await db.loadAll();
+        if (data.vendors && data.vendors.length > 0) setVendors(data.vendors.filter(v=>!v.id.includes("SEED_FLAG")));
+        if (data.customers && data.customers.length > 0) setCustomers(data.customers);
+        if (data.reps && data.reps.length > 0) setReps(data.reps.filter(r=>!r.id.includes("SEED_FLAG")));
         if (data.jobs && data.jobs.length > 0) setJobs(data.jobs);
         if (data.lineItems && data.lineItems.length > 0) setLineItems(data.lineItems);
-        if (data.vendors && data.vendors.length > 0) setVendors(data.vendors);
-        if (data.customers && data.customers.length > 0) setCustomers(data.customers);
-        if (data.reps && data.reps.length > 0) setReps(data.reps);
-        // If DB is still empty, seed it
+        // If DB is empty, seed with initial data
         if (!data.jobs || data.jobs.length === 0) {
           await db.seed(INIT_JOBS, INIT_LINE_ITEMS, INIT_VENDORS, INIT_CUSTOMERS, INIT_REPS);
+          const fresh = await db.loadAll();
+          if (fresh.vendors) setVendors(fresh.vendors);
+          if (fresh.customers) setCustomers(fresh.customers);
+          if (fresh.reps) setReps(fresh.reps);
+          if (fresh.jobs) setJobs(fresh.jobs);
+          if (fresh.lineItems) setLineItems(fresh.lineItems);
         }
-        // Load QB config from localStorage (credentials stay local for security)
         try { const qb = localStorage.getItem('mw_qbConfig'); if (qb) setQbConfig(JSON.parse(qb)); } catch {}
         setDbStatus("connected");
       } catch (e) {
