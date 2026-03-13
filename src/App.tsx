@@ -350,14 +350,15 @@ export default function MidwestAIOS() {
       <ConfirmDialog />
 
       {/* Mobile hamburger */}
-      <button onClick={()=>setMobileMenuOpen(!mobileMenuOpen)} className="mobile-menu-btn" style={{display:"none",position:"fixed",top:12,left:12,zIndex:10001,width:40,height:40,borderRadius:8,background:"#12141b",border:"1px solid #1e2130",cursor:"pointer",alignItems:"center",justifyContent:"center",color:"#c8a25c"}}><I n={mobileMenuOpen?"close":"dashboard"} s={20}/></button>
+      <button onClick={()=>setMobileMenuOpen(!mobileMenuOpen)} className="mobile-menu-btn" style={{display:"none",position:"fixed",top:12,left:12,zIndex:10001,width:40,height:40,borderRadius:8,background:"#12141b",border:"1px solid #1e2130",cursor:"pointer",alignItems:"center",justifyContent:"center",color:"#c8a25c"}}>{mobileMenuOpen?null:<I n="dashboard" s={20}/>}</button>
       {mobileMenuOpen&&<div onClick={()=>setMobileMenuOpen(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:9999}}/>}
 
       {/* SIDEBAR */}
       <div className={"sidebar"+(mobileMenuOpen?" open":"")} style={{width:sidebarCollapsed?64:240,minWidth:sidebarCollapsed?64:240,background:"#0d0f14",borderRight:"1px solid #1a1d27",display:"flex",flexDirection:"column",transition:"all 0.3s",overflow:"hidden"}}>
-        <div style={{padding:sidebarCollapsed?"20px 12px":"20px 20px",borderBottom:"1px solid #1a1d27",display:"flex",alignItems:"center",gap:12,cursor:"pointer"}} onClick={()=>setSidebarCollapsed(!sidebarCollapsed)}>
-          <img src={MW_LOGO} alt="Midwest" style={{height:32,width:"auto",flexShrink:0,objectFit:"contain"}}/>
-          {!sidebarCollapsed&&<div><div style={{fontSize:13,fontWeight:700,color:"#f0d68a",letterSpacing:0.3}}>Midwest Furnishings</div><div style={{fontSize:10,color:"#6b7280",letterSpacing:1.5,textTransform:"uppercase"}}>AI Operating System</div></div>}
+        <div style={{padding:"16px 16px",borderBottom:"1px solid #1a1d27",display:"flex",alignItems:"center",gap:10}}>
+          <img src={MW_LOGO} alt="Midwest" style={{height:30,width:"auto",flexShrink:0,objectFit:"contain"}} onClick={()=>{if(window.innerWidth>768)setSidebarCollapsed(!sidebarCollapsed)}}/>
+          {!sidebarCollapsed&&<div style={{flex:1,cursor:"pointer"}} onClick={()=>{if(window.innerWidth>768)setSidebarCollapsed(!sidebarCollapsed)}}><div style={{fontSize:13,fontWeight:700,color:"#f0d68a",letterSpacing:0.3}}>Midwest Furnishings</div><div style={{fontSize:10,color:"#6b7280",letterSpacing:1.5,textTransform:"uppercase"}}>AI Operating System</div></div>}
+          <button className="mobile-close-btn" onClick={()=>setMobileMenuOpen(false)} style={{display:"none",width:32,height:32,borderRadius:6,background:"#1a1d27",border:"1px solid #2a2d37",cursor:"pointer",alignItems:"center",justifyContent:"center",color:"#9ca3af",flexShrink:0}}><I n="close" s={16}/></button>
         </div>
         <nav style={{flex:1,padding:"12px 8px",display:"flex",flexDirection:"column",gap:2}}>
           {navItems.map(item=> <button key={item.id} onClick={()=>{setPage(item.id);setSelectedJob(null);setMobileMenuOpen(false)}} style={{display:"flex",alignItems:"center",gap:12,padding:sidebarCollapsed?"10px 12px":"10px 14px",borderRadius:8,border:"none",cursor:"pointer",background:page===item.id?"rgba(200,162,92,0.12)":"transparent",color:page===item.id?"#f0d68a":"#9ca3af",fontSize:13,fontWeight:page===item.id?600:400,fontFamily:"inherit",textAlign:"left",transition:"all 0.2s",justifyContent:sidebarCollapsed?"center":"flex-start"}} onMouseEnter={e=>{if(page!==item.id)e.target.style.background="rgba(255,255,255,0.04)"}} onMouseLeave={e=>{if(page!==item.id)e.target.style.background="transparent"}}><span style={{flexShrink:0,opacity:page===item.id?1:0.6}}><I n={item.icon} s={18}/></span>{!sidebarCollapsed&&<span style={{flex:1}}>{item.label}</span>}{!sidebarCollapsed&&item.badge&&<span style={{minWidth:18,height:18,borderRadius:9,background:item.badgeColor||"#c8a25c",color:"#fff",fontSize:9,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 5px"}}>{item.badge}</span>}</button>)}
@@ -399,6 +400,7 @@ export default function MidwestAIOS() {
           .sidebar{position:fixed!important;left:-260px!important;top:0!important;bottom:0!important;width:240px!important;min-width:240px!important;z-index:10000!important;transition:left 0.3s ease!important}
           .sidebar.open{left:0px!important}
           .mobile-menu-btn{display:flex!important}
+          .mobile-close-btn{display:flex!important}
           .main-content{padding:16px 12px!important;padding-top:56px!important}
           h1{font-size:20px!important}
           h2{font-size:16px!important}
