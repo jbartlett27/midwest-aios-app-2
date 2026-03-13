@@ -550,12 +550,18 @@ function JobDetail({job,ctx}){
 function DeliveryPage({jobs,lineItems,vendors,getItemStatus,updateLineItem,notify}){
   const [receiveModal,setReceiveModal]=useState(null);
   const [receiveQty,setReceiveQty]=useState("");
-  const allItems=lineItems.filter(i=>i.qtyReceived<i.qtyOrdered).map(i=>({...i,jobName:jobs.find(j=>j.id===i.jobId)?.name||""}));
+  const allItems=lineItems.filter(i=>i.qtyReceived<i.qtyOrdered).map(i=>({...i,jobName:jobs.find(j=>j.id===i.jobId)?.name||"",jobId:i.jobId}));
   const partials=lineItems.filter(i=>i.qtyReceived>0&&i.qtyReceived<i.qtyOrdered);
 
-  const handleReceive=()=>{const qty=parseInt(receiveQty)||0;if(qty<=0)return;const newRcv=Math.min(receiveModal.qtyReceived+qty,receiveModal.qtyOrdered);updateLineItem(receiveModal.id,{qtyReceived:newRcv});notify(`Logged ${qty} units received — dashboard, invoices, and deliveries updated`);setReceiveModal(null);setReceiveQty("")};
+  // Group by job
+  const jobGroups={};
+  allItems.forEach(item=>{if(!jobGroups[item.jobId])jobGroups[item.jobId]={job:jobs.find(j=>j.id===item.jobId),items:[]};jobGroups[item.jobId].items.push(item)});
+  const groupedJobs=Object.values(jobGroups).filter(g=>g.job);
 
-  return <div style={{animation:"fadeUp 0.4s"}}><Header title="Delivery Tracker" sub="Quantity-specific tracking — updates propagate to invoices and dashboard"/>
+  const handleReceive=()=>{const qty=parseInt(receiveQty)||0;if(qty<=0)return;const newRcv=Math.min(receiveModal.qtyReceived+qty,receiveModal.qtyOrdered);updateLineItem(receiveModal.id,{qtyReceived:newRcv,deliveryDate:new Date().toISOString().split("T")[0]});notify(`Logged ${qty} units received`);setReceiveModal(null);setReceiveQty("")};
+  const completeAll=(jobItems)=>{jobItems.forEach(item=>{updateLineItem(item.id,{qtyReceived:item.qtyOrdered,deliveryDate:new Date().toISOString().split("T")[0]})});notify(`All ${jobItems.length} items marked complete`)};
+
+  return <div style={{animation:"fadeUp 0.4s"}}><Header title="Delivery Tracker" sub="Grouped by job — quantity-specific tracking — updates propagate everywhere"/>
     <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16,marginBottom:24}}>
       <StatCard label="Pending Delivery" value={allItems.length} sub="line items" icon="truck" color="#d97706"/>
       <StatCard label="Partial Shipments" value={partials.length} sub="in progress" icon="package" color="#2563eb"/>
@@ -563,16 +569,40 @@ function DeliveryPage({jobs,lineItems,vendors,getItemStatus,updateLineItem,notif
       <StatCard label="Total Received" value={fmtN(lineItems.reduce((s,i)=>s+i.qtyReceived,0))} sub="units" icon="check" color="#059669"/>
     </div>
     {receiveModal&&<Card style={{marginBottom:20,border:"1px solid #d9770644"}}><div style={{fontSize:14,fontWeight:700,marginBottom:12,color:"#d97706"}}>Log Shipment Received</div><div style={{fontSize:13,color:"#d1d5db",marginBottom:4}}>{receiveModal.description}</div><div style={{fontSize:12,color:"#6b7280",marginBottom:12}}>Outstanding: {fmtN(receiveModal.qtyOrdered-receiveModal.qtyReceived)} units · Already received: {fmtN(receiveModal.qtyReceived)}</div><div style={{display:"flex",gap:8,alignItems:"center"}}><input type="number" value={receiveQty} onChange={e=>setReceiveQty(e.target.value)} placeholder="Qty received" min="1" max={receiveModal.qtyOrdered-receiveModal.qtyReceived} style={{...inputStyle,width:120}}/><Btn onClick={handleReceive}>Log Receipt</Btn><Btn v="secondary" onClick={()=>{setReceiveModal(null);setReceiveQty("")}}>Cancel</Btn></div></Card>}
-    <Tbl columns={[
-      {header:"Job",render:r=><span style={{fontWeight:500,color:"#c8a25c",fontSize:12}}>{r.jobName}</span>},
-      {header:"Item",render:r=><span style={{fontSize:12}}>{r.description}</span>},
-      {header:"Vendor",render:r=>vendors.find(v=>v.id===r.vendor)?.name},
-      {header:"Ordered",render:r=>fmtN(r.qtyOrdered)},
-      {header:"Received",render:r=>fmtN(r.qtyReceived)},
-      {header:"Outstanding",render:r=><span style={{fontWeight:600,color:"#d97706",fontFamily:"'DM Mono',monospace"}}>{fmtN(r.qtyOrdered-r.qtyReceived)}</span>},
-      {header:"Progress",render:r=><div style={{width:100}}><Bar value={r.qtyReceived} max={r.qtyOrdered} color={r.qtyReceived>0?"#d97706":"#2a2d37"} height={5}/></div>},
-      {header:"",render:r=><div style={{display:"flex",gap:4}}><Btn v="ghost" style={{fontSize:11,padding:"4px 10px"}} onClick={e=>{e.stopPropagation();setReceiveModal(r)}}>Receive</Btn>{r.qtyOrdered-r.qtyReceived>0&&<Btn v="secondary" style={{fontSize:10,padding:"3px 8px"}} onClick={e=>{e.stopPropagation();updateLineItem(r.id,{qtyReceived:r.qtyOrdered,deliveryDate:new Date().toISOString().split("T")[0]});notify("Marked complete — all "+fmtN(r.qtyOrdered)+" units received")}}>Complete</Btn>}</div>},
-    ]} data={allItems}/>
+
+    {groupedJobs.length===0&&<Card style={{textAlign:"center",padding:40}}><div style={{fontSize:16,color:"#059669",fontWeight:600,marginBottom:4}}>All deliveries complete</div><div style={{fontSize:13,color:"#6b7280"}}>No outstanding items across any job.</div></Card>}
+
+    {groupedJobs.map(({job,items})=>{
+      const totalOut=items.reduce((s,i)=>s+i.qtyOrdered-i.qtyReceived,0);
+      const totalOrd=items.reduce((s,i)=>s+i.qtyOrdered,0);
+      const totalRcv=items.reduce((s,i)=>s+i.qtyReceived,0);
+      return <Card key={job.id} style={{marginBottom:16}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+          <div>
+            <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:15,fontWeight:700,color:"#f5f5f4"}}>{job.name}</span><Badge label={job.phase} color={statusColor(job.phase)}/></div>
+            <div style={{fontSize:12,color:"#6b7280",marginTop:2}}>{job.id} · {items.length} items pending · {fmtN(totalOut)} units outstanding</div>
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            <div style={{textAlign:"right",marginRight:8}}><div style={{fontSize:11,color:"#6b7280"}}>Received</div><div style={{fontSize:14,fontWeight:600,color:"#d97706",fontFamily:"'DM Mono',monospace"}}>{fmtN(totalRcv)}/{fmtN(totalOrd)}</div></div>
+            <Btn v="secondary" style={{fontSize:11}} onClick={()=>completeAll(items)}>Complete All</Btn>
+          </div>
+        </div>
+        <Bar value={totalRcv} max={totalOrd} color="#d97706" height={4}/>
+        <div style={{overflowX:"auto",marginTop:12,borderRadius:8,border:"1px solid #1e2130"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <thead><tr style={{background:"#12141b"}}><th style={{padding:"8px 10px",textAlign:"left",color:"#6b7280",fontSize:10,textTransform:"uppercase",letterSpacing:0.5}}>Item</th><th style={{padding:"8px 10px",textAlign:"left",color:"#6b7280",fontSize:10,textTransform:"uppercase"}}>Vendor</th><th style={{padding:"8px 10px",textAlign:"right",color:"#6b7280",fontSize:10,textTransform:"uppercase"}}>Ordered</th><th style={{padding:"8px 10px",textAlign:"right",color:"#6b7280",fontSize:10,textTransform:"uppercase"}}>Received</th><th style={{padding:"8px 10px",textAlign:"right",color:"#6b7280",fontSize:10,textTransform:"uppercase"}}>Outstanding</th><th style={{padding:"8px 10px",textAlign:"center",color:"#6b7280",fontSize:10,textTransform:"uppercase"}}>Progress</th><th style={{padding:"8px 10px"}}></th></tr></thead>
+            <tbody>{items.map(item=><tr key={item.id} style={{borderBottom:"1px solid #1a1d2720"}}>
+              <td style={{padding:"8px 10px",color:"#d1d5db"}}>{item.description}</td>
+              <td style={{padding:"8px 10px",color:"#9ca3af"}}>{vendors.find(v=>v.id===item.vendor)?.name||"--"}</td>
+              <td style={{padding:"8px 10px",textAlign:"right",color:"#d1d5db",fontFamily:"'DM Mono',monospace"}}>{fmtN(item.qtyOrdered)}</td>
+              <td style={{padding:"8px 10px",textAlign:"right",color:item.qtyReceived>0?"#d97706":"#6b7280",fontFamily:"'DM Mono',monospace"}}>{fmtN(item.qtyReceived)}</td>
+              <td style={{padding:"8px 10px",textAlign:"right",fontWeight:600,color:"#ef4444",fontFamily:"'DM Mono',monospace"}}>{fmtN(item.qtyOrdered-item.qtyReceived)}</td>
+              <td style={{padding:"8px 10px"}}><div style={{width:80,margin:"0 auto"}}><Bar value={item.qtyReceived} max={item.qtyOrdered} color={item.qtyReceived>0?"#d97706":"#2a2d37"} height={4}/></div></td>
+              <td style={{padding:"8px 10px"}}><div style={{display:"flex",gap:4,justifyContent:"flex-end"}}><Btn v="ghost" style={{fontSize:10,padding:"3px 8px"}} onClick={e=>{e.stopPropagation();setReceiveModal(item)}}>Receive</Btn><Btn v="secondary" style={{fontSize:10,padding:"3px 6px"}} onClick={e=>{e.stopPropagation();updateLineItem(item.id,{qtyReceived:item.qtyOrdered,deliveryDate:new Date().toISOString().split("T")[0]});notify("Complete")}}>Done</Btn></div></td>
+            </tr>)}</tbody>
+          </table>
+        </div>
+      </Card>})}
   </div>;
 }
 
