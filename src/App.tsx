@@ -398,7 +398,7 @@ export default function MidwestAIOS() {
 // ═══════════════════════════════════════════════════════════════
 // DASHBOARD
 // ═══════════════════════════════════════════════════════════════
-function Dashboard({jobs,lineItems,reps,vendors,getJobFinancials,getJobItems,setPage,setSelectedJob,dateFilter,setDateFilter}){
+function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJobItems,setPage,setSelectedJob,dateFilter,setDateFilter}){
   // Date filtering
   const now = new Date();
   const filterJob = (j) => {
