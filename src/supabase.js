@@ -54,8 +54,7 @@ async function deleteRow(table, id) {
 
 async function deleteAll(table) {
   try {
-    // Supabase DELETE requires a filter — use id=neq.'' to match all rows
-    const r = await fetch(URL + '/' + table + '?id=neq.', {
+    const r = await fetch(URL + '/' + table + '?id=not.is.null', {
       method: 'DELETE', headers: hdrs,
     });
     return { ok: r.ok };
