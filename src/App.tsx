@@ -192,6 +192,7 @@ export default function MidwestAIOS() {
   const [brainLoading, setBrainLoading] = useState(false);
   const [qbConfig, setQbConfig] = useState({connected:false, clientId:"", clientSecret:"", realmId:"", accessToken:"", refreshToken:""});
   const [dbStatus, setDbStatus] = useState("connecting");
+  const [appReady, setAppReady] = useState(false);
   const { triggerPrint, PrintOverlay } = usePrintOverlay();
   const { confirm, ConfirmDialog } = useConfirm();
   const [globalSearch, setGlobalSearch] = useState("");
@@ -225,9 +226,11 @@ export default function MidwestAIOS() {
         }
         try { const qb = localStorage.getItem('mw_qbConfig'); if (qb) setQbConfig(JSON.parse(qb)); } catch {}
         setDbStatus("connected");
+        setAppReady(true);
       } catch (e) {
         console.error("Supabase load error:", e);
         setDbStatus("error");
+        setAppReady(true);
       }
     };
     loadFromDb();
@@ -305,13 +308,18 @@ export default function MidwestAIOS() {
   };
   const deleteVendor = async (id) => { if (!await confirm("Delete this vendor? Line items will be unlinked.")) return; setVendors(p => p.filter(v => v.id !== id)); db.deleteVendor(id); };
 
+  // Badge counts for sidebar
+  const pendingDeliveries = lineItems.filter(i=>i.qtyReceived<i.qtyOrdered).length;
+  const pendingInvoices = lineItems.filter(i=>i.qtyReceived>i.qtyInvoiced).length;
+  const overdueCount = jobs.filter(j=>j.dueDate&&new Date(j.dueDate)<new Date()&&j.phase!=="Complete"&&j.paymentStatus!=="paid").length;
+
   const navItems = [
-    {id:"dashboard",label:"Command Center",icon:"dashboard"},
-    {id:"jobs",label:"Job Records",icon:"briefcase"},
+    {id:"dashboard",label:"Command Center",icon:"dashboard",badge:overdueCount>0?overdueCount:null,badgeColor:"#ef4444"},
+    {id:"jobs",label:"Job Records",icon:"briefcase",badge:jobs.length||null,badgeColor:"#6b7280"},
     {id:"directory",label:"Directory",icon:"users"},
     {id:"dataimport",label:"Data Import",icon:"download"},
-    {id:"deliveries",label:"Delivery Tracker",icon:"truck"},
-    {id:"documents",label:"Documents",icon:"file"},
+    {id:"deliveries",label:"Delivery Tracker",icon:"truck",badge:pendingDeliveries||null,badgeColor:"#d97706"},
+    {id:"documents",label:"Documents",icon:"file",badge:pendingInvoices||null,badgeColor:"#c8a25c"},
     {id:"commissions",label:"Commissions",icon:"dollar"},
     {id:"salesportal",label:"Sales Portal",icon:"users"},
     {id:"brain",label:"Midwest Brain",icon:"brain"},
@@ -320,6 +328,19 @@ export default function MidwestAIOS() {
   ];
 
   const ctx = {jobs,setJobs,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,setPage:p=>{setPage(p);setMobileMenuOpen(false)},brainQuery,setBrainQuery,brainLoading,setBrainLoading,qbConfig,setQbConfig,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter};
+
+  if (!appReady) return (
+    <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",width:"100vw",background:"#0a0c10",fontFamily:"'DM Sans',sans-serif"}}>
+      <div style={{textAlign:"center"}}>
+        <img src={MW_LOGO} alt="Midwest" style={{height:48,marginBottom:16,opacity:0.8}}/>
+        <div style={{fontSize:16,fontWeight:600,color:"#c8a25c",marginBottom:8}}>Midwest Educational Furnishings</div>
+        <div style={{fontSize:12,color:"#6b7280",marginBottom:20}}>AI Operating System</div>
+        <div style={{width:120,height:3,background:"#1e2130",borderRadius:2,margin:"0 auto",overflow:"hidden"}}><div style={{width:"40%",height:"100%",background:"#c8a25c",borderRadius:2,animation:"loadSlide 1.2s ease-in-out infinite"}}/></div>
+        <style>{"@keyframes loadSlide{0%{transform:translateX(-100%)}50%{transform:translateX(150%)}100%{transform:translateX(-100%)}}"}</style>
+        <div style={{fontSize:11,color:"#4b5563",marginTop:16}}>Connecting to database...</div>
+      </div>
+    </div>
+  );
 
   return (
     <div style={{display:"flex",height:"100vh",width:"100vw",fontFamily:"'DM Sans','Satoshi',sans-serif",background:"#0a0c10",color:"#e8e6e3",overflow:"hidden"}}>
@@ -339,7 +360,7 @@ export default function MidwestAIOS() {
           {!sidebarCollapsed&&<div><div style={{fontSize:13,fontWeight:700,color:"#f0d68a",letterSpacing:0.3}}>Midwest Furnishings</div><div style={{fontSize:10,color:"#6b7280",letterSpacing:1.5,textTransform:"uppercase"}}>AI Operating System</div></div>}
         </div>
         <nav style={{flex:1,padding:"12px 8px",display:"flex",flexDirection:"column",gap:2}}>
-          {navItems.map(item=> <button key={item.id} onClick={()=>{setPage(item.id);setSelectedJob(null);setMobileMenuOpen(false)}} style={{display:"flex",alignItems:"center",gap:12,padding:sidebarCollapsed?"10px 12px":"10px 14px",borderRadius:8,border:"none",cursor:"pointer",background:page===item.id?"rgba(200,162,92,0.12)":"transparent",color:page===item.id?"#f0d68a":"#9ca3af",fontSize:13,fontWeight:page===item.id?600:400,fontFamily:"inherit",textAlign:"left",transition:"all 0.2s",justifyContent:sidebarCollapsed?"center":"flex-start"}} onMouseEnter={e=>{if(page!==item.id)e.target.style.background="rgba(255,255,255,0.04)"}} onMouseLeave={e=>{if(page!==item.id)e.target.style.background="transparent"}}><span style={{flexShrink:0,opacity:page===item.id?1:0.6}}><I n={item.icon} s={18}/></span>{!sidebarCollapsed&&item.label}</button>)}
+          {navItems.map(item=> <button key={item.id} onClick={()=>{setPage(item.id);setSelectedJob(null);setMobileMenuOpen(false)}} style={{display:"flex",alignItems:"center",gap:12,padding:sidebarCollapsed?"10px 12px":"10px 14px",borderRadius:8,border:"none",cursor:"pointer",background:page===item.id?"rgba(200,162,92,0.12)":"transparent",color:page===item.id?"#f0d68a":"#9ca3af",fontSize:13,fontWeight:page===item.id?600:400,fontFamily:"inherit",textAlign:"left",transition:"all 0.2s",justifyContent:sidebarCollapsed?"center":"flex-start"}} onMouseEnter={e=>{if(page!==item.id)e.target.style.background="rgba(255,255,255,0.04)"}} onMouseLeave={e=>{if(page!==item.id)e.target.style.background="transparent"}}><span style={{flexShrink:0,opacity:page===item.id?1:0.6}}><I n={item.icon} s={18}/></span>{!sidebarCollapsed&&<span style={{flex:1}}>{item.label}</span>}{!sidebarCollapsed&&item.badge&&<span style={{minWidth:18,height:18,borderRadius:9,background:item.badgeColor||"#c8a25c",color:"#fff",fontSize:9,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 5px"}}>{item.badge}</span>}</button>)}
         </nav>
         {!sidebarCollapsed&&<div style={{padding:"12px 20px",borderTop:"1px solid #1a1d27",fontSize:10,color:"#4b5563"}}>
           <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
@@ -442,7 +463,7 @@ function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJo
         <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:"#05966910",border:"1px solid #05966925",borderRadius:8,cursor:"pointer"}} onClick={()=>setPage("commissions")}><div style={{width:8,height:8,borderRadius:"50%",background:"#059669"}}/><span style={{fontSize:13,color:"#6ee7b7",flex:1}}>Commission statements ready for review</span><Btn v="ghost" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>setPage("commissions")}>Review &rarr;</Btn></div>
         {overdueJobs.length>0&&<div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:"#ef444410",border:"1px solid #ef444425",borderRadius:8,cursor:"pointer"}} onClick={()=>setPage("jobs")}><div style={{width:8,height:8,borderRadius:"50%",background:"#ef4444"}}/><span style={{fontSize:13,color:"#fca5a5",flex:1}}><strong>{overdueJobs.length}</strong> job{overdueJobs.length>1?"s":""} past due date</span><Btn v="ghost" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>setPage("jobs")}>View &rarr;</Btn></div>}
       </div></Card>
-      <Card><div style={{fontSize:14,fontWeight:700,color:"#f5f5f4",marginBottom:16,display:"flex",alignItems:"center",gap:8}}><I n="briefcase" s={16}/> Active Jobs</div><div style={{display:"flex",flexDirection:"column",gap:8}}>{jobs.map(job=>{const f=getJobFinancials(job.id);return <div key={job.id} onClick={()=>{setSelectedJob(job.id);setPage("jobs")}} style={{padding:"10px 12px",background:"#1a1d27",borderRadius:8,cursor:"pointer",transition:"all 0.15s"}} onMouseEnter={e=>e.currentTarget.style.background="#1e2130"} onMouseLeave={e=>e.currentTarget.style.background="#1a1d27"}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}><span style={{fontSize:13,fontWeight:600,color:"#e8e6e3"}}>{job.name}</span><Badge label={job.phase} color={statusColor(job.phase)}/></div><Bar value={f.totalReceived} max={f.totalOrdered||1} color={statusColor(job.phase)} height={4}/><div style={{display:"flex",justifyContent:"space-between",marginTop:4}}><span style={{fontSize:11,color:"#6b7280"}}>{fmtN(f.totalReceived)}/{fmtN(f.totalOrdered)} units</span><span style={{fontSize:11,color:"#6b7280"}}>{fmt(f.totalRevenue)}</span></div></div>})}</div></Card>
+      <Card><div style={{fontSize:14,fontWeight:700,color:"#f5f5f4",marginBottom:16,display:"flex",alignItems:"center",gap:8}}><I n="briefcase" s={16}/> Active Jobs</div>{jobs.length===0&&<div style={{textAlign:"center",padding:20,color:"#6b7280",fontSize:13}}>No jobs yet. Go to Job Records to create your first project.</div>}<div style={{display:"flex",flexDirection:"column",gap:8}}>{jobs.map(job=>{const f=getJobFinancials(job.id);return <div key={job.id} onClick={()=>{setSelectedJob(job.id);setPage("jobs")}} style={{padding:"10px 12px",background:"#1a1d27",borderRadius:8,cursor:"pointer",transition:"all 0.15s"}} onMouseEnter={e=>e.currentTarget.style.background="#1e2130"} onMouseLeave={e=>e.currentTarget.style.background="#1a1d27"}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}><span style={{fontSize:13,fontWeight:600,color:"#e8e6e3"}}>{job.name}</span><Badge label={job.phase} color={statusColor(job.phase)}/></div><Bar value={f.totalReceived} max={f.totalOrdered||1} color={statusColor(job.phase)} height={4}/><div style={{display:"flex",justifyContent:"space-between",marginTop:4}}><span style={{fontSize:11,color:"#6b7280"}}>{fmtN(f.totalReceived)}/{fmtN(f.totalOrdered)} units</span><span style={{fontSize:11,color:"#6b7280"}}>{fmt(f.totalRevenue)}</span></div></div>})}</div></Card>
     </div>
     <div className="resp-grid-2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
       <Card><div style={{fontSize:14,fontWeight:700,color:"#f5f5f4",marginBottom:16}}>Revenue by Sales Rep</div>{reps.map(rep=>{const rj=jobs.filter(j=>j.salesRep===rep.id);const rv=rj.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);return <div key={rep.id} style={{padding:"12px 0",borderBottom:"1px solid #1e2130"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}><div><span style={{fontSize:13,fontWeight:600,color:"#e8e6e3"}}>{rep.name}</span><span style={{fontSize:11,color:"#6b7280",marginLeft:8}}>{rep.territory}</span></div><span style={{fontSize:13,fontWeight:600,color:"#059669",fontFamily:"'DM Mono',monospace"}}>{fmt(rv)}</span></div><div style={{display:"flex",justifyContent:"space-between"}}><span style={{fontSize:11,color:"#6b7280"}}>{rj.length} job(s) · {pct(rep.commissionRate*100)} rate</span><span style={{fontSize:11,color:"#c8a25c"}}>Est. commission: {fmt(rv*rep.commissionRate)}</span></div></div>})}</Card>
@@ -522,7 +543,7 @@ function JobsPage(ctx){
       {header:"Revenue",render:r=><span style={{fontFamily:"'DM Mono',monospace",fontSize:12}}>{fmt(getJobFinancials(r.id).totalRevenue)}</span>},
       {header:"Margin",render:r=>{const m=getJobFinancials(r.id).margin;return <span style={{color:m>=30?"#059669":"#d97706",fontSize:12}}>{pct(m)}</span>}},
       {header:"Payment",render:r=><Badge label={r.paymentStatus} color={statusColor(r.paymentStatus)}/>},
-    ]} data={sortedJobs} onRowClick={r=>setSelectedJob(r.id)}/>}
+    ]} data={sortedJobs} onRowClick={r=>setSelectedJob(r.id)}/>}{sortedJobs.length===0&&<Card style={{textAlign:"center",padding:40,marginTop:16}}><div style={{fontSize:40,marginBottom:8}}>+</div><div style={{fontSize:16,fontWeight:600,color:"#c8a25c",marginBottom:4}}>No jobs yet</div><div style={{fontSize:13,color:"#6b7280",marginBottom:16}}>Create your first job to start tracking projects, deliveries, and invoices.</div><Btn onClick={()=>setShowNewJob(true)}><I n="plus" s={14}/> Create First Job</Btn></Card>}
 
     {viewMode==="kanban"&&<div className="kanban-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,minHeight:400}}>
       {["Quoting","In Progress","Invoiced","Complete"].map(phase=><div key={phase} onDrop={e=>handleDrop(e,phase)} onDragOver={handleDragOver} style={{background:"#12141b",borderRadius:12,padding:12,border:"1px solid #1e2130",minHeight:300}}>
