@@ -66,12 +66,16 @@ const jobToDb = (j) => ({
   phase: j.phase, created_date: j.createdDate, start_date: j.startDate || '',
   end_date: j.endDate || '', due_date: j.dueDate,
   notes: j.notes, payment_status: j.paymentStatus,
+  doc_statuses: typeof j.docStatuses === 'string' ? j.docStatuses : JSON.stringify(j.docStatuses || {}),
+  activities: typeof j.activities === 'string' ? j.activities : JSON.stringify(j.activities || []),
 });
 const jobFromDb = (r) => ({
   id: r.id, name: r.name, customer: r.customer, salesRep: r.sales_rep,
   phase: r.phase, createdDate: r.created_date, startDate: r.start_date || '',
   endDate: r.end_date || '', dueDate: r.due_date,
   notes: r.notes, paymentStatus: r.payment_status,
+  docStatuses: (() => { try { return JSON.parse(r.doc_statuses || '{}'); } catch { return {}; } })(),
+  activities: (() => { try { return JSON.parse(r.activities || '[]'); } catch { return []; } })(),
 });
 const liToDb = (li) => ({
   id: li.id, job_id: li.jobId, description: li.description, vendor: li.vendor,
@@ -138,11 +142,20 @@ export const db = {
   async deleteCustomer(id) { return deleteRow('customers', id); },
   async deleteRep(id) { return deleteRow('reps', id); },
   async seed(initJobs, initLI, initV, initC, initR) {
-    // Delete old data first (order matters for foreign keys)
+    // DANGEROUS: Deletes all data then re-inserts. Only for full database reset.
     await deleteAll('line_items');
     await deleteAll('jobs');
     await Promise.all([deleteAll('vendors'), deleteAll('customers'), deleteAll('reps')]);
-    // Insert new data
+    await Promise.all([
+      upsertMany('vendors', initV.map(vendorToDb)),
+      upsertMany('customers', initC.map(custToDb)),
+      upsertMany('reps', initR.map(repToDb)),
+    ]);
+    await upsertMany('jobs', initJobs.map(jobToDb));
+    await upsertMany('line_items', initLI.map(liToDb));
+  },
+  async seedSafe(initJobs, initLI, initV, initC, initR) {
+    // SAFE: Only upserts — never deletes existing data. Used for first-time setup.
     await Promise.all([
       upsertMany('vendors', initV.map(vendorToDb)),
       upsertMany('customers', initC.map(custToDb)),
