@@ -52,6 +52,16 @@ async function deleteRow(table, id) {
   } catch (e) { console.error('Delete ' + table + ':', e); return { ok: false }; }
 }
 
+async function deleteAll(table) {
+  try {
+    // Supabase DELETE requires a filter — use id=neq.'' to match all rows
+    const r = await fetch(URL + '/' + table + '?id=neq.', {
+      method: 'DELETE', headers: hdrs,
+    });
+    return { ok: r.ok };
+  } catch (e) { console.error('DeleteAll ' + table + ':', e); return { ok: false }; }
+}
+
 const jobToDb = (j) => ({
   id: j.id, name: j.name, customer: j.customer, sales_rep: j.salesRep,
   phase: j.phase, created_date: j.createdDate, start_date: j.startDate || '',
@@ -129,6 +139,11 @@ export const db = {
   async deleteCustomer(id) { return deleteRow('customers', id); },
   async deleteRep(id) { return deleteRow('reps', id); },
   async seed(initJobs, initLI, initV, initC, initR) {
+    // Delete old data first (order matters for foreign keys)
+    await deleteAll('line_items');
+    await deleteAll('jobs');
+    await Promise.all([deleteAll('vendors'), deleteAll('customers'), deleteAll('reps')]);
+    // Insert new data
     await Promise.all([
       upsertMany('vendors', initV.map(vendorToDb)),
       upsertMany('customers', initC.map(custToDb)),
