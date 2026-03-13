@@ -197,13 +197,20 @@ export default function MidwestAIOS() {
   useEffect(() => {
     const loadFromDb = async () => {
       try {
+        // Check if we need to reseed (v3 adds 30 vendors + 6 reps + discount fields)
+        const needsReseed = !localStorage.getItem('mw_seed_v3');
+        if (needsReseed) {
+          // Force reseed with new data
+          await db.seed(INIT_JOBS, INIT_LINE_ITEMS, INIT_VENDORS, INIT_CUSTOMERS, INIT_REPS);
+          localStorage.setItem('mw_seed_v3', 'true');
+        }
         const data = await db.loadAll();
         if (data.jobs && data.jobs.length > 0) setJobs(data.jobs);
         if (data.lineItems && data.lineItems.length > 0) setLineItems(data.lineItems);
         if (data.vendors && data.vendors.length > 0) setVendors(data.vendors);
         if (data.customers && data.customers.length > 0) setCustomers(data.customers);
         if (data.reps && data.reps.length > 0) setReps(data.reps);
-        // If DB is empty, seed it with initial data
+        // If DB is still empty, seed it
         if (!data.jobs || data.jobs.length === 0) {
           await db.seed(INIT_JOBS, INIT_LINE_ITEMS, INIT_VENDORS, INIT_CUSTOMERS, INIT_REPS);
         }
