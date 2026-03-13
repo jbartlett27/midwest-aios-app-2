@@ -270,6 +270,17 @@ export default function MidwestAIOS() {
     setJobs(p => [...p, job]);
     db.saveJob(job);
   };
+  const deleteJob = async (id) => {
+    if (!await confirm("Delete this entire job and all its line items? This cannot be undone.")) return;
+    // Delete all line items for this job first
+    const jobItems = lineItems.filter(li => li.jobId === id);
+    for (const item of jobItems) { db.deleteLineItem(item.id); }
+    setLineItems(p => p.filter(li => li.jobId !== id));
+    setJobs(p => p.filter(j => j.id !== id));
+    db.deleteJob(id);
+    setSelectedJob(null);
+    notify("Job and all line items deleted");
+  };
   const updateRep = (id, u) => {
     setReps(p => { const updated = p.map(r => r.id===id ? {...r,...u} : r); const rep = updated.find(r=>r.id===id); if(rep) db.saveRep(rep); return updated; });
   };
@@ -292,7 +303,7 @@ export default function MidwestAIOS() {
     {id:"directory",label:"Directory",icon:"users"},
     {id:"dataimport",label:"Data Import",icon:"download"},
     {id:"deliveries",label:"Delivery Tracker",icon:"truck"},
-    {id:"documents",label:"PO & Invoices",icon:"file"},
+    {id:"documents",label:"Documents",icon:"file"},
     {id:"commissions",label:"Commissions",icon:"dollar"},
     {id:"salesportal",label:"Sales Portal",icon:"users"},
     {id:"brain",label:"Midwest Brain",icon:"brain"},
@@ -300,7 +311,7 @@ export default function MidwestAIOS() {
     {id:"qbsetup",label:"QuickBooks",icon:"settings"},
   ];
 
-  const ctx = {jobs,setJobs,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,setPage:p=>{setPage(p);setMobileMenuOpen(false)},brainQuery,setBrainQuery,brainLoading,setBrainLoading,qbConfig,setQbConfig,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter};
+  const ctx = {jobs,setJobs,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,setPage:p=>{setPage(p);setMobileMenuOpen(false)},brainQuery,setBrainQuery,brainLoading,setBrainLoading,qbConfig,setQbConfig,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter};
 
   return (
     <div style={{display:"flex",height:"100vh",width:"100vw",fontFamily:"'DM Sans','Satoshi',sans-serif",background:"#0a0c10",color:"#e8e6e3",overflow:"hidden"}}>
@@ -516,7 +527,7 @@ function JobsPage(ctx){
 
 // ─── JOB DETAIL ──────────────────────────────────────────────
 function JobDetail({job,ctx}){
-  const {getJobFinancials,getJobItems,getItemStatus,vendors,customers,reps,updateJob,addLineItem,updateLineItem,deleteLineItem,setSelectedJob,notify}=ctx;
+  const {getJobFinancials,getJobItems,getItemStatus,vendors,customers,reps,updateJob,addLineItem,updateLineItem,deleteLineItem,deleteJob,setSelectedJob,notify}=ctx;
   const f=getJobFinancials(job.id);
   const items=getJobItems(job.id);
   const customer=customers.find(c=>c.id===job.customer);
@@ -535,7 +546,7 @@ function JobDetail({job,ctx}){
 
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:24}}>
       <div><div style={{display:"flex",alignItems:"center",gap:12,marginBottom:4}}><h2 style={{fontSize:24,fontWeight:800,color:"#f5f5f4"}}>{job.name}</h2><Badge label={job.phase} color={statusColor(job.phase)}/></div><div style={{fontSize:13,color:"#6b7280"}}><span style={{fontFamily:"'DM Mono',monospace",color:"#c8a25c"}}>{job.id}</span>{" · "}{customer?.name}{" · "}Rep: {rep?.name}</div></div>
-      <div style={{display:"flex",gap:8}}><Btn v="secondary" onClick={()=>setEditing(!editing)}><I n="edit" s={14}/> Edit Job</Btn><Btn v="ghost" onClick={()=>{ctx.setPage("documents")}}><I n="file" s={14}/> Generate Quote</Btn><Btn onClick={()=>setAddingItem(true)}><I n="plus" s={14}/> Add Line Item</Btn></div>
+      <div style={{display:"flex",gap:8}}><Btn v="danger" onClick={()=>deleteJob(job.id)} style={{fontSize:12}}><I n="close" s={14}/> Delete Job</Btn><Btn v="secondary" onClick={()=>setEditing(!editing)}><I n="edit" s={14}/> Edit Job</Btn><Btn v="ghost" onClick={()=>{ctx.setPage("documents")}}><I n="file" s={14}/> Generate Quote</Btn><Btn onClick={()=>setAddingItem(true)}><I n="plus" s={14}/> Add Line Item</Btn></div>
     </div>
 
     {editing&&<Card style={{marginBottom:20,border:"1px solid #c8a25c30"}}><div style={{fontSize:14,fontWeight:700,marginBottom:12,color:"#c8a25c"}}>Edit Job Record</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:12}}><div><label style={{fontSize:11,color:"#6b7280",display:"block",marginBottom:4}}>Job Name</label><input value={editJob.name} onChange={e=>setEditJob({...editJob,name:e.target.value})} style={inputStyle}/></div><div><label style={{fontSize:11,color:"#6b7280",display:"block",marginBottom:4}}>Phase</label><select value={editJob.phase} onChange={e=>setEditJob({...editJob,phase:e.target.value})} style={inputStyle}>{["Quoting","In Progress","Invoiced","Complete"].map(p=><option key={p}>{p}</option>)}</select></div><div><label style={{fontSize:11,color:"#6b7280",display:"block",marginBottom:4}}>Payment Status</label><select value={editJob.paymentStatus} onChange={e=>setEditJob({...editJob,paymentStatus:e.target.value})} style={inputStyle}>{["unpaid","partial","paid"].map(p=><option key={p}>{p}</option>)}</select></div></div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:12}}><div><label style={{fontSize:11,color:"#6b7280",display:"block",marginBottom:4}}>Customer</label><select value={editJob.customer} onChange={e=>setEditJob({...editJob,customer:e.target.value})} style={inputStyle}>{customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div><div><label style={{fontSize:11,color:"#6b7280",display:"block",marginBottom:4}}>Sales Rep</label><select value={editJob.salesRep} onChange={e=>setEditJob({...editJob,salesRep:e.target.value})} style={inputStyle}>{reps.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></div><div><label style={{fontSize:11,color:"#6b7280",display:"block",marginBottom:4}}>Due Date</label><input type="date" value={editJob.dueDate} onChange={e=>setEditJob({...editJob,dueDate:e.target.value})} style={inputStyle}/></div></div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:12,marginBottom:12}}><div><label style={{fontSize:11,color:"#6b7280",display:"block",marginBottom:4}}>Start Date</label><input type="date" value={editJob.startDate||""} onChange={e=>setEditJob({...editJob,startDate:e.target.value})} style={inputStyle}/></div><div><label style={{fontSize:11,color:"#6b7280",display:"block",marginBottom:4}}>End Date</label><input type="date" value={editJob.endDate||""} onChange={e=>setEditJob({...editJob,endDate:e.target.value})} style={inputStyle}/></div><div style={{gridColumn:"span 2"}}><label style={{fontSize:11,color:"#6b7280",display:"block",marginBottom:4}}>Notes</label><input value={editJob.notes} onChange={e=>setEditJob({...editJob,notes:e.target.value})} style={inputStyle}/></div></div><div style={{display:"flex",gap:8}}><Btn onClick={saveJob}>Save Changes</Btn><Btn v="secondary" onClick={()=>setEditing(false)}>Cancel</Btn></div></Card>}
@@ -698,7 +709,7 @@ function DocumentsPage({jobs,lineItems,vendors,customers,reps,getJobItems,notify
     setPushing(false);
   };
 
-  return <div style={{animation:"fadeUp 0.4s"}}><Header title="PO & Invoice Engine" sub="Quotes, POs, Invoices, Commission Statements — all auto-drafted from job records"/>
+  return <div style={{animation:"fadeUp 0.4s"}}><Header title="Documents" sub="Quotes, Purchase Orders, Invoices — all auto-drafted from job records"/>
     <div style={{display:"flex",gap:4,marginBottom:20,background:"#12141b",padding:4,borderRadius:10,width:"fit-content"}}>{[["quotes","Quotes"],["pos","Purchase Orders"],["invoices","Invoices"],["preview","Document Preview"]].map(([id,label])=><button key={id} onClick={()=>setTab(id)} style={{padding:"8px 16px",borderRadius:8,border:"none",cursor:"pointer",background:tab===id?"#c8a25c":"transparent",color:tab===id?"#0a0c10":"#6b7280",fontSize:13,fontWeight:tab===id?600:400,fontFamily:"inherit"}}>{label}</button>)}</div>
 
     {tab==="quotes"&&jobs.map(job=>{const q=genQuote(job);return <Card key={job.id} style={{marginBottom:16}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}><div><span style={{fontSize:14,fontWeight:700,color:"#f5f5f4"}}>{job.name}</span><span style={{fontSize:12,color:"#6b7280",marginLeft:10}}>{q.customer?.name} · {q.items.length} items · {fmt(q.total)}</span></div><Btn onClick={()=>{setPreviewDoc({type:"quote",data:q,job});setTab("preview")}}><I n="file" s={14}/> Generate Quote</Btn></div><Bar value={job.phase==="Quoting"?0.2:job.phase==="In Progress"?0.5:1} max={1} color={statusColor(job.phase)} height={3}/></Card>})}
