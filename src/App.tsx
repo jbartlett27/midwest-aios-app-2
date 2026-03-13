@@ -77,10 +77,10 @@ const INIT_LINE_ITEMS = [
 ];
 
 const INIT_JOBS = [
-  { id: "JOB-2026-001", name: "Lincoln USD Summer Refresh", customer: "C001", salesRep: "S001", phase: "Invoiced", createdDate: "2026-01-15", startDate: "2026-01-20", endDate: "2026-05-28", dueDate: "2026-06-01", notes: "Full classroom furniture refresh for 12 elementary classrooms. Summer install window.", paymentStatus: "paid" },
-  { id: "JOB-2026-002", name: "Midwest Tech STEM Lab Build-Out", customer: "C002", salesRep: "S001", phase: "In Progress", createdDate: "2026-02-03", startDate: "2026-02-10", endDate: "", dueDate: "2026-07-15", notes: "New STEM lab + library media center. Multi-vendor job — partial shipments expected.", paymentStatus: "partial" },
-  { id: "JOB-2026-003", name: "Oakwood Elementary ADA Compliance", customer: "C003", salesRep: "S002", phase: "In Progress", createdDate: "2026-02-20", startDate: "2026-03-01", endDate: "", dueDate: "2026-08-01", notes: "ADA-compliant furniture replacements across 3 buildings. Music room + admin offices.", paymentStatus: "unpaid" },
-  { id: "JOB-2026-004", name: "Heritage Academy New Classroom Wing", customer: "C004", salesRep: "S003", phase: "Quoting", createdDate: "2026-03-05", startDate: "", endDate: "", dueDate: "2026-09-01", notes: "Brand new wing — 4 classrooms, 1 media room. Awaiting final budget approval from board.", paymentStatus: "unpaid" },
+  { id: "JOB-2026-001", name: "Lincoln USD Summer Refresh", customer: "C001", salesRep: "S001", phase: "Invoiced", createdDate: "2026-01-15", startDate: "2026-01-20", endDate: "2026-05-28", dueDate: "2026-06-01", notes: "Full classroom furniture refresh for 12 elementary classrooms. Summer install window.", paymentStatus: "paid", docStatuses: {}, activities: [] },
+  { id: "JOB-2026-002", name: "Midwest Tech STEM Lab Build-Out", customer: "C002", salesRep: "S001", phase: "In Progress", createdDate: "2026-02-03", startDate: "2026-02-10", endDate: "", dueDate: "2026-07-15", notes: "New STEM lab + library media center. Multi-vendor job — partial shipments expected.", paymentStatus: "partial", docStatuses: {}, activities: [] },
+  { id: "JOB-2026-003", name: "Oakwood Elementary ADA Compliance", customer: "C003", salesRep: "S002", phase: "In Progress", createdDate: "2026-02-20", startDate: "2026-03-01", endDate: "", dueDate: "2026-08-01", notes: "ADA-compliant furniture replacements across 3 buildings. Music room + admin offices.", paymentStatus: "unpaid", docStatuses: {}, activities: [] },
+  { id: "JOB-2026-004", name: "Heritage Academy New Classroom Wing", customer: "C004", salesRep: "S003", phase: "Quoting", createdDate: "2026-03-05", startDate: "", endDate: "", dueDate: "2026-09-01", notes: "Brand new wing — 4 classrooms, 1 media room. Awaiting final budget approval from board.", paymentStatus: "unpaid", docStatuses: {}, activities: [] },
 ];
 
 // ─── ICONS ───────────────────────────────────────────────────
@@ -557,8 +557,8 @@ function JobDetail({job,ctx}){
   const [newItem,setNewItem]=useState({description:"",vendor:vendors[0]?.id||"",listPrice:0,unitCost:0,unitPrice:0,qtyOrdered:0,qtyReceived:0,qtyInvoiced:0});
   const [editingItem,setEditingItem]=useState(null);
   const [activityInput,setActivityInput]=useState("");
-  const [activities,setActivities]=useState(()=>{try{return JSON.parse(localStorage.getItem('mw_activity_'+job.id)||'[]')}catch{return[]}});
-  const addActivity=(text)=>{const entry={text,time:new Date().toISOString(),id:Math.random().toString(36).slice(2)};const next=[entry,...activities];setActivities(next);localStorage.setItem('mw_activity_'+job.id,JSON.stringify(next))};
+  const activities = job.activities || [];
+  const addActivity=(text)=>{const entry={text,time:new Date().toISOString(),id:Math.random().toString(36).slice(2)};const next=[entry,...activities];updateJob(job.id,{activities:next})};
   const duplicateJob=()=>{const newId='JOB-'+new Date().getFullYear()+'-'+String(Math.floor(Math.random()*900)+100);const newJob={...job,id:newId,name:job.name+' (Copy)',phase:'Quoting',paymentStatus:'unpaid',createdDate:new Date().toISOString().split('T')[0],startDate:'',endDate:''};addJob(newJob);items.forEach(item=>{addLineItem({...item,id:'LI-'+Math.random().toString(36).slice(2,8),jobId:newId,qtyReceived:0,qtyInvoiced:0,deliveryDate:'',invoiceDate:''})});setSelectedJob(newId);notify('Job duplicated — '+newId+' created with all line items')};
 
   const saveJob=()=>{updateJob(job.id,editJob);setEditing(false);notify("Job updated — changes propagated everywhere")};
@@ -708,8 +708,29 @@ function DocumentsPage({jobs,lineItems,vendors,customers,reps,getJobItems,getJob
   const [tab,setTab]=useState("quotes");
   const [previewDoc,setPreviewDoc]=useState(null);
   const [pushing,setPushing]=useState(false);
-  const [docStatuses,setDocStatuses]=useState(()=>{try{return JSON.parse(localStorage.getItem('mw_doc_statuses')||'{}');}catch{return{}}});
-  const setDocStatus=(docNum,status)=>{const next={...docStatuses,[docNum]:status};setDocStatuses(next);localStorage.setItem('mw_doc_statuses',JSON.stringify(next))};
+  // Doc statuses stored IN each job record in Supabase — persists across browsers, deploys, cache clears
+  const allDocStatuses = jobs.reduce((acc, j) => ({...acc, ...(j.docStatuses || {})}), (() => { try { return JSON.parse(localStorage.getItem("mw_doc_statuses_fallback")||"{}"); } catch { return {}; } })());
+  const [localStatuses, setLocalStatuses] = useState({});
+  const docStatuses = {...allDocStatuses, ...localStatuses};
+  const setDocStatus = (docNum, status) => {
+    setLocalStatuses(prev => ({...prev, [docNum]: status}));
+    // Find which job this doc belongs to and persist to Supabase
+    const jobId = docNum.includes('-') ? jobs.find(j => {
+      const jPart = j.id.replace(/[^A-Z0-9]/gi,'').slice(-4).toUpperCase();
+      return docNum.includes(jPart);
+    })?.id : null;
+    if (jobId) {
+      const job = jobs.find(j => j.id === jobId);
+      if (job) {
+        const updated = {...(job.docStatuses || {}), [docNum]: status};
+        updateJob(jobId, {docStatuses: updated});
+      }
+    } else {
+      // Commission statements — store on first job or use localStorage fallback
+      const all = {...allDocStatuses, ...localStatuses, [docNum]: status};
+      localStorage.setItem('mw_doc_statuses_fallback', JSON.stringify(all));
+    }
+  };
   const [emailModal,setEmailModal]=useState(null);
   const [emailTo,setEmailTo]=useState("");
   const [emailFrom,setEmailFrom]=useState(()=>localStorage.getItem('mw_email_from')||"");
