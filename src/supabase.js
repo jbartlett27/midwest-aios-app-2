@@ -71,6 +71,7 @@ const jobToDb = (j) => ({
   ship_to: j.shipTo || '',
   ship_via: j.shipVia || '',
   bill_to: j.billTo || '',
+  order_notes: j.orderNotes || '',
   doc_statuses: typeof j.docStatuses === 'string' ? j.docStatuses : JSON.stringify(j.docStatuses || {}),
   activities: typeof j.activities === 'string' ? j.activities : JSON.stringify(j.activities || []),
 });
@@ -84,6 +85,7 @@ const jobFromDb = (r) => ({
   shipTo: r.ship_to || '',
   shipVia: r.ship_via || '',
   billTo: r.bill_to || '',
+  orderNotes: r.order_notes || '',
   docStatuses: (() => { try { return JSON.parse(r.doc_statuses || '{}'); } catch { return {}; } })(),
   activities: (() => { try { return JSON.parse(r.activities || '[]'); } catch { return []; } })(),
 });
