@@ -212,8 +212,9 @@ export default function MidwestAIOS() {
   const [showNewJob, setShowNewJob] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const auditLogRef = React.useRef([]);
-  const [auditLog, setAuditLog] = useState([]);
+  const auditLogRef = React.useRef(()=>{try{return JSON.parse(localStorage.getItem("mw_audit_log")||"[]")}catch{return []}});
+  if(typeof auditLogRef.current==="function")auditLogRef.current=auditLogRef.current();
+  const [auditLog, setAuditLog] = useState(()=>{try{return JSON.parse(localStorage.getItem("mw_audit_log")||"[]")}catch{return []}});
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   useEffect(() => {
@@ -279,6 +280,7 @@ export default function MidwestAIOS() {
 
   // Save QB config to localStorage (not DB -- contains secrets)
   useEffect(() => { try { localStorage.setItem('mw_qbConfig', JSON.stringify(qbConfig)); } catch {} }, [qbConfig]);
+  useEffect(() => { try { localStorage.setItem('mw_audit_log', JSON.stringify(auditLog.slice(0,500))); } catch {} }, [auditLog]);
 
   // --- DERIVED COMPUTATIONS ----------------------------------
   const getJobItems = jobId => lineItems.filter(li => li.jobId === jobId);
