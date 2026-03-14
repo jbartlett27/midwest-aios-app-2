@@ -320,7 +320,7 @@ export default function CsvUploadPage({ vendors, customers, reps, jobs, lineItem
                 {csvData.rows.slice(0, 5).map((row, ri) => (
                   <tr key={ri}>
                     {COLUMN_MAPS[targetType].fields.filter(f => columnMap[f]).map(f => (
-                      <td key={f} style={{ padding: "6px 10px", borderBottom: "1px solid #22222220", color: "#d1d5db" }}>
+                      <td key={f} style={{ padding: "6px 10px", borderBottom: "1px solid #22222220", color: "#333333" }}>
                         {row[columnMap[f]] || ''}
                       </td>
                     ))}
@@ -349,7 +349,7 @@ export default function CsvUploadPage({ vendors, customers, reps, jobs, lineItem
             Import Complete
           </div>
           <div style={{ fontSize: 14, color: "#6b7280", textAlign: "center", marginBottom: 20 }}>
-            <strong style={{ color: "#059669" }}>{importResult.imported}</strong> records imported successfully
+            <strong style={{ color: "#14b8a6" }}>{importResult.imported}</strong> records imported successfully
             {importResult.errors > 0 && <>, <strong style={{ color: "#ef4444" }}>{importResult.errors}</strong> rows skipped (missing required fields)</>}
           </div>
           <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
