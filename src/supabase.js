@@ -1,6 +1,4 @@
-// ═══════════════════════════════════════════════════════════════
-// SUPABASE CLIENT — Pure fetch(), zero npm packages
-// ═══════════════════════════════════════════════════════════════
+// Supabase Client -- Pure fetch(), zero npm packages
 
 const URL = 'https://kogjthgceejpzxnekprr.supabase.co/rest/v1';
 const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtvZ2p0aGdjZWVqcHp4bmVrcHJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyODgyODUsImV4cCI6MjA4ODg2NDI4NX0.W0bhVfPNjCPYKzs6KpIeYaXk5epKRbLmDzgSN8NEjHo';
@@ -61,11 +59,18 @@ async function deleteAll(table) {
   } catch (e) { console.error('DeleteAll ' + table + ':', e); return { ok: false }; }
 }
 
+// ---- MAPPERS: App state <-> Supabase row ----
+
 const jobToDb = (j) => ({
   id: j.id, name: j.name, customer: j.customer, sales_rep: j.salesRep,
   phase: j.phase, created_date: j.createdDate, start_date: j.startDate || '',
   end_date: j.endDate || '', due_date: j.dueDate,
   notes: j.notes, payment_status: j.paymentStatus,
+  terms: j.terms || 'Net 30',
+  po_number: j.poNumber || '',
+  ship_to: j.shipTo || '',
+  ship_via: j.shipVia || '',
+  bill_to: j.billTo || '',
   doc_statuses: typeof j.docStatuses === 'string' ? j.docStatuses : JSON.stringify(j.docStatuses || {}),
   activities: typeof j.activities === 'string' ? j.activities : JSON.stringify(j.activities || []),
 });
@@ -74,21 +79,43 @@ const jobFromDb = (r) => ({
   phase: r.phase, createdDate: r.created_date, startDate: r.start_date || '',
   endDate: r.end_date || '', dueDate: r.due_date,
   notes: r.notes, paymentStatus: r.payment_status,
+  terms: r.terms || 'Net 30',
+  poNumber: r.po_number || '',
+  shipTo: r.ship_to || '',
+  shipVia: r.ship_via || '',
+  billTo: r.bill_to || '',
   docStatuses: (() => { try { return JSON.parse(r.doc_statuses || '{}'); } catch { return {}; } })(),
   activities: (() => { try { return JSON.parse(r.activities || '[]'); } catch { return []; } })(),
 });
+
 const liToDb = (li) => ({
   id: li.id, job_id: li.jobId, description: li.description, vendor: li.vendor,
-  unit_cost: li.unitCost, unit_price: li.unitPrice, qty_ordered: li.qtyOrdered,
+  tag: li.tag || '',
+  manufacturer: li.manufacturer || '',
+  model_number: li.modelNumber || '',
+  color: li.color || '',
+  list_price: li.listPrice || 0,
+  unit_cost: li.unitCost, unit_price: li.unitPrice,
+  shipping_per_unit: li.shippingPerUnit || 0,
+  install_per_unit: li.installPerUnit || 0,
+  qty_ordered: li.qtyOrdered,
   qty_received: li.qtyReceived, qty_invoiced: li.qtyInvoiced,
   po_date: li.poDate || '', delivery_date: li.deliveryDate || '', invoice_date: li.invoiceDate || '',
 });
 const liFromDb = (r) => ({
   id: r.id, jobId: r.job_id, description: r.description, vendor: r.vendor,
+  tag: r.tag || '',
+  manufacturer: r.manufacturer || '',
+  modelNumber: r.model_number || '',
+  color: r.color || '',
+  listPrice: Number(r.list_price) || 0,
   unitCost: Number(r.unit_cost), unitPrice: Number(r.unit_price),
+  shippingPerUnit: Number(r.shipping_per_unit) || 0,
+  installPerUnit: Number(r.install_per_unit) || 0,
   qtyOrdered: r.qty_ordered, qtyReceived: r.qty_received, qtyInvoiced: r.qty_invoiced,
   poDate: r.po_date || '', deliveryDate: r.delivery_date || '', invoiceDate: r.invoice_date || '',
 });
+
 const vendorToDb = (v) => ({
   id: v.id, name: v.name, contact: v.contact || '', email: v.email || '',
   phone: v.phone || '', category: v.category || '', address: v.address || '',
@@ -142,7 +169,6 @@ export const db = {
   async deleteCustomer(id) { return deleteRow('customers', id); },
   async deleteRep(id) { return deleteRow('reps', id); },
   async seed(initJobs, initLI, initV, initC, initR) {
-    // DANGEROUS: Deletes all data then re-inserts. Only for full database reset.
     await deleteAll('line_items');
     await deleteAll('jobs');
     await Promise.all([deleteAll('vendors'), deleteAll('customers'), deleteAll('reps')]);
@@ -155,7 +181,6 @@ export const db = {
     await upsertMany('line_items', initLI.map(liToDb));
   },
   async seedSafe(initJobs, initLI, initV, initC, initR) {
-    // SAFE: Only upserts — never deletes existing data. Used for first-time setup.
     await Promise.all([
       upsertMany('vendors', initV.map(vendorToDb)),
       upsertMany('customers', initC.map(custToDb)),
