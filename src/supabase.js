@@ -74,6 +74,7 @@ const jobToDb = (j) => ({
   order_notes: j.orderNotes || '',
   doc_statuses: typeof j.docStatuses === 'string' ? j.docStatuses : JSON.stringify(j.docStatuses || {}),
   activities: typeof j.activities === 'string' ? j.activities : JSON.stringify(j.activities || []),
+  audit_trail: typeof j.auditTrail === 'string' ? j.auditTrail : JSON.stringify(j.auditTrail || []),
 });
 const jobFromDb = (r) => ({
   id: r.id, name: r.name, customer: r.customer, salesRep: r.sales_rep,
@@ -88,6 +89,7 @@ const jobFromDb = (r) => ({
   orderNotes: r.order_notes || '',
   docStatuses: (() => { try { return JSON.parse(r.doc_statuses || '{}'); } catch { return {}; } })(),
   activities: (() => { try { return JSON.parse(r.activities || '[]'); } catch { return []; } })(),
+  auditTrail: (() => { try { return JSON.parse(r.audit_trail || '[]'); } catch { return []; } })(),
 });
 
 const liToDb = (li) => ({
