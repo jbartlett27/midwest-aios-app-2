@@ -119,31 +119,56 @@ import CsvUploadPage from './CsvUpload';
 // --- PDF EXPORT: zero dependencies, works everywhere ---------
 function usePrintOverlay() {
   const triggerPrint = (title, html) => {
-    const container = document.createElement('div');
-    container.style.cssText = 'position:fixed;left:-9999px;top:0;width:760px;font-family:Satoshi,Arial,sans-serif;padding:40px;color:#111;background:#fff';
-    container.innerHTML = '<style>h2{font-size:14px;color:#666;margin:16px 0 8px}table{width:100%;border-collapse:collapse;margin:12px 0;font-size:12px}th{background:#f5f5f4;padding:8px;text-align:left;border-bottom:2px solid #ddd;font-size:11px;text-transform:uppercase;color:#666}td{padding:8px;border-bottom:1px solid #eee}.total-row td{border-top:2px solid #2dd4bf;font-weight:bold;font-size:14px}.hdr{display:flex;justify-content:space-between;margin-bottom:24px}.hdr div{font-size:12px;color:#666}.co{font-size:18px;font-weight:bold;color:#111}.gold{color:#b8923c}</style>' + html;
-    document.body.appendChild(container);
-    const script = document.createElement('script');
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
-    script.onload = () => {
-      window.html2pdf().set({
-        margin: [10, 10, 10, 10],
-        filename: (title || 'document').replace(/[^a-zA-Z0-9-_ ]/g, '') + '.pdf',
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, letterRendering: true },
-        jsPDF: { unit: 'mm', format: 'letter', orientation: 'portrait' },
-        pagebreak: { mode: ['css', 'legacy'], before: '.page-break-before' }
-      }).from(container).save().then(() => {
-        document.body.removeChild(container);
-      }).catch(() => {
-        document.body.removeChild(container);
-      });
-    };
-    script.onerror = () => {
-      document.body.removeChild(container);
-      alert('PDF library failed to load. Please check your internet connection.');
-    };
-    document.head.appendChild(script);
+    const w = window.open('', '_blank');
+    if (!w) { alert('Please allow popups for PDF export'); return; }
+    const fname = (title || 'document').replace(/[^a-zA-Z0-9-_ ]/g, '');
+    w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + title + '</title><style>' +
+      'body{font-family:Satoshi,Arial,sans-serif;padding:40px;color:#111;max-width:760px;margin:0 auto}' +
+      'h2{font-size:14px;color:#666;margin:16px 0 8px}' +
+      'table{width:100%;border-collapse:collapse;margin:12px 0;font-size:12px}' +
+      'th{background:#f5f5f4;padding:8px;text-align:left;border-bottom:2px solid #ddd;font-size:11px;text-transform:uppercase;color:#666}' +
+      'td{padding:8px;border-bottom:1px solid #eee}' +
+      '.total-row td{border-top:2px solid #2dd4bf;font-weight:bold;font-size:14px}' +
+      '.hdr{display:flex;justify-content:space-between;margin-bottom:24px}' +
+      '.hdr div{font-size:12px;color:#666}' +
+      '.co{font-size:18px;font-weight:bold;color:#111}' +
+      '.gold{color:#b8923c}' +
+      '.dl-bar{position:fixed;top:0;left:0;right:0;background:#111;padding:10px 20px;display:flex;gap:10px;align-items:center;z-index:999;border-bottom:2px solid #2dd4bf}' +
+      '.dl-bar button{padding:10px 24px;font-size:14px;font-weight:700;border:none;border-radius:6px;cursor:pointer}' +
+      '@media print{.dl-bar{display:none!important}}' +
+      '</style></head><body>' +
+      '<div class="dl-bar">' +
+      '<button id="dl-btn" style="background:#2dd4bf;color:#111">Download PDF</button>' +
+      '<button onclick="window.close()" style="background:#333;color:#fff">Close</button>' +
+      '<span style="color:#666;font-size:13px;margin-left:12px" id="dl-status">Preview - click Download PDF to save</span>' +
+      '</div>' +
+      '<div style="margin-top:56px">' + html + '</div>' +
+      '<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"><\/script>' +
+      '<script>' +
+      'document.getElementById("dl-btn").onclick=function(){' +
+        'var el=document.querySelector("[style*=margin-top]");' +
+        'document.getElementById("dl-status").textContent="Generating PDF...";' +
+        'document.getElementById("dl-btn").disabled=true;' +
+        'html2pdf().set({' +
+          'margin:[10,10,10,10],' +
+          'filename:"' + fname + '.pdf",' +
+          'image:{type:"jpeg",quality:0.98},' +
+          'html2canvas:{scale:2,useCORS:true},' +
+          'jsPDF:{unit:"mm",format:"letter",orientation:"portrait"},' +
+          'pagebreak:{mode:["css","legacy"],before:".page-break-before"}' +
+        '}).from(el).save().then(function(){' +
+          'document.getElementById("dl-status").textContent="PDF downloaded!";' +
+          'document.getElementById("dl-btn").disabled=false;' +
+        '}).catch(function(){' +
+          'document.getElementById("dl-status").textContent="Download failed - try Save As PDF from print";' +
+          'document.getElementById("dl-btn").disabled=false;' +
+          'window.print();' +
+        '});' +
+      '};' +
+      '<\/script>' +
+      '</body></html>');
+    w.document.close();
+    w.focus();
   };
   const PrintOverlay = () => null;
   return { triggerPrint, PrintOverlay };
