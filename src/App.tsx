@@ -578,13 +578,94 @@ function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJo
 // JOB RECORDS -- Full CRUD + Line Items
 // ===============================================================
 function JobsPage(ctx){
-  const {jobs,reps,customers,vendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobFinancials,getJobItems,getItemStatus,getJobPOStatus,getJobInvStatus,updateJob,addJob,addLineItem,updateLineItem,deleteLineItem,lineItems,addCustomer} = ctx;
+  const {jobs,reps,customers,vendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobFinancials,getJobItems,getItemStatus,getJobPOStatus,getJobInvStatus,updateJob,addJob,addLineItem,updateLineItem,deleteLineItem,lineItems,addCustomer,addVendor} = ctx;
   const [newJob,setNewJob]=useState({name:"",customer:customers[0]?.id||"",salesRep:reps[0]?.id||"",dueDate:"",startDate:"",notes:"",terms:"Net 30",poNumber:"",shipTo:"",shipVia:""});
   const [newCust,setNewCust]=useState(false);
   const [custForm,setCustForm]=useState({name:"",contact:"",email:"",phone:"",type:"K-12 District",address:""});
   const [viewMode,setViewMode]=useState("kanban"); // table or kanban
   const [sortBy,setSortBy]=useState("createdDate");
+  const [uploadData,setUploadData]=useState(null);
+  const [uploadJobName,setUploadJobName]=useState('');
+  const [uploadSheets,setUploadSheets]=useState({});
+  const [uploading,setUploading]=useState(false);
+  const uploadRef=useRef();
 
+  // XLS Quote Upload Parser
+  const parseQuoteFile=async(file)=>{
+    try{
+      const XLSX=await import('xlsx');
+      const data=await file.arrayBuffer();
+      const wb=XLSX.read(data,{type:'array'});
+      const items=[];const vendorSet=new Set();const groups=new Set();const sheets=[];
+      for(let si=0;si<wb.SheetNames.length;si++){
+        const sn=wb.SheetNames[si];const ws=wb.Sheets[sn];
+        const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+        let grp='';let ct=0;
+        for(let r=0;r<rows.length;r++){
+          const row=rows[r];if(!row||row.length<4)continue;
+          if(String(row[0]||'').toLowerCase().trim()==='tag')continue;
+          const hd=row[3]&&String(row[3]).trim();const ht=row[0]&&String(row[0]).trim();
+          const hm=row[1]&&String(row[1]).trim();const hq=Number(row[5])>0;
+          const hp=Number(row[6])>0;const hn=Number(row[8])>0;
+          if(hd&&!ht&&!hm&&!hq&&!hp&&!hn){grp=String(row[3]).trim().replace(/\n/g,' ').substring(0,80);groups.add(grp);continue}
+          if(hd&&(hq||hp||hn||Number(row[14])>0)){
+            let desc=String(row[3]).replace(/\r/g,'').split('\n')[0].trim();
+            const si2=desc.indexOf('Item Specifics');if(si2>0)desc=desc.substring(0,si2).trim();
+            const ri=desc.indexOf('-- Room Number');if(ri>0)desc=desc.substring(0,ri).trim();
+            const ri2=desc.indexOf('Room Number');if(ri2>20)desc=desc.substring(0,ri2).trim();
+            if(desc.toLowerCase().startsWith('quote ')||desc.startsWith('#'))continue;
+            const qty=Math.round(Number(row[5])||0);const list=Number(row[6])||0;const net=Number(row[8])||0;
+            if(qty<=0&&list<=0&&net<=0)continue;
+            const mfr=String(row[1]||'').trim();if(mfr)vendorSet.add(mfr);
+            items.push({tag:String(row[0]||'').trim().replace(/\.0$/,''),manufacturer:mfr||sn,
+              modelNumber:String(row[2]||'').trim().replace(/\.0$/,''),description:desc,
+              color:String(row[4]||'').trim(),qtyOrdered:qty||1,listPrice:list,
+              unitCost:net||Number(row[14])||0,shippingPerUnit:Number(row[10])||0,
+              installPerUnit:Number(row[12])||0,unitPrice:Number(row[16])||0,
+              group:grp,sheet:sn});ct++
+          }
+        }
+        sheets.push({name:sn,count:ct})
+      }
+      let name=file.name.replace(/\.(xls|xlsx|csv)$/i,'').replace(/_/g,' ');
+      try{const ws0=wb.Sheets[wb.SheetNames[0]];const d0=XLSX.utils.sheet_to_json(ws0,{header:1,defval:''});
+        if(d0[0]&&d0[0][4])name=String(d0[0][4]).split('\n')[0].trim()}catch{}
+      setUploadJobName(name);
+      const sel={};sheets.forEach(s=>{sel[s.name]=true});setUploadSheets(sel);
+      setUploadData({items,vendors:vendorSet,groups,sheets});
+    }catch(err){notify('Error reading file: '+err.message,'error')}
+  };
+  const handleUploadImport=()=>{
+    if(!uploadData||uploading)return;setUploading(true);
+    try{
+      const items=uploadData.items.filter(i=>uploadSheets[i.sheet]);
+      if(items.length===0){notify('No items selected','error');setUploading(false);return}
+      const jid='JOB-2026-'+String(jobs.length+1).padStart(3,'0');
+      addJob({id:jid,name:uploadJobName||'Imported Quote',customer:customers[0]?.id||'',salesRep:reps[0]?.id||'',
+        phase:'Quoting',createdDate:new Date().toISOString().split('T')[0],
+        startDate:'',dueDate:'',endDate:'',notes:'Imported from Excel quote - '+items.length+' line items',
+        paymentStatus:'unpaid',terms:'Net 30',poNumber:'',shipTo:'',shipVia:'',billTo:'',orderNotes:'',
+        docStatuses:{},activities:[],auditTrail:[]});
+      const existNames=new Set(vendors.map(v=>v.name.toLowerCase().trim()));
+      const vMap={};vendors.forEach(v=>{vMap[v.name.toLowerCase().trim()]=v.id});
+      for(const vn of uploadData.vendors){const k=vn.toLowerCase().trim();
+        if(!existNames.has(k)){const vid='V-'+Math.random().toString(36).slice(2,8);
+          addVendor({id:vid,name:vn,contact:'',email:'',phone:'',category:'Furniture',address:'',discountRate:0,discountType:'percentage',discountNotes:''});
+          vMap[k]=vid;existNames.add(k)}}
+      let ct=0;
+      for(const item of items){const vk=(item.manufacturer||'').toLowerCase().trim();
+        addLineItem({id:'LI-'+Math.random().toString(36).slice(2,8),jobId:jid,description:item.description,
+          vendor:vMap[vk]||'',tag:item.tag,group:item.group,manufacturer:item.manufacturer,
+          modelNumber:item.modelNumber,color:item.color,listPrice:item.listPrice,unitCost:item.unitCost,
+          unitPrice:item.unitPrice,shippingPerUnit:item.shippingPerUnit,installPerUnit:item.installPerUnit,
+          qtyOrdered:item.qtyOrdered,qtyReceived:0,qtyInvoiced:0,poDate:'',deliveryDate:'',invoiceDate:''});ct++}
+      notify('Imported '+ct+' items into "'+uploadJobName+'" -- click the job to view');
+      setUploadData(null);setUploadJobName('');setSelectedJob(jid);
+    }catch(err){notify('Import error: '+err.message,'error')}
+    setUploading(false);
+  };
+  const uploadSelCount=uploadData?uploadData.items.filter(i=>uploadSheets[i.sheet]).length:0;
+  const uploadSelCost=uploadData?uploadData.items.filter(i=>uploadSheets[i.sheet]).reduce((s,i)=>s+(i.unitCost*i.qtyOrdered),0):0;
   const handleCreateJob=()=>{if(!newJob.name)return;const id=`JOB-2026-${String(jobs.length+1).padStart(3,"0")}`;addJob({id,...newJob,phase:"Quoting",createdDate:new Date().toISOString().split("T")[0],startDate:newJob.startDate||"",endDate:"",paymentStatus:"unpaid",terms:newJob.terms||"Net 30",poNumber:newJob.poNumber||"",shipTo:newJob.shipTo||"",shipVia:newJob.shipVia||"",billTo:newJob.billTo||"",orderNotes:""});setShowNewJob(false);setNewJob({name:"",customer:customers[0]?.id||"",salesRep:reps[0]?.id||"",dueDate:"",startDate:"",notes:""});notify(`Job ${id} created -- saved to database`)};
 
   // Kanban drag handler
@@ -602,7 +683,7 @@ function JobsPage(ctx){
   const sortedJobs = [...filteredJobs].sort((a,b)=>{ if(sortBy==="revenue") return getJobFinancials(b.id).totalRevenue-getJobFinancials(a.id).totalRevenue; if(sortBy==="margin") return getJobFinancials(b.id).margin-getJobFinancials(a.id).margin; if(sortBy==="name") return a.name.localeCompare(b.name); return (b[sortBy]||"").localeCompare(a[sortBy]||""); });
 
   return <div style={{animation:"fadeUp 0.4s"}}>
-    <Header title="Job Records" sub="Central hub -- single source of truth for every project" action={<div style={{display:"flex",gap:8}}><Btn onClick={()=>setNewCust(true)} v="secondary"><I n="plus" s={14}/> New Customer</Btn><Btn onClick={()=>setShowNewJob(true)}><I n="plus" s={14}/> New Job</Btn></div>}/>
+    <Header title="Job Records" sub="Central hub -- single source of truth for every project" action={<div style={{display:"flex",gap:8}}><input ref={uploadRef} type="file" accept=".xls,.xlsx" onChange={e=>{if(e.target.files[0])parseQuoteFile(e.target.files[0])}} style={{display:"none"}}/><Btn onClick={()=>setNewCust(true)} v="secondary"><I n="plus" s={14}/> New Customer</Btn><Btn onClick={()=>uploadRef.current?.click()} v="ghost"><I n="download" s={14}/> Upload Quote</Btn><Btn onClick={()=>setShowNewJob(true)}><I n="plus" s={14}/> New Job</Btn></div>}/>
 
     <div style={{display:"flex",gap:12,marginBottom:16,alignItems:"center",flexWrap:"wrap"}}>
       <input value={ctx.globalSearch} onChange={e=>ctx.setGlobalSearch(e.target.value)} placeholder="Search jobs..." style={{...inputStyle,maxWidth:300,background:"#111111",border:"1px solid #222222",padding:"10px 14px",fontSize:14}}/>
@@ -615,6 +696,44 @@ function JobsPage(ctx){
       </div>
     </div>
 
+    {uploadData&&<Card style={{marginBottom:24,border:"1px solid rgba(45,212,191,0.2)"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+        <div style={{fontSize:15,fontWeight:700,color:"#2dd4bf"}}>Quote Import Preview</div>
+        <Btn v="secondary" style={{fontSize:12,padding:"4px 10px"}} onClick={()=>{setUploadData(null);if(uploadRef.current)uploadRef.current.value=''}}>Cancel</Btn>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:16}}>
+        <div style={{padding:12,background:"#0a0a0a",borderRadius:10,textAlign:"center"}}><div style={{fontSize:11,color:"#737373",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Sheets</div><div style={{fontSize:22,fontWeight:700,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>{uploadData.sheets.length}</div></div>
+        <div style={{padding:12,background:"#0a0a0a",borderRadius:10,textAlign:"center"}}><div style={{fontSize:11,color:"#737373",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Items</div><div style={{fontSize:22,fontWeight:700,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{uploadSelCount}</div></div>
+        <div style={{padding:12,background:"#0a0a0a",borderRadius:10,textAlign:"center"}}><div style={{fontSize:11,color:"#737373",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Vendors</div><div style={{fontSize:22,fontWeight:700,color:"#a78bfa",fontFamily:"'JetBrains Mono',monospace"}}>{uploadData.vendors.size}</div></div>
+        <div style={{padding:12,background:"#0a0a0a",borderRadius:10,textAlign:"center"}}><div style={{fontSize:11,color:"#737373",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Cost</div><div style={{fontSize:22,fontWeight:700,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>${Math.round(uploadSelCost).toLocaleString()}</div></div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:12,marginBottom:16}}>
+        <div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Job Name</label><input value={uploadJobName} onChange={e=>setUploadJobName(e.target.value)} style={inputStyle}/></div>
+        <div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Sheets</label>
+          <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{uploadData.sheets.map(s=><button key={s.name} onClick={()=>setUploadSheets(p=>({...p,[s.name]:!p[s.name]}))} style={{padding:"3px 8px",borderRadius:5,border:"none",cursor:"pointer",fontSize:11,fontFamily:"inherit",background:uploadSheets[s.name]?"rgba(45,212,191,0.15)":"rgba(255,255,255,0.04)",color:uploadSheets[s.name]?"#2dd4bf":"#525252",fontWeight:uploadSheets[s.name]?600:400}}>{s.name} ({s.count})</button>)}</div>
+        </div>
+      </div>
+      <div style={{overflowX:"auto",maxHeight:240,borderRadius:8,border:"1px solid rgba(255,255,255,0.04)",marginBottom:16}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,minWidth:800}}>
+          <thead><tr style={{background:"#0a0a0a",position:"sticky",top:0}}>{["Tag","Manuf","Model","Description","Qty","List","Net","Ship","Your Price"].map(h=><th key={h} style={{padding:"5px 6px",textAlign:"left",fontWeight:600,color:"#525252",fontSize:10,textTransform:"uppercase",letterSpacing:0.5}}>{h}</th>)}</tr></thead>
+          <tbody>{uploadData.items.filter(i=>uploadSheets[i.sheet]).slice(0,30).map((it,idx)=><tr key={idx} style={{borderBottom:"1px solid rgba(255,255,255,0.02)"}}>
+            <td style={{padding:"4px 6px",color:"#a78bfa"}}>{it.tag}</td>
+            <td style={{padding:"4px 6px",color:"#9a9a9a"}}>{it.manufacturer}</td>
+            <td style={{padding:"4px 6px",color:"#9a9a9a",fontFamily:"'JetBrains Mono',monospace",fontSize:10}}>{it.modelNumber}</td>
+            <td style={{padding:"4px 6px",color:"#c4c4c4",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.description}</td>
+            <td style={{padding:"4px 6px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace"}}>{it.qtyOrdered}</td>
+            <td style={{padding:"4px 6px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",color:"#525252"}}>{it.listPrice?'$'+it.listPrice.toFixed(0):'--'}</td>
+            <td style={{padding:"4px 6px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",color:"#34d399"}}>${it.unitCost.toFixed(2)}</td>
+            <td style={{padding:"4px 6px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",color:"#fbbf24"}}>{it.shippingPerUnit?'$'+it.shippingPerUnit.toFixed(0):'--'}</td>
+            <td style={{padding:"4px 6px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",color:"#2dd4bf",fontWeight:600}}>{it.unitPrice?'$'+it.unitPrice.toFixed(2):'--'}</td>
+          </tr>)}</tbody>
+        </table>
+        {uploadSelCount>30&&<div style={{padding:8,textAlign:"center",color:"#333",fontSize:11}}>Showing 30 of {uploadSelCount}</div>}
+      </div>
+      <Btn onClick={handleUploadImport} style={{width:"100%",justifyContent:"center",padding:"12px",fontSize:14}}>
+        {uploading?'Importing...':'Import '+uploadSelCount+' Items as New Quoting Job'}
+      </Btn>
+    </Card>}
     {newCust&&<Card style={{marginBottom:20,border:"1px solid #2563eb30"}}><div style={{fontSize:14,fontWeight:700,marginBottom:16,color:"#a78bfa"}}>Add New Customer</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:12,marginBottom:12}}>{[["name","Name"],["contact","Contact"],["email","Email"],["phone","Phone"]].map(([k,l])=><div key={k}><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>{l}</label><input value={custForm[k]} onChange={e=>setCustForm({...custForm,[k]:e.target.value})} style={inputStyle}/></div>)}</div><div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:12,marginBottom:12}}><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Type</label><select value={custForm.type||"K-12 District"} onChange={e=>setCustForm({...custForm,type:e.target.value})} style={inputStyle}><option>K-12 District</option><option>Private School</option><option>University</option><option>Government</option><option>Corporate</option><option>Other</option></select></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Address</label><input value={custForm.address||""} onChange={e=>setCustForm({...custForm,address:e.target.value})} placeholder="Full address (street, city, state, zip)" style={inputStyle}/></div></div><div style={{display:"flex",gap:8}}><Btn onClick={()=>{if(custForm.name){addCustomer(custForm);setNewCust(false);setCustForm({name:"",contact:"",email:"",phone:"",type:"K-12 District",address:""});notify("Customer added")}}}>Add Customer</Btn><Btn v="secondary" onClick={()=>setNewCust(false)}>Cancel</Btn></div></Card>}
 
     {showNewJob&&<Card style={{marginBottom:20,border:"1px solid #2dd4bf30"}}><div style={{fontSize:14,fontWeight:700,marginBottom:16,color:"#2dd4bf"}}>Create New Job Record</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:12}}><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Job Name</label><input value={newJob.name} onChange={e=>setNewJob({...newJob,name:e.target.value})} placeholder="e.g., Lincoln USD Media Center" style={inputStyle}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Customer</label><select value={newJob.customer} onChange={e=>setNewJob({...newJob,customer:e.target.value})} style={inputStyle}>{customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Sales Rep</label><select value={newJob.salesRep} onChange={e=>setNewJob({...newJob,salesRep:e.target.value})} style={inputStyle}>{reps.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></div></div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:12,marginBottom:12}}><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Start Date</label><input type="date" value={newJob.startDate} onChange={e=>setNewJob({...newJob,startDate:e.target.value})} style={inputStyle}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Due Date</label><input type="date" value={newJob.dueDate} onChange={e=>setNewJob({...newJob,dueDate:e.target.value})} style={inputStyle}/></div><div style={{gridColumn:"span 2"}}><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Notes</label><input value={newJob.notes} onChange={e=>setNewJob({...newJob,notes:e.target.value})} placeholder="Project details..." style={inputStyle}/></div></div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr",gap:12,marginBottom:12}}><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Payment Terms</label><select value={newJob.terms||"Net 30"} onChange={e=>setNewJob({...newJob,terms:e.target.value})} style={inputStyle}><option>Net 30</option><option>Net 15</option><option>Due Upon Receipt</option></select></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Customer PO #</label><input value={newJob.poNumber||""} onChange={e=>setNewJob({...newJob,poNumber:e.target.value})} placeholder="Customer PO number" style={inputStyle}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Ship To</label><input value={newJob.shipTo||""} onChange={e=>setNewJob({...newJob,shipTo:e.target.value})} placeholder="Ship to address" style={inputStyle}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Ship Via</label><input value={newJob.shipVia||""} onChange={e=>setNewJob({...newJob,shipVia:e.target.value})} placeholder="Shipping instructions" style={inputStyle}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Bill To</label><input value={newJob.billTo||""} onChange={e=>setNewJob({...newJob,billTo:e.target.value})} placeholder="Bill-to address (if different)" style={inputStyle}/></div></div><div style={{display:"flex",gap:8}}><Btn onClick={handleCreateJob}>Create Job Record</Btn><Btn v="secondary" onClick={()=>setShowNewJob(false)}>Cancel</Btn></div></Card>}
