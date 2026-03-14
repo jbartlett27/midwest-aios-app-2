@@ -91,6 +91,7 @@ const jobFromDb = (r) => ({
 const liToDb = (li) => ({
   id: li.id, job_id: li.jobId, description: li.description, vendor: li.vendor,
   tag: li.tag || '',
+  item_group: li.group || '',
   manufacturer: li.manufacturer || '',
   model_number: li.modelNumber || '',
   color: li.color || '',
@@ -105,6 +106,7 @@ const liToDb = (li) => ({
 const liFromDb = (r) => ({
   id: r.id, jobId: r.job_id, description: r.description, vendor: r.vendor,
   tag: r.tag || '',
+  group: r.item_group || '',
   manufacturer: r.manufacturer || '',
   modelNumber: r.model_number || '',
   color: r.color || '',
