@@ -1,5 +1,4 @@
 import { useState, useRef } from 'react';
-import * as XLSX from 'xlsx';
 
 const inputStyle = {width:"100%",padding:"8px 12px",background:"#111111",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"#e5e5e5",fontSize:13,outline:"none",fontFamily:"'Satoshi',sans-serif"};
 const Card = ({children,style}) => <div style={{background:"#111111",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:22,...style}}>{children}</div>;
@@ -41,7 +40,10 @@ function cleanDesc(d) {
   return main.trim();
 }
 
-function parseQuoteXLS(workbook) {
+async function parseQuoteXLS(file) {
+  const XLSX = (await import('xlsx'));
+  const data = await file.arrayBuffer();
+  const workbook = XLSX.read(data, { type: 'array' });
   const results = { sheets: [], allItems: [], vendors: new Set(), groups: new Set(), errors: [] };
   for (let si = 0; si < workbook.SheetNames.length; si++) {
     const sheetName = workbook.SheetNames[si];
@@ -87,6 +89,12 @@ function parseQuoteXLS(workbook) {
     results.sheets.push({ name: sheetName, itemCount: sheetItems.length });
     results.allItems.push(...sheetItems);
   }
+  // Extract job name from first sheet
+  try {
+    const ws0 = workbook.Sheets[workbook.SheetNames[0]];
+    const d0 = XLSX.utils.sheet_to_json(ws0, { header: 1, defval: '' });
+    if (d0[0] && d0[0][4]) results.jobName = String(d0[0][4]).split('\n')[0].trim();
+  } catch {}
   return results;
 }
 
@@ -103,15 +111,8 @@ export default function CsvUploadPage({ jobs, addJob, addLineItem, addVendor, ve
     const file = e.target.files[0];
     if (!file) return;
     try {
-      const data = await file.arrayBuffer();
-      const wb = XLSX.read(data, { type: 'array' });
-      const result = parseQuoteXLS(wb);
-      let name = file.name.replace(/\.(xls|xlsx|csv)$/i, '').replace(/_/g, ' ');
-      try {
-        const ws0 = wb.Sheets[wb.SheetNames[0]];
-        const d0 = XLSX.utils.sheet_to_json(ws0, { header: 1, defval: '' });
-        if (d0[0] && d0[0][4]) name = String(d0[0][4]).split('\n')[0].trim();
-      } catch {}
+      const result = await parseQuoteXLS(file);
+      let name = result.jobName || file.name.replace(/\.(xls|xlsx|csv)$/i, '').replace(/_/g, ' ');
       setJobName(name);
       const sel = {};
       result.sheets.forEach(s => { sel[s.name] = true; });
