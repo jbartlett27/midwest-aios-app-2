@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 
 const inputStyle = {width:"100%",padding:"8px 12px",background:"#111111",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"#e5e5e5",fontSize:13,outline:"none",fontFamily:"'Satoshi',sans-serif"};
-const Card = ({children,style}) => <div style={{background:"#111111",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:22,...style}}>{children}</div>;
+const Card = ({children,style,onClick}) => <div onClick={onClick} style={{background:"#111111",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:22,cursor:onClick?"pointer":"default",...style}}>{children}</div>;
 const Btn = ({children,onClick,v="primary",style:s}) => {const st={primary:{background:"#2dd4bf",color:"#000",fontWeight:600},secondary:{background:"transparent",color:"#a3a3a3",border:"1px solid rgba(255,255,255,0.1)"},danger:{background:"rgba(248,113,113,0.08)",color:"#f87171",border:"1px solid rgba(248,113,113,0.15)"}};return <button onClick={onClick} style={{padding:"8px 16px",borderRadius:8,border:"none",cursor:"pointer",fontSize:13,fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:6,transition:"all 0.2s cubic-bezier(0.4,0,0.2,1)",...st[v],...s}} onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-1px)"}} onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)"}}>{children}</button>};
 const fmt = n => '$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 
