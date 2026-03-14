@@ -1,375 +1,340 @@
 import { useState, useRef } from 'react';
+import * as XLSX from 'xlsx';
 
-// âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
-// CSV / EXCEL DATA IMPORT
-// Parses CSV/TSV, auto-maps columns, previews data, bulk inserts
-// âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+const inputStyle = {width:"100%",padding:"8px 12px",background:"#111111",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"#e5e5e5",fontSize:13,outline:"none",fontFamily:"'Satoshi',sans-serif"};
+const Card = ({children,style}) => <div style={{background:"#111111",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:22,...style}}>{children}</div>;
+const Btn = ({children,onClick,v="primary",style:s}) => {const st={primary:{background:"#2dd4bf",color:"#000",fontWeight:600},secondary:{background:"transparent",color:"#a3a3a3",border:"1px solid rgba(255,255,255,0.1)"},danger:{background:"rgba(248,113,113,0.08)",color:"#f87171",border:"1px solid rgba(248,113,113,0.15)"}};return <button onClick={onClick} style={{padding:"8px 16px",borderRadius:8,border:"none",cursor:"pointer",fontSize:13,fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:6,transition:"all 0.2s cubic-bezier(0.4,0,0.2,1)",...st[v],...s}} onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-1px)"}} onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)"}}>{children}</button>};
+const fmt = n => '$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 
-const inputStyle = {width:"100%",padding:"8px 12px",background:"#222222",border:"1px solid #333333",borderRadius:6,color:"#e5e5e5",fontSize:13,outline:"none",fontFamily:"inherit"};
+function isHeaderRow(row) {
+  return String(row[0]||'').toLowerCase().trim() === 'tag' || String(row[0]||'').toLowerCase().trim() === 'tags';
+}
 
-// Parse CSV text into array of objects
-function parseCSV(text) {
-  // Detect delimiter
-  const firstLine = text.split('\n')[0];
-  const delim = firstLine.includes('\t') ? '\t' : ',';
-  
-  const lines = [];
-  let current = '';
-  let inQuotes = false;
-  
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    if (ch === '"') {
-      if (inQuotes && text[i+1] === '"') { current += '"'; i++; }
-      else inQuotes = !inQuotes;
-    } else if (ch === '\n' && !inQuotes) {
-      lines.push(current);
-      current = '';
-    } else {
-      current += ch;
+function isSectionHeader(row) {
+  const hasDesc = row[3] && String(row[3]).trim().length > 0;
+  const hasTag = row[0] && String(row[0]).trim().length > 0;
+  const hasManuf = row[1] && String(row[1]).trim().length > 0;
+  const hasQty = row[5] && Number(row[5]) > 0;
+  const hasPrice = row[6] && Number(row[6]) > 0;
+  const hasNet = row[8] && Number(row[8]) > 0;
+  return hasDesc && !hasTag && !hasManuf && !hasQty && !hasPrice && !hasNet;
+}
+
+function isLineItem(row) {
+  const desc = row[3] && String(row[3]).trim().length > 0;
+  const qty = Number(row[5]) > 0;
+  const price = Number(row[8]) > 0 || Number(row[14]) > 0 || Number(row[6]) > 0;
+  return desc && (qty || price);
+}
+
+function cleanDesc(d) {
+  if (!d) return '';
+  let s = String(d).replace(/\r/g, '');
+  const lines = s.split('\n').map(l => l.trim()).filter(Boolean);
+  let main = lines[0] || '';
+  let specIdx = main.indexOf('Item Specifics');
+  if (specIdx > 0) main = main.substring(0, specIdx).trim();
+  let roomIdx = main.indexOf('-- Room Number');
+  if (roomIdx > 0) main = main.substring(0, roomIdx).trim();
+  let roomIdx2 = main.indexOf('Room Number');
+  if (roomIdx2 > 20) main = main.substring(0, roomIdx2).trim();
+  return main.trim();
+}
+
+function parseQuoteXLS(workbook) {
+  const results = { sheets: [], allItems: [], vendors: new Set(), groups: new Set(), errors: [] };
+  for (let si = 0; si < workbook.SheetNames.length; si++) {
+    const sheetName = workbook.SheetNames[si];
+    const ws = workbook.Sheets[sheetName];
+    const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    let currentGroup = '';
+    let sheetItems = [];
+    for (let r = 0; r < data.length; r++) {
+      const row = data[r];
+      if (!row || row.length < 4) continue;
+      if (isHeaderRow(row)) continue;
+      if (isSectionHeader(row)) {
+        currentGroup = String(row[3]).trim().replace(/\n/g, ' ').substring(0, 80);
+        results.groups.add(currentGroup);
+        continue;
+      }
+      if (isLineItem(row)) {
+        const tag = String(row[0]||'').trim().replace(/\.0$/, '');
+        const manuf = String(row[1]||'').trim();
+        const model = String(row[2]||'').trim().replace(/\.0$/, '');
+        const desc = cleanDesc(row[3]);
+        const color = String(row[4]||'').trim();
+        const qty = Math.round(Number(row[5])||0);
+        const list = Number(row[6])||0;
+        const netEach = Number(row[8])||0;
+        const shipEach = Number(row[10])||0;
+        const installEach = Number(row[12])||0;
+        const costEach = Number(row[14])||netEach;
+        const yourPrice = Number(row[16])||0;
+        if (qty <= 0 && list <= 0 && netEach <= 0) continue;
+        if (desc.toLowerCase().startsWith('quote ') || desc.startsWith('#')) continue;
+        sheetItems.push({
+          tag, manufacturer: manuf || sheetName, modelNumber: model,
+          description: desc, color, qtyOrdered: qty || 1,
+          listPrice: list, unitCost: netEach || costEach,
+          shippingPerUnit: shipEach, installPerUnit: installEach,
+          unitPrice: yourPrice || 0, group: currentGroup, sheet: sheetName,
+          qtyReceived: 0, qtyInvoiced: 0,
+        });
+        if (manuf) results.vendors.add(manuf);
+      }
     }
+    results.sheets.push({ name: sheetName, itemCount: sheetItems.length });
+    results.allItems.push(...sheetItems);
   }
-  if (current.trim()) lines.push(current);
-  
-  if (lines.length < 2) return { headers: [], rows: [] };
-  
-  const splitLine = (line) => {
-    const cells = [];
-    let cell = '';
-    let inQ = false;
-    for (let i = 0; i < line.length; i++) {
-      const c = line[i];
-      if (c === '"') { if (inQ && line[i+1] === '"') { cell += '"'; i++; } else inQ = !inQ; }
-      else if (c === delim && !inQ) { cells.push(cell.trim()); cell = ''; }
-      else cell += c;
-    }
-    cells.push(cell.trim());
-    return cells;
-  };
-  
-  const headers = splitLine(lines[0]);
-  const rows = lines.slice(1).filter(l => l.trim()).map(l => {
-    const cells = splitLine(l);
-    const obj = {};
-    headers.forEach((h, i) => { obj[h] = cells[i] || ''; });
-    return obj;
-  });
-  
-  return { headers, rows };
+  return results;
 }
 
-// Column mapping presets per data type
-const COLUMN_MAPS = {
-  vendors: {
-    fields: ['id','name','contact','email','phone','category','address'],
-    labels: ['ID (auto if blank)','Company Name','Contact Person','Email','Phone','Category','Address'],
-    required: ['name'],
-    guesses: { name: ['vendor','company','name','vendor name','company name'], contact: ['contact','person','rep','representative'], email: ['email','e-mail','mail'], phone: ['phone','tel','telephone'], category: ['category','type','cat'], address: ['address','addr','location','street'] },
-  },
-  customers: {
-    fields: ['id','name','contact','email','phone','type','address'],
-    labels: ['ID (auto if blank)','Organization Name','Contact Person','Email','Phone','Type','Address'],
-    required: ['name'],
-    guesses: { name: ['customer','client','organization','school','district','name','customer name'], contact: ['contact','person'], email: ['email','e-mail'], phone: ['phone','tel'], type: ['type','category','segment'], address: ['address','addr','location'] },
-  },
-  reps: {
-    fields: ['id','name','email','territory','commissionRate','tier'],
-    labels: ['ID (auto if blank)','Name','Email','Territory','Commission Rate (decimal)','Tier'],
-    required: ['name'],
-    guesses: { name: ['name','rep','salesperson','sales rep'], email: ['email'], territory: ['territory','region','area'], commissionRate: ['rate','commission','commission rate','%'], tier: ['tier','level','rank'] },
-  },
-  jobs: {
-    fields: ['id','name','customer','salesRep','phase','createdDate','dueDate','notes','paymentStatus'],
-    labels: ['ID (auto if blank)','Job Name','Customer ID','Sales Rep ID','Phase','Created Date','Due Date','Notes','Payment Status'],
-    required: ['name'],
-    guesses: { name: ['job','project','name','job name','project name'], customer: ['customer','client','customer id'], salesRep: ['rep','sales rep','salesperson'], phase: ['phase','status','stage'], createdDate: ['created','date','start'], dueDate: ['due','deadline','end','due date'], notes: ['notes','description','details'], paymentStatus: ['payment','paid','payment status'] },
-  },
-  lineItems: {
-    fields: ['id','jobId','description','vendor','unitCost','unitPrice','qtyOrdered','qtyReceived','qtyInvoiced'],
-    labels: ['ID (auto if blank)','Job ID','Description','Vendor ID','Unit Cost','Unit Price','Qty Ordered','Qty Received','Qty Invoiced'],
-    required: ['description'],
-    guesses: { jobId: ['job','job id','project'], description: ['description','item','product','name'], vendor: ['vendor','supplier','vendor id'], unitCost: ['cost','unit cost','buy price','wholesale'], unitPrice: ['price','unit price','sell price','retail'], qtyOrdered: ['ordered','qty ordered','quantity','qty'], qtyReceived: ['received','qty received','delivered'], qtyInvoiced: ['invoiced','qty invoiced','billed'] },
-  },
-};
-
-function autoMapColumns(csvHeaders, targetType) {
-  const map = COLUMN_MAPS[targetType];
-  if (!map) return {};
-  const mapping = {};
-  
-  map.fields.forEach(field => {
-    const guesses = map.guesses[field] || [];
-    const match = csvHeaders.find(h => {
-      const lower = h.toLowerCase().trim();
-      return guesses.some(g => lower === g || lower.includes(g));
-    });
-    if (match) mapping[field] = match;
-  });
-  
-  return mapping;
-}
-
-const uid = () => Math.random().toString(36).substr(2, 9);
-
-export default function CsvUploadPage({ vendors, customers, reps, jobs, lineItems, setVendors, setCustomers, setReps, setJobs, setLineItems, notify, db }) {
-  const [step, setStep] = useState('select'); // select, map, preview, done
-  const [targetType, setTargetType] = useState('vendors');
-  const [csvData, setCsvData] = useState({ headers: [], rows: [] });
-  const [columnMap, setColumnMap] = useState({});
+export default function CsvUploadPage({ jobs, addJob, addLineItem, addVendor, vendors, customers, notify, db }) {
+  const [parsed, setParsed] = useState(null);
   const [importing, setImporting] = useState(false);
-  const [importResult, setImportResult] = useState(null);
-  const fileRef = useRef(null);
+  const [importDone, setImportDone] = useState(null);
+  const [jobName, setJobName] = useState('');
+  const [selectedSheets, setSelectedSheets] = useState({});
+  const [jobId, setJobId] = useState('new');
+  const fileRef = useRef();
 
-  const handleFile = (e) => {
+  const handleFile = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      const text = evt.target.result;
-      const parsed = parseCSV(text);
-      if (parsed.rows.length === 0) { notify('No data found in file', 'error'); return; }
-      setCsvData(parsed);
-      const autoMap = autoMapColumns(parsed.headers, targetType);
-      setColumnMap(autoMap);
-      setStep('map');
-      notify(parsed.rows.length + ' rows found in ' + file.name);
-    };
-    reader.readAsText(file);
+    try {
+      const data = await file.arrayBuffer();
+      const wb = XLSX.read(data, { type: 'array' });
+      const result = parseQuoteXLS(wb);
+      let name = file.name.replace(/\.(xls|xlsx|csv)$/i, '').replace(/_/g, ' ');
+      try {
+        const ws0 = wb.Sheets[wb.SheetNames[0]];
+        const d0 = XLSX.utils.sheet_to_json(ws0, { header: 1, defval: '' });
+        if (d0[0] && d0[0][4]) name = String(d0[0][4]).split('\n')[0].trim();
+      } catch {}
+      setJobName(name);
+      const sel = {};
+      result.sheets.forEach(s => { sel[s.name] = true; });
+      setSelectedSheets(sel);
+      setParsed(result);
+      setImportDone(null);
+    } catch (err) {
+      notify('Error reading file: ' + err.message, 'error');
+    }
   };
 
   const handleImport = async () => {
+    if (!parsed || importing) return;
     setImporting(true);
-    const map = COLUMN_MAPS[targetType];
-    let imported = 0;
-    let errors = 0;
-    
-    const rows = csvData.rows.map(row => {
-      const obj = {};
-      map.fields.forEach(field => {
-        const csvCol = columnMap[field];
-        if (csvCol && row[csvCol] !== undefined) {
-          let val = row[csvCol];
-          // Type coercion
-          if (['unitCost','unitPrice','commissionRate'].includes(field)) val = parseFloat(val) || 0;
-          if (['qtyOrdered','qtyReceived','qtyInvoiced'].includes(field)) val = parseInt(val) || 0;
-          obj[field] = val;
-        }
-      });
-      // Auto-generate ID if missing
-      if (!obj.id || obj.id === '') {
-        const prefix = { vendors: 'V-', customers: 'C-', reps: 'S-', jobs: 'JOB-', lineItems: 'LI-' }[targetType] || '';
-        obj.id = prefix + uid();
-      }
-      return obj;
-    }).filter(obj => {
-      // Validate required fields
-      const hasRequired = map.required.every(f => obj[f] && obj[f].toString().trim() !== '');
-      if (!hasRequired) errors++;
-      return hasRequired;
-    });
-
-    if (rows.length === 0) {
-      notify('No valid rows to import â check required fields', 'error');
-      setImporting(false);
-      return;
-    }
-
     try {
-      // Batch save to Supabase (single API call instead of one per row)
-      if (targetType === 'vendors') {
-        await db.batchSaveVendors(rows);
-        setVendors(prev => {
-          const ids = new Set(prev.map(v => v.id));
-          const newOnes = rows.filter(r => !ids.has(r.id));
-          const updated = prev.map(v => { const match = rows.find(r => r.id === v.id); return match ? { ...v, ...match } : v; });
-          return [...updated, ...newOnes];
+      const items = parsed.allItems.filter(i => selectedSheets[i.sheet]);
+      if (items.length === 0) { notify('No items selected', 'error'); setImporting(false); return; }
+      let targetJobId;
+      if (jobId === 'new') {
+        targetJobId = 'JOB-' + Math.random().toString(36).slice(2, 8);
+        addJob({
+          id: targetJobId, name: jobName || 'Imported Quote',
+          customer: customers[0]?.id || '', salesRep: '',
+          phase: 'Quoting', createdDate: new Date().toISOString().split('T')[0],
+          startDate: '', dueDate: '', endDate: '', notes: 'Imported from Excel quote',
+          paymentStatus: 'unpaid', terms: 'Net 30', poNumber: '',
+          shipTo: '', shipVia: '', billTo: '', orderNotes: '',
+          docStatuses: {}, activities: [], auditTrail: [],
         });
-      } else if (targetType === 'customers') {
-        await db.batchSaveCustomers(rows);
-        setCustomers(prev => {
-          const ids = new Set(prev.map(c => c.id));
-          const newOnes = rows.filter(r => !ids.has(r.id));
-          const updated = prev.map(c => { const match = rows.find(r => r.id === c.id); return match ? { ...c, ...match } : c; });
-          return [...updated, ...newOnes];
-        });
-      } else if (targetType === 'reps') {
-        await db.batchSaveReps(rows);
-        setReps(prev => {
-          const ids = new Set(prev.map(r => r.id));
-          const newOnes = rows.filter(r => !ids.has(r.id));
-          const updated = prev.map(r => { const match = rows.find(rr => rr.id === r.id); return match ? { ...r, ...match } : r; });
-          return [...updated, ...newOnes];
-        });
-      } else if (targetType === 'jobs') {
-        await db.batchSaveJobs(rows);
-        setJobs(prev => {
-          const ids = new Set(prev.map(j => j.id));
-          const newOnes = rows.filter(r => !ids.has(r.id));
-          const updated = prev.map(j => { const match = rows.find(r => r.id === j.id); return match ? { ...j, ...match } : j; });
-          return [...updated, ...newOnes];
-        });
-      } else if (targetType === 'lineItems') {
-        await db.batchSaveLineItems(rows);
-        setLineItems(prev => {
-          const ids = new Set(prev.map(l => l.id));
-          const newOnes = rows.filter(r => !ids.has(r.id));
-          const updated = prev.map(l => { const match = rows.find(r => r.id === l.id); return match ? { ...l, ...match } : l; });
-          return [...updated, ...newOnes];
-        });
+      } else {
+        targetJobId = jobId;
       }
-      imported = rows.length;
-    } catch (e) {
-      console.error('Import error:', e);
-      errors++;
+      const existingNames = new Set(vendors.map(v => v.name.toLowerCase().trim()));
+      const vendorMap = {};
+      vendors.forEach(v => { vendorMap[v.name.toLowerCase().trim()] = v.id; });
+      let newVendorCount = 0;
+      for (const vName of parsed.vendors) {
+        const key = vName.toLowerCase().trim();
+        if (!existingNames.has(key)) {
+          const vid = 'V-' + Math.random().toString(36).slice(2, 8);
+          addVendor({ id: vid, name: vName, contact: '', email: '', phone: '', category: 'Furniture', address: '', discountRate: 0, discountType: 'percentage', discountNotes: '' });
+          vendorMap[key] = vid;
+          existingNames.add(key);
+          newVendorCount++;
+        }
+      }
+      let created = 0;
+      for (const item of items) {
+        const vendorId = vendorMap[(item.manufacturer || '').toLowerCase().trim()] || '';
+        addLineItem({
+          id: 'LI-' + Math.random().toString(36).slice(2, 8),
+          jobId: targetJobId, description: item.description, vendor: vendorId,
+          tag: item.tag, group: item.group, manufacturer: item.manufacturer,
+          modelNumber: item.modelNumber, color: item.color, listPrice: item.listPrice,
+          unitCost: item.unitCost, unitPrice: item.unitPrice,
+          shippingPerUnit: item.shippingPerUnit, installPerUnit: item.installPerUnit,
+          qtyOrdered: item.qtyOrdered, qtyReceived: 0, qtyInvoiced: 0,
+          poDate: '', deliveryDate: '', invoiceDate: '',
+        });
+        created++;
+      }
+      setImportDone({ jobId: targetJobId, items: created, vendors: newVendorCount, jobName });
+      notify('Imported ' + created + ' line items into "' + jobName + '"');
+    } catch (err) {
+      notify('Import error: ' + err.message, 'error');
     }
-
-    setImportResult({ imported, errors });
-    setStep('done');
     setImporting(false);
-    notify(imported + ' records imported to ' + targetType);
   };
 
-  const reset = () => { setStep('select'); setCsvData({ headers: [], rows: [] }); setColumnMap({}); setImportResult(null); if (fileRef.current) fileRef.current.value = ''; };
-
-  const cardStyle = { background: "#111111", border: "1px solid #1a1a1a", borderRadius: 12, padding: 20 };
-  const goldBtn = { padding: "10px 20px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: "inherit", background: "linear-gradient(135deg,#2dd4bf,#14b8a6)", color: "#0a0a0a" };
-  const secBtn = { ...goldBtn, background: "#1a1a1a", color: "#e5e5e5", border: "1px solid #333333" };
+  const selectedCount = parsed ? parsed.allItems.filter(i => selectedSheets[i.sheet]).length : 0;
+  const selectedCost = parsed ? parsed.allItems.filter(i => selectedSheets[i.sheet]).reduce((s, i) => s + (i.unitCost * i.qtyOrdered), 0) : 0;
+  const selectedRevenue = parsed ? parsed.allItems.filter(i => selectedSheets[i.sheet]).reduce((s, i) => s + ((i.unitPrice || 0) * i.qtyOrdered), 0) : 0;
 
   return (
-    <div style={{ animation: "fadeUp 0.4s" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 20 }}>
+    <div style={{animation:"fadeUp 0.4s"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:24}}>
         <div>
-          <h2 style={{ fontSize: 22, fontWeight: 700, color: "#e5e5e5", marginBottom: 4, letterSpacing: -0.5 }}>Data Import</h2>
-          <p style={{ fontSize: 13, color: "#6b7280" }}>Upload CSV or Excel exports to bulk-import historical data</p>
+          <h2 style={{fontSize:24,fontWeight:700,color:"#f0f0f0",marginBottom:4,letterSpacing:-0.5}}>Data Import</h2>
+          <p style={{fontSize:13,color:"#737373"}}>Upload Excel quotes to create jobs with all line items</p>
         </div>
-        {step !== 'select' && <button onClick={reset} style={secBtn}>Start Over</button>}
       </div>
 
-      {/* STEP 1: Select data type and upload file */}
-      {step === 'select' && (
-        <div style={cardStyle}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: "#e5e5e5", marginBottom: 16 }}>Step 1: Choose data type and upload file</div>
-          
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, marginBottom: 20 }}>
-            {[['vendors','Vendors'],['customers','Customers'],['reps','Sales Reps'],['jobs','Jobs'],['lineItems','Line Items']].map(([key, label]) => (
-              <button key={key} onClick={() => setTargetType(key)} style={{
-                padding: "12px 8px", borderRadius: 8, border: "none", cursor: "pointer",
-                background: targetType === key ? "rgba(200,162,92,0.15)" : "#222222",
-                color: targetType === key ? "#2dd4bf" : "#9ca3af",
-                fontSize: 13, fontWeight: targetType === key ? 700 : 400, fontFamily: "inherit",
-                border: targetType === key ? "1px solid #2dd4bf44" : "1px solid #333333",
-              }}>{label}</button>
+      {!parsed && !importDone && (
+        <Card style={{textAlign:"center",padding:48,border:"2px dashed rgba(45,212,191,0.2)",cursor:"pointer"}} onClick={() => fileRef.current?.click()}>
+          <input ref={fileRef} type="file" accept=".xls,.xlsx,.csv" onChange={handleFile} style={{display:"none"}}/>
+          <div style={{fontSize:40,marginBottom:16,opacity:0.3}}>+</div>
+          <div style={{fontSize:16,fontWeight:600,color:"#e5e5e5",marginBottom:8}}>Drop an Excel quote here or click to browse</div>
+          <div style={{fontSize:13,color:"#737373",marginBottom:16}}>Supports .xls and .xlsx files</div>
+          <div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap"}}>
+            {["Tag","Manuf","Model #","Description","Color","QTY","List","Net Each","Ship","Install","Your Price"].map(f => (
+              <span key={f} style={{padding:"3px 8px",borderRadius:5,background:"rgba(45,212,191,0.08)",color:"#2dd4bf",fontSize:10,fontWeight:500}}>{f}</span>
             ))}
           </div>
-
-          <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 12 }}>
-            Expected columns for <strong style={{ color: "#2dd4bf" }}>{targetType}</strong>: {COLUMN_MAPS[targetType]?.labels.join(', ')}
-          </div>
-
-          <div style={{
-            border: "2px dashed #333333", borderRadius: 12, padding: 40, textAlign: "center",
-            cursor: "pointer", transition: "border-color 0.2s",
-          }} onClick={() => fileRef.current?.click()}
-             onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = "#2dd4bf"; }}
-             onDragLeave={e => { e.currentTarget.style.borderColor = "#333333"; }}
-             onDrop={e => { e.preventDefault(); e.currentTarget.style.borderColor = "#333333"; const file = e.dataTransfer.files[0]; if (file) { const dt = new DataTransfer(); dt.items.add(file); fileRef.current.files = dt.files; handleFile({ target: { files: [file] } }); } }}>
-            <div style={{ fontSize: 36, marginBottom: 8, opacity: 0.3 }}>ð</div>
-            <div style={{ fontSize: 14, color: "#9ca3af", marginBottom: 4 }}>Drop a CSV file here or click to browse</div>
-            <div style={{ fontSize: 12, color: "#4b5563" }}>Supports .csv and .tsv files. First row must be column headers.</div>
-            <input ref={fileRef} type="file" accept=".csv,.tsv,.txt" onChange={handleFile} style={{ display: "none" }} />
-          </div>
-
-          <div style={{ marginTop: 16, padding: 12, background: "#222222", borderRadius: 8, fontSize: 12, color: "#6b7280" }}>
-            <strong style={{ color: "#2dd4bf" }}>Tip for QuickBooks data:</strong> In QuickBooks, go to Reports â export any report as CSV. Common exports: Customer Contact List, Vendor Contact List, Sales by Rep, Items list. The system will auto-detect column names and map them.
-          </div>
-        </div>
+          <div style={{fontSize:11,color:"#525252",marginTop:16}}>All columns auto-mapped from Midwest quote format</div>
+        </Card>
       )}
 
-      {/* STEP 2: Map columns */}
-      {step === 'map' && (
-        <div style={cardStyle}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: "#e5e5e5", marginBottom: 4 }}>Step 2: Map your columns</div>
-          <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 16 }}>{csvData.rows.length} rows found. Map your CSV columns to the system fields below. The system auto-detected what it could.</div>
+      {parsed && !importDone && (
+        <div style={{display:"flex",flexDirection:"column",gap:20}}>
+          <div className="resp-grid-4" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16}}>
+            <Card style={{padding:16}}>
+              <div style={{fontSize:11,color:"#737373",fontWeight:600,textTransform:"uppercase",letterSpacing:2,marginBottom:6}}>Sheets</div>
+              <div style={{fontSize:28,fontWeight:700,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>{parsed.sheets.length}</div>
+            </Card>
+            <Card style={{padding:16}}>
+              <div style={{fontSize:11,color:"#737373",fontWeight:600,textTransform:"uppercase",letterSpacing:2,marginBottom:6}}>Line Items</div>
+              <div style={{fontSize:28,fontWeight:700,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{selectedCount}</div>
+            </Card>
+            <Card style={{padding:16}}>
+              <div style={{fontSize:11,color:"#737373",fontWeight:600,textTransform:"uppercase",letterSpacing:2,marginBottom:6}}>Vendors</div>
+              <div style={{fontSize:28,fontWeight:700,color:"#a78bfa",fontFamily:"'JetBrains Mono',monospace"}}>{parsed.vendors.size}</div>
+            </Card>
+            <Card style={{padding:16}}>
+              <div style={{fontSize:11,color:"#737373",fontWeight:600,textTransform:"uppercase",letterSpacing:2,marginBottom:6}}>Total Cost</div>
+              <div style={{fontSize:28,fontWeight:700,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(selectedCost)}</div>
+            </Card>
+          </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
-            {COLUMN_MAPS[targetType].fields.map((field, i) => (
-              <div key={field} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <div style={{ width: 140, fontSize: 12, color: COLUMN_MAPS[targetType].required.includes(field) ? "#2dd4bf" : "#9ca3af", fontWeight: 500 }}>
-                  {COLUMN_MAPS[targetType].labels[i]} {COLUMN_MAPS[targetType].required.includes(field) && '*'}
-                </div>
-                <select value={columnMap[field] || ''} onChange={e => setColumnMap(prev => ({ ...prev, [field]: e.target.value }))} style={{ ...inputStyle, flex: 1 }}>
-                  <option value="">â skip â</option>
-                  {csvData.headers.map(h => <option key={h} value={h}>{h}</option>)}
+          <Card>
+            <div style={{fontSize:15,fontWeight:700,color:"#f0f0f0",marginBottom:16}}>Import Settings</div>
+            <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:16}}>
+              <div>
+                <label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Job Name</label>
+                <input value={jobName} onChange={e => setJobName(e.target.value)} style={inputStyle} placeholder="e.g. DeKalb Mitchell ES"/>
+              </div>
+              <div>
+                <label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Import Into</label>
+                <select value={jobId} onChange={e => setJobId(e.target.value)} style={inputStyle}>
+                  <option value="new">+ Create New Job</option>
+                  {jobs.map(j => <option key={j.id} value={j.id}>{j.name}</option>)}
                 </select>
               </div>
-            ))}
-          </div>
+            </div>
+          </Card>
 
-          {/* Preview */}
-          <div style={{ fontSize: 14, fontWeight: 700, color: "#e5e5e5", marginBottom: 8 }}>Preview (first 5 rows)</div>
-          <div style={{ overflowX: "auto", borderRadius: 8, border: "1px solid #1a1a1a" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
-              <thead>
-                <tr style={{ background: "#111111" }}>
-                  {COLUMN_MAPS[targetType].fields.filter(f => columnMap[f]).map(f => (
-                    <th key={f} style={{ padding: "6px 10px", textAlign: "left", color: "#6b7280", borderBottom: "1px solid #1a1a1a", fontSize: 10, textTransform: "uppercase" }}>{f}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {csvData.rows.slice(0, 5).map((row, ri) => (
-                  <tr key={ri}>
-                    {COLUMN_MAPS[targetType].fields.filter(f => columnMap[f]).map(f => (
-                      <td key={f} style={{ padding: "6px 10px", borderBottom: "1px solid #22222220", color: "#333333" }}>
-                        {row[columnMap[f]] || ''}
-                      </td>
+          <Card>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+              <div style={{fontSize:15,fontWeight:700,color:"#f0f0f0"}}>Sheets to Import</div>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={() => { const s = {}; parsed.sheets.forEach(sh => { s[sh.name] = true; }); setSelectedSheets(s); }} style={{fontSize:11,color:"#2dd4bf",background:"none",border:"none",cursor:"pointer",fontFamily:"inherit"}}>Select All</button>
+                <button onClick={() => setSelectedSheets({})} style={{fontSize:11,color:"#737373",background:"none",border:"none",cursor:"pointer",fontFamily:"inherit"}}>Clear</button>
+              </div>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:6}}>
+              {parsed.sheets.map(sh => (
+                <label key={sh.name} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",borderRadius:10,background:selectedSheets[sh.name]?"rgba(45,212,191,0.06)":"rgba(255,255,255,0.02)",border:selectedSheets[sh.name]?"1px solid rgba(45,212,191,0.15)":"1px solid rgba(255,255,255,0.04)",cursor:"pointer",transition:"all 0.15s"}}>
+                  <input type="checkbox" checked={!!selectedSheets[sh.name]} onChange={e => setSelectedSheets({...selectedSheets,[sh.name]:e.target.checked})} style={{accentColor:"#2dd4bf",width:16,height:16}} onClick={e => e.stopPropagation()}/>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:14,fontWeight:600,color:"#e5e5e5"}}>{sh.name}</div>
+                  </div>
+                  <span style={{fontSize:12,fontWeight:600,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{sh.itemCount} items</span>
+                </label>
+              ))}
+            </div>
+          </Card>
+
+          <Card>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+              <div style={{fontSize:15,fontWeight:700,color:"#f0f0f0"}}>Preview ({selectedCount} items)</div>
+              {selectedRevenue > 0 && <span style={{fontSize:13,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>Revenue: {fmt(selectedRevenue)}</span>}
+            </div>
+            <div style={{overflowX:"auto",borderRadius:10,border:"1px solid rgba(255,255,255,0.06)"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:1100}}>
+                <thead>
+                  <tr style={{background:"#0a0a0a"}}>
+                    {["Tag","Manuf","Model #","Description","Color","Qty","List","Net Ea","Ship","Install","Price","Group"].map(h => (
+                      <th key={h} style={{padding:"6px 8px",textAlign:"left",fontWeight:600,color:"#737373",fontSize:11,textTransform:"uppercase",letterSpacing:0.8,borderBottom:"1px solid rgba(255,255,255,0.06)"}}>{h}</th>
                     ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-            <button onClick={handleImport} disabled={importing} style={{ ...goldBtn, opacity: importing ? 0.6 : 1 }}>
-              {importing ? 'Importing...' : 'Import ' + csvData.rows.length + ' Rows'}
-            </button>
-            <button onClick={() => setStep('select')} style={secBtn}>Back</button>
-          </div>
-        </div>
-      )}
-
-      {/* STEP 3: Done */}
-      {step === 'done' && importResult && (
-        <div style={cardStyle}>
-          <div style={{ fontSize: 48, textAlign: "center", marginBottom: 12 }}>
-            {importResult.errors === 0 ? 'â' : 'â ï¸'}
-          </div>
-          <div style={{ fontSize: 20, fontWeight: 700, color: "#e5e5e5", textAlign: "center", marginBottom: 8 }}>
-            Import Complete
-          </div>
-          <div style={{ fontSize: 14, color: "#6b7280", textAlign: "center", marginBottom: 20 }}>
-            <strong style={{ color: "#14b8a6" }}>{importResult.imported}</strong> records imported successfully
-            {importResult.errors > 0 && <>, <strong style={{ color: "#ef4444" }}>{importResult.errors}</strong> rows skipped (missing required fields)</>}
-          </div>
-          <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
-            <button onClick={reset} style={goldBtn}>Import More Data</button>
-          </div>
-        </div>
-      )}
-
-      {/* Current data counts */}
-      <div style={{ ...cardStyle, marginTop: 16 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: "#e5e5e5", marginBottom: 12 }}>Current Database</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12 }}>
-          {[['Vendors', vendors.length],['Customers', customers.length],['Sales Reps', reps.length],['Jobs', jobs.length],['Line Items', lineItems.length]].map(([label, count]) => (
-            <div key={label} style={{ textAlign: "center", padding: 12, background: "#222222", borderRadius: 8 }}>
-              <div style={{ fontSize: 24, fontWeight: 700, color: "#2dd4bf", fontFamily: "'DM Mono', monospace" }}>{count}</div>
-              <div style={{ fontSize: 11, color: "#6b7280" }}>{label}</div>
+                </thead>
+                <tbody>
+                  {parsed.allItems.filter(i => selectedSheets[i.sheet]).slice(0, 50).map((item, idx) => (
+                    <tr key={idx} style={{borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
+                      <td style={{padding:"5px 8px",color:"#a78bfa",fontWeight:500}}>{item.tag}</td>
+                      <td style={{padding:"5px 8px",color:"#c4c4c4"}}>{item.manufacturer}</td>
+                      <td style={{padding:"5px 8px",color:"#c4c4c4",fontFamily:"'JetBrains Mono',monospace",fontSize:11}}>{item.modelNumber}</td>
+                      <td style={{padding:"5px 8px",color:"#e5e5e5",maxWidth:260,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.description}</td>
+                      <td style={{padding:"5px 8px",color:"#c4c4c4"}}>{item.color}</td>
+                      <td style={{padding:"5px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace"}}>{item.qtyOrdered}</td>
+                      <td style={{padding:"5px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",color:"#737373"}}>{item.listPrice ? fmt(item.listPrice) : '--'}</td>
+                      <td style={{padding:"5px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",color:"#34d399"}}>{fmt(item.unitCost)}</td>
+                      <td style={{padding:"5px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",color:"#fbbf24"}}>{item.shippingPerUnit ? fmt(item.shippingPerUnit) : '--'}</td>
+                      <td style={{padding:"5px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",color:"#a78bfa"}}>{item.installPerUnit ? fmt(item.installPerUnit) : '--'}</td>
+                      <td style={{padding:"5px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",color:"#2dd4bf",fontWeight:600}}>{item.unitPrice ? fmt(item.unitPrice) : '--'}</td>
+                      <td style={{padding:"5px 8px",color:"#525252",fontSize:11,maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.group}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {selectedCount > 50 && <div style={{padding:12,textAlign:"center",color:"#525252",fontSize:12}}>Showing 50 of {selectedCount} items</div>}
             </div>
-          ))}
+          </Card>
+
+          <div style={{display:"flex",gap:12,justifyContent:"flex-end"}}>
+            <Btn v="secondary" onClick={() => { setParsed(null); if(fileRef.current) fileRef.current.value=''; }}>Cancel</Btn>
+            <Btn onClick={handleImport} style={{padding:"12px 32px",fontSize:15}}>
+              {importing ? 'Importing...' : 'Import ' + selectedCount + ' Items'}
+            </Btn>
+          </div>
         </div>
-      </div>
+      )}
+
+      {importDone && (
+        <Card style={{textAlign:"center",padding:48}}>
+          <div style={{width:56,height:56,borderRadius:28,background:"rgba(45,212,191,0.12)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px",fontSize:24,color:"#2dd4bf"}}>+</div>
+          <div style={{fontSize:22,fontWeight:700,color:"#2dd4bf",marginBottom:8}}>Import Complete</div>
+          <div style={{fontSize:14,color:"#c4c4c4",marginBottom:24}}>{importDone.items} line items imported into "{importDone.jobName}"</div>
+          <div style={{display:"flex",gap:16,justifyContent:"center",flexWrap:"wrap",marginBottom:24}}>
+            <Card style={{padding:16,minWidth:120}}>
+              <div style={{fontSize:11,color:"#737373",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Items</div>
+              <div style={{fontSize:24,fontWeight:700,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{importDone.items}</div>
+            </Card>
+            <Card style={{padding:16,minWidth:120}}>
+              <div style={{fontSize:11,color:"#737373",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>New Vendors</div>
+              <div style={{fontSize:24,fontWeight:700,color:"#a78bfa",fontFamily:"'JetBrains Mono',monospace"}}>{importDone.vendors}</div>
+            </Card>
+          </div>
+          <div style={{display:"flex",gap:12,justifyContent:"center"}}>
+            <Btn v="secondary" onClick={() => { setParsed(null); setImportDone(null); if(fileRef.current) fileRef.current.value=''; }}>Import Another</Btn>
+            <Btn onClick={() => { setParsed(null); setImportDone(null); }}>Done</Btn>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
