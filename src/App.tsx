@@ -212,9 +212,6 @@ export default function MidwestAIOS() {
   const [showNewJob, setShowNewJob] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const auditLogRef = React.useRef(()=>{try{return JSON.parse(localStorage.getItem("mw_audit_log")||"[]")}catch{return []}});
-  if(typeof auditLogRef.current==="function")auditLogRef.current=auditLogRef.current();
-  const [auditLog, setAuditLog] = useState(()=>{try{return JSON.parse(localStorage.getItem("mw_audit_log")||"[]")}catch{return []}});
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   useEffect(() => {
@@ -280,7 +277,6 @@ export default function MidwestAIOS() {
 
   // Save QB config to localStorage (not DB -- contains secrets)
   useEffect(() => { try { localStorage.setItem('mw_qbConfig', JSON.stringify(qbConfig)); } catch {} }, [qbConfig]);
-  useEffect(() => { try { localStorage.setItem('mw_audit_log', JSON.stringify(auditLog.slice(0,500))); } catch {} }, [auditLog]);
 
   // --- DERIVED COMPUTATIONS ----------------------------------
   const getJobItems = jobId => lineItems.filter(li => li.jobId === jobId);
@@ -305,7 +301,7 @@ export default function MidwestAIOS() {
 
   // --- MUTATORS (update state + save to Supabase) ------------
   const updateLineItem = (id, u) => {
-    setLineItems(p => { const old=p.find(li=>li.id===id);const updated = p.map(li => li.id===id ? {...li,...u} : li); const item = updated.find(li=>li.id===id); if(item){db.saveLineItem(item);const changes=Object.keys(u).filter(k=>String(old?.[k])!==String(u[k]));if(changes.length>0){const log={time:new Date().toISOString(),type:"edit",entity:"lineItem",entityId:id,fields:changes.map(k=>({field:k,from:old?.[k],to:u[k]}))};auditLogRef.current=[log,...auditLogRef.current].slice(0,500);setTimeout(()=>setAuditLog([...auditLogRef.current]),0)}} return updated; });
+    setLineItems(p => { const old=p.find(li=>li.id===id);const updated = p.map(li => li.id===id ? {...li,...u} : li); const item = updated.find(li=>li.id===id); if(item){db.saveLineItem(item);const changes=Object.keys(u).filter(k=>String(old?.[k])!==String(u[k]));if(changes.length>0){const log={time:new Date().toISOString(),type:"edit",entity:"lineItem",entityId:id,desc:(old?.description||"item"),fields:changes.map(k=>({field:k,from:old?.[k],to:u[k]}))};setTimeout(()=>{setJobs(jp=>{const jobId=item.jobId;return jp.map(j=>{if(j.id!==jobId)return j;const trail=[log,...(j.auditTrail||[])].slice(0,200);const nj={...j,auditTrail:trail};db.saveJob(nj);return nj})})},0)}} return updated; });
   };
   const addLineItem = item => {
     const newItem = {...item, id: "LI-"+uid()};
@@ -318,7 +314,7 @@ export default function MidwestAIOS() {
     db.deleteLineItem(id);
   };
   const updateJob = (id, u) => {
-    setJobs(p => { const old=p.find(j=>j.id===id);const updated = p.map(j => j.id===id ? {...j,...u} : j); const job = updated.find(j=>j.id===id); if(job){db.saveJob(job);const skip=new Set(["activities","docStatuses"]);const changes=Object.keys(u).filter(k=>!skip.has(k)&&String(old?.[k])!==String(u[k]));if(changes.length>0){const log={time:new Date().toISOString(),type:"edit",entity:"job",entityId:id,fields:changes.map(k=>({field:k,from:old?.[k],to:u[k]}))};auditLogRef.current=[log,...auditLogRef.current].slice(0,500);setTimeout(()=>setAuditLog([...auditLogRef.current]),0)}} return updated; });
+    setJobs(p => { const old=p.find(j=>j.id===id);const updated = p.map(j => j.id===id ? {...j,...u} : j); const job = updated.find(j=>j.id===id); if(job){const skip=new Set(["activities","docStatuses","auditTrail"]);const changes=Object.keys(u).filter(k=>!skip.has(k)&&String(old?.[k])!==String(u[k]));if(changes.length>0){const log={time:new Date().toISOString(),type:"edit",entity:"job",entityId:id,fields:changes.map(k=>({field:k,from:old?.[k],to:u[k]}))};const trail=[log,...(job.auditTrail||[])].slice(0,200);job.auditTrail=trail}db.saveJob(job)} return updated; });
   };
   const addJob = (job) => {
     setJobs(p => [...p, job]);
@@ -370,7 +366,7 @@ export default function MidwestAIOS() {
     {id:"qbsetup",label:"QuickBooks",icon:"settings"},
   ];
 
-  const ctx = {jobs,setJobs,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,setPage:p=>{setPage(p);setMobileMenuOpen(false)},brainQuery,setBrainQuery,brainLoading,setBrainLoading,qbConfig,setQbConfig,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter,auditLog,pendingCommPreview,setPendingCommPreview};
+  const ctx = {jobs,setJobs,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,setPage:p=>{setPage(p);setMobileMenuOpen(false)},brainQuery,setBrainQuery,brainLoading,setBrainLoading,qbConfig,setQbConfig,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter,pendingCommPreview,setPendingCommPreview};
 
   if (!appReady) return (
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",width:"100vw",background:"#0a0a0a",fontFamily:"'Satoshi',sans-serif"}}>
@@ -646,7 +642,7 @@ function DiscInput({initial,onCommit,style}){
   return <input type="number" value={val} onClick={e=>e.stopPropagation()} onMouseDown={e=>e.stopPropagation()} onChange={e=>{setVal(e.target.value);const pct=parseFloat(e.target.value);if(!isNaN(pct))onCommit(pct)}} style={style} placeholder="0" min="0" max="100" step="1"/>;
 }
 function JobDetail({job,ctx}){
-  const {getJobFinancials,getJobItems,getItemStatus,vendors,customers,reps,updateJob,addJob,addLineItem,updateLineItem,deleteLineItem,deleteJob,setSelectedJob,notify,lineItems,jobs,triggerPrint,updateVendor,auditLog}=ctx;
+  const {getJobFinancials,getJobItems,getItemStatus,vendors,customers,reps,updateJob,addJob,addLineItem,updateLineItem,deleteLineItem,deleteJob,setSelectedJob,notify,lineItems,jobs,triggerPrint,updateVendor}=ctx;
   const f=getJobFinancials(job.id);
   const items=getJobItems(job.id);
   const customer=customers.find(c=>c.id===job.customer);
@@ -765,7 +761,7 @@ function JobDetail({job,ctx}){
 
 
     {/* --- AUDIT TRAIL ---------------------------------------- */}
-    {(()=>{const jobAudit=auditLog.filter(l=>l.entityId===job.id||items.some(i=>i.id===l.entityId));return jobAudit.length>0?<Card style={{marginTop:24,marginBottom:8}}><details><summary style={{fontSize:14,fontWeight:700,color:"#a78bfa",cursor:"pointer"}}>Audit Trail ({jobAudit.length} changes)</summary><div style={{maxHeight:250,overflow:"auto",marginTop:8}}>{jobAudit.map((log,idx)=><div key={idx} style={{padding:"6px 0",borderBottom:"1px solid #1a1a1a",fontSize:12}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:2}}><span style={{color:"#a78bfa"}}>{log.entity==="job"?"Job":"Line Item"} edited</span><span style={{color:"#555"}}>{new Date(log.time).toLocaleString()}</span></div>{log.fields.map((f,fi)=><div key={fi} style={{color:"#a3a3a3",paddingLeft:12}}><span style={{color:"#e5e5e5"}}>{f.field}</span>: <span style={{color:"#f87171"}}>{String(f.from===undefined?"--":f.from).slice(0,40)}</span> &rarr; <span style={{color:"#34d399"}}>{String(f.to===undefined?"--":f.to).slice(0,40)}</span></div>)}</div>)}</div></details></Card>:null})()}
+    {(()=>{const jobAudit=job.auditTrail||[];return jobAudit.length>0?<Card style={{marginTop:24,marginBottom:8}}><details><summary style={{fontSize:14,fontWeight:700,color:"#a78bfa",cursor:"pointer"}}>Audit Trail ({jobAudit.length} changes)</summary><div style={{maxHeight:250,overflow:"auto",marginTop:8}}>{jobAudit.map((log,idx)=><div key={idx} style={{padding:"6px 0",borderBottom:"1px solid #1a1a1a",fontSize:12}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:2}}><span style={{color:"#a78bfa"}}>{log.entity==="job"?"Job":"Line Item"+(log.desc?" ("+log.desc+")":"")} edited</span><span style={{color:"#555"}}>{new Date(log.time).toLocaleString()}</span></div>{log.fields.map((f,fi)=><div key={fi} style={{color:"#a3a3a3",paddingLeft:12}}><span style={{color:"#e5e5e5"}}>{f.field}</span>: <span style={{color:"#f87171"}}>{String(f.from===undefined?"--":f.from).slice(0,40)}</span> &rarr; <span style={{color:"#34d399"}}>{String(f.to===undefined?"--":f.to).slice(0,40)}</span></div>)}</div>)}</div></details></Card>:null})()}
 
     {/* --- ACTIVITY FEED ---------------------------------------- */}
     <Card style={{marginTop:32}}>
