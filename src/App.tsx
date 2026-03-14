@@ -962,7 +962,7 @@ function DocumentsPage({jobs,lineItems,vendors,customers,reps,getJobItems,getJob
 
     const docTitle=isPO?"Purchase Order":isInvoice?"Invoice":isQuote?"Quote":"Commission Statement";
     triggerPrint(docTitle+" - "+(doc.data.docNum||job.name||""),html);
-    if(doc.data.docNum) setDocStatus(doc.data.docNum,'drafted');
+    if(doc.data.docNum && !docStatuses[doc.data.docNum]) setDocStatus(doc.data.docNum,'drafted');
   };
 
   const pushToQB = async (doc) => {
