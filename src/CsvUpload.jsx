@@ -1,11 +1,11 @@
 import { useState, useRef } from 'react';
 
-// ═══════════════════════════════════════════════════════════════
+// âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 // CSV / EXCEL DATA IMPORT
 // Parses CSV/TSV, auto-maps columns, previews data, bulk inserts
-// ═══════════════════════════════════════════════════════════════
+// âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 
-const inputStyle = {width:"100%",padding:"8px 12px",background:"#1a1d27",border:"1px solid #2a2d37",borderRadius:6,color:"#e8e6e3",fontSize:13,outline:"none",fontFamily:"inherit"};
+const inputStyle = {width:"100%",padding:"8px 12px",background:"#222222",border:"1px solid #333333",borderRadius:6,color:"#e5e5e5",fontSize:13,outline:"none",fontFamily:"inherit"};
 
 // Parse CSV text into array of objects
 function parseCSV(text) {
@@ -169,7 +169,7 @@ export default function CsvUploadPage({ vendors, customers, reps, jobs, lineItem
     });
 
     if (rows.length === 0) {
-      notify('No valid rows to import — check required fields', 'error');
+      notify('No valid rows to import â check required fields', 'error');
       setImporting(false);
       return;
     }
@@ -231,15 +231,15 @@ export default function CsvUploadPage({ vendors, customers, reps, jobs, lineItem
 
   const reset = () => { setStep('select'); setCsvData({ headers: [], rows: [] }); setColumnMap({}); setImportResult(null); if (fileRef.current) fileRef.current.value = ''; };
 
-  const cardStyle = { background: "#12141b", border: "1px solid #1e2130", borderRadius: 12, padding: 20 };
-  const goldBtn = { padding: "10px 20px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: "inherit", background: "linear-gradient(135deg,#c8a25c,#b8923c)", color: "#0a0c10" };
-  const secBtn = { ...goldBtn, background: "#1e2130", color: "#e8e6e3", border: "1px solid #2a2d37" };
+  const cardStyle = { background: "#111111", border: "1px solid #1a1a1a", borderRadius: 12, padding: 20 };
+  const goldBtn = { padding: "10px 20px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, fontFamily: "inherit", background: "linear-gradient(135deg,#2dd4bf,#14b8a6)", color: "#0a0a0a" };
+  const secBtn = { ...goldBtn, background: "#1a1a1a", color: "#e5e5e5", border: "1px solid #333333" };
 
   return (
     <div style={{ animation: "fadeUp 0.4s" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 20 }}>
         <div>
-          <h2 style={{ fontSize: 22, fontWeight: 700, color: "#f5f5f4", marginBottom: 4, letterSpacing: -0.5 }}>Data Import</h2>
+          <h2 style={{ fontSize: 22, fontWeight: 700, color: "#e5e5e5", marginBottom: 4, letterSpacing: -0.5 }}>Data Import</h2>
           <p style={{ fontSize: 13, color: "#6b7280" }}>Upload CSV or Excel exports to bulk-import historical data</p>
         </div>
         {step !== 'select' && <button onClick={reset} style={secBtn}>Start Over</button>}
@@ -248,39 +248,39 @@ export default function CsvUploadPage({ vendors, customers, reps, jobs, lineItem
       {/* STEP 1: Select data type and upload file */}
       {step === 'select' && (
         <div style={cardStyle}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: "#f5f5f4", marginBottom: 16 }}>Step 1: Choose data type and upload file</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: "#e5e5e5", marginBottom: 16 }}>Step 1: Choose data type and upload file</div>
           
           <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, marginBottom: 20 }}>
             {[['vendors','Vendors'],['customers','Customers'],['reps','Sales Reps'],['jobs','Jobs'],['lineItems','Line Items']].map(([key, label]) => (
               <button key={key} onClick={() => setTargetType(key)} style={{
                 padding: "12px 8px", borderRadius: 8, border: "none", cursor: "pointer",
-                background: targetType === key ? "rgba(200,162,92,0.15)" : "#1a1d27",
-                color: targetType === key ? "#c8a25c" : "#9ca3af",
+                background: targetType === key ? "rgba(200,162,92,0.15)" : "#222222",
+                color: targetType === key ? "#2dd4bf" : "#9ca3af",
                 fontSize: 13, fontWeight: targetType === key ? 700 : 400, fontFamily: "inherit",
-                border: targetType === key ? "1px solid #c8a25c44" : "1px solid #2a2d37",
+                border: targetType === key ? "1px solid #2dd4bf44" : "1px solid #333333",
               }}>{label}</button>
             ))}
           </div>
 
           <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 12 }}>
-            Expected columns for <strong style={{ color: "#c8a25c" }}>{targetType}</strong>: {COLUMN_MAPS[targetType]?.labels.join(', ')}
+            Expected columns for <strong style={{ color: "#2dd4bf" }}>{targetType}</strong>: {COLUMN_MAPS[targetType]?.labels.join(', ')}
           </div>
 
           <div style={{
-            border: "2px dashed #2a2d37", borderRadius: 12, padding: 40, textAlign: "center",
+            border: "2px dashed #333333", borderRadius: 12, padding: 40, textAlign: "center",
             cursor: "pointer", transition: "border-color 0.2s",
           }} onClick={() => fileRef.current?.click()}
-             onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = "#c8a25c"; }}
-             onDragLeave={e => { e.currentTarget.style.borderColor = "#2a2d37"; }}
-             onDrop={e => { e.preventDefault(); e.currentTarget.style.borderColor = "#2a2d37"; const file = e.dataTransfer.files[0]; if (file) { const dt = new DataTransfer(); dt.items.add(file); fileRef.current.files = dt.files; handleFile({ target: { files: [file] } }); } }}>
-            <div style={{ fontSize: 36, marginBottom: 8, opacity: 0.3 }}>📄</div>
+             onDragOver={e => { e.preventDefault(); e.currentTarget.style.borderColor = "#2dd4bf"; }}
+             onDragLeave={e => { e.currentTarget.style.borderColor = "#333333"; }}
+             onDrop={e => { e.preventDefault(); e.currentTarget.style.borderColor = "#333333"; const file = e.dataTransfer.files[0]; if (file) { const dt = new DataTransfer(); dt.items.add(file); fileRef.current.files = dt.files; handleFile({ target: { files: [file] } }); } }}>
+            <div style={{ fontSize: 36, marginBottom: 8, opacity: 0.3 }}>ð</div>
             <div style={{ fontSize: 14, color: "#9ca3af", marginBottom: 4 }}>Drop a CSV file here or click to browse</div>
             <div style={{ fontSize: 12, color: "#4b5563" }}>Supports .csv and .tsv files. First row must be column headers.</div>
             <input ref={fileRef} type="file" accept=".csv,.tsv,.txt" onChange={handleFile} style={{ display: "none" }} />
           </div>
 
-          <div style={{ marginTop: 16, padding: 12, background: "#1a1d27", borderRadius: 8, fontSize: 12, color: "#6b7280" }}>
-            <strong style={{ color: "#c8a25c" }}>Tip for QuickBooks data:</strong> In QuickBooks, go to Reports → export any report as CSV. Common exports: Customer Contact List, Vendor Contact List, Sales by Rep, Items list. The system will auto-detect column names and map them.
+          <div style={{ marginTop: 16, padding: 12, background: "#222222", borderRadius: 8, fontSize: 12, color: "#6b7280" }}>
+            <strong style={{ color: "#2dd4bf" }}>Tip for QuickBooks data:</strong> In QuickBooks, go to Reports â export any report as CSV. Common exports: Customer Contact List, Vendor Contact List, Sales by Rep, Items list. The system will auto-detect column names and map them.
           </div>
         </div>
       )}
@@ -288,17 +288,17 @@ export default function CsvUploadPage({ vendors, customers, reps, jobs, lineItem
       {/* STEP 2: Map columns */}
       {step === 'map' && (
         <div style={cardStyle}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: "#f5f5f4", marginBottom: 4 }}>Step 2: Map your columns</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: "#e5e5e5", marginBottom: 4 }}>Step 2: Map your columns</div>
           <div style={{ fontSize: 13, color: "#6b7280", marginBottom: 16 }}>{csvData.rows.length} rows found. Map your CSV columns to the system fields below. The system auto-detected what it could.</div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 20 }}>
             {COLUMN_MAPS[targetType].fields.map((field, i) => (
               <div key={field} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <div style={{ width: 140, fontSize: 12, color: COLUMN_MAPS[targetType].required.includes(field) ? "#c8a25c" : "#9ca3af", fontWeight: 500 }}>
+                <div style={{ width: 140, fontSize: 12, color: COLUMN_MAPS[targetType].required.includes(field) ? "#2dd4bf" : "#9ca3af", fontWeight: 500 }}>
                   {COLUMN_MAPS[targetType].labels[i]} {COLUMN_MAPS[targetType].required.includes(field) && '*'}
                 </div>
                 <select value={columnMap[field] || ''} onChange={e => setColumnMap(prev => ({ ...prev, [field]: e.target.value }))} style={{ ...inputStyle, flex: 1 }}>
-                  <option value="">— skip —</option>
+                  <option value="">â skip â</option>
                   {csvData.headers.map(h => <option key={h} value={h}>{h}</option>)}
                 </select>
               </div>
@@ -306,13 +306,13 @@ export default function CsvUploadPage({ vendors, customers, reps, jobs, lineItem
           </div>
 
           {/* Preview */}
-          <div style={{ fontSize: 14, fontWeight: 700, color: "#f5f5f4", marginBottom: 8 }}>Preview (first 5 rows)</div>
-          <div style={{ overflowX: "auto", borderRadius: 8, border: "1px solid #1e2130" }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "#e5e5e5", marginBottom: 8 }}>Preview (first 5 rows)</div>
+          <div style={{ overflowX: "auto", borderRadius: 8, border: "1px solid #1a1a1a" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
               <thead>
-                <tr style={{ background: "#12141b" }}>
+                <tr style={{ background: "#111111" }}>
                   {COLUMN_MAPS[targetType].fields.filter(f => columnMap[f]).map(f => (
-                    <th key={f} style={{ padding: "6px 10px", textAlign: "left", color: "#6b7280", borderBottom: "1px solid #1e2130", fontSize: 10, textTransform: "uppercase" }}>{f}</th>
+                    <th key={f} style={{ padding: "6px 10px", textAlign: "left", color: "#6b7280", borderBottom: "1px solid #1a1a1a", fontSize: 10, textTransform: "uppercase" }}>{f}</th>
                   ))}
                 </tr>
               </thead>
@@ -320,7 +320,7 @@ export default function CsvUploadPage({ vendors, customers, reps, jobs, lineItem
                 {csvData.rows.slice(0, 5).map((row, ri) => (
                   <tr key={ri}>
                     {COLUMN_MAPS[targetType].fields.filter(f => columnMap[f]).map(f => (
-                      <td key={f} style={{ padding: "6px 10px", borderBottom: "1px solid #1a1d2720", color: "#d1d5db" }}>
+                      <td key={f} style={{ padding: "6px 10px", borderBottom: "1px solid #22222220", color: "#d1d5db" }}>
                         {row[columnMap[f]] || ''}
                       </td>
                     ))}
@@ -343,9 +343,9 @@ export default function CsvUploadPage({ vendors, customers, reps, jobs, lineItem
       {step === 'done' && importResult && (
         <div style={cardStyle}>
           <div style={{ fontSize: 48, textAlign: "center", marginBottom: 12 }}>
-            {importResult.errors === 0 ? '✅' : '⚠️'}
+            {importResult.errors === 0 ? 'â' : 'â ï¸'}
           </div>
-          <div style={{ fontSize: 20, fontWeight: 700, color: "#f5f5f4", textAlign: "center", marginBottom: 8 }}>
+          <div style={{ fontSize: 20, fontWeight: 700, color: "#e5e5e5", textAlign: "center", marginBottom: 8 }}>
             Import Complete
           </div>
           <div style={{ fontSize: 14, color: "#6b7280", textAlign: "center", marginBottom: 20 }}>
@@ -360,11 +360,11 @@ export default function CsvUploadPage({ vendors, customers, reps, jobs, lineItem
 
       {/* Current data counts */}
       <div style={{ ...cardStyle, marginTop: 16 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: "#f5f5f4", marginBottom: 12 }}>Current Database</div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "#e5e5e5", marginBottom: 12 }}>Current Database</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12 }}>
           {[['Vendors', vendors.length],['Customers', customers.length],['Sales Reps', reps.length],['Jobs', jobs.length],['Line Items', lineItems.length]].map(([label, count]) => (
-            <div key={label} style={{ textAlign: "center", padding: 12, background: "#1a1d27", borderRadius: 8 }}>
-              <div style={{ fontSize: 24, fontWeight: 700, color: "#c8a25c", fontFamily: "'DM Mono', monospace" }}>{count}</div>
+            <div key={label} style={{ textAlign: "center", padding: 12, background: "#222222", borderRadius: 8 }}>
+              <div style={{ fontSize: 24, fontWeight: 700, color: "#2dd4bf", fontFamily: "'DM Mono', monospace" }}>{count}</div>
               <div style={{ fontSize: 11, color: "#6b7280" }}>{label}</div>
             </div>
           ))}
