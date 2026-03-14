@@ -119,25 +119,31 @@ import CsvUploadPage from './CsvUpload';
 // --- PDF EXPORT: zero dependencies, works everywhere ---------
 function usePrintOverlay() {
   const triggerPrint = (title, html) => {
-    const w = window.open('', '_blank');
-    if (!w) { alert('Please allow popups for PDF export'); return; }
-    w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>' + title + '</title><style>' +
-      'body{font-family:Satoshi,Arial,sans-serif;padding:40px;color:#111;max-width:760px;margin:0 auto}' +
-      'h2{font-size:14px;color:#666;margin:16px 0 8px}' +
-      'table{width:100%;border-collapse:collapse;margin:12px 0;font-size:12px}' +
-      'th{background:#f5f5f4;padding:8px;text-align:left;border-bottom:2px solid #ddd;font-size:11px;text-transform:uppercase;color:#666}' +
-      'td{padding:8px;border-bottom:1px solid #eee}' +
-      '.total-row td{border-top:2px solid #2dd4bf;font-weight:bold;font-size:14px}' +
-      '.hdr{display:flex;justify-content:space-between;margin-bottom:24px}' +
-      '.hdr div{font-size:12px;color:#666}' +
-      '.co{font-size:18px;font-weight:bold;color:#111}' +
-      '.gold{color:#b8923c}' +
-      '</style></head><body>' +
-      html +
-      '</body></html>');
-    w.document.close();
-    w.focus();
-    setTimeout(()=>{w.print();},300);
+    const container = document.createElement('div');
+    container.style.cssText = 'position:fixed;left:-9999px;top:0;width:760px;font-family:Satoshi,Arial,sans-serif;padding:40px;color:#111;background:#fff';
+    container.innerHTML = '<style>h2{font-size:14px;color:#666;margin:16px 0 8px}table{width:100%;border-collapse:collapse;margin:12px 0;font-size:12px}th{background:#f5f5f4;padding:8px;text-align:left;border-bottom:2px solid #ddd;font-size:11px;text-transform:uppercase;color:#666}td{padding:8px;border-bottom:1px solid #eee}.total-row td{border-top:2px solid #2dd4bf;font-weight:bold;font-size:14px}.hdr{display:flex;justify-content:space-between;margin-bottom:24px}.hdr div{font-size:12px;color:#666}.co{font-size:18px;font-weight:bold;color:#111}.gold{color:#b8923c}</style>' + html;
+    document.body.appendChild(container);
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+    script.onload = () => {
+      window.html2pdf().set({
+        margin: [10, 10, 10, 10],
+        filename: (title || 'document').replace(/[^a-zA-Z0-9-_ ]/g, '') + '.pdf',
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, letterRendering: true },
+        jsPDF: { unit: 'mm', format: 'letter', orientation: 'portrait' },
+        pagebreak: { mode: ['css', 'legacy'], before: '.page-break-before' }
+      }).from(container).save().then(() => {
+        document.body.removeChild(container);
+      }).catch(() => {
+        document.body.removeChild(container);
+      });
+    };
+    script.onerror = () => {
+      document.body.removeChild(container);
+      alert('PDF library failed to load. Please check your internet connection.');
+    };
+    document.head.appendChild(script);
   };
   const PrintOverlay = () => null;
   return { triggerPrint, PrintOverlay };
@@ -644,12 +650,12 @@ function JobDetail({job,ctx}){
   const coverHtml=hd+'<div style="text-align:center;padding:80px 0 40px"><div style="font-size:28px;font-weight:300;color:#888;letter-spacing:1;margin-bottom:8px">Job Packet</div><div style="font-size:24px;font-weight:700;margin-bottom:12px">'+job.name+'</div><div style="font-size:14px;color:#888;margin-bottom:24px">'+(customer2?.name||'')+'</div><div style="display:flex;justify-content:center;gap:40px;font-size:12px;color:#888"><div><strong>Terms:</strong> '+(job.terms||'Net 30')+'</div><div><strong>Date:</strong> '+today+'</div>'+(job.poNumber?'<div><strong>PO#:</strong> '+job.poNumber+'</div>':'')+'</div>'+(job.shipTo?'<div style="margin-top:12px;font-size:12px;color:#888"><strong>Ship To:</strong> '+job.shipTo+'</div>':'')+(job.billTo?'<div style="font-size:12px;color:#888"><strong>Bill To:</strong> '+job.billTo+'</div>':'')+'</div>';
   const quoteRows=allItems.map(i=>{const sh=i.shippingPerUnit||0;const ins=i.installPerUnit||0;const each=(i.unitPrice||0)+sh+ins;return '<tr><td style="'+tdS+'">'+(i.tag||'')+'</td><td style="'+tdS+'">'+(i.manufacturer||vendors.find(v=>v.id===i.vendor)?.name||'')+'</td><td style="'+tdS+'">'+(i.modelNumber||'')+'</td><td style="'+tdS+'">'+i.description+'</td><td style="'+tdS+'">'+(i.color||'')+'</td><td style="'+tdS+';text-align:right">'+i.qtyOrdered+'</td><td style="'+tdS+';text-align:right">'+(sh>0?'$'+sh.toFixed(2):'')+'</td><td style="'+tdS+';text-align:right">'+(ins>0?'$'+ins.toFixed(2):'')+'</td><td style="'+tdS+';text-align:right;font-weight:600">$'+each.toFixed(2)+'</td><td style="'+tdS+';text-align:right;font-weight:700">$'+(each*i.qtyOrdered).toFixed(2)+'</td></tr>'}).join('');
   const quoteHtml=hd+'<div style="font-size:24px;font-weight:300;color:#888;letter-spacing:1;margin-bottom:16px">Project Quote</div><div style="display:flex;gap:40px;margin-bottom:16px"><div style="flex:1"><div style="'+lbl+'">Prepared For</div><div style="font-size:13px;line-height:1.6">'+(job.billTo||customer2?.name||'')+(customer2?.address?'<br>'+customer2.address:'')+'</div></div><div style="flex:1"><div style="'+lbl+'">Ship To</div><div style="font-size:13px;line-height:1.6">'+(job.shipTo||customer2?.name||'')+'</div></div><div style="text-align:right"><div style="font-size:12px;color:#888">Date: '+today+'</div><div style="font-size:12px;color:#888">Terms: '+(job.terms||'Net 30')+'</div></div></div><table style="'+tS+'"><thead><tr><th style="'+thS+';text-align:left">Tag</th><th style="'+thS+';text-align:left">Manuf.</th><th style="'+thS+';text-align:left">Model #</th><th style="'+thS+';text-align:left">Description</th><th style="'+thS+';text-align:left">Color</th><th style="'+thS+';text-align:right">Qty</th><th style="'+thS+';text-align:right">Ship/Ea</th><th style="'+thS+';text-align:right">Inst/Ea</th><th style="'+thS+';text-align:right">Your Price</th><th style="'+thS+';text-align:right">Extended</th></tr></thead><tbody>'+quoteRows+'</tbody></table><div style="margin-top:12px;text-align:right;font-size:16px;font-weight:700">TOTAL: $'+invTotal.toFixed(2)+'</div>';
-  const poSections=jobPOs.map(po=>{const vendObj=po.vendor||{};const poTotal=po.items.reduce((s,i)=>s+i.unitCost*i.qtyOrdered,0);return '<div style="'+lbl+';margin-top:24px;font-size:14px">Purchase Order -- '+(vendObj.name||'')+'</div><div style="display:flex;gap:40px;margin:12px 0"><div style="flex:1"><div style="'+lbl+'">Vendor</div><div style="font-size:13px;line-height:1.6">'+(vendObj.name||'')+(vendObj.address?'<br>'+vendObj.address:'')+'</div></div><div style="flex:1"><div style="'+lbl+'">Ship To</div><div style="font-size:13px">'+(job.shipTo||customer2?.name||'')+'</div></div></div>'+(job.shipVia?'<div style="margin-bottom:12px;font-size:12px;color:#888"><strong>Ship Via:</strong> '+job.shipVia+'</div>':'')+(job.orderNotes?'<div style="margin-bottom:12px;font-size:12px;color:#888;white-space:pre-wrap"><strong>Notes:</strong> '+job.orderNotes+'</div>':'')+'<table style="'+tS+'"><thead><tr><th style="'+thS+';text-align:left">Description</th><th style="'+thS+';text-align:right">Qty</th><th style="'+thS+';text-align:right">Rate</th><th style="'+thS+';text-align:right">Amount</th></tr></thead><tbody>'+po.items.map(i=>'<tr><td style="'+tdS+';white-space:pre-wrap">'+(i.modelNumber?i.modelNumber+'\\n':'')+(i.description||'')+(i.color?'\\n'+i.color:'')+'</td><td style="'+tdS+';text-align:right">'+i.qtyOrdered+'</td><td style="'+tdS+';text-align:right">$'+i.unitCost.toFixed(2)+'</td><td style="'+tdS+';text-align:right;font-weight:600">$'+(i.unitCost*i.qtyOrdered).toFixed(2)+'</td></tr>').join('')+'</tbody></table><div style="text-align:right;margin-top:8px;font-size:14px;font-weight:700">PO Total: $'+poTotal.toFixed(2)+'</div>'}).join('<div style="page-break-before:always"></div>');
+  const poSections=jobPOs.map(po=>{const vendObj=po.vendor||{};const poTotal=po.items.reduce((s,i)=>s+i.unitCost*i.qtyOrdered,0);return '<div style="'+lbl+';margin-top:24px;font-size:14px">Purchase Order -- '+(vendObj.name||'')+'</div><div style="display:flex;gap:40px;margin:12px 0"><div style="flex:1"><div style="'+lbl+'">Vendor</div><div style="font-size:13px;line-height:1.6">'+(vendObj.name||'')+(vendObj.address?'<br>'+vendObj.address:'')+'</div></div><div style="flex:1"><div style="'+lbl+'">Ship To</div><div style="font-size:13px">'+(job.shipTo||customer2?.name||'')+'</div></div></div>'+(job.shipVia?'<div style="margin-bottom:12px;font-size:12px;color:#888"><strong>Ship Via:</strong> '+job.shipVia+'</div>':'')+(job.orderNotes?'<div style="margin-bottom:12px;font-size:12px;color:#888;white-space:pre-wrap"><strong>Notes:</strong> '+job.orderNotes+'</div>':'')+'<table style="'+tS+'"><thead><tr><th style="'+thS+';text-align:left">Description</th><th style="'+thS+';text-align:right">Qty</th><th style="'+thS+';text-align:right">Rate</th><th style="'+thS+';text-align:right">Amount</th></tr></thead><tbody>'+po.items.map(i=>'<tr><td style="'+tdS+';white-space:pre-wrap">'+(i.modelNumber?i.modelNumber+'\\n':'')+(i.description||'')+(i.color?'\\n'+i.color:'')+'</td><td style="'+tdS+';text-align:right">'+i.qtyOrdered+'</td><td style="'+tdS+';text-align:right">$'+i.unitCost.toFixed(2)+'</td><td style="'+tdS+';text-align:right;font-weight:600">$'+(i.unitCost*i.qtyOrdered).toFixed(2)+'</td></tr>').join('')+'</tbody></table><div style="text-align:right;margin-top:8px;font-size:14px;font-weight:700">PO Total: $'+poTotal.toFixed(2)+'</div>'}).join('<div class="page-break-before" style="page-break-before:always"></div>');
   const deliveryRows=allItems.map(i=>'<tr><td style="'+tdS+'">'+(i.tag||'')+'</td><td style="'+tdS+'">'+(i.manufacturer||vendors.find(v=>v.id===i.vendor)?.name||'')+'</td><td style="'+tdS+'">'+i.description+'</td><td style="'+tdS+';text-align:right">'+i.qtyOrdered+'</td><td style="'+tdS+';text-align:right">'+i.qtyReceived+'</td><td style="'+tdS+';text-align:right">'+(i.qtyOrdered-i.qtyReceived)+'</td><td style="'+tdS+';text-align:center;color:'+(i.qtyReceived>=i.qtyOrdered?'#059669':'#d97706')+'">'+(i.qtyReceived>=i.qtyOrdered?'Complete':'Pending')+'</td></tr>').join('');
   const deliveryHtml='<div style="font-size:24px;font-weight:300;color:#888;letter-spacing:1;margin-bottom:16px">Delivery Status</div><table style="'+tS+'"><thead><tr><th style="'+thS+';text-align:left">Tag</th><th style="'+thS+';text-align:left">Vendor</th><th style="'+thS+';text-align:left">Item</th><th style="'+thS+';text-align:right">Ordered</th><th style="'+thS+';text-align:right">Received</th><th style="'+thS+';text-align:right">Outstanding</th><th style="'+thS+';text-align:center">Status</th></tr></thead><tbody>'+deliveryRows+'</tbody></table>';
   const summaryHtml='<div style="font-size:24px;font-weight:300;color:#888;letter-spacing:1;margin:32px 0 16px">Financial Summary</div><table style="'+tS+'"><tbody><tr><td style="'+tdS+';font-weight:600">Total Revenue</td><td style="'+tdS+';text-align:right;font-weight:700;font-size:14px">$'+invTotal.toFixed(2)+'</td></tr><tr><td style="'+tdS+'">Total Cost</td><td style="'+tdS+';text-align:right">$'+costTotal.toFixed(2)+'</td></tr><tr><td style="'+tdS+';color:#059669">Gross Profit</td><td style="'+tdS+';text-align:right;color:#059669;font-weight:700">$'+(invTotal-costTotal).toFixed(2)+'</td></tr><tr><td style="'+tdS+'">Margin</td><td style="'+tdS+';text-align:right">'+(invTotal>0?((1-costTotal/invTotal)*100).toFixed(1):0)+'%</td></tr></tbody></table>';
 
-  triggerPrint('Job Packet - '+job.name,coverHtml+'<div style="page-break-before:always"></div>'+quoteHtml+'<div style="page-break-before:always"></div>'+hd+poSections+'<div style="page-break-before:always"></div>'+hd+deliveryHtml+summaryHtml)}} style={{fontSize:12,padding:"6px 10px"}}><I n="download" s={12}/> Job Packet</Btn></div>
+  triggerPrint('Job Packet - '+job.name,coverHtml+'<div class="page-break-before" style="page-break-before:always"></div>'+quoteHtml+'<div class="page-break-before" style="page-break-before:always"></div>'+hd+poSections+'<div class="page-break-before" style="page-break-before:always"></div>'+hd+deliveryHtml+summaryHtml)}} style={{fontSize:12,padding:"6px 10px"}}><I n="download" s={12}/> Job Packet</Btn></div>
       </div>
 
     </div>
