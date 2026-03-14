@@ -601,7 +601,7 @@ function JobsPage(ctx){
       </div>)}
     </div>}
   </div>;
-}
+
 
 // Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂ JOB DETAIL Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
 function JobDetail({job,ctx}){
@@ -663,8 +663,8 @@ function JobDetail({job,ctx}){
 
     {addingItem&&<Card style={{marginBottom:20,border:"1px solid #05966930"}}><div style={{fontSize:14,fontWeight:700,marginBottom:12,color:"#34d399"}}>Add Line Item</div><div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 1fr",gap:8,marginBottom:12}}><div><label style={{fontSize:10,color:"#525252",display:"block",marginBottom:3}}>Description</label><input value={newItem.description} onChange={e=>setNewItem({...newItem,description:e.target.value})} style={{...inputStyle,fontSize:12}}/></div><div><label style={{fontSize:10,color:"#525252",display:"block",marginBottom:3}}>Vendor</label><select value={newItem.vendor} onChange={e=>{const vid=e.target.value;const calc=autoCalcFromList(parseFloat(newItem.listPrice)||0,vid);setNewItem({...newItem,vendor:vid,...calc})}} style={{...inputStyle,fontSize:12}}>{vendors.map(v=><option key={v.id} value={v.id}>{v.name}{v.discountRate?" ("+((v.discountRate*100).toFixed(0))+"% off)":""}</option>)}</select></div><div><label style={{fontSize:10,color:"#525252",display:"block",marginBottom:3}}>List Price</label><input type="number" value={newItem.listPrice} onChange={e=>{const lp=parseFloat(e.target.value)||0;const calc=autoCalcFromList(lp,newItem.vendor);setNewItem({...newItem,listPrice:lp,...calc})}} style={{...inputStyle,fontSize:12}} placeholder="Enter list price"/></div><div><label style={{fontSize:10,color:"#34d399",display:"block",marginBottom:3}}>Cost (auto)</label><input type="number" value={newItem.unitCost} onChange={e=>setNewItem({...newItem,unitCost:parseFloat(e.target.value)||0})} style={{...inputStyle,fontSize:12,borderColor:"#05966930"}}/></div><div><label style={{fontSize:10,color:"#2dd4bf",display:"block",marginBottom:3}}>Sell Price</label><input type="number" value={newItem.unitPrice} onChange={e=>setNewItem({...newItem,unitPrice:parseFloat(e.target.value)||0})} style={{...inputStyle,fontSize:12,borderColor:"#2dd4bf30"}}/></div><div><label style={{fontSize:10,color:"#525252",display:"block",marginBottom:3}}>Qty Ordered</label><input type="number" value={newItem.qtyOrdered} onChange={e=>setNewItem({...newItem,qtyOrdered:e.target.value})} style={{...inputStyle,fontSize:12}}/></div></div>{newItem.listPrice>0&&<div style={{fontSize:11,color:"#34d399",marginBottom:8}}>Vendor discount: {((vendors.find(v=>v.id===newItem.vendor)?.discountRate||0)*100).toFixed(0)}% off list Ã¢ÂÂ Cost: {fmt(newItem.unitCost)} Ã¢ÂÂ Sell: {fmt(newItem.unitPrice)} Ã¢ÂÂ Margin: {newItem.unitPrice>0?((1-newItem.unitCost/newItem.unitPrice)*100).toFixed(1):0}%</div>}<div style={{display:"flex",gap:8}}><Btn onClick={saveNewItem}>Add Item</Btn><Btn v="secondary" onClick={()=>setAddingItem(false)}>Cancel</Btn></div></Card>}
 
-    </>
-    }{/* LINE ITEMS */}<div style={{marginTop:32}}><Header title="Line Items" sub="Click any cell value to edit inline Ã¢ÂÂ changes propagate across all views"/>
+
+    {/* LINE ITEMS */}<div style={{marginTop:32}}><Header title="Line Items" sub="Click any cell value to edit inline Ã¢ÂÂ changes propagate across all views"/>
     <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch",borderRadius:10,border:"1px solid #222222"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:800}}><thead><tr style={{background:"#111111"}}>{["Item","Vendor","Unit Cost","Unit Price","Ordered","Received","Invoiced","Status","Line Total",""].map((h,i)=><th key={i} style={{padding:"8px 10px",textAlign:"left",fontWeight:600,color:"#525252",fontSize:10,textTransform:"uppercase",letterSpacing:0.8,borderBottom:"1px solid #222222",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead><tbody>{items.map(item=>{
       const isEditing=editingItem===item.id;
       return <tr key={item.id} style={{borderBottom:"1px solid #1a1d2708"}}>
@@ -680,8 +680,8 @@ function JobDetail({job,ctx}){
         <td style={{padding:"8px 10px"}}><div style={{display:"flex",gap:4}}><Btn v={isEditing?"primary":"ghost"} style={{fontSize:10,padding:"3px 8px"}} onClick={()=>setEditingItem(isEditing?null:item.id)}>{isEditing?"Done":"Edit"}</Btn>{isEditing&&<Btn v="danger" style={{fontSize:10,padding:"3px 8px"}} onClick={()=>{deleteLineItem(item.id);setEditingItem(null);notify("Line item deleted")}}>Del</Btn>}</div></td>
       </tr>})}</tbody></table></div>
 
-    </>
-    }{/* TIMELINE */}<><div style={{marginTop:32}}></div>{/* Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂ JOB TIMELINE Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ */}
+
+    {/* TIMELINE */}<><div style={{marginTop:32}}></div>{/* Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂ JOB TIMELINE Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ */}
     <Card style={{marginTop:24}}>
       <div style={{fontSize:14,fontWeight:700,color:"#e5e5e5",marginBottom:16}}>Job Timeline</div>
       <div style={{display:"flex",alignItems:"center",gap:0,overflow:"auto",padding:"8px 0"}}>
@@ -704,15 +704,15 @@ function JobDetail({job,ctx}){
       {job.paymentStatus!=="paid"&&<div style={{marginTop:12,display:"flex",gap:8}}><Btn v="ghost" style={{fontSize:11}} onClick={()=>{updateJob(job.id,{paymentStatus:"paid",endDate:new Date().toISOString().split("T")[0]});addActivity("Payment received Ã¢ÂÂ marked as paid");notify("Job marked as paid")}}>Mark as Paid</Btn>{job.paymentStatus==="unpaid"&&<Btn v="ghost" style={{fontSize:11}} onClick={()=>{updateJob(job.id,{paymentStatus:"partial"});addActivity("Partial payment received");notify("Payment status: partial")}}>Mark Partial Payment</Btn>}</div>}
     </Card>
 
-    </>
-    }{/* ACTIVITY */}<><div style={{marginTop:32}}></div>{/* Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂ ACTIVITY FEED Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ */}
+
+    {/* ACTIVITY */}<><div style={{marginTop:32}}></div>{/* Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂ ACTIVITY FEED Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ */}
     <Card style={{marginTop:16}}>
       <div style={{fontSize:14,fontWeight:700,color:"#e5e5e5",marginBottom:12}}>Activity Log</div>
       <div style={{display:"flex",gap:8,marginBottom:12}}><input value={activityInput} onChange={e=>setActivityInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&activityInput.trim()){addActivity(activityInput.trim());setActivityInput("")}}} placeholder="Add a note... (press Enter)" style={{...inputStyle,flex:1}}/><Btn onClick={()=>{if(activityInput.trim()){addActivity(activityInput.trim());setActivityInput("")}}}>Add Note</Btn></div>
       <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:300,overflow:"auto"}}>{activities.length===0?<div style={{fontSize:12,color:"#404040",padding:12,textAlign:"center"}}>No activity yet. Add notes, status updates, or reminders.</div>:activities.map(a=><div key={a.id} style={{display:"flex",gap:10,padding:"8px 0",borderBottom:"1px solid #222222"}}><div style={{width:6,height:6,borderRadius:"50%",background:"#2dd4bf",marginTop:6,flexShrink:0}}/><div style={{flex:1}}><div style={{fontSize:12,color:"#a3a3a3"}}>{a.text}</div><div style={{fontSize:10,color:"#404040",marginTop:2}}>{new Date(a.time).toLocaleString()}</div></div></div>)}</div>
     </Card>
-    </>
-    }
+
+
     </div>
   </div>;
 }
