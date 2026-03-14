@@ -171,6 +171,7 @@ function useConfirm() {
 
 export default function MidwestAIOS() {
   const [page, setPage] = useState("dashboard");
+  const [pendingCommPreview, setPendingCommPreview] = useState(null);
   const [jobs, setJobs] = useState(INIT_JOBS);
   const [lineItems, setLineItems] = useState(INIT_LINE_ITEMS);
   const [reps, setReps] = useState(INIT_REPS);
@@ -336,7 +337,7 @@ export default function MidwestAIOS() {
     {id:"qbsetup",label:"QuickBooks",icon:"settings"},
   ];
 
-  const ctx = {jobs,setJobs,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,setPage:p=>{setPage(p);setMobileMenuOpen(false)},brainQuery,setBrainQuery,brainLoading,setBrainLoading,qbConfig,setQbConfig,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter,auditLog};
+  const ctx = {jobs,setJobs,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,setPage:p=>{setPage(p);setMobileMenuOpen(false)},brainQuery,setBrainQuery,brainLoading,setBrainLoading,qbConfig,setQbConfig,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter,auditLog,pendingCommPreview,setPendingCommPreview};
 
   if (!appReady) return (
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",width:"100vw",background:"#0a0a0a",fontFamily:"'Satoshi',sans-serif"}}>
@@ -391,7 +392,7 @@ export default function MidwestAIOS() {
           {page==="dataimport"&&<CsvUploadPage {...ctx} db={db}/>}
           {page==="deliveries"&&<DeliveryPage {...ctx}/>}
           {page==="documents"&&<DocumentsPage {...ctx}/>}
-          {page==="commissions"&&<CommissionsPage {...ctx}/>}
+          {page==="commissions"&&<CommissionsPage {...ctx} onGenerateStatement={doc=>{setPendingCommPreview(doc);}} />}
           {page==="salesportal"&&<SalesPortalPage {...ctx}/>}
           {page==="brain"&&<BrainPage {...ctx}/>}
           {page==="exitready"&&<ExitReadinessPage {...ctx}/>}
@@ -861,8 +862,9 @@ function DeliveryPage({jobs,lineItems,vendors,customers,getItemStatus,getJobItem
 // ===============================================================
 // DOCUMENTS -- Quotes, POs, Invoices, Commission Statements
 // ===============================================================
-function DocumentsPage({jobs,lineItems,vendors,customers,reps,getJobItems,getJobFinancials,updateJob,updateLineItem,notify,qbConfig,setPage,triggerPrint,...ctx}){
+function DocumentsPage({jobs,lineItems,vendors,customers,reps,getJobItems,getJobFinancials,updateJob,updateLineItem,notify,qbConfig,setPage,triggerPrint,pendingCommPreview,setPendingCommPreview,...ctx}){
   const [tab,setTab]=useState("quotes");
+  useEffect(()=>{if(pendingCommPreview){setPreviewDoc(pendingCommPreview);setTab("preview");setPendingCommPreview(null)}},[pendingCommPreview]);
   const [previewDoc,setPreviewDoc]=useState(null);
   const [pushing,setPushing]=useState(false);
   // Doc statuses stored IN each job record in Supabase -- persists across browsers, deploys, cache clears
@@ -1115,7 +1117,7 @@ function DocumentsPage({jobs,lineItems,vendors,customers,reps,getJobItems,getJob
 // ===============================================================
 // COMMISSIONS -- Editable Reps + PDF Export
 // ===============================================================
-function CommissionsPage({jobs,reps,customers,updateRep,addRep,deleteRep,getJobFinancials,notify,triggerPrint}){
+function CommissionsPage({jobs,reps,customers,updateRep,addRep,deleteRep,getJobFinancials,notify,triggerPrint,setPage,onGenerateStatement}){
   const [selectedRep,setSelectedRep]=useState(null);
   const [editingRep,setEditingRep]=useState(null);
   const [editForm,setEditForm]=useState({});
@@ -1127,10 +1129,15 @@ function CommissionsPage({jobs,reps,customers,updateRep,addRep,deleteRep,getJobF
   const handleAddRep=()=>{if(!newRepForm.name)return;addRep({...newRepForm,commissionRate:parseFloat(newRepForm.commissionRate)||0.05});setAddingRep(false);setNewRepForm({name:"",email:"",territory:"",commissionRate:0.05,tier:"Associate"});notify("Sales rep added")};
 
   const exportCommStatement=(rep)=>{
-    const repJobs=jobs.filter(j=>j.salesRep===rep.id);
-    const rows=repJobs.map(j=>{const f=getJobFinancials(j.id);return '<tr><td>'+j.name+'</td><td>'+(customers.find(c=>c.id===j.customer)?.name||'')+'</td><td style="text-align:right">$'+f.totalRevenue.toFixed(2)+'</td><td style="text-align:center">'+j.paymentStatus+'</td><td style="text-align:right;font-weight:bold">$'+(f.totalRevenue*rep.commissionRate).toFixed(2)+'</td></tr>';}).join('');
-    const total=repJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue*rep.commissionRate,0);
-    triggerPrint('Commission Statement - '+rep.name, '<div class="hdr"><div><img src="'+MW_LOGO+'" style="height:36px;margin-bottom:8px"/><div class="co">COMMISSION STATEMENT</div><div>Midwest Educational Furnishings</div></div><div style="text-align:right"><div>Period: Q1 2026</div><div>Rep: '+rep.name+'</div><div>Rate: '+(rep.commissionRate*100).toFixed(1)+'%</div></div></div><table><thead><tr><th>Job</th><th>Customer</th><th style="text-align:right">Revenue</th><th style="text-align:center">Status</th><th style="text-align:right">Commission</th></tr></thead><tbody>'+rows+'</tbody><tfoot><tr class="total-row"><td colspan="4" style="text-align:right;padding:10px 8px">TOTAL COMMISSION</td><td style="text-align:right;padding:10px 8px">$'+total.toFixed(2)+'</td></tr></tfoot></table>');
+    const rj=jobs.filter(j=>j.salesRep===rep.id);
+    const totalRev=rj.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
+    const comm=totalRev*rep.commissionRate;
+    const paidRev=rj.filter(j=>j.paymentStatus==="paid").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
+    const paidComm=paidRev*rep.commissionRate;
+    const unpaidComm=comm-paidComm;
+    const docNum=("COMM-S"+String(reps.indexOf(rep)+1).padStart(3,"0")+"-STMT");
+    const items=rj.map(j=>{const f=getJobFinancials(j.id);const isPaid=j.paymentStatus==="paid";return{description:j.name+' -- '+(customers.find(c=>c.id===j.customer)?.name||'')+' -- '+(isPaid?'PAID':'PENDING'),displayQty:1,displayPrice:f.totalRevenue*rep.commissionRate}});
+    if(onGenerateStatement){onGenerateStatement({type:"commission",data:{rep,items,total:comm,docNum},job:{id:'ALL',name:rep.name+' Commission Statement',notes:''}});setPage("documents")}
   };
 
   return <div style={{animation:"fadeUp 0.4s"}}><Header title="Commission Engine" sub="Editable reps, customizable rates -- auto-calculated on every job" action={<Btn onClick={()=>setAddingRep(true)}><I n="plus" s={14}/> Add Sales Rep</Btn>}/>
