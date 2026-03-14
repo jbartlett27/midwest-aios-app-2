@@ -390,26 +390,43 @@ export default function MidwestAIOS() {
       <ConfirmDialog />
 
       {/* Mobile hamburger */}
-      {!mobileMenuOpen&&<button onClick={()=>setMobileMenuOpen(true)} className="mobile-menu-btn" style={{display:"none",position:"fixed",top:10,left:10,zIndex:10001,width:36,height:36,borderRadius:8,background:"#111111ee",border:"1px solid #222222",cursor:"pointer",alignItems:"center",justifyContent:"center",color:"#2dd4bf",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)"}}><I n="dashboard" s={18}/></button>}
+      {!mobileMenuOpen&&<div className="mobile-menu-btn" style={{display:"none",position:"fixed",bottom:12,left:"50%",transform:"translateX(-50%)",zIndex:10001,background:"rgba(10,10,10,0.92)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:16,padding:"6px 4px",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",boxShadow:"0 8px 32px rgba(0,0,0,0.5)"}}><div style={{display:"flex",gap:2}}>{[{id:"dashboard",icon:"dashboard",l:"Home"},{id:"jobs",icon:"briefcase",l:"Jobs"},{id:"documents",icon:"file",l:"Docs"},{id:"deliveries",icon:"truck",l:"Track"},{id:"brain",icon:"brain",l:"AI"}].map(t=><button key={t.id} onClick={()=>{setPage(t.id);setSelectedJob(null)}} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"6px 12px",borderRadius:12,border:"none",background:page===t.id?"rgba(45,212,191,0.12)":"transparent",color:page===t.id?"#2dd4bf":"#525252",cursor:"pointer",fontFamily:"'Satoshi',sans-serif",fontSize:9,fontWeight:page===t.id?600:400,transition:"all 0.15s"}}><I n={t.icon} s={18}/>{t.l}</button>)}<button onClick={()=>setMobileMenuOpen(true)} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"6px 12px",borderRadius:12,border:"none",background:"transparent",color:"#525252",cursor:"pointer",fontFamily:"'Satoshi',sans-serif",fontSize:9,fontWeight:400}}><I n="settings" s={18}/>More</button></div></div>}
       {mobileMenuOpen&&<div onClick={()=>setMobileMenuOpen(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:9999}}/>}
 
       {/* SIDEBAR */}
-      <div className={"sidebar"+(mobileMenuOpen?" open":"")} style={{width:sidebarCollapsed?64:240,minWidth:sidebarCollapsed?64:240,background:"#0a0a0a",borderRight:"1px solid #1a1d27",display:"flex",flexDirection:"column",transition:"all 0.3s",overflow:"hidden"}}>
-        <div style={{padding:"16px",borderBottom:"1px solid #1a1d27",display:"flex",alignItems:"center",gap:10}}>
-          <img src={MW_LOGO} alt="Midwest" style={{height:30,width:"auto",flexShrink:0,objectFit:"contain"}} onClick={()=>{if(window.innerWidth>768)setSidebarCollapsed(!sidebarCollapsed)}}/>
-          <div style={{flex:1,cursor:"pointer",minWidth:0}} onClick={()=>{if(window.innerWidth>768)setSidebarCollapsed(!sidebarCollapsed)}}><div style={{fontSize:13,fontWeight:700,color:"#5eead4",letterSpacing:0.3}}>Midwest Furnishings</div><div style={{fontSize:12,color:"#a3a3a3",letterSpacing:1.5,textTransform:"uppercase"}}>AI Operating System</div></div>
-          <button className="mobile-close-btn" onClick={()=>setMobileMenuOpen(false)} style={{display:"none",width:28,height:28,borderRadius:6,background:"transparent",border:"1px solid #2a2d37",cursor:"pointer",alignItems:"center",justifyContent:"center",color:"#a3a3a3",flexShrink:0,padding:0}}><I n="close" s={14}/></button>
+      <div className={"sidebar"+(mobileMenuOpen?" open":"")} style={{width:sidebarCollapsed?56:220,minWidth:sidebarCollapsed?56:220,background:"#08080a",borderRight:"1px solid rgba(255,255,255,0.06)",display:"flex",flexDirection:"column",transition:"width 0.25s cubic-bezier(0.4,0,0.2,1),min-width 0.25s cubic-bezier(0.4,0,0.2,1)",overflow:"hidden"}}>
+        {/* Logo header */}
+        <div style={{padding:sidebarCollapsed?"14px 12px":"14px 16px",display:"flex",alignItems:"center",gap:10,cursor:"pointer",minHeight:56}} onClick={()=>{if(window.innerWidth>768)setSidebarCollapsed(!sidebarCollapsed)}}>
+          <img src={MW_LOGO} alt="MW" style={{height:28,width:28,flexShrink:0,objectFit:"contain"}}/>
+          {!sidebarCollapsed&&<div style={{flex:1,minWidth:0,overflow:"hidden"}}><div style={{fontSize:13,fontWeight:700,color:"#e5e5e5",letterSpacing:-0.3,whiteSpace:"nowrap"}}>Midwest AIOS</div></div>}
+          {!sidebarCollapsed&&<button className="mobile-close-btn" onClick={e=>{e.stopPropagation();setMobileMenuOpen(false)}} style={{display:"none",width:24,height:24,borderRadius:6,background:"transparent",border:"none",cursor:"pointer",alignItems:"center",justifyContent:"center",color:"#525252",flexShrink:0,padding:0}}><I n="close" s={14}/></button>}
         </div>
-        <nav style={{flex:1,padding:"12px 8px",display:"flex",flexDirection:"column",gap:2}}>
-          {navItems.map(item=> <button key={item.id} onClick={()=>{setPage(item.id);setSelectedJob(null);setMobileMenuOpen(false)}} style={{display:"flex",alignItems:"center",gap:12,padding:sidebarCollapsed?"10px 12px":"10px 14px",borderRadius:8,border:"none",cursor:"pointer",background:page===item.id?"rgba(200,162,92,0.12)":"transparent",color:page===item.id?"#5eead4":"#737373",fontSize:13,fontWeight:page===item.id?600:400,fontFamily:"inherit",textAlign:"left",transition:"all 0.2s",justifyContent:sidebarCollapsed?"center":"flex-start"}} onMouseEnter={e=>{if(page!==item.id)e.target.style.background="rgba(255,255,255,0.04)"}} onMouseLeave={e=>{if(page!==item.id)e.target.style.background="transparent"}}><span style={{flexShrink:0,opacity:page===item.id?1:0.6}}><I n={item.icon} s={18}/></span>{!sidebarCollapsed&&<span style={{flex:1}}>{item.label}</span>}{!sidebarCollapsed&&item.badge&&<span style={{minWidth:18,height:18,borderRadius:9,background:item.badgeColor||"#2dd4bf",color:"#fff",fontSize:12,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 5px"}}>{item.badge}</span>}</button>)}
+
+        {/* Search trigger */}
+        {!sidebarCollapsed&&<div style={{padding:"0 12px",marginBottom:8}}><button onClick={()=>setSearchOpen(true)} style={{width:"100%",display:"flex",alignItems:"center",gap:8,padding:"7px 10px",borderRadius:8,border:"1px solid rgba(255,255,255,0.06)",background:"rgba(255,255,255,0.02)",color:"#525252",fontSize:12,fontFamily:"'Satoshi',sans-serif",cursor:"pointer",transition:"border-color 0.15s"}} onMouseEnter={e=>e.currentTarget.style.borderColor="rgba(255,255,255,0.12)"} onMouseLeave={e=>e.currentTarget.style.borderColor="rgba(255,255,255,0.06)"}><I n="search" s={13}/><span style={{flex:1,textAlign:"left"}}>Search...</span><span style={{fontSize:10,color:"#333",background:"rgba(255,255,255,0.04)",padding:"1px 6px",borderRadius:4,fontFamily:"'JetBrains Mono',monospace"}}>K</span></button></div>}
+        {sidebarCollapsed&&<div style={{padding:"4px 0",display:"flex",justifyContent:"center",marginBottom:4}}><button onClick={()=>setSearchOpen(true)} style={{width:32,height:32,borderRadius:8,border:"none",background:"transparent",cursor:"pointer",color:"#525252",display:"flex",alignItems:"center",justifyContent:"center"}}><I n="search" s={16}/></button></div>}
+
+        {/* Nav sections */}
+        <nav style={{flex:1,padding:sidebarCollapsed?"4px":"4px 8px",display:"flex",flexDirection:"column",gap:0,overflowY:"auto",overflowX:"hidden"}}>
+          {/* Core */}
+          {!sidebarCollapsed&&<div style={{fontSize:10,fontWeight:600,color:"#333",textTransform:"uppercase",letterSpacing:1.5,padding:"10px 10px 6px",userSelect:"none"}}>Core</div>}
+          {navItems.slice(0,2).map(item=>{const active=page===item.id;return <button key={item.id} onClick={()=>{setPage(item.id);setSelectedJob(null);setMobileMenuOpen(false)}} style={{display:"flex",alignItems:"center",gap:10,padding:sidebarCollapsed?"8px 0":"7px 10px",borderRadius:8,border:"none",cursor:"pointer",background:active?"rgba(45,212,191,0.08)":"transparent",color:active?"#2dd4bf":"#737373",fontSize:13,fontWeight:active?500:400,fontFamily:"'Satoshi',sans-serif",textAlign:"left",transition:"all 0.15s",justifyContent:sidebarCollapsed?"center":"flex-start",width:"100%",position:"relative"}} onMouseEnter={e=>{if(!active)e.currentTarget.style.background="rgba(255,255,255,0.03)"}} onMouseLeave={e=>{if(!active)e.currentTarget.style.background="transparent"}}>{active&&<div style={{position:"absolute",left:sidebarCollapsed?-4:0,top:"50%",transform:"translateY(-50%)",width:3,height:16,borderRadius:2,background:"#2dd4bf"}}/>}<span style={{flexShrink:0,display:"flex",alignItems:"center"}}><I n={item.icon} s={16}/></span>{!sidebarCollapsed&&<span style={{flex:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.label}</span>}{!sidebarCollapsed&&item.badge&&<span style={{minWidth:18,height:18,borderRadius:9,background:item.badgeColor=="#f87171"?"rgba(248,113,113,0.15)":item.badgeColor=="#fbbf24"?"rgba(251,191,36,0.15)":"rgba(45,212,191,0.15)",color:item.badgeColor||"#2dd4bf",fontSize:10,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 5px",fontFamily:"'JetBrains Mono',monospace"}}>{item.badge}</span>}</button>})}
+
+          {/* Operations */}
+          {!sidebarCollapsed&&<div style={{fontSize:10,fontWeight:600,color:"#333",textTransform:"uppercase",letterSpacing:1.5,padding:"14px 10px 6px",userSelect:"none"}}>Operations</div>}
+          {sidebarCollapsed&&<div style={{height:1,background:"rgba(255,255,255,0.04)",margin:"8px 12px"}}/>}
+          {navItems.slice(2,7).map(item=>{const active=page===item.id;return <button key={item.id} onClick={()=>{setPage(item.id);setSelectedJob(null);setMobileMenuOpen(false)}} style={{display:"flex",alignItems:"center",gap:10,padding:sidebarCollapsed?"8px 0":"7px 10px",borderRadius:8,border:"none",cursor:"pointer",background:active?"rgba(45,212,191,0.08)":"transparent",color:active?"#2dd4bf":"#737373",fontSize:13,fontWeight:active?500:400,fontFamily:"'Satoshi',sans-serif",textAlign:"left",transition:"all 0.15s",justifyContent:sidebarCollapsed?"center":"flex-start",width:"100%",position:"relative"}} onMouseEnter={e=>{if(!active)e.currentTarget.style.background="rgba(255,255,255,0.03)"}} onMouseLeave={e=>{if(!active)e.currentTarget.style.background="transparent"}}>{active&&<div style={{position:"absolute",left:sidebarCollapsed?-4:0,top:"50%",transform:"translateY(-50%)",width:3,height:16,borderRadius:2,background:"#2dd4bf"}}/>}<span style={{flexShrink:0,display:"flex",alignItems:"center"}}><I n={item.icon} s={16}/></span>{!sidebarCollapsed&&<span style={{flex:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.label}</span>}{!sidebarCollapsed&&item.badge&&<span style={{minWidth:18,height:18,borderRadius:9,background:item.badgeColor=="#f87171"?"rgba(248,113,113,0.15)":item.badgeColor=="#fbbf24"?"rgba(251,191,36,0.15)":"rgba(45,212,191,0.15)",color:item.badgeColor||"#2dd4bf",fontSize:10,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 5px",fontFamily:"'JetBrains Mono',monospace"}}>{item.badge}</span>}</button>})}
+
+          {/* Intelligence */}
+          {!sidebarCollapsed&&<div style={{fontSize:10,fontWeight:600,color:"#333",textTransform:"uppercase",letterSpacing:1.5,padding:"14px 10px 6px",userSelect:"none"}}>Intelligence</div>}
+          {sidebarCollapsed&&<div style={{height:1,background:"rgba(255,255,255,0.04)",margin:"8px 12px"}}/>}
+          {navItems.slice(7).map(item=>{const active=page===item.id;return <button key={item.id} onClick={()=>{setPage(item.id);setSelectedJob(null);setMobileMenuOpen(false)}} style={{display:"flex",alignItems:"center",gap:10,padding:sidebarCollapsed?"8px 0":"7px 10px",borderRadius:8,border:"none",cursor:"pointer",background:active?"rgba(45,212,191,0.08)":"transparent",color:active?"#737373":"#525252",fontSize:13,fontWeight:active?500:400,fontFamily:"'Satoshi',sans-serif",textAlign:"left",transition:"all 0.15s",justifyContent:sidebarCollapsed?"center":"flex-start",width:"100%",position:"relative"}} onMouseEnter={e=>{if(!active)e.currentTarget.style.background="rgba(255,255,255,0.03)"}} onMouseLeave={e=>{if(!active)e.currentTarget.style.background="transparent"}}>{active&&<div style={{position:"absolute",left:sidebarCollapsed?-4:0,top:"50%",transform:"translateY(-50%)",width:3,height:16,borderRadius:2,background:"#2dd4bf"}}/>}<span style={{flexShrink:0,display:"flex",alignItems:"center"}}><I n={item.icon} s={16}/></span>{!sidebarCollapsed&&<span style={{flex:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.label}</span>}</button>})}
         </nav>
-        {!sidebarCollapsed&&<div style={{padding:"12px 20px",borderTop:"1px solid #1a1d27",fontSize:12,color:"#8a8a8a"}}>
-          <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
-            <div style={{width:6,height:6,borderRadius:"50%",background:dbStatus==="connected"?"#34d399":dbStatus==="connecting"?"#fbbf24":"#f87171"}}/>
-            <span>Database: {dbStatus==="connected"?"Connected":dbStatus==="connecting"?"Connecting...":"Error"}</span>
-          </div>
-          <div style={{color:"#2dd4bf",fontSize:9}}>Powered by DYFRENT</div>
-        </div>}
+
+        {/* Footer */}
+        <div style={{padding:sidebarCollapsed?"10px 8px":"10px 16px",borderTop:"1px solid rgba(255,255,255,0.04)"}}>
+          {!sidebarCollapsed?<div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:6,height:6,borderRadius:"50%",background:dbStatus==="connected"?"#34d399":dbStatus==="connecting"?"#fbbf24":"#f87171",flexShrink:0}}/><span style={{fontSize:11,color:"#333"}}>{dbStatus==="connected"?"Connected":"Connecting..."}</span><span style={{marginLeft:"auto",fontSize:9,color:"#222",letterSpacing:1}}>DYFRENT</span></div>:<div style={{display:"flex",justifyContent:"center"}}><div style={{width:6,height:6,borderRadius:"50%",background:dbStatus==="connected"?"#34d399":"#fbbf24"}}/></div>}
+        </div>
       </div>
 
       {/* MAIN */}
@@ -448,11 +465,11 @@ export default function MidwestAIOS() {
         input,textarea,select{font-family:Satoshi,sans-serif;font-size:16px!important}
         button{-webkit-tap-highlight-color:transparent}
         @media(max-width:768px){
-          .sidebar{position:fixed!important;left:-260px!important;top:0!important;bottom:0!important;width:240px!important;min-width:240px!important;z-index:10000!important;transition:left 0.3s ease!important}
+          .sidebar{position:fixed!important;left:-240px!important;top:0!important;bottom:0!important;width:220px!important;min-width:220px!important;z-index:10000!important;transition:left 0.3s cubic-bezier(0.4,0,0.2,1)!important}
           .sidebar.open{left:0px!important}
           .mobile-menu-btn{display:flex!important}
           .mobile-close-btn{display:flex!important}
-          .main-content{padding:20px 16px!important;padding-top:56px!important}
+          .main-content{padding:16px 16px 80px 16px!important}
           h1{font-size:20px!important}
           h2{font-size:16px!important}
           table{font-size:11px!important;display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
@@ -464,7 +481,7 @@ export default function MidwestAIOS() {
           .kanban-grid>div{min-height:auto!important}
         }
         @media(max-width:480px){
-          .main-content{padding:12px 8px!important;padding-top:56px!important}
+          .main-content{padding:12px 8px 80px 8px!important}
           h1{font-size:18px!important}
         }
       `}</style>
