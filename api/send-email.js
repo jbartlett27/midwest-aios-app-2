@@ -25,6 +25,14 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Missing to, subject, or html' });
     }
 
+    // Resend requires from to be either onboarding@resend.dev or a verified domain
+    // If user provides a custom from, use it as the reply-to and send from resend.dev
+    const userFrom = from || '';
+    const hasVerifiedDomain = process.env.RESEND_VERIFIED_DOMAIN;
+    const senderEmail = hasVerifiedDomain 
+      ? `Midwest Furnishings <${userFrom || 'noreply@' + hasVerifiedDomain}>`
+      : 'Midwest Furnishings <onboarding@resend.dev>';
+
     const emailRes = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
@@ -32,7 +40,8 @@ export default async function handler(req, res) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: from || 'Midwest Furnishings <onboarding@resend.dev>',
+        from: senderEmail,
+        reply_to: userFrom || undefined,
         to: Array.isArray(to) ? to : [to],
         subject,
         html,
