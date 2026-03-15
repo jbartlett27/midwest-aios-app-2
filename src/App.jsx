@@ -2051,94 +2051,108 @@ function NotesView({customSops,addSop,deleteSop,jobs,reps,notify,triggerPrint}){
   const [folder,setFolder]=useState("General");
   const [newFolder,setNewFolder]=useState("");
   const [showNewFolder,setShowNewFolder]=useState(false);
-  const [editId,setEditId]=useState(null);
-  const [editContent,setEditContent]=useState("");
   const [search,setSearch]=useState("");
   const [activeNote,setActiveNote]=useState(null);
-  const [newNoteMode,setNewNoteMode]=useState(false);
-  const [checklistMode,setChecklistMode]=useState(false);
-
-  const notes=(customSops||[]).filter(s=>s.cat==="Notes").sort((a,b)=>b.id.localeCompare(a.id));
-  const parseNote=(n)=>{try{return JSON.parse(n.content)}catch{return{text:n.content,folder:"General",items:[]}}};
-  const allFolders=[...new Set(notes.map(n=>{const d=parseNote(n);return d.folder||"General"}))].sort();
-  const folders=["All",...allFolders];
-
-  const filtered=notes.filter(n=>{
-    if(search){const q=search.toLowerCase();if(!n.title.toLowerCase().includes(q)){const d=parseNote(n);if(!(d.text||"").toLowerCase().includes(q))return false}}
-    if(folder!=="All"){const d=parseNote(n);if((d.folder||"General")!==folder)return false}
-    return true;
-  });
-
-  const [draftId]=useState(()=>"NOTE-"+Math.random().toString(36).slice(2,8));
+  const [editId,setEditId]=useState(null);
+  const [editContent,setEditContent]=useState("");
+  const editorRef=useRef(null);
+  const [draftId,setDraftId]=useState(()=>"NOTE-"+Math.random().toString(36).slice(2,8));
   const [saved,setSaved]=useState(false);
   const saveTimerRef=useRef(null);
-  const autoSave=(text)=>{
-    setContent(text);setSaved(false);
-    if(saveTimerRef.current)clearTimeout(saveTimerRef.current);
-    if(!text.trim())return;
-    saveTimerRef.current=setTimeout(()=>{
-      const title=text.split("\n")[0].slice(0,60)||"Untitled";
-      const data={text,folder:folder==="All"?"General":folder,date:new Date().toISOString(),items:[]};
-      const existing=(customSops||[]).find(s=>s.id===draftId);
-      if(existing)deleteSop(draftId);
-      addSop({id:draftId,title,cat:"Notes",icon:"file",content:JSON.stringify(data),custom:true});
-      setSaved(true);
-    },800);
-  };
-  const finishNote=()=>{if(!content.trim())return;setContent("");setActiveNote(draftId);setSaved(false)};
 
-  const updateNote=(note,newText)=>{const data=parseNote(note);const title=(newText||data.text||"").split("\n")[0].slice(0,60)||"Untitled";deleteSop(note.id);addSop({...note,title,content:JSON.stringify({...data,text:newText||data.text})});notify("Note updated")};
+  const notes=(customSops||[]).filter(s=>s.cat==="Notes").sort((a,b)=>b.id.localeCompare(a.id));
+  const parseNote=(n)=>{try{return JSON.parse(n.content)}catch{return{text:n.content,folder:"General"}}};
+  const allFolders=[...new Set(notes.map(n=>(parseNote(n).folder||"General")))].sort();
+  const folders=["All",...allFolders];
+  const filtered=notes.filter(n=>{if(search){const q=search.toLowerCase();if(!n.title.toLowerCase().includes(q)&&!(parseNote(n).text||"").toLowerCase().includes(q))return false}if(folder!=="All"&&(parseNote(n).folder||"General")!==folder)return false;return true});
 
-  const toggleItem=(note,idx)=>{const data=parseNote(note);const lines=(data.text||"").split("\n");if(idx<lines.length){const l=lines[idx];if(l.match(/^\[x\]/))lines[idx]=l.replace(/^\[x\]/,"[ ]");else if(l.match(/^\[ \]/))lines[idx]=l.replace(/^\[ \]/,"[x]");updateNote(note,lines.join("\n"))}};
+  // Auto-save as you type
+  const autoSave=(text)=>{setContent(text);setSaved(false);if(saveTimerRef.current)clearTimeout(saveTimerRef.current);if(!text.trim())return;saveTimerRef.current=setTimeout(()=>{const title=text.split("\n")[0].replace(/^#+\s*/,"").slice(0,60)||"Untitled";const data={text,folder:folder==="All"?"General":folder,date:new Date().toISOString()};const existing=(customSops||[]).find(s=>s.id===draftId);if(existing)deleteSop(draftId);addSop({id:draftId,title,cat:"Notes",icon:"file",content:JSON.stringify(data),custom:true});setSaved(true)},800)};
 
-  const addChecklist=()=>{setContent(c=>c+(c?"\n":"")+"[ ] ")};
-  const addBullet=()=>{setContent(c=>c+(c?"\n":"")+"- ")};
+  const finishNote=()=>{if(!content.trim())return;const id=draftId;setContent("");setActiveNote(id);setDraftId("NOTE-"+Math.random().toString(36).slice(2,8));setSaved(false)};
 
+  const updateNote=(note,newText)=>{const data=parseNote(note);const title=(newText||data.text||"").split("\n")[0].replace(/^#+\s*/,"").slice(0,60)||"Untitled";deleteSop(note.id);addSop({...note,title,content:JSON.stringify({...data,text:newText||data.text})});notify("Saved")};
+  const toggleItem=(note,idx)=>{const data=parseNote(note);const lines=(data.text||"").split("\n");if(idx<lines.length){const l=lines[idx];if(l.startsWith("[x] "))lines[idx]="[ ] "+l.slice(4);else if(l.startsWith("[ ] "))lines[idx]="[x] "+l.slice(4);updateNote(note,lines.join("\n"))}};
   const exportPDF=(note)=>{const data=parseNote(note);const body=String(data.text||"").split("<").join("&lt;");const html="<div style=\"font-family:sans-serif;max-width:700px;margin:0 auto;padding:40px\"><h1>"+note.title+"</h1><div style=\"font-size:12px;color:#888;margin-bottom:20px\">"+(data.date?new Date(data.date).toLocaleDateString():"")+"</div><div style=\"font-size:14px;line-height:1.8;white-space:pre-wrap\">"+body+"</div></div>";if(triggerPrint)triggerPrint(note.title,html);else{const w=window.open("","_blank");w.document.write(html);w.print()}};
-
   const createFolder=()=>{if(!newFolder.trim())return;setFolder(newFolder.trim());setShowNewFolder(false);setNewFolder("");notify("Folder created")};
+
+  // Toolbar actions - insert at cursor
+  const insertAt=(prefix,suffix)=>{const el=editorRef.current;if(!el)return;const start=el.selectionStart;const end=el.selectionEnd;const text=content;const selected=text.slice(start,end);const newText=text.slice(0,start)+prefix+selected+suffix+text.slice(end);autoSave(newText);setTimeout(()=>{el.selectionStart=start+prefix.length;el.selectionEnd=start+prefix.length+selected.length;el.focus()},10)};
+  const insertLine=(prefix)=>{const el=editorRef.current;if(!el)return;const pos=el.selectionStart;const before=content.slice(0,pos);const needsNewline=before.length>0&&!before.endsWith("\n");autoSave(before+(needsNewline?"\n":"")+prefix+content.slice(pos));setTimeout(()=>{el.selectionStart=el.selectionEnd=pos+(needsNewline?1:0)+prefix.length;el.focus()},10)};
 
   const viewing=activeNote?notes.find(n=>n.id===activeNote):null;
   const viewData=viewing?parseNote(viewing):null;
 
   return <div className="notes-layout" style={{display:"flex",gap:16,minHeight:400}}>
     {/* Sidebar */}
-    <div style={{width:240,flexShrink:0,display:"flex",flexDirection:"column",gap:8}}>
+    <div style={{width:220,flexShrink:0,display:"flex",flexDirection:"column",gap:8}}>
       <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search..." style={{...inputStyle,padding:"8px 12px",fontSize:12}}/>
-      <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{folders.map(f=><button key={f} onClick={()=>setFolder(f)} style={{padding:"4px 8px",borderRadius:6,border:"none",background:folder===f?"#2dd4bf":"rgba(255,255,255,0.04)",color:folder===f?"#000":"#737373",fontSize:11,fontWeight:folder===f?600:400,cursor:"pointer",fontFamily:"inherit"}}>{f}</button>)}<button onClick={()=>setShowNewFolder(true)} style={{padding:"4px 8px",borderRadius:6,border:"1px dashed rgba(255,255,255,0.1)",background:"transparent",color:"#525252",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>+</button></div>
-      {showNewFolder&&<div style={{display:"flex",gap:4}}><input value={newFolder} onChange={e=>setNewFolder(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")createFolder()}} placeholder="Folder name" autoFocus style={{...inputStyle,padding:"4px 8px",fontSize:11,flex:1}}/><Btn style={{fontSize:10,padding:"4px 8px"}} onClick={createFolder}>Add</Btn></div>}
-      <div style={{flex:1,overflow:"auto",display:"flex",flexDirection:"column",gap:4}}>
-        <div onClick={()=>{const newId="NOTE-"+Math.random().toString(36).slice(2,8);setActiveNote(newId);setEditId(newId);setEditContent("");setNewNoteMode(true)}} style={{padding:"10px 12px",borderRadius:10,background:!activeNote?"rgba(45,212,191,0.06)":"transparent",border:"1px solid "+(!activeNote?"rgba(45,212,191,0.15)":"transparent"),cursor:"pointer"}}><div style={{fontSize:13,fontWeight:600,color:"#2dd4bf"}}>+ New Note</div></div>
-        {filtered.map(n=>{const d=parseNote(n);return <div key={n.id} onClick={()=>{setActiveNote(n.id);setEditId(null)}} style={{padding:"10px 12px",borderRadius:10,background:activeNote===n.id?"rgba(255,255,255,0.04)":"transparent",border:"1px solid "+(activeNote===n.id?"rgba(255,255,255,0.08)":"transparent"),cursor:"pointer"}}><div style={{fontSize:13,fontWeight:600,color:activeNote===n.id?"#f0f0f0":"#c4c4c4",marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{n.title}</div><div style={{fontSize:11,color:"#525252"}}>{d.date?new Date(d.date).toLocaleDateString():""}</div></div>})}
+      <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{folders.map(f=><button key={f} onClick={()=>setFolder(f)} style={{padding:"3px 8px",borderRadius:6,border:"none",background:folder===f?"#2dd4bf":"rgba(255,255,255,0.04)",color:folder===f?"#000":"#737373",fontSize:10,fontWeight:folder===f?600:400,cursor:"pointer",fontFamily:"inherit"}}>{f}</button>)}<button onClick={()=>setShowNewFolder(true)} style={{padding:"3px 8px",borderRadius:6,border:"1px dashed rgba(255,255,255,0.1)",background:"transparent",color:"#525252",fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>+</button></div>
+      {showNewFolder&&<div style={{display:"flex",gap:4}}><input value={newFolder} onChange={e=>setNewFolder(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")createFolder()}} placeholder="Name" autoFocus style={{...inputStyle,padding:"4px 8px",fontSize:11,flex:1}}/><Btn style={{fontSize:10,padding:"3px 8px"}} onClick={createFolder}>Add</Btn></div>}
+      <div style={{flex:1,overflow:"auto",display:"flex",flexDirection:"column",gap:3}}>
+        <div onClick={()=>{setActiveNote(null);setEditId(null);setContent("")}} style={{padding:"8px 10px",borderRadius:8,background:!activeNote?"rgba(45,212,191,0.06)":"transparent",border:"1px solid "+(!activeNote?"rgba(45,212,191,0.12)":"transparent"),cursor:"pointer"}}><div style={{fontSize:12,fontWeight:600,color:"#2dd4bf"}}>+ New Note</div></div>
+        {filtered.map(n=>{const d=parseNote(n);return <div key={n.id} onClick={()=>{setActiveNote(n.id);setEditId(null)}} style={{padding:"8px 10px",borderRadius:8,background:activeNote===n.id?"rgba(255,255,255,0.03)":"transparent",border:"1px solid "+(activeNote===n.id?"rgba(255,255,255,0.06)":"transparent"),cursor:"pointer"}}><div style={{fontSize:12,fontWeight:600,color:activeNote===n.id?"#f0f0f0":"#a3a3a3",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{n.title}</div><div style={{fontSize:10,color:"#525252"}}>{d.date?new Date(d.date).toLocaleDateString():""}</div></div>})}
       </div>
     </div>
 
-    {/* Main */}
-    <div style={{flex:1,minWidth:0}}>
-      {/* New note composer */}
-      {!viewing&&!editId&&<div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:300,color:"#525252"}}>
-        <div style={{fontSize:16,marginBottom:8}}>Select a note or create a new one</div>
-        <Btn v="ghost" onClick={()=>{const newId="NOTE-"+Math.random().toString(36).slice(2,8);setActiveNote(newId);setEditId(newId);setEditContent("");setNewNoteMode(true)}}>+ New Note</Btn>
+    {/* Main editor area */}
+    <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column"}}>
+
+      {/* NEW NOTE: Always-ready editor */}
+      {!activeNote&&<div style={{flex:1,display:"flex",flexDirection:"column"}}>
+        {/* Toolbar */}
+        <div style={{display:"flex",gap:4,marginBottom:8,flexWrap:"wrap",alignItems:"center"}}>
+          <button onClick={()=>insertAt("**","**")} title="Bold" style={{width:30,height:30,borderRadius:6,border:"1px solid rgba(255,255,255,0.08)",background:"transparent",color:"#a3a3a3",cursor:"pointer",fontFamily:"inherit",fontWeight:700,fontSize:13}}>B</button>
+          <button onClick={()=>insertAt("*","*")} title="Italic" style={{width:30,height:30,borderRadius:6,border:"1px solid rgba(255,255,255,0.08)",background:"transparent",color:"#a3a3a3",cursor:"pointer",fontFamily:"inherit",fontStyle:"italic",fontSize:13}}>I</button>
+          <button onClick={()=>insertAt("__","__")} title="Underline" style={{width:30,height:30,borderRadius:6,border:"1px solid rgba(255,255,255,0.08)",background:"transparent",color:"#a3a3a3",cursor:"pointer",fontFamily:"inherit",textDecoration:"underline",fontSize:13}}>U</button>
+          <div style={{width:1,height:20,background:"rgba(255,255,255,0.06)",margin:"0 4px"}}/>
+          <button onClick={()=>insertLine("- ")} title="Bullet" style={{width:30,height:30,borderRadius:6,border:"1px solid rgba(255,255,255,0.08)",background:"transparent",color:"#a3a3a3",cursor:"pointer",fontFamily:"inherit",fontSize:14}}>*</button>
+          <button onClick={()=>insertLine("[ ] ")} title="Checklist" style={{width:30,height:30,borderRadius:6,border:"1px solid rgba(255,255,255,0.08)",background:"transparent",color:"#2dd4bf",cursor:"pointer",fontFamily:"inherit",fontSize:11}}>&#9745;</button>
+          <div style={{width:1,height:20,background:"rgba(255,255,255,0.06)",margin:"0 4px"}}/>
+          <select value={folder==="All"?"General":folder} onChange={e=>{if(e.target.value==="__new")setShowNewFolder(true);else setFolder(e.target.value)}} style={{...inputStyle,width:120,padding:"4px 8px",fontSize:11}}>{allFolders.map(f=><option key={f}>{f}</option>)}<option value="General">General</option><option value="__new">+ Folder</option></select>
+          <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8}}>
+            {content.trim()&&<span style={{fontSize:11,color:saved?"#34d399":"#525252"}}>{saved?"Saved":"..."}</span>}
+            {content.trim()&&<Btn v="ghost" style={{fontSize:11,padding:"4px 10px"}} onClick={finishNote}>Done</Btn>}
+          </div>
+        </div>
+        {/* Editor */}
+        <textarea ref={editorRef} value={content} onChange={e=>autoSave(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){const lines=content.slice(0,e.target.selectionStart).split("\n");const last=lines[lines.length-1]||"";if(last.startsWith("[ ] ")||last.startsWith("[x] ")){e.preventDefault();autoSave(content.slice(0,e.target.selectionStart)+"\n[ ] "+content.slice(e.target.selectionEnd))}else if(last.startsWith("- ")){e.preventDefault();autoSave(content.slice(0,e.target.selectionStart)+"\n- "+content.slice(e.target.selectionEnd))}}}} placeholder={"Start typing...\n\nFirst line becomes the title.\nAuto-saves as you type."} style={{flex:1,width:"100%",padding:20,background:"#000",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,color:"#e5e5e5",fontSize:15,lineHeight:1.8,fontFamily:"inherit",resize:"none",minHeight:320,outline:"none"}}/>
       </div>}
-            {viewing&&!editId&&<div>
+
+      {/* VIEW existing note */}
+      {viewing&&!editId&&<div>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,gap:12,flexWrap:"wrap"}}>
           <div style={{flex:1}}><div style={{fontSize:22,fontWeight:800,color:"#f0f0f0",marginBottom:4}}>{viewing.title}</div><div style={{fontSize:12,color:"#525252"}}>{viewData?.date?new Date(viewData.date).toLocaleDateString():""}{viewData?.folder&&viewData.folder!=="General"?" | "+viewData.folder:""}</div></div>
-          <div style={{display:"flex",gap:6,flexShrink:0}}><Btn v="ghost" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>{setEditId(viewing.id);setEditContent(viewData?.text||viewing.content||"")}}>Edit</Btn><Btn v="ghost" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>exportPDF(viewing)}>PDF</Btn><Btn v="danger" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>{deleteSop(viewing.id);setActiveNote(null);notify("Deleted")}}>Delete</Btn></div>
+          <div style={{display:"flex",gap:6,flexShrink:0}}><Btn v="ghost" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>{setEditId(viewing.id);setEditContent(viewData?.text||"")}}>Edit</Btn><Btn v="ghost" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>exportPDF(viewing)}>PDF</Btn><Btn v="danger" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>{deleteSop(viewing.id);setActiveNote(null);notify("Deleted")}}>Delete</Btn></div>
         </div>
         <div style={{fontSize:14,color:"#c4c4c4",lineHeight:1.9}}>
-          {(viewData?.text||viewing.content||"").split("\n").map((line,i)=>{
-            if(line.match(/^\[x\] /))return <div key={i} style={{display:"flex",gap:10,alignItems:"center",padding:"4px 0",cursor:"pointer"}} onClick={()=>toggleItem(viewing,i)}><Check checked={true} size={18}/><span style={{textDecoration:"line-through",color:"#525252"}}>{line.slice(4)}</span></div>;
-            if(line.match(/^\[ \] /))return <div key={i} style={{display:"flex",gap:10,alignItems:"center",padding:"4px 0",cursor:"pointer"}} onClick={()=>toggleItem(viewing,i)}><Check checked={false} size={18}/><span>{line.slice(4)}</span></div>;
+          {(viewData?.text||"").split("\n").map((line,i)=>{
+            if(line.startsWith("[x] "))return <div key={i} style={{display:"flex",gap:10,alignItems:"center",padding:"4px 0",cursor:"pointer"}} onClick={()=>toggleItem(viewing,i)}><Check checked={true} size={18}/><span style={{textDecoration:"line-through",color:"#525252"}}>{line.slice(4)}</span></div>;
+            if(line.startsWith("[ ] "))return <div key={i} style={{display:"flex",gap:10,alignItems:"center",padding:"4px 0",cursor:"pointer"}} onClick={()=>toggleItem(viewing,i)}><Check checked={false} size={18}/><span>{line.slice(4)}</span></div>;
             if(line.startsWith("- "))return <div key={i} style={{display:"flex",gap:10,alignItems:"flex-start",padding:"3px 0"}}><div style={{width:6,height:6,borderRadius:"50%",background:"#2dd4bf",marginTop:8,flexShrink:0}}/><span>{line.slice(2)}</span></div>;
+            // Bold **text**, Italic *text*, Underline __text__
+            const rendered=line.replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>").replace(/\*([^*]+)\*/g,"<i>$1</i>").replace(/__([^_]+)__/g,"<u>$1</u>");
+            if(rendered!==line)return <div key={i} style={{padding:"2px 0"}} dangerouslySetInnerHTML={{__html:rendered}}/>;
             return <div key={i} style={{padding:"2px 0",minHeight:line?"auto":16}}>{line}</div>;
           })}
         </div>
       </div>}
 
-      {/* Edit note */}
-      {editId&&<div>
-        <textarea value={editContent} onChange={e=>setEditContent(e.target.value)} rows={16} style={{width:"100%",padding:20,background:"#000",border:"1px solid rgba(167,139,250,0.15)",borderRadius:14,color:"#e5e5e5",fontSize:14,lineHeight:1.8,fontFamily:"inherit",resize:"vertical",minHeight:300,outline:"none"}}/>
-        <div style={{display:"flex",gap:8,marginTop:12}}><Btn onClick={()=>{const note=notes.find(n=>n.id===editId);if(note)updateNote(note,editContent);setEditId(null);setActiveNote(editId)}}>Save</Btn><Btn v="secondary" onClick={()=>setEditId(null)}>Cancel</Btn></div>
+      {/* EDIT existing note */}
+      {editId&&<div style={{flex:1,display:"flex",flexDirection:"column"}}>
+        <div style={{display:"flex",gap:4,marginBottom:8}}>
+          <button onClick={()=>{const el=document.getElementById("editTA");if(el){const s=el.selectionStart,e2=el.selectionEnd,sel=editContent.slice(s,e2);setEditContent(editContent.slice(0,s)+"**"+sel+"**"+editContent.slice(e2))}}} style={{width:30,height:30,borderRadius:6,border:"1px solid rgba(255,255,255,0.08)",background:"transparent",color:"#a3a3a3",cursor:"pointer",fontWeight:700,fontSize:13,fontFamily:"inherit"}}>B</button>
+          <button onClick={()=>{const el=document.getElementById("editTA");if(el){const s=el.selectionStart,e2=el.selectionEnd,sel=editContent.slice(s,e2);setEditContent(editContent.slice(0,s)+"*"+sel+"*"+editContent.slice(e2))}}} style={{width:30,height:30,borderRadius:6,border:"1px solid rgba(255,255,255,0.08)",background:"transparent",color:"#a3a3a3",cursor:"pointer",fontStyle:"italic",fontSize:13,fontFamily:"inherit"}}>I</button>
+          <button onClick={()=>{const el=document.getElementById("editTA");if(el){const s=el.selectionStart,e2=el.selectionEnd,sel=editContent.slice(s,e2);setEditContent(editContent.slice(0,s)+"__"+sel+"__"+editContent.slice(e2))}}} style={{width:30,height:30,borderRadius:6,border:"1px solid rgba(255,255,255,0.08)",background:"transparent",color:"#a3a3a3",cursor:"pointer",textDecoration:"underline",fontSize:13,fontFamily:"inherit"}}>U</button>
+          <div style={{width:1,height:20,background:"rgba(255,255,255,0.06)",margin:"0 4px"}}/>
+          <button onClick={()=>setEditContent(c=>c+(c?"\n":"")+"- ")} style={{width:30,height:30,borderRadius:6,border:"1px solid rgba(255,255,255,0.08)",background:"transparent",color:"#a3a3a3",cursor:"pointer",fontSize:14,fontFamily:"inherit"}}>*</button>
+          <button onClick={()=>setEditContent(c=>c+(c?"\n":"")+"[ ] ")} style={{width:30,height:30,borderRadius:6,border:"1px solid rgba(255,255,255,0.08)",background:"transparent",color:"#2dd4bf",cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>&#9745;</button>
+        </div>
+        <textarea id="editTA" value={editContent} onChange={e=>setEditContent(e.target.value)} style={{flex:1,width:"100%",padding:20,background:"#000",border:"1px solid rgba(167,139,250,0.15)",borderRadius:14,color:"#e5e5e5",fontSize:15,lineHeight:1.8,fontFamily:"inherit",resize:"none",minHeight:320,outline:"none"}}/>
+        <div style={{display:"flex",gap:8,marginTop:10}}>
+          <Btn onClick={()=>{const note=notes.find(n=>n.id===editId);if(note)updateNote(note,editContent);setEditId(null);setActiveNote(editId)}}>Save</Btn>
+          <Btn v="secondary" onClick={()=>setEditId(null)}>Cancel</Btn>
+        </div>
       </div>}
     </div>
   </div>;
