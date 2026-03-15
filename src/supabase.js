@@ -151,10 +151,20 @@ const repFromDb = (r) => ({
   commissionRate: Number(r.commission_rate), tier: r.tier || '',
 });
 
+
+const sopToDb = (s) => ({
+  id: s.id, title: s.title, cat: s.cat || 'Custom', icon: s.icon || 'file',
+  content: s.content || '', custom: s.custom ? true : false,
+});
+const sopFromDb = (r) => ({
+  id: r.id, title: r.title, cat: r.cat || 'Custom', icon: r.icon || 'file',
+  content: r.content || '', custom: r.custom !== false,
+});
+
 export const db = {
   async loadAll() {
-    const [jobsRaw, liRaw, vRaw, cRaw, rRaw] = await Promise.all([
-      fetchAll('jobs'), fetchAll('line_items'), fetchAll('vendors'), fetchAll('customers'), fetchAll('reps'),
+    const [jobsRaw, liRaw, vRaw, cRaw, rRaw, sRaw] = await Promise.all([
+      fetchAll('jobs'), fetchAll('line_items'), fetchAll('vendors'), fetchAll('customers'), fetchAll('reps'), fetchAll('sops'),
     ]);
     return {
       jobs: jobsRaw ? jobsRaw.map(jobFromDb) : null,
@@ -162,6 +172,7 @@ export const db = {
       vendors: vRaw ? vRaw.map(vendorFromDb) : null,
       customers: cRaw ? cRaw.map(custFromDb) : null,
       reps: rRaw ? rRaw.map(repFromDb) : null,
+      sops: sRaw ? sRaw.map(sopFromDb) : null,
     };
   },
   async saveJob(job) { return upsertRow('jobs', jobToDb(job)); },
@@ -174,6 +185,8 @@ export const db = {
   async deleteVendor(id) { return deleteRow('vendors', id); },
   async deleteCustomer(id) { return deleteRow('customers', id); },
   async deleteRep(id) { return deleteRow('reps', id); },
+  async saveSop(s) { return upsertRow('sops', sopToDb(s)); },
+  async deleteSop(id) { return deleteRow('sops', id); },
   async seed(initJobs, initLI, initV, initC, initR) {
     await deleteAll('line_items');
     await deleteAll('jobs');
