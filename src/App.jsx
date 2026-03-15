@@ -641,7 +641,7 @@ function JobsPage(ctx){
   const [newJob,setNewJob]=useState({name:"",customer:customers[0]?.id||"",salesRep:reps[0]?.id||"",dueDate:"",startDate:"",notes:"",terms:"Net 30",poNumber:"",shipTo:"",shipVia:""});
   const [newCust,setNewCust]=useState(false);
   const [custForm,setCustForm]=useState({name:"",contact:"",email:"",phone:"",type:"K-12 District",address:""});
-  const [viewMode,setViewMode]=useState("kanban"); // table or kanban
+  const [setViewMode]=useState("kanban"); // table or kanban
   const [sortBy,setSortBy]=useState("createdDate");
   const [uploadData,setUploadData]=useState(null);
   const [uploadJobName,setUploadJobName]=useState('');
@@ -1009,8 +1009,7 @@ function DeliveryCalendar({jobs,lineItems,vendors,customers,getJobItems,setPage,
     }
   });
 
-  const days=[];
-  for(let i=0;i<firstDay;i++)days.push(null);
+    for(let i=0;i<firstDay;i++)days.push(null);
   for(let d=1;d<=daysInMonth;d++)days.push(d);
 
   return <div style={{animation:"fadeUp 0.4s"}}><Header title="Delivery Calendar" sub={monthName+" "+year+" -- expected deliveries for active jobs"} action={<div style={{display:"flex",gap:8}}><Btn v="secondary" onClick={()=>setMonthOffset(p=>p-1)}>&larr; Prev</Btn><Btn v="secondary" onClick={()=>setMonthOffset(0)}>Today</Btn><Btn v="secondary" onClick={()=>setMonthOffset(p=>p+1)}>Next &rarr;</Btn></div>}/>
@@ -1420,7 +1419,7 @@ function CommissionsPage({jobs,reps,customers,updateRep,addRep,deleteRep,getJobF
 // ===============================================================
 // SALES PORTAL
 // ===============================================================
-function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobItems,vendors,setPage,setSelectedJob,updateJob,notify,addSop,deleteSop,customSops}){
+function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobItems,vendors,setPage,setSelectedJob,updateJob,notify,addSop,deleteSop,customSops,triggerPrint}){
   const [activeRep,setActiveRep]=useState("overview");
   const [crmTab,setCrmTab]=useState("pipeline");
   const [noteText,setNoteText]=useState("");
@@ -1526,7 +1525,7 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
     {crmTab==="tasks"&&<TasksKanban jobs={rj} allJobs={jobs} reps={reps} updateJob={updateJob} notify={notify} inputStyle={inputStyle} customSops={customSops} addSop={addSop} deleteSop={deleteSop}/>}
 
     {/* NOTES */}
-    {crmTab==="notes"&&<NotesView customSops={customSops} addSop={addSop} deleteSop={deleteSop} jobs={rj} reps={reps} notify={notify} triggerPrint={ctx?.triggerPrint}/>}
+    {crmTab==="notes"&&<NotesView customSops={customSops} addSop={addSop} deleteSop={deleteSop} jobs={rj} reps={reps} notify={notify} triggerPrint={triggerPrint}/>}
 
     {/* TEAM */}
     {crmTab==="team"&&!repDetail&&<Card>
@@ -1746,7 +1745,7 @@ function PlaybookPage({jobs,reps,vendors,customers,lineItems,getJobFinancials,se
   const [newSop,setNewSop]=useState({title:'',cat:'Company',content:'',icon:'file'});
   // addSop/deleteSop come from props
   const iconOpts=['shield','send','users','receipt','download','dollar','file','truck','package','check','alert','chart','brain','edit','settings','book'];
-  const catOpts=['Company','Workflow','Financial','Operations','Strategic','Custom','Notes'];
+  const catOpts=['Company','Workflow','Financial','Operations','Strategic','Custom'];
 
   // Rich SOP renderer
   const RichSOP=({doc})=>{
@@ -1844,7 +1843,7 @@ function PlaybookPage({jobs,reps,vendors,customers,lineItems,getJobFinancials,se
     {id:"seasonal",cat:"Strategic",title:"Seasonal Planning & Capacity",icon:"chart",content:"SEASONAL PLANNING\nTHE SCHOOL CALENDAR DRIVES EVERYTHING.\n\nJANUARY THROUGH APRIL\n- Quoting season. Districts plan budgets.\n- Focus: respond to RFPs, build relationships, spec products.\n- Longest lead time items should be identified early.\n\nMAY THROUGH JUNE\n- Ordering season. Budgets approved, POs issued.\n- Focus: get orders to manufacturers ASAP.\n- Confirm delivery dates with every vendor.\n\nJUNE THROUGH AUGUST\n- Delivery and installation. CRITICAL WINDOW.\n- Focus: coordinate deliveries, manage partial shipments.\n- Invoice immediately upon receipt.\n- 60-70% of annual revenue books in this period.\n\nSEPTEMBER\n- HARD DEADLINE. School starts.\n- All furniture must be installed and rooms ready.\n- Escalate any outstanding deliveries.\n\nOCTOBER THROUGH DECEMBER\n- Slower period. Collections focus.\n- Review overdue payments.\n- Plan next year's strategy.\n- Update vendor relationships and discount rates."},
   ];
 
-  const allSops=[...sops,...customSops];
+  const allSops=[...sops,...customSops].filter(s=>s.cat!=="Notes"&&s.cat!=="Task");
   const cats=[...new Set(allSops.map(s=>s.cat))];
   const filtered=search?allSops.filter(s=>s.title.toLowerCase().includes(search.toLowerCase())||s.content.toLowerCase().includes(search.toLowerCase())):allSops;
 
@@ -1901,7 +1900,7 @@ function PlaybookPage({jobs,reps,vendors,customers,lineItems,getJobFinancials,se
 // ===============================================================
 // TASKS KANBAN (drag-and-drop, used in Sales Portal + standalone)
 // ===============================================================
-function TasksKanban({jobs,allJobs,reps,updateJob,notify,customSops,addSop,deleteSop,filterRep,filterJob,viewMode}){
+function TasksKanban({jobs,allJobs,reps,updateJob,notify,customSops,addSop,deleteSop,filterRep,filterJob}){
   const [showAdd,setShowAdd]=useState(false);
   const [editTask,setEditTask]=useState(null);
   const [form,setForm]=useState({text:"",due:"",assignees:[],status:"To Do",jobId:"",notes:"",link:"",priority:"normal"});
@@ -1922,24 +1921,6 @@ function TasksKanban({jobs,allJobs,reps,updateJob,notify,customSops,addSop,delet
 
   const createTask=(overrides)=>{if(!form.text.trim())return;saveTask({...form,...overrides,jobId:form.jobId||""});setForm({text:"",due:"",assignees:[],status:"To Do",jobId:"",notes:"",link:"",priority:"normal"});setShowAdd(false)};
 
-  // Week view
-  const days=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
-  const getDayStr=(dayIdx)=>{const today=new Date();const dow=today.getDay();const diff=dayIdx-(dow===0?6:dow-1);const d=new Date(today);d.setDate(today.getDate()+diff);return d.toISOString().split("T")[0]};
-
-  if(viewMode==="week") return <div>
-    <div className="resp-grid-3" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:8}}>
-      {days.map((day,di)=>{const ds=getDayStr(di);const dt=filtered.filter(t=>t.due===ds);const today=new Date();const dow=today.getDay();const isToday=di===(dow===0?6:dow-1);return <div key={day} style={{background:isToday?"rgba(45,212,191,0.04)":"#0a0a0a",borderRadius:12,border:"1px solid "+(isToday?"rgba(45,212,191,0.15)":"rgba(255,255,255,0.04)"),padding:12,minHeight:120}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-          <span style={{fontSize:12,fontWeight:700,color:isToday?"#2dd4bf":"#9a9a9a"}}>{day}{isToday&&<span style={{marginLeft:6,fontSize:10}}>TODAY</span>}</span>
-          <button onClick={()=>{setForm(f=>({...f,due:ds,status:"To Do"}));setShowAdd(true)}} style={{width:20,height:20,borderRadius:5,border:"1px dashed rgba(255,255,255,0.12)",background:"transparent",color:"#2dd4bf",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontFamily:"inherit"}}>+</button>
-        </div>
-        {dt.length===0&&<div style={{fontSize:11,color:"#333",textAlign:"center",padding:8}}>No tasks</div>}
-        {dt.map(t=><div key={t.id} onClick={()=>setEditTask(t)} style={{padding:"8px 10px",background:"#111",borderRadius:8,marginBottom:6,fontSize:13,fontWeight:500,color:t.status==="Done"?"#525252":"#e5e5e5",textDecoration:t.status==="Done"?"line-through":"none",cursor:"pointer",borderLeft:"3px solid "+colColors[t.status||"To Do"]}}>{t.text}</div>)}
-      </div>})}
-    </div>
-    {showAdd&&<AddTaskForm form={form} setForm={setForm} jobs={jobs} reps={reps} createTask={createTask} onClose={()=>setShowAdd(false)} inputStyle={inputStyle}/>}
-    {editTask&&<EditTaskOverlay task={editTask} setEditTask={setEditTask} jobs={jobs} reps={reps} saveTask={saveTask} deleteSop={deleteSop} notify={notify} inputStyle={inputStyle}/>}
-  </div>;
 
   return <div>
     {showAdd&&<AddTaskForm form={form} setForm={setForm} jobs={jobs} reps={reps} createTask={createTask} onClose={()=>setShowAdd(false)} inputStyle={inputStyle}/>}
@@ -1951,6 +1932,8 @@ function TasksKanban({jobs,allJobs,reps,updateJob,notify,customSops,addSop,delet
         {cols[status].map(t=><div key={t.id} draggable onDragStart={e=>handleDragStart(e,t.id)} onClick={()=>setEditTask(t)} style={{padding:"14px 16px",background:"#111",borderRadius:12,marginBottom:10,border:"1px solid rgba(255,255,255,0.04)",cursor:"grab",transition:"all 0.15s",borderLeft:"3px solid "+(priColors[t.priority]||"#525252")}} onMouseEnter={e=>{e.currentTarget.style.borderColor="rgba(45,212,191,0.15)";e.currentTarget.style.transform="translateY(-1px)"}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.04)";e.currentTarget.style.transform="translateY(0)"}}>
           <div style={{fontSize:15,fontWeight:600,color:status==="Done"?"#737373":"#f0f0f0",textDecoration:status==="Done"?"line-through":"none",marginBottom:8,lineHeight:1.4}}>{t.text}</div>
           <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>{t.jobName&&<span style={{fontSize:11,padding:"2px 8px",borderRadius:5,background:"rgba(45,212,191,0.06)",color:"#2dd4bf"}}>{t.jobName}</span>}{t.due&&<span style={{fontSize:11,padding:"2px 8px",borderRadius:5,background:"rgba(251,191,36,0.06)",color:"#fbbf24"}}>{t.due}</span>}{(t.assignees||[]).map(a=><span key={a} style={{fontSize:11,padding:"2px 8px",borderRadius:5,background:"rgba(167,139,250,0.06)",color:"#a78bfa"}}>{a}</span>)}{t.priority==="high"&&<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(248,113,113,0.08)",color:"#f87171",fontWeight:600}}>HIGH</span>}</div>
+          {t.notes&&<div style={{fontSize:12,color:"#737373",marginTop:6,lineHeight:1.5,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{t.notes}</div>}
+          {t.link&&<a href={t.link} target="_blank" rel="noopener" onClick={e=>e.stopPropagation()} style={{fontSize:11,color:"#2dd4bf",marginTop:4,display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.link}</a>}
         </div>)}
       </div>)}
     </div>
@@ -1992,17 +1975,16 @@ function EditTaskOverlay({task,setEditTask,jobs,reps,saveTask,deleteSop,notify,i
 }
 
 function TasksPage({jobs,reps,updateJob,notify,customSops,addSop,deleteSop}){
-  const [viewMode,setViewMode]=useState("kanban");
+  const [setViewMode]=useState("kanban");
   const [filterRep,setFilterRep]=useState("all");
   const [filterJob,setFilterJob]=useState("all");
   const open=(customSops||[]).filter(s=>s.cat==="Task").filter(s=>{try{return JSON.parse(s.content).status!=="Done"}catch{return true}}).length;
   return <div style={{animation:"fadeUp 0.4s"}}><Header title="Tasks" sub={open+" open tasks"}/>
     <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
-      <div style={{display:"flex",gap:0,background:"#111",borderRadius:8,padding:3}}>{[["kanban","Board"],["week","Week"]].map(([v,l])=><button key={v} onClick={()=>setViewMode(v)} style={{padding:"6px 14px",borderRadius:6,border:"none",cursor:"pointer",background:viewMode===v?"#2dd4bf":"transparent",color:viewMode===v?"#000":"#737373",fontSize:12,fontWeight:viewMode===v?600:400,fontFamily:"inherit"}}>{l}</button>)}</div>
       <select value={filterRep} onChange={e=>setFilterRep(e.target.value)} style={{...inputStyle,width:160,padding:"6px 10px",fontSize:12}}><option value="all">Everyone</option>{reps.filter(r=>!r.id.includes("SEED_FLAG")).map(r=><option key={r.id} value={r.name}>{r.name}</option>)}</select>
       <select value={filterJob} onChange={e=>setFilterJob(e.target.value)} style={{...inputStyle,width:180,padding:"6px 10px",fontSize:12}}><option value="all">All Projects</option>{jobs.map(j=><option key={j.id} value={j.id}>{j.name}</option>)}</select>
     </div>
-    <TasksKanban jobs={jobs} allJobs={jobs} reps={reps} updateJob={updateJob} notify={notify} customSops={customSops} addSop={addSop} deleteSop={deleteSop} filterRep={filterRep} filterJob={filterJob} viewMode={viewMode}/>
+    <TasksKanban jobs={jobs} allJobs={jobs} reps={reps} updateJob={updateJob} notify={notify} customSops={customSops} addSop={addSop} deleteSop={deleteSop} filterRep={filterRep} filterJob={filterJob}/>
   </div>;
 }
 
