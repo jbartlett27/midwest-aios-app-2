@@ -1907,9 +1907,7 @@ function PlaybookPage({jobs,reps,vendors,customers,lineItems,getJobFinancials,se
 // TASKS KANBAN (drag-and-drop, used in Sales Portal + standalone)
 // ===============================================================
 function TasksKanban({jobs,allJobs,reps,updateJob,notify,customSops,addSop,deleteSop,filterRep,filterJob}){
-  const [showAdd,setShowAdd]=useState(false);
   const [editTask,setEditTask]=useState(null);
-  const [form,setForm]=useState({text:"",due:"",assignees:[],status:"To Do",jobId:"",notes:"",link:"",priority:"normal"});
   const [dragId,setDragId]=useState(null);
 
   const allTasks=(customSops||[]).filter(s=>s.cat==="Task").map(s=>{try{const d=JSON.parse(s.content);return{...d,id:s.id,sopId:s.id}}catch{return{id:s.id,sopId:s.id,text:s.title,status:"To Do",assignees:[],due:"",jobId:"",jobName:"",notes:"",link:"",priority:"normal"}}});
@@ -1925,15 +1923,14 @@ function TasksKanban({jobs,allJobs,reps,updateJob,notify,customSops,addSop,delet
   const handleDrop=(e,status)=>{e.preventDefault();const id=e.dataTransfer.getData("taskId")||dragId;if(id)moveTask(id,status);setDragId(null)};
   const handleDragOver=(e)=>{e.preventDefault();e.dataTransfer.dropEffect="move"};
 
-  const createTask=(overrides)=>{if(!form.text.trim())return;saveTask({...form,...overrides,jobId:form.jobId||""});setForm({text:"",due:"",assignees:[],status:"To Do",jobId:"",notes:"",link:"",priority:"normal"});setShowAdd(false)};
+  
 
 
   return <div>
-    {showAdd&&<AddTaskForm form={form} setForm={setForm} jobs={jobs} reps={reps} createTask={createTask} onClose={()=>setShowAdd(false)} inputStyle={inputStyle}/>}
     {editTask&&<EditTaskOverlay task={editTask} setEditTask={setEditTask} jobs={jobs} reps={reps} saveTask={saveTask} deleteSop={deleteSop} notify={notify} inputStyle={inputStyle}/>}
     <div className="resp-grid-3" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:14}}>
       {["To Do","In Progress","Done"].map(status=><div key={status} onDrop={e=>handleDrop(e,status)} onDragOver={handleDragOver} style={{background:"#0a0a0a",borderRadius:14,border:"1px solid rgba(255,255,255,0.04)",padding:16,minHeight:200,transition:"border-color 0.2s"}} onDragEnter={e=>{e.currentTarget.style.borderColor=colColors[status]+"60"}} onDragLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.04)"}}>
-        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}><div style={{width:12,height:12,borderRadius:"50%",background:colColors[status]}}/><span style={{fontSize:16,fontWeight:800,color:"#f0f0f0"}}>{status}</span><span style={{fontSize:13,color:"#525252",background:"rgba(255,255,255,0.04)",padding:"2px 10px",borderRadius:12,marginLeft:"auto",fontFamily:"'JetBrains Mono',monospace"}}>{cols[status].length}</span><button onClick={()=>{setForm(f=>({...f,status}));setShowAdd(true)}} style={{width:28,height:28,borderRadius:8,border:"1px dashed rgba(255,255,255,0.12)",background:"transparent",color:"#2dd4bf",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontFamily:"inherit"}}>+</button></div>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}><div style={{width:12,height:12,borderRadius:"50%",background:colColors[status]}}/><span style={{fontSize:16,fontWeight:800,color:"#f0f0f0"}}>{status}</span><span style={{fontSize:13,color:"#525252",background:"rgba(255,255,255,0.04)",padding:"2px 10px",borderRadius:12,marginLeft:"auto",fontFamily:"'JetBrains Mono',monospace"}}>{cols[status].length}</span><button onClick={()=>setEditTask({text:"",due:"",assignees:[],status:status,jobId:"",notes:"",link:"",priority:"normal",isNew:true})} style={{width:28,height:28,borderRadius:8,border:"1px dashed rgba(255,255,255,0.12)",background:"transparent",color:"#2dd4bf",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontFamily:"inherit"}}>+</button></div>
         {cols[status].length===0&&<div style={{fontSize:13,color:"#333",padding:"28px 0",textAlign:"center",border:"1px dashed rgba(255,255,255,0.06)",borderRadius:10}}>Drop tasks here</div>}
         {cols[status].map(t=><div key={t.id} draggable onDragStart={e=>handleDragStart(e,t.id)} onClick={()=>setEditTask(t)} style={{padding:"14px 16px",background:"#111",borderRadius:12,marginBottom:10,border:"1px solid rgba(255,255,255,0.04)",cursor:"grab",transition:"all 0.15s",borderLeft:"3px solid "+(priColors[t.priority]||"#525252")}} onMouseEnter={e=>{e.currentTarget.style.borderColor="rgba(45,212,191,0.15)";e.currentTarget.style.transform="translateY(-1px)"}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.04)";e.currentTarget.style.transform="translateY(0)"}}>
           <div style={{fontSize:15,fontWeight:600,color:status==="Done"?"#737373":"#f0f0f0",textDecoration:status==="Done"?"line-through":"none",marginBottom:8,lineHeight:1.4}}>{t.text}</div>
@@ -1946,24 +1943,10 @@ function TasksKanban({jobs,allJobs,reps,updateJob,notify,customSops,addSop,delet
   </div>;
 }
 
-// Add Task Form (shared)
-function AddTaskForm({form,setForm,jobs,reps,createTask,onClose,inputStyle}){
-  return <Card style={{marginBottom:16,border:"1px solid rgba(45,212,191,0.15)"}}>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:10,marginBottom:12}}>
-      <div style={{gridColumn:"1/-1"}}><input value={form.text} onChange={e=>setForm({...form,text:e.target.value})} onKeyDown={e=>{if(e.key==="Enter"&&form.text.trim())createTask()}} autoFocus placeholder="What needs to be done?" style={{...inputStyle,fontSize:15,padding:"14px 16px"}}/></div>
-      <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Due Date</label><input type="date" value={form.due} onChange={e=>setForm({...form,due:e.target.value})} style={inputStyle}/></div>
-      <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Project</label><select value={form.jobId} onChange={e=>setForm({...form,jobId:e.target.value})} style={inputStyle}><option value="">None</option>{jobs.map(j=><option key={j.id} value={j.id}>{j.name}</option>)}</select></div>
-      <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Priority</label><select value={form.priority} onChange={e=>setForm({...form,priority:e.target.value})} style={inputStyle}><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select></div>
-      <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Assign</label><div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{reps.filter(r=>!r.id.includes("SEED_FLAG")).map(r=>{const on=(form.assignees||[]).includes(r.name);return <button key={r.id} onClick={()=>setForm({...form,assignees:on?form.assignees.filter(a=>a!==r.name):[...(form.assignees||[]),r.name]})} style={{padding:"4px 10px",borderRadius:6,border:"1px solid "+(on?"#2dd4bf":"rgba(255,255,255,0.08)"),background:on?"rgba(45,212,191,0.1)":"transparent",color:on?"#2dd4bf":"#737373",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>{r.name.split(" ")[0]}</button>})}</div></div>
-    </div>
-    <div style={{display:"flex",gap:8}}><Btn onClick={()=>createTask()}>Create</Btn><Btn v="secondary" onClick={onClose}>Cancel</Btn></div>
-  </Card>;
-}
-
 // Edit Task Overlay (click blank space to close)
 function EditTaskOverlay({task,setEditTask,jobs,reps,saveTask,deleteSop,notify,inputStyle}){
   const [t,setT]=useState({...task});
-  return <div onClick={()=>{saveTask(t,t.sopId);setEditTask(null)}} style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.75)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+  return <div onClick={()=>{if(t.text?.trim()){saveTask(t,t.isNew?null:t.sopId)};setEditTask(null)}} style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.75)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
     <div onClick={e=>e.stopPropagation()} style={{background:"#0a0a0a",borderRadius:16,border:"1px solid rgba(45,212,191,0.15)",padding:24,width:"100%",maxWidth:480,maxHeight:"85vh",overflow:"auto"}}>
       <input value={t.text} onChange={e=>setT({...t,text:e.target.value})} style={{...inputStyle,fontSize:18,fontWeight:700,background:"transparent",border:"none",padding:"8px 0",color:"#f0f0f0",marginBottom:12}}/>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:8,marginBottom:12}}>
@@ -1975,7 +1958,7 @@ function EditTaskOverlay({task,setEditTask,jobs,reps,saveTask,deleteSop,notify,i
       <div style={{marginBottom:12}}><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Assign</label><div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{reps.filter(r=>!r.id.includes("SEED_FLAG")).map(r=>{const on=(t.assignees||[]).includes(r.name);return <button key={r.id} onClick={()=>setT({...t,assignees:on?(t.assignees||[]).filter(a=>a!==r.name):[...(t.assignees||[]),r.name]})} style={{padding:"4px 10px",borderRadius:6,border:"1px solid "+(on?"#2dd4bf":"rgba(255,255,255,0.08)"),background:on?"rgba(45,212,191,0.1)":"transparent",color:on?"#2dd4bf":"#737373",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>{r.name.split(" ")[0]}</button>})}</div></div>
       <div style={{marginBottom:12}}><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Notes</label><textarea value={t.notes||""} onChange={e=>setT({...t,notes:e.target.value})} rows={3} placeholder="Details, context, follow-ups..." style={{...inputStyle,resize:"vertical"}}/></div>
       <div style={{marginBottom:16}}><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Link</label><input value={t.link||""} onChange={e=>setT({...t,link:e.target.value})} placeholder="https://..." style={inputStyle}/></div>
-      <div style={{display:"flex",gap:8}}><Btn onClick={()=>{saveTask(t,t.sopId);setEditTask(null)}}>Save</Btn><Btn v="danger" onClick={()=>{deleteSop(t.sopId);setEditTask(null);notify("Deleted")}}>Delete</Btn><Btn v="secondary" onClick={()=>{saveTask(t,t.sopId);setEditTask(null)}}>Close</Btn></div>
+      <div style={{display:"flex",gap:8}}><Btn onClick={()=>{if(t.text?.trim()){saveTask(t,t.isNew?null:t.sopId)}setEditTask(null)}}>Save</Btn><Btn v="danger" onClick={()=>{deleteSop(t.sopId);setEditTask(null);notify("Deleted")}}>Delete</Btn><Btn v="secondary" onClick={()=>{if(t.text?.trim()){saveTask(t,t.isNew?null:t.sopId)}setEditTask(null)}}>Close</Btn></div>
     </div>
   </div>;
 }
@@ -2005,6 +1988,7 @@ function NotesView({customSops,addSop,deleteSop,jobs,reps,notify,triggerPrint}){
   const [editContent,setEditContent]=useState("");
   const [search,setSearch]=useState("");
   const [activeNote,setActiveNote]=useState(null);
+  const [newNoteMode,setNewNoteMode]=useState(false);
   const [checklistMode,setChecklistMode]=useState(false);
 
   const notes=(customSops||[]).filter(s=>s.cat==="Notes").sort((a,b)=>b.id.localeCompare(a.id));
@@ -2057,7 +2041,7 @@ function NotesView({customSops,addSop,deleteSop,jobs,reps,notify,triggerPrint}){
       <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{folders.map(f=><button key={f} onClick={()=>setFolder(f)} style={{padding:"4px 8px",borderRadius:6,border:"none",background:folder===f?"#2dd4bf":"rgba(255,255,255,0.04)",color:folder===f?"#000":"#737373",fontSize:11,fontWeight:folder===f?600:400,cursor:"pointer",fontFamily:"inherit"}}>{f}</button>)}<button onClick={()=>setShowNewFolder(true)} style={{padding:"4px 8px",borderRadius:6,border:"1px dashed rgba(255,255,255,0.1)",background:"transparent",color:"#525252",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>+</button></div>
       {showNewFolder&&<div style={{display:"flex",gap:4}}><input value={newFolder} onChange={e=>setNewFolder(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")createFolder()}} placeholder="Folder name" autoFocus style={{...inputStyle,padding:"4px 8px",fontSize:11,flex:1}}/><Btn style={{fontSize:10,padding:"4px 8px"}} onClick={createFolder}>Add</Btn></div>}
       <div style={{flex:1,overflow:"auto",display:"flex",flexDirection:"column",gap:4}}>
-        <div onClick={()=>{setActiveNote(null);setEditId(null)}} style={{padding:"10px 12px",borderRadius:10,background:!activeNote?"rgba(45,212,191,0.06)":"transparent",border:"1px solid "+(!activeNote?"rgba(45,212,191,0.15)":"transparent"),cursor:"pointer"}}><div style={{fontSize:13,fontWeight:600,color:"#2dd4bf"}}>+ New Note</div></div>
+        <div onClick={()=>{const newId="NOTE-"+Math.random().toString(36).slice(2,8);setActiveNote(newId);setEditId(newId);setEditContent("");setNewNoteMode(true)}} style={{padding:"10px 12px",borderRadius:10,background:!activeNote?"rgba(45,212,191,0.06)":"transparent",border:"1px solid "+(!activeNote?"rgba(45,212,191,0.15)":"transparent"),cursor:"pointer"}}><div style={{fontSize:13,fontWeight:600,color:"#2dd4bf"}}>+ New Note</div></div>
         {filtered.map(n=>{const d=parseNote(n);return <div key={n.id} onClick={()=>{setActiveNote(n.id);setEditId(null)}} style={{padding:"10px 12px",borderRadius:10,background:activeNote===n.id?"rgba(255,255,255,0.04)":"transparent",border:"1px solid "+(activeNote===n.id?"rgba(255,255,255,0.08)":"transparent"),cursor:"pointer"}}><div style={{fontSize:13,fontWeight:600,color:activeNote===n.id?"#f0f0f0":"#c4c4c4",marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{n.title}</div><div style={{fontSize:11,color:"#525252"}}>{d.date?new Date(d.date).toLocaleDateString():""}</div></div>})}
       </div>
     </div>
@@ -2065,18 +2049,11 @@ function NotesView({customSops,addSop,deleteSop,jobs,reps,notify,triggerPrint}){
     {/* Main */}
     <div style={{flex:1,minWidth:0}}>
       {/* New note composer */}
-      {!viewing&&<div>
-        <div style={{display:"flex",gap:8,marginBottom:10,flexWrap:"wrap"}}>
-          <select value={folder==="All"?"General":folder} onChange={e=>{if(e.target.value==="__new"){setShowNewFolder(true)}else{setFolder(e.target.value)}}} style={{...inputStyle,width:140,padding:"6px 10px",fontSize:12}}>{allFolders.map(f=><option key={f}>{f}</option>)}<option value="__new">+ New Folder</option></select>
-          <button onClick={addChecklist} style={{padding:"4px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.08)",background:"transparent",color:"#737373",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>+ Checklist</button>
-          <button onClick={addBullet} style={{padding:"4px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.08)",background:"transparent",color:"#737373",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>+ Bullet</button>
-        </div>
-        <textarea value={content} onChange={e=>autoSave(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){const lines=content.split("\n");const last=lines[lines.length-1]||"";if(last.startsWith("[ ] ")||last.startsWith("[x] ")){e.preventDefault();autoSave(content+"\n[ ] ")}else if(last.startsWith("- ")){e.preventDefault();autoSave(content+"\n- ")}}}} placeholder={"Start writing...\n\nFirst line becomes the title.\nAuto-saves as you type."} rows={16} style={{width:"100%",padding:20,background:"#000",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,color:"#e5e5e5",fontSize:14,lineHeight:1.8,fontFamily:"inherit",resize:"vertical",minHeight:300,outline:"none"}}/>
-        <div style={{display:"flex",alignItems:"center",gap:12,marginTop:10}}>{content.trim()&&<span style={{fontSize:12,color:saved?"#34d399":"#525252"}}>{saved?"Saved":"Saving..."}</span>}{content.trim()&&<Btn v="ghost" style={{fontSize:12,padding:"4px 12px"}} onClick={finishNote}>Done</Btn>}</div>
+      {!viewing&&!editId&&<div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:300,color:"#525252"}}>
+        <div style={{fontSize:16,marginBottom:8}}>Select a note or create a new one</div>
+        <Btn v="ghost" onClick={()=>{const newId="NOTE-"+Math.random().toString(36).slice(2,8);setActiveNote(newId);setEditId(newId);setEditContent("");setNewNoteMode(true)}}>+ New Note</Btn>
       </div>}
-
-      {/* View note */}
-      {viewing&&!editId&&<div>
+            {viewing&&!editId&&<div>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,gap:12,flexWrap:"wrap"}}>
           <div style={{flex:1}}><div style={{fontSize:22,fontWeight:800,color:"#f0f0f0",marginBottom:4}}>{viewing.title}</div><div style={{fontSize:12,color:"#525252"}}>{viewData?.date?new Date(viewData.date).toLocaleDateString():""}{viewData?.folder&&viewData.folder!=="General"?" | "+viewData.folder:""}</div></div>
           <div style={{display:"flex",gap:6,flexShrink:0}}><Btn v="ghost" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>{setEditId(viewing.id);setEditContent(viewData?.text||viewing.content||"")}}>Edit</Btn><Btn v="ghost" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>exportPDF(viewing)}>PDF</Btn><Btn v="danger" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>{deleteSop(viewing.id);setActiveNote(null);notify("Deleted")}}>Delete</Btn></div>
