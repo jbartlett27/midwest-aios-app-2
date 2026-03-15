@@ -117,6 +117,10 @@ import { db } from './supabase';
 import CsvUploadPage from './CsvUpload';
 
 // --- PDF EXPORT: zero dependencies, works everywhere ---------
+// Reusable checkbox components
+const Check=({checked,onChange,onClick,size})=>{const sz=size||18;return <div onClick={e=>{if(onClick)onClick(e);if(onChange)onChange()}} style={{width:sz,height:sz,borderRadius:5,border:"2px solid "+(checked?"#2dd4bf":"rgba(255,255,255,0.15)"),background:checked?"#2dd4bf":"transparent",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"all 0.15s cubic-bezier(0.4,0,0.2,1)",flexShrink:0}} onMouseEnter={e=>{if(!checked)e.currentTarget.style.borderColor="rgba(45,212,191,0.5)"}} onMouseLeave={e=>{if(!checked)e.currentTarget.style.borderColor="rgba(255,255,255,0.15)"}}>{checked&&<svg width={sz-6} height={sz-6} viewBox="0 0 12 12" fill="none"><path d="M2.5 6L5 8.5L9.5 3.5" stroke="#000" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}</div>};
+const CheckMinus=({checked,onChange,size})=>{const sz=size||18;return <div onClick={onChange} style={{width:sz,height:sz,borderRadius:5,border:"2px solid "+(checked?"#2dd4bf":"rgba(255,255,255,0.15)"),background:checked?"#2dd4bf":"transparent",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"all 0.15s",flexShrink:0}}>{checked&&<svg width={sz-6} height={sz-6} viewBox="0 0 12 12" fill="none"><path d="M2.5 6H9.5" stroke="#000" strokeWidth="2" strokeLinecap="round"/></svg>}</div>};
+
 function usePrintOverlay() {
   const triggerPrint = (title, html) => {
     const w = window.open('', '_blank');
@@ -2202,8 +2206,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,brain
 function DirectoryPage({vendors,customers,reps,updateVendor,addVendor,deleteVendor,forceDeleteVendor,forceDeleteCustomer,forceDeleteRep,updateCustomer,addCustomer,deleteCustomer,updateRep,addRep,deleteRep,notify,jobs,lineItems,getJobFinancials,getJobItems,setPage,confirm}){
   
   // Custom checkbox component
-  const Check=({checked,onChange,onClick,size})=>{const sz=size||18;return <div onClick={e=>{if(onClick)onClick(e);if(onChange)onChange()}} style={{width:sz,height:sz,borderRadius:5,border:"2px solid "+(checked?"#2dd4bf":"rgba(255,255,255,0.15)"),background:checked?"#2dd4bf":"transparent",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"all 0.15s cubic-bezier(0.4,0,0.2,1)",flexShrink:0}} onMouseEnter={e=>{if(!checked)e.currentTarget.style.borderColor="rgba(45,212,191,0.5)"}} onMouseLeave={e=>{if(!checked)e.currentTarget.style.borderColor="rgba(255,255,255,0.15)"}}>{checked&&<svg width={sz-6} height={sz-6} viewBox="0 0 12 12" fill="none"><path d="M2.5 6L5 8.5L9.5 3.5" stroke="#000" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}</div>};
-  const CheckMinus=({checked,onChange,size})=>{const sz=size||18;return <div onClick={onChange} style={{width:sz,height:sz,borderRadius:5,border:"2px solid "+(checked?"#2dd4bf":"rgba(255,255,255,0.15)"),background:checked?"#2dd4bf":"transparent",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"all 0.15s",flexShrink:0}}>{checked&&<svg width={sz-6} height={sz-6} viewBox="0 0 12 12" fill="none"><path d="M2.5 6H9.5" stroke="#000" strokeWidth="2" strokeLinecap="round"/></svg>}</div>};
+
 
 const [tab,setTab]=useState("vendors");
   const [editId,setEditId]=useState(null);
