@@ -106,7 +106,7 @@ const inputStyle = {width:"100%",padding:"11px 14px",background:"#0a0a0a",border
 // --- SHARED COMPONENTS ---------------------------------------
 const Card = ({children,style,onClick,hover}) => <div onClick={onClick} style={{background:"#111111",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:22,cursor:onClick?"pointer":"default",transition:"all 0.25s cubic-bezier(0.4,0,0.2,1)",...style}} onMouseEnter={e=>{if(hover||onClick){e.currentTarget.style.borderColor="rgba(45,212,191,0.2)";e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow="0 8px 32px rgba(0,0,0,0.2)"}}} onMouseLeave={e=>{if(hover||onClick){e.currentTarget.style.borderColor="rgba(255,255,255,0.06)";e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="none"}}}>{children}</div>;
 const Badge = ({label,color}) => <span style={{display:"inline-flex",padding:"3px 8px",borderRadius:5,fontSize:11,fontWeight:600,letterSpacing:0.5,textTransform:"uppercase",background:`${color}12`,color:`${color}cc`,transition:"opacity 0.2s"}}>{label}</span>;
-const StatCard = ({label,value,sub,icon,color="#2dd4bf"}) => <Card style={{display:"flex",flexDirection:"column",gap:4,padding:"14px 16px",position:"relative",overflow:"hidden"}}><div style={{position:"absolute",top:-10,right:-10,width:44,height:44,borderRadius:"50%",background:color+"0a"}}/><span style={{fontSize:10,color:"#737373",fontWeight:600,textTransform:"uppercase",letterSpacing:1.5}}>{label}</span><div style={{fontSize:"clamp(18px,4vw,30px)",fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace",letterSpacing:-1,lineHeight:1}}>{value}</div>{sub&&<div style={{fontSize:11,color:"#525252",marginTop:1}}>{sub}</div>}</Card>;
+const StatCard = ({label,value,sub,icon,color="#2dd4bf"}) => <Card style={{display:"flex",flexDirection:"column",gap:4,padding:"14px 16px"}}><span style={{fontSize:10,color:"#737373",fontWeight:600,textTransform:"uppercase",letterSpacing:1.5}}>{label}</span><div style={{fontSize:"clamp(18px,4vw,30px)",fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace",letterSpacing:-1,lineHeight:1}}>{value}</div>{sub&&<div style={{fontSize:11,color:"#525252",marginTop:1}}>{sub}</div>}</Card>;
 const Header = ({title,sub,action}) => <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:24,flexWrap:"wrap",gap:12}}><div><h2 style={{fontSize:24,fontWeight:700,color:"#f0f0f0",marginBottom:4,letterSpacing:-0.5}}>{title}</h2>{sub&&<p style={{fontSize:13,color:"#737373"}}>{sub}</p>}</div>{action}</div>;
 const Btn = ({children,onClick,v="primary",style:s}) => {const st={primary:{background:"#2dd4bf",color:"#000000",fontWeight:600},secondary:{background:"transparent",color:"#a3a3a3",border:"1px solid rgba(255,255,255,0.1)"},ghost:{background:"transparent",color:"#2dd4bf",border:"1px solid rgba(45,212,191,0.15)"},danger:{background:"rgba(248,113,113,0.08)",color:"#f87171",border:"1px solid rgba(248,113,113,0.15)"}};return <button onClick={onClick} style={{padding:"8px 16px",borderRadius:8,border:"none",cursor:"pointer",fontSize:13,fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:6,transition:"all 0.2s cubic-bezier(0.4,0,0.2,1)",...st[v],...s}} onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-1px)";if(v==="primary")e.currentTarget.style.boxShadow="0 4px 16px rgba(45,212,191,0.3)"}} onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="none"}}>{children}</button>};
 const Bar = ({value,max,color="#2dd4bf",height=7}) => <div style={{width:"100%",height,background:"rgba(255,255,255,0.04)",borderRadius:height,overflow:"hidden"}}><div style={{width:`${Math.min((value/(max||1))*100,100)}%`,height:"100%",background:color,borderRadius:height,transition:"width 0.6s cubic-bezier(0.25,0.1,0.25,1)"}}/></div>;
@@ -2013,13 +2013,23 @@ function NotesView({customSops,addSop,deleteSop,jobs,reps,notify,triggerPrint}){
     return true;
   });
 
-  const saveNote=()=>{
-    const text=content.trim();if(!text)return;
-    const title=text.split("\n")[0].slice(0,60)||"Untitled";
-    const data={text,folder:folder==="All"?"General":folder,date:new Date().toISOString(),items:[]};
-    addSop({id:"NOTE-"+Math.random().toString(36).slice(2,8),title,cat:"Notes",icon:"file",content:JSON.stringify(data),custom:true});
-    setContent("");notify("Note saved");
+  const [draftId]=useState(()=>"NOTE-"+Math.random().toString(36).slice(2,8));
+  const [saved,setSaved]=useState(false);
+  const saveTimerRef=useRef(null);
+  const autoSave=(text)=>{
+    setContent(text);setSaved(false);
+    if(saveTimerRef.current)clearTimeout(saveTimerRef.current);
+    if(!text.trim())return;
+    saveTimerRef.current=setTimeout(()=>{
+      const title=text.split("\n")[0].slice(0,60)||"Untitled";
+      const data={text,folder:folder==="All"?"General":folder,date:new Date().toISOString(),items:[]};
+      const existing=(customSops||[]).find(s=>s.id===draftId);
+      if(existing)deleteSop(draftId);
+      addSop({id:draftId,title,cat:"Notes",icon:"file",content:JSON.stringify(data),custom:true});
+      setSaved(true);
+    },800);
   };
+  const finishNote=()=>{if(!content.trim())return;setContent("");setActiveNote(draftId);setSaved(false)};
 
   const updateNote=(note,newText)=>{const data=parseNote(note);const title=(newText||data.text||"").split("\n")[0].slice(0,60)||"Untitled";deleteSop(note.id);addSop({...note,title,content:JSON.stringify({...data,text:newText||data.text})});notify("Note updated")};
 
@@ -2056,8 +2066,8 @@ function NotesView({customSops,addSop,deleteSop,jobs,reps,notify,triggerPrint}){
           <button onClick={addChecklist} style={{padding:"4px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.08)",background:"transparent",color:"#737373",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>+ Checklist</button>
           <button onClick={addBullet} style={{padding:"4px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.08)",background:"transparent",color:"#737373",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>+ Bullet</button>
         </div>
-        <textarea value={content} onChange={e=>setContent(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){const lines=content.split("\n");const last=lines[lines.length-1]||"";if(last.startsWith("[ ] ")||last.startsWith("[x] ")){e.preventDefault();setContent(c=>c+"\n[ ] ")}else if(last.startsWith("- ")){e.preventDefault();setContent(c=>c+"\n- ")}}}} placeholder={"Start writing...\n\nFirst line becomes the title.\nPress Enter after a checklist or bullet to continue the list."} rows={16} style={{width:"100%",padding:20,background:"#000",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,color:"#e5e5e5",fontSize:14,lineHeight:1.8,fontFamily:"inherit",resize:"vertical",minHeight:300,outline:"none"}}/>
-        <div style={{display:"flex",gap:8,marginTop:12}}><Btn onClick={saveNote}>Save Note</Btn></div>
+        <textarea value={content} onChange={e=>autoSave(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){const lines=content.split("\n");const last=lines[lines.length-1]||"";if(last.startsWith("[ ] ")||last.startsWith("[x] ")){e.preventDefault();autoSave(content+"\n[ ] ")}else if(last.startsWith("- ")){e.preventDefault();autoSave(content+"\n- ")}}}} placeholder={"Start writing...\n\nFirst line becomes the title.\nAuto-saves as you type."} rows={16} style={{width:"100%",padding:20,background:"#000",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,color:"#e5e5e5",fontSize:14,lineHeight:1.8,fontFamily:"inherit",resize:"vertical",minHeight:300,outline:"none"}}/>
+        <div style={{display:"flex",alignItems:"center",gap:12,marginTop:10}}>{content.trim()&&<span style={{fontSize:12,color:saved?"#34d399":"#525252"}}>{saved?"Saved":"Saving..."}</span>}{content.trim()&&<Btn v="ghost" style={{fontSize:12,padding:"4px 12px"}} onClick={finishNote}>Done</Btn>}</div>
       </div>}
 
       {/* View note */}
