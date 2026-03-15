@@ -728,7 +728,7 @@ function JobsPage(ctx){
 
   if(selectedJob){
     const job=jobs.find(j=>j.id===selectedJob);
-    if(!job){setSelectedJob(null);return <div style={{padding:40,textAlign:"center",color:"#737373"}}>Job not found. Returning to list...</div>}
+    if(!job){setTimeout(()=>setSelectedJob(null),0);return <div style={{padding:40,textAlign:"center",color:"#737373"}}>Loading...</div>}
     return <JobDetail job={job} ctx={ctx}/>;
   }
 
@@ -831,6 +831,7 @@ function DiscInput({initial,onCommit,style}){
   return <input type="number" value={val} onClick={e=>e.stopPropagation()} onMouseDown={e=>e.stopPropagation()} onChange={e=>{setVal(e.target.value);const pct=parseFloat(e.target.value);if(!isNaN(pct))onCommit(pct)}} style={style} placeholder="0" min="0" max="100" step="1"/>;
 }
 function JobDetail({job,ctx}){
+  if(!job||!ctx)return <div style={{padding:40,textAlign:"center",color:"#f87171"}}>Missing job data. <button onClick={()=>ctx?.setSelectedJob?.(null)} style={{color:"#2dd4bf",background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",textDecoration:"underline"}}>Back to jobs</button></div>;
   const {getJobFinancials,getJobItems,getItemStatus,vendors,customers,reps,updateJob,addJob,addLineItem,updateLineItem,deleteLineItem,deleteJob,setSelectedJob,notify,lineItems,jobs,triggerPrint,updateVendor}=ctx;
   const f=getJobFinancials(job.id);
   const items=getJobItems(job.id);
