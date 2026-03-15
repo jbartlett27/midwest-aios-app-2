@@ -643,7 +643,7 @@ function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJo
 
 function JobsPage(ctx){
   const {jobs,reps,customers,vendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobFinancials,getJobItems,getItemStatus,getJobPOStatus,getJobInvStatus,updateJob,addJob,addLineItem,updateLineItem,deleteLineItem,lineItems,addCustomer,addVendor} = ctx;
-  const [viewMode,setViewMode]=useState("table");
+  const [viewMode,setViewMode]=useState("kanban");
   const [newJob,setNewJob]=useState({name:"",customer:customers[0]?.id||"",salesRep:reps[0]?.id||"",dueDate:"",startDate:"",notes:"",terms:"Net 30",poNumber:"",shipTo:"",shipVia:""});
   const [newCust,setNewCust]=useState(false);
   const [custForm,setCustForm]=useState({name:"",contact:"",email:"",phone:"",type:"K-12 District",address:""});
