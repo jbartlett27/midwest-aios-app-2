@@ -463,9 +463,10 @@ export default function MidwestAIOS() {
         *{box-sizing:border-box;margin:0;padding:0}
         ::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:3px}
         input,textarea,select{font-family:Satoshi,sans-serif;font-size:16px!important}
-        select{-webkit-appearance:none;-moz-appearance:none;appearance:none;background-image:url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23737373' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;background-size:10px;padding-right:32px!important;cursor:pointer}
-        select:focus{border-color:rgba(45,212,191,0.3)!important;outline:none}
-        select option{background:#111111;color:#e5e5e5;padding:8px}
+        select{-webkit-appearance:none!important;-moz-appearance:none!important;appearance:none!important;background-color:#0a0a0a!important;background-image:url("data:image/svg+xml,%3Csvg width='10' height='6' viewBox='0 0 10 6' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L5 5L9 1' stroke='%23737373' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")!important;background-repeat:no-repeat!important;background-position:right 12px center!important;background-size:10px!important;padding-right:32px!important;cursor:pointer!important;color:#e5e5e5!important;border:1px solid rgba(255,255,255,0.08)!important;border-radius:10px!important;padding:11px 32px 11px 14px!important;outline:none!important}
+        select:focus{border-color:rgba(45,212,191,0.3)!important}
+        select option{background:#111111!important;color:#e5e5e5!important;padding:8px!important}
+        select::-ms-expand{display:none!important}
         button{-webkit-tap-highlight-color:transparent}
         @media(max-width:768px){
           .sidebar{position:fixed!important;left:-240px!important;top:0!important;bottom:0!important;width:220px!important;min-width:220px!important;z-index:10000!important;transition:left 0.3s cubic-bezier(0.4,0,0.2,1)!important}
