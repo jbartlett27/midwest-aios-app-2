@@ -510,6 +510,7 @@ export default function MidwestAIOS() {
           .dash-hero{flex-direction:column!important;text-align:center!important}
           .dash-hero>div{width:100%!important}
           .dash-stat{min-width:0!important}
+          .job-sticky{margin:-16px -12px 0!important;padding:12px 12px 0!important}
           .dash-exports{gap:4px!important}
           .dash-exports>button{padding:6px 10px!important;font-size:11px!important}
           .doc-tabs{overflow-x:auto!important;-webkit-overflow-scrolling:touch!important}
@@ -642,10 +643,10 @@ function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJo
 
 function JobsPage(ctx){
   const {jobs,reps,customers,vendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobFinancials,getJobItems,getItemStatus,getJobPOStatus,getJobInvStatus,updateJob,addJob,addLineItem,updateLineItem,deleteLineItem,lineItems,addCustomer,addVendor} = ctx;
+  const [viewMode,setViewMode]=useState("table");
   const [newJob,setNewJob]=useState({name:"",customer:customers[0]?.id||"",salesRep:reps[0]?.id||"",dueDate:"",startDate:"",notes:"",terms:"Net 30",poNumber:"",shipTo:"",shipVia:""});
   const [newCust,setNewCust]=useState(false);
   const [custForm,setCustForm]=useState({name:"",contact:"",email:"",phone:"",type:"K-12 District",address:""});
-  const [setViewMode]=useState("kanban"); // table or kanban
   const [sortBy,setSortBy]=useState("createdDate");
   const [uploadData,setUploadData]=useState(null);
   const [uploadJobName,setUploadJobName]=useState('');
@@ -867,7 +868,7 @@ function JobDetail({job,ctx}){
   const saveNewItem=()=>{if(!newItem.description)return;addLineItem({...newItem,jobId:job.id,group:newItem.group||"",tag:newItem.tag||"",manufacturer:newItem.manufacturer||"",modelNumber:newItem.modelNumber||"",color:newItem.color||"",listPrice:parseFloat(newItem.listPrice)||0,unitCost:parseFloat(newItem.unitCost)||0,unitPrice:parseFloat(newItem.unitPrice)||0,shippingPerUnit:parseFloat(newItem.shippingPerUnit)||0,installPerUnit:parseFloat(newItem.installPerUnit)||0,qtyOrdered:parseInt(newItem.qtyOrdered)||0,qtyReceived:parseInt(newItem.qtyReceived)||0,qtyInvoiced:parseInt(newItem.qtyInvoiced)||0});setAddingItem(false);setNewItem({description:"",vendor:"",tag:"",manufacturer:"",modelNumber:"",color:"",group:"",listPrice:"",unitCost:"",unitPrice:"",shippingPerUnit:"",installPerUnit:"",qtyOrdered:"",qtyReceived:0,qtyInvoiced:0});notify("Line item added -- financials updated")};
 
   return <div style={{animation:"fadeUp 0.3s"}}>
-    <div style={{position:"sticky",top:0,zIndex:100,background:"rgba(0,0,0,0.92)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",margin:"-32px -16px 0",padding:"16px 16px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+    <div className="job-sticky" style={{position:"sticky",top:0,zIndex:100,background:"rgba(0,0,0,0.92)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",margin:"-32px -40px 0",padding:"16px 40px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
       <button onClick={()=>setSelectedJob(null)} style={{background:"none",border:"none",color:"#2dd4bf",cursor:"pointer",fontSize:13,fontFamily:"inherit",marginBottom:12,display:"flex",alignItems:"center",gap:6}}>&larr; All Jobs</button>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}>
         <div><div style={{display:"flex",alignItems:"center",gap:10,marginBottom:2}}><h2 style={{fontSize:22,fontWeight:800,color:"#e5e5e5",margin:0}}>{job.name}</h2><Badge label={job.phase} color={statusColor(job.phase)}/><Badge label={job.paymentStatus} color={statusColor(job.paymentStatus)}/></div><div style={{fontSize:12,color:"#a3a3a3"}}>{job.id} - {customer?.name} - {rep?.name} - {fmt(f.totalRevenue)} rev - {pct(f.margin)} margin</div></div>
@@ -1013,6 +1014,7 @@ function DeliveryCalendar({jobs,lineItems,vendors,customers,getJobItems,setPage,
     }
   });
 
+  const days=[];
     for(let i=0;i<firstDay;i++)days.push(null);
   for(let d=1;d<=daysInMonth;d++)days.push(d);
 
@@ -1979,7 +1981,6 @@ function EditTaskOverlay({task,setEditTask,jobs,reps,saveTask,deleteSop,notify,i
 }
 
 function TasksPage({jobs,reps,updateJob,notify,customSops,addSop,deleteSop}){
-  const [setViewMode]=useState("kanban");
   const [filterRep,setFilterRep]=useState("all");
   const [filterJob,setFilterJob]=useState("all");
   const open=(customSops||[]).filter(s=>s.cat==="Task").filter(s=>{try{return JSON.parse(s.content).status!=="Done"}catch{return true}}).length;
