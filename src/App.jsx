@@ -85,7 +85,7 @@ const INIT_JOBS = [
 
 // --- ICONS ---------------------------------------------------
 const I = ({ n, s = 18 }) => {
-  const d = { dashboard: "M3 3h7v7H3zm11 0h7v7h-7zM3 14h7v7H3zm11 0h7v7h-7z", briefcase: "M2 7h20v14H2zM8 7V5a2 2 0 012-2h4a2 2 0 012 2v2", truck: "M1 3h15v13H1zM16 8h4l3 3v5h-7zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z", dollar: "M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6", users: "M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75", chart: "M18 20V10M12 20V4M6 20v-6", check: "M20 6L9 17l-5-5", alert: "M12 2a10 10 0 100 20 10 10 0 000-20zM12 8v4M12 16h.01", file: "M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6", send: "M22 2L11 13M22 2l-7 20-4-9-9-4z", plus: "M12 5v14M5 12h14", close: "M18 6L6 18M6 6l12 12", receipt: "M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1zM8 6h8M8 10h8M8 14h5", shield: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z", brain: "M9.5 2A5.5 5.5 0 004 7.5c0 1.5.5 2.8 1.3 3.8A5 5 0 004 14.5 5.5 5.5 0 009.5 20h1V2zM14.5 2A5.5 5.5 0 0120 7.5c0 1.5-.5 2.8-1.3 3.8A5 5 0 0120 14.5 5.5 5.5 0 0114.5 20h-1V2z", package: "M16.5 9.4l-9-5.19M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12", edit: "M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4z", settings: "M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z", download: "M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" };
+  const d = { dashboard: "M3 3h7v7H3zm11 0h7v7h-7zM3 14h7v7H3zm11 0h7v7h-7z", briefcase: "M2 7h20v14H2zM8 7V5a2 2 0 012-2h4a2 2 0 012 2v2", truck: "M1 3h15v13H1zM16 8h4l3 3v5h-7zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z", dollar: "M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6", users: "M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75", chart: "M18 20V10M12 20V4M6 20v-6", check: "M20 6L9 17l-5-5", alert: "M12 2a10 10 0 100 20 10 10 0 000-20zM12 8v4M12 16h.01", file: "M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6", send: "M22 2L11 13M22 2l-7 20-4-9-9-4z", plus: "M12 5v14M5 12h14", close: "M18 6L6 18M6 6l12 12", receipt: "M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1zM8 6h8M8 10h8M8 14h5", shield: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z", brain: "M9.5 2A5.5 5.5 0 004 7.5c0 1.5.5 2.8 1.3 3.8A5 5 0 004 14.5 5.5 5.5 0 009.5 20h1V2zM14.5 2A5.5 5.5 0 0120 7.5c0 1.5-.5 2.8-1.3 3.8A5 5 0 0120 14.5 5.5 5.5 0 0114.5 20h-1V2z", package: "M16.5 9.4l-9-5.19M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12", edit: "M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4z", settings: "M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z", download: "M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3", book: "M4 19.5A2.5 2.5 0 016.5 17H20M4 19.5A2.5 2.5 0 004 17V5a2.5 2.5 0 012.5-2.5H20v15H6.5" };
   return <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={d[n]||""}/></svg>;
 };
 
@@ -361,6 +361,7 @@ export default function MidwestAIOS() {
     {id:"documents",label:"Documents",icon:"file",badge:pendingInvoices||null,badgeColor:"#2dd4bf"},
     {id:"commissions",label:"Commissions",icon:"dollar"},
     {id:"salesportal",label:"Sales Portal",icon:"users"},
+    {id:"playbook",label:"Playbook & SOPs",icon:"book"},
     {id:"brain",label:"Midwest Brain",icon:"brain"},
     {id:"exitready",label:"Exit Readiness",icon:"shield"},
     {id:"qbsetup",label:"QuickBooks",icon:"settings"},
@@ -440,6 +441,7 @@ export default function MidwestAIOS() {
           {page==="documents"&&<DocumentsPage {...ctx}/>}
           {page==="commissions"&&<CommissionsPage {...ctx} onGenerateStatement={doc=>{setPendingCommPreview(doc);}} />}
           {page==="salesportal"&&<SalesPortalPage {...ctx}/>}
+          {page==="playbook"&&<PlaybookPage {...ctx}/>}
           {page==="brain"&&<BrainPage {...ctx}/>}
           {page==="exitready"&&<ExitReadinessPage {...ctx}/>}
           {page==="qbsetup"&&<QBSetupPage {...ctx}/>}
@@ -1410,12 +1412,553 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,vendors
 // ===============================================================
 // MIDWEST BRAIN
 // ===============================================================
+
+// ===============================================================
+// PLAYBOOK & SOPs
+// ===============================================================
+function PlaybookPage({jobs,reps,vendors,customers,lineItems,getJobFinancials}){
+  const [activeDoc,setActiveDoc]=useState(null);
+  const [search,setSearch]=useState("");
+
+  const sops = [
+    {id:"company-overview",cat:"Company",title:"Company Overview & Mission",icon:"shield",
+      content:`MIDWEST EDUCATIONAL FURNISHINGS, INC.
+Full-service school furniture and equipment for K-12 districts and universities.
+
+MISSION: To enhance and improve learning experiences for students of all ages by providing full-service school furniture and equipment solutions that create inspiring, functional, and adaptable learning environments.
+
+WHAT WE DO:
+- Design Consultation and Space Planning
+- Budgeting and Product Selection
+- Product Specification from 160 manufacturer partners
+- Project Management from quote to installation
+- Delivery Coordination and Installation Oversight
+
+WHO WE SERVE: K-12 school districts (primary) and universities across the Midwest and beyond. Facilities directors, superintendents, purchasing managers, and project managers.
+
+THE BUSINESS MODEL: Midwest is a purchasing agent. We sit between the manufacturer and the school district. Revenue is generated on the margin between dealer cost (after vendor discount) and customer price. We do not manufacture or warehouse inventory.
+
+SCALE: 14+ years in operation. 160 manufacturer partners. Primarily IL and WI territory with national reach through rep network. Small founder-operated team. Busy season May through September aligned to school calendar.`},
+
+    {id:"brand-voice",cat:"Company",title:"Brand Voice & Communication Standards",icon:"send",
+      content:`BRAND VOICE GUIDELINES
+
+PERSONALITY: If Midwest were a person, they would be the most reliable contractor you have ever worked with. Shows up on time. Figures out problems without drama. Does not oversell and underdeliver.
+
+VOICE CHARACTERISTICS:
+- Direct: Say the thing. Do not circle around it.
+- Warm but not soft: Genuine care without being fluffy or overly formal.
+- Confident: Never hedging. Never apologetic about capability.
+- Practical: Every sentence should do something useful. No filler.
+- Can-do: Problems get solved. Lean toward solutions and next steps.
+- Professional without being stiff: Works for a superintendent and a contractor on a loading dock.
+
+DO WRITE LIKE THIS:
+- "We can get that spec to you by end of day."
+- "The shipment is coming in two separate deliveries. First truck arrives Tuesday."
+- "Here is what we ordered, what has arrived, and what is still outstanding."
+- "That chair comes in three lead times depending on the finish. Want me to check which ships fastest?"
+
+DO NOT WRITE LIKE THIS:
+- "We would like to take this opportunity to thank you for your continued partnership."
+- "Please be advised that the aforementioned purchase order is currently in a pending state."
+- "We apologize for any inconvenience this may have caused."
+- "We are working diligently to resolve this matter in a timely manner."
+
+EMAIL TONE: Emails should feel like they came from someone who knows the answer, is not wasting the reader's time, and is ready to act. Subject lines specific. Openers direct. Closers with clear next step.
+
+ON-BRAND PHRASES:
+- "We will figure it out."
+- "A small company that does big things."
+- "Things are going to happen. It is how you handle it."
+- "Learning environments that inspire students and support educators."`},
+
+    {id:"team-directory",cat:"Company",title:"Team Directory & Roles",icon:"users",
+      content:`TEAM DIRECTORY
+
+MAUREEN WELTER - Owner and primary operator. Handles all quoting, PO management, invoicing, commission tracking, and vendor relationships. The business runs through Maureen.
+
+DAVE WELTER - Co-owner and key salesperson. Covers broad geography.
+
+LISA MONCHUNSKI - Primary operator and sales support. Handles day-to-day support work, quote preparation, and administrative operations.
+
+SALES REPS (Commission-Based):
+- Jim Lindner: Based in Milwaukee, WI
+- Jackie Biller: Based in Lake Geneva, WI
+- Jim Harris: Based in AZ, sells into IL/Chicago market
+- Dave Welter: Covers broad territory
+
+COMMISSION STRUCTURE: Reps operate on a commission basis. Rates are tracked per rep. Commission is calculated against invoiced revenue.
+
+DECISION AUTHORITY: Maureen is the decision-maker on all operations, approvals, and financials.`},
+
+    {id:"quote-to-invoice",cat:"Workflow",title:"Quote-to-Invoice Complete Workflow",icon:"receipt",
+      content:`COMPLETE WORKFLOW: QUOTE TO INVOICE
+
+STAGE 1 - VENDOR QUOTE
+Manufacturer provides list price. Midwest receives dealer discount off list price. This gives Midwest their cost (net cost). Discount rates vary by manufacturer.
+
+STAGE 2 - CUSTOMER QUOTE
+Lisa builds the quote spreadsheet with line items from vendor catalogs. Upload the Excel file to the AIOS using the Upload Quote button on Job Records. The system creates the job in Quoting phase with all line items, vendors, and room groupings.
+
+STAGE 3 - QUOTE APPROVAL
+Go to Documents > Quotes. Generate the quote document. Review, then mark as Sent. Once the customer approves, mark as Approved. This unlocks Purchase Order generation.
+
+STAGE 4 - PURCHASE ORDERS
+Go to Documents > Purchase Orders. POs are auto-generated per vendor. Each PO contains only the line items from that specific vendor. Review each PO, mark as Drafted then Sent to the vendor.
+
+STAGE 5 - DELIVERY TRACKING
+As items arrive, update received quantities on line items. Go to Deliveries tab to track what has arrived and what is outstanding. Partial deliveries are common and expected.
+
+STAGE 6 - INVOICING
+Go to Documents > Invoices. The system auto-generates invoices based on received-but-not-yet-invoiced quantities. Partial invoicing is supported. Select which vendor PO numbers to include on each invoice. Mark items as invoiced after sending.
+
+STAGE 7 - PAYMENT
+Track payment status on the job record (unpaid / partial / paid). Payment reminders appear automatically for overdue invoices. Mark as paid when payment is received.
+
+STAGE 8 - COMMISSION
+Go to Documents > Commissions. Commission statements are auto-generated per rep based on invoiced revenue and their commission rate.
+
+TIMELINE: The entire cycle can take 2-12 weeks depending on vendor lead times and school calendar constraints.`},
+
+    {id:"excel-upload",cat:"Workflow",title:"Excel Quote Upload Process",icon:"download",
+      content:`EXCEL QUOTE UPLOAD SOP
+
+PURPOSE: Convert Lisa's Excel quote spreadsheets into live jobs in the AIOS with all line items, vendors, and groupings preserved.
+
+STEP 1: Prepare the Excel file. Use the standard quote format with columns: Tag, Manufacturer, Model #, Description, Color, QTY, List Price, Net Each, Ship Each, Install Each, Your Price.
+
+STEP 2: Go to Job Records in the AIOS.
+
+STEP 3: Click "Upload Quote" button (top right, next to New Job).
+
+STEP 4: Select the .xls or .xlsx file.
+
+STEP 5: The system parses all sheets and shows a preview:
+- Number of sheets, items, vendors, and total cost
+- Job name (auto-extracted from file)
+- Sheet toggles to include/exclude specific vendors
+- Scrollable preview table of line items
+
+STEP 6: Review the job name. Edit if needed.
+
+STEP 7: Toggle off any sheets you do not want to import.
+
+STEP 8: Click "Import [X] Items as New Quoting Job".
+
+STEP 9: System creates the job, creates any new vendors, saves all line items to the database, and navigates you into the new job.
+
+WHAT THE PARSER CAPTURES:
+- Tag/room numbers
+- Manufacturer name (matched to vendor directory)
+- Model numbers
+- Descriptions (cleaned of spec text)
+- Color/finish
+- Quantities
+- List price, net cost, shipping, install, customer price
+- Section headers become room/group designations
+
+VENDOR MATCHING: The parser checks each manufacturer name against existing vendors. If no match, it auto-creates a new vendor in the directory.`},
+
+    {id:"discount-math",cat:"Workflow",title:"Vendor Discount Calculations",icon:"dollar",
+      content:`VENDOR DISCOUNT MATH (VENDRUM MATH)
+
+Each manufacturer has a specific discount rate off their list price. This is Midwest's dealer discount.
+
+FORMULA:
+Net Cost = List Price x (1 - Discount Rate)
+
+EXAMPLE:
+- List Price: $1,000.00
+- Vendor Discount: 45%
+- Net Cost: $1,000 x (1 - 0.45) = $550.00
+- Customer Price (Your Price): Set by Midwest based on desired margin
+
+MARGIN CALCULATION:
+Margin % = (1 - Net Cost / Customer Price) x 100
+
+EXAMPLE:
+- Net Cost: $550.00
+- Customer Price: $850.00
+- Margin: (1 - 550/850) x 100 = 35.3%
+
+IN THE AIOS:
+- Discount rates are stored per vendor in the Directory
+- When adding line items, entering List Price auto-calculates Net Cost using the vendor's rate
+- The Disc % field allows per-item override without changing the vendor's global rate
+- Edit All mode updates the vendor rate AND propagates to all items from that vendor
+- Single-edit mode changes only that specific item's cost
+
+IMPORTANT: Discount rates vary significantly by manufacturer. Always verify the rate before quoting. Some manufacturers offer different rates for different product lines.`},
+
+    {id:"document-generation",cat:"Workflow",title:"Document Generation & Management",icon:"file",
+      content:`DOCUMENT GENERATION SOP
+
+ALL DOCUMENTS follow this status lifecycle:
+New > Drafted > Sent > Approved
+
+QUOTES:
+1. Go to Documents > Quotes tab
+2. Click "Generate Quote" on any job
+3. Preview shows the full quote document with all line items
+4. Mark status: Drafted > Sent (to customer) > Approved (customer confirmed)
+5. Approved quote unlocks PO generation
+
+PURCHASE ORDERS:
+1. Go to Documents > Purchase Orders tab
+2. POs are auto-grouped by vendor
+3. Quote must be Approved or Sent before POs can be generated
+4. Each PO shows vendor name, items, quantities, and total
+5. Review and mark as Drafted > Sent (to vendor)
+6. PO Notes from the job record appear on each PO
+
+INVOICES:
+1. Go to Documents > Invoices tab
+2. Invoices auto-generate from received quantities
+3. Select which vendor PO numbers to include (persistent selection)
+4. Partial invoicing is standard - invoice only what has been received
+5. Mark All Invoiced button updates all line item invoiced quantities
+6. Payment reminders appear for overdue invoices
+
+COMMISSION STATEMENTS:
+1. Go to Documents > Commissions tab
+2. Statements auto-calculate from invoiced revenue x rep rate
+3. Shows earned (paid jobs) vs pending (unpaid jobs)
+
+EXPORT: All documents can be exported as PDF or emailed directly from the preview.
+
+DOCUMENT FILTER: Use the All/Pending/Sent/Approved filter bar to quickly find documents by status. This filter persists across sessions.`},
+
+    {id:"delivery-tracking",cat:"Workflow",title:"Delivery Tracking Process",icon:"truck",
+      content:`DELIVERY TRACKING SOP
+
+UPDATING RECEIVED QUANTITIES:
+1. Go to a job's detail page (Job Records > click a job)
+2. Find the line item table
+3. Click on a line item to edit
+4. Update "Qty Received" as items arrive
+5. System automatically tracks delivery status
+
+DELIVERY PAGE:
+- Shows all pending and delivered items across all jobs
+- Filter: Pending / Delivered / All
+- Calendar view shows delivery dates by month
+- Items with no delivery date show as "TBD"
+
+PARTIAL DELIVERIES:
+- Common in school furniture. A vendor may ship 50 of 80 chairs first.
+- Update received quantity to 50. System shows 30 pending.
+- Invoice can be generated for the 50 received items immediately.
+- Remaining 30 invoiced when they arrive.
+
+DELIVERY DATES:
+- Set delivery_date on line items when shipment is confirmed
+- Delivery calendar shows upcoming deliveries by date
+- Overdue deliveries are flagged (delivery date passed, qty not fully received)
+
+INSTALLATION:
+- After delivery, coordinate installation with school
+- Update job phase to Complete when all items delivered and installed
+- Busy season: May-September. Schedule installations around school calendar.`},
+
+    {id:"sales-portal",cat:"Workflow",title:"Sales Rep Portal & Job Creation",icon:"users",
+      content:`SALES PORTAL SOP
+
+OVERVIEW MODE:
+- Shows all team performance, total pipeline, and all jobs
+- Quick view of each rep's revenue and job count
+
+REP-SPECIFIC MODE:
+- Click a rep name to see only their jobs
+- Pipeline, quoting, active, and paid revenue per rep
+- Commission calculation displayed
+
+CREATING A JOB FROM SALES PORTAL:
+1. Click "+ New Job" in the header
+2. If on a rep's page, Sales Rep auto-fills
+3. Fill in: Job Name, Customer (type to search or add new), Sales Rep, Start Date, Due Date, PO Notes, Payment Terms, Customer PO #, Ship To, Ship Via, Bill To
+4. Click "Create Job" - creates in Quoting phase
+5. Click the job card to navigate to full Job Detail for line item management
+
+ADDING CUSTOMERS:
+- Click "New Customer" button in header
+- Fill in name, contact, email, phone, type, address
+- Customer is immediately available for job creation
+- Or: type a new name in the customer field when creating a job and click "+ Add New"
+
+UPLOADING QUOTES:
+- Click "Upload Quote" button
+- Select Excel file - navigates to Job Records import flow`},
+
+    {id:"commission-calc",cat:"Financial",title:"Commission Calculation & Statements",icon:"dollar",
+      content:`COMMISSION CALCULATION SOP
+
+FORMULA:
+Commission = Invoiced Revenue x Rep Commission Rate
+
+COMMISSION TRACKING:
+- Each rep has a commission rate set in the Directory
+- Commission is calculated against INVOICED revenue, not quoted or ordered
+- Paid vs Pending: Commission on paid jobs is "earned", on unpaid jobs is "pending"
+
+GENERATING STATEMENTS:
+1. Go to Documents > Commissions tab
+2. Each rep shows: total pipeline, earned commission, pending commission
+3. Click "Generate Statement" to preview
+4. Statement lists each job with revenue and commission amount
+5. Export as PDF or email directly to the rep
+
+COMMISSION RATES BY REP:
+- Set in Directory > Sales Reps > Edit
+- Rate is stored as a decimal (e.g., 0.20 = 20%)
+- Different reps can have different rates based on tier
+
+UPDATING RATES:
+- Go to Directory > Sales Reps
+- Click Edit on the rep
+- Update commission rate
+- All future calculations use the new rate
+- Historical statements retain the rate at time of generation`},
+
+    {id:"customer-management",cat:"Operations",title:"Customer Relationship Management",icon:"users",
+      content:`CUSTOMER MANAGEMENT SOP
+
+ADDING A NEW CUSTOMER:
+Method 1: Directory > Customers > Add Customer
+Method 2: Job Records > New Customer button
+Method 3: Type new name in customer field when creating a job, click "+ Add New"
+Method 4: Sales Portal > New Customer button
+
+CUSTOMER FIELDS:
+- Name (school district or organization)
+- Primary Contact (facilities director, purchasing manager)
+- Email
+- Phone
+- Type (K-12 District, University, Government, Private, Non-Profit)
+- Address
+
+CLIENT RELATIONSHIP NOTES:
+- K-12 districts are the primary client type
+- Buying decisions made by facilities directors, superintendents, or purchasing managers
+- Projects often tied to bond funds, state grants, or annual capital budgets
+- Fixed budget + fixed deadline is common
+- Winning one district often means multi-year, multi-building relationship
+- School calendar drives everything: order in spring, deliver and install in summer`},
+
+    {id:"vendor-management",cat:"Operations",title:"Vendor & Manufacturer Management",icon:"package",
+      content:`VENDOR MANAGEMENT SOP
+
+160 MANUFACTURER PARTNERS across every furniture category and price point.
+
+ADDING A VENDOR:
+- Directory > Vendors > Add Vendor
+- Or: auto-created when uploading an Excel quote with a new manufacturer name
+
+VENDOR FIELDS:
+- Name, Contact, Email, Phone
+- Category (e.g., Classroom Furniture, Lab & STEM Seating)
+- Address
+- Discount Rate (dealer discount off list price)
+- Discount Type (percentage or fixed)
+
+DISCOUNT MANAGEMENT:
+- Set per vendor in Directory > Vendors > Edit
+- Disc % field on line items allows per-item override
+- Edit All mode: updates vendor rate AND recalculates all items from that vendor
+- Single edit: changes only that specific line item
+
+MANUFACTURER RELATIONSHIPS:
+- 14 years of relationships that cannot be replicated
+- Direct contact with manufacturer reps by name
+- When there is a lead time problem, a direct call is a real option
+- Each manufacturer has its own discount structure and lead times
+
+VENDOR CATEGORIES IN SYSTEM:
+Collaborative Tables, Classroom Furniture, Seating & Staging, Education & Office, Whiteboards & AV, Early Childhood, Technology & Charging, Science Lab Furniture, Classroom & Mobile, Music & Performing Arts, Cafeteria & Tables, Lab & STEM Seating, Room Dividers, Administration Office, Carpets & Rugs, Activity & Folding Tables, AV & Projection, Office Seating, AV & Headphones, AV Carts & Stands, Stages & Mobile, Collaborative & Soft Seating, Library Furniture`},
+
+    {id:"payment-tracking",cat:"Financial",title:"Payment Tracking & Reminders",icon:"alert",
+      content:`PAYMENT TRACKING SOP
+
+PAYMENT STATUSES:
+- Unpaid: No payment received
+- Partial: Some payment received, balance outstanding
+- Paid: Fully paid
+
+UPDATING PAYMENT STATUS:
+1. Go to job detail (Job Records > click job)
+2. Click Edit
+3. Change Payment Status dropdown
+4. Save Changes
+
+PAYMENT TERMS:
+- Net 30 (standard)
+- Net 15
+- Due Upon Receipt
+- Set per job in the job record
+
+AUTOMATED PAYMENT REMINDERS:
+- Documents > Invoices tab shows overdue jobs automatically
+- Overdue = invoiced but unpaid past the payment terms deadline
+- "Send External Reminder" drafts an email to the customer
+- "Log Internal Reminder" creates an activity note on the job
+
+REMINDER EMAIL FORMAT:
+- States the amount owed
+- States the job name
+- States the payment terms
+- Professional but direct tone per brand voice guidelines
+- Does not apologize. States the facts and requests payment.`},
+
+    {id:"exit-readiness",cat:"Strategic",title:"Exit Readiness & Business Valuation",icon:"shield",
+      content:`EXIT READINESS OVERVIEW
+
+Midwest is being positioned for a future sale within a 2-year horizon. The DYFRENT engagement is designed to systematize operations and remove founder dependency so the business can be transferred to a new owner.
+
+KEY EXIT METRICS:
+1. Revenue Growth: Exceed prior year every year
+2. Founder Dependency: Reduce Maureen's weekly operational hours from 15-20 to under 5
+3. Documented Processes: Every workflow captured in SOPs (this playbook)
+4. Transferable Systems: AIOS handles quoting, POs, invoicing, commissions, and tracking
+5. Customer Diversification: Revenue not concentrated in one account
+6. Team Capability: Lisa and reps can operate without Maureen present
+
+WHAT MAKES A BUSINESS SELLABLE:
+- Recurring/predictable revenue patterns
+- Documented, repeatable processes
+- Systems that run without the founder
+- Strong customer relationships that survive ownership change
+- Clean financial records with clear margin visibility
+- Low key-person risk
+
+THE AIOS ROLE IN EXIT:
+- Automates manual processes (reduces founder dependency)
+- Creates audit trail (proves operational history)
+- Generates financial visibility (margin, commission, cash flow)
+- Documents all SOPs in one place (this playbook)
+- Provides data for valuation (revenue trends, customer LTV, vendor performance)`},
+
+    {id:"brain-guide",cat:"Technology",title:"Midwest Brain AI Assistant Guide",icon:"brain",
+      content:`MIDWEST BRAIN SETUP & USAGE
+
+WHAT IT IS: An AI assistant connected to all live Midwest data. Ask questions in plain English and get instant answers about jobs, vendors, deliveries, financials, and commissions.
+
+SETUP:
+1. Get Claude API key from console.anthropic.com
+2. Go to Midwest Brain in the AIOS
+3. Paste key in the API Key field
+4. Save. Brain is now connected.
+
+COST: Approximately $0.01-0.05 per question. $2-5/month at normal usage.
+
+WHAT YOU CAN ASK:
+- "What is our total pipeline revenue?"
+- "Which vendor do we spend the most with?"
+- "Show me all jobs that are In Progress"
+- "What are Jim Harris's commissions?"
+- "Which deliveries are pending?"
+- "What is our average margin across all jobs?"
+
+THE BRAIN KNOWS:
+- All job records, statuses, and financials
+- All line items, quantities, and delivery status
+- All vendor information and discount rates
+- All customer information
+- All sales rep commission data
+- All SOP content from this Playbook
+
+SECURITY: API key is stored in your browser only. Never sent to a server. Each team member needs their own key or can share one.`},
+
+    {id:"seasonal-planning",cat:"Strategic",title:"Seasonal Planning & Capacity",icon:"chart",
+      content:`SEASONAL PLANNING
+
+THE SCHOOL CALENDAR DRIVES EVERYTHING:
+- January-April: Quoting season. Districts finalize budgets and project lists.
+- May-June: Order season. POs go to manufacturers.
+- June-August: Delivery and installation season. The critical window.
+- September: Deadline. Everything must be installed before school starts.
+- October-December: Slower period. Follow-up, collections, planning.
+
+CAPACITY CONSIDERATIONS:
+- Summer delivery window is 12-14 weeks
+- Multiple jobs delivering simultaneously is normal
+- Vendor lead times vary: 4 weeks (Jonti Craft) to 12+ weeks (custom orders)
+- Installation crews must be coordinated across overlapping projects
+- School access may be restricted during summer construction
+
+PLANNING RULES:
+- Quote early. The earlier a district approves, the more lead time for vendors.
+- Order by May for standard items. Earlier for custom.
+- Confirm delivery dates with vendors 2 weeks before scheduled delivery.
+- Installation must be complete before teacher return dates (usually mid-August).
+- Always have a backup plan for delayed shipments.
+
+REVENUE PATTERN:
+- ~60-70% of annual revenue books in Q2-Q3
+- Q1 is pipeline building
+- Q4 is collection and planning
+- Cash flow is uneven. May need reserves to cover Q4-Q1 gap.`}
+  ];
+
+  const cats = [...new Set(sops.map(s=>s.cat))];
+  const filtered = search ? sops.filter(s=>s.title.toLowerCase().includes(search.toLowerCase())||s.content.toLowerCase().includes(search.toLowerCase())) : sops;
+
+  if(activeDoc){
+    const doc = sops.find(s=>s.id===activeDoc);
+    if(!doc) return null;
+    return <div style={{animation:"fadeUp 0.3s"}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16}}>
+        <span onClick={()=>setActiveDoc(null)} style={{color:"#525252",cursor:"pointer",fontSize:13,transition:"color 0.15s"}} onMouseEnter={e=>e.currentTarget.style.color="#2dd4bf"} onMouseLeave={e=>e.currentTarget.style.color="#525252"}>Playbook</span>
+        <span style={{color:"#333",fontSize:13}}>/</span>
+        <span style={{color:"#e5e5e5",fontSize:13,fontWeight:600}}>{doc.title}</span>
+      </div>
+      <Card style={{marginBottom:24}}>
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
+          <div style={{width:40,height:40,borderRadius:10,background:"rgba(45,212,191,0.08)",display:"flex",alignItems:"center",justifyContent:"center"}}><I n={doc.icon} s={20}/></div>
+          <div><div style={{fontSize:18,fontWeight:700,color:"#f0f0f0"}}>{doc.title}</div><div style={{fontSize:12,color:"#a3a3a3"}}>{doc.cat}</div></div>
+        </div>
+        <div style={{whiteSpace:"pre-wrap",fontSize:13,lineHeight:1.8,color:"#c4c4c4",fontFamily:"'Satoshi',sans-serif"}}>{doc.content}</div>
+      </Card>
+    </div>;
+  }
+
+  return <div style={{animation:"fadeUp 0.4s"}}><Header title="Playbook & SOPs" sub={"Documented systems, workflows, and operating procedures -- "+sops.length+" documents"}/>
+    <div style={{marginBottom:24}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search SOPs..." style={{...inputStyle,maxWidth:400}}/></div>
+    {cats.map(cat=>{const catDocs=filtered.filter(s=>s.cat===cat);if(catDocs.length===0)return null;return <div key={cat} style={{marginBottom:32}}>
+      <div style={{fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:1.5,color:"#444",marginBottom:12}}>{cat}</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12}}>
+        {catDocs.map(doc=><div key={doc.id} onClick={()=>setActiveDoc(doc.id)} className="hover-lift" style={{padding:16,background:"#111111",borderRadius:12,border:"1px solid rgba(255,255,255,0.06)",cursor:"pointer",transition:"all 0.2s"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+            <div style={{width:32,height:32,borderRadius:8,background:"rgba(45,212,191,0.06)",display:"flex",alignItems:"center",justifyContent:"center",color:"#2dd4bf"}}><I n={doc.icon} s={16}/></div>
+            <div style={{fontSize:14,fontWeight:600,color:"#e5e5e5"}}>{doc.title}</div>
+          </div>
+          <div style={{fontSize:12,color:"#737373",lineHeight:1.5}}>{doc.content.split("\n").filter(Boolean).slice(0,2).join(". ").slice(0,120)}...</div>
+        </div>)}
+      </div>
+    </div>})}
+  </div>;
+}
+
 function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,brainQuery,setBrainQuery,brainLoading,setBrainLoading}){
   const [history,setHistory]=useState([{role:"system",content:"Welcome to the Midwest Brain. I have access to all your live data -- vendors, jobs, deliveries, financials. Ask me anything."}]);
   const suggestedQueries=["What is our total pipeline revenue?","Which vendor do we spend the most with?","Show me all jobs that are In Progress","What is Jim Harris\'s commission?","Which deliveries are pending?","What is our average margin across all jobs?"];
   
   const buildAnswer = (q) => {
     const ql = q.toLowerCase();
+    // SOP/Playbook knowledge for the Brain
+    const sopContent = [
+      {q:["sop","process","workflow","how do i","how to","procedure","playbook"],a:"Midwest has documented SOPs covering: Quote-to-Invoice Workflow, Excel Upload Process, Vendor Discount Math, Document Generation, Delivery Tracking, Sales Portal Usage, Commission Calculations, Customer Management, Vendor Management, Payment Tracking, Seasonal Planning, and Exit Readiness. Go to Playbook & SOPs in the sidebar for full documentation."},
+      {q:["quote process","quoting","how to quote"],a:"The quoting process: 1) Lisa builds quote in Excel with vendor specs. 2) Upload to AIOS via Upload Quote button. 3) System creates job in Quoting phase with all line items. 4) Go to Documents > Quotes to generate the quote document. 5) Mark as Sent to customer. 6) When customer approves, mark as Approved to unlock POs."},
+      {q:["purchase order","po process","how to create po"],a:"PO Process: Once a quote is Approved or Sent, go to Documents > Purchase Orders. POs are auto-generated per vendor with only that vendor's line items. Review each PO, mark as Drafted, then Sent to the vendor. PO Notes from the job record appear on each PO."},
+      {q:["invoice","invoicing","how to invoice"],a:"Invoicing: Go to Documents > Invoices. Invoices auto-generate from received quantities. Only items with uninvoiced received quantities appear. Select which vendor PO numbers to include. Partial invoicing is standard. After sending, click Mark All Invoiced."},
+      {q:["discount","vendor discount","vendrum","margin calc"],a:"Vendor Discount Math: Net Cost = List Price x (1 - Discount Rate). Example: $1,000 list at 45% discount = $550 net. Margin = (1 - Net Cost / Customer Price) x 100. Each vendor has their own rate in the Directory. The Disc % field on line items allows per-item override."},
+      {q:["delivery","tracking deliveries","shipping"],a:"Delivery Tracking: Update received quantities on line items as items arrive. Deliveries page shows all pending/delivered items. Calendar view shows by month. Partial deliveries are common. Invoice can be generated for received items immediately."},
+      {q:["commission","rep commission","how commission works"],a:"Commission = Invoiced Revenue x Rep Rate. Set rates in Directory > Sales Reps. Generate statements in Documents > Commissions. Shows earned (paid jobs) vs pending (unpaid). Export as PDF or email to rep."},
+      {q:["upload","excel","import","xls"],a:"Excel Upload: Go to Job Records > Upload Quote. Select .xls/.xlsx file. System parses all sheets, shows preview with item count and vendor list. Name the job, toggle sheets, click Import. Auto-creates vendors and line items. Navigates into the new job."},
+      {q:["exit","sell","valuation","exit readiness"],a:"Exit Readiness: Midwest is targeting a 2-year exit. Key metrics: revenue growth, reduced founder dependency, documented SOPs (this playbook), transferable systems (AIOS), customer diversification, and team capability to operate without Maureen."},
+      {q:["seasonal","busy season","school calendar","when"],a:"Seasonal Pattern: Jan-Apr quoting season, May-Jun ordering, Jun-Aug delivery/install (critical window), Sep deadline (school starts), Oct-Dec slower/collections. 60-70% of revenue books in Q2-Q3. Order by May for standard items."},
+      {q:["brand","voice","how to write","tone"],a:"Brand Voice: Direct, warm, confident, practical. Say the thing. No corporate filler. No hedging. Solutions over problems. ON BRAND: 'We can get that spec to you by end of day.' OFF BRAND: 'We would like to take this opportunity to thank you for your continued partnership.'"}
+    ];
+    const sopMatch = sopContent.find(s=>s.q.some(kw=>ql.includes(kw)));
     
     // --- VENDOR QUERIES ------------------------------------
     const matchedVendor = vendors.find(v => ql.includes(v.name.toLowerCase().split(' ')[0].toLowerCase()));
