@@ -1387,37 +1387,155 @@ function CommissionsPage({jobs,reps,customers,updateRep,addRep,deleteRep,getJobF
 // ===============================================================
 // SALES PORTAL
 // ===============================================================
-function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,vendors}){
+function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobItems,vendors,setPage,setSelectedJob,updateJob,notify}){
   const [activeRep,setActiveRep]=useState("overview");
+  const [crmTab,setCrmTab]=useState("pipeline");
+  const [noteText,setNoteText]=useState("");
+  const [taskText,setTaskText]=useState("");
+  const [taskDue,setTaskDue]=useState("");
+
   const isOverview=activeRep==="overview";
   const rep=reps.find(r=>r.id===activeRep)||reps[0];
   const rj=isOverview?jobs:jobs.filter(j=>j.salesRep===activeRep);
   const totalRev=rj.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
   const paidRev=rj.filter(j=>j.paymentStatus==="paid").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
+  const totalCost=rj.reduce((s,j)=>s+getJobFinancials(j.id).totalCost,0);
+  const avgMargin=totalRev>0?(1-totalCost/totalRev)*100:0;
   const quotingJobs=rj.filter(j=>j.phase==="Quoting");
   const activeJobs=rj.filter(j=>j.phase==="In Progress");
+  const invoicedJobs=rj.filter(j=>j.phase==="Invoiced");
   const pendingItems=lineItems.filter(li=>rj.some(j=>j.id===li.jobId)&&li.qtyReceived<li.qtyOrdered);
   const commRate=isOverview?0:rep.commissionRate;
+  const wonRev=rj.filter(j=>j.paymentStatus==="paid").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
+  const lostJobs=0;
+  const winRate=rj.length>0?Math.round((rj.filter(j=>j.phase!=="Quoting").length/rj.length)*100):0;
 
-  return <div style={{animation:"fadeUp 0.4s"}}><Header title="Sales Portal" sub="Company overview and per-rep dashboards"/>
-    <div style={{display:"flex",gap:8,marginBottom:20,flexWrap:"wrap"}}><button onClick={()=>setActiveRep("overview")} style={{padding:"8px 16px",borderRadius:8,cursor:"pointer",background:isOverview?"#2dd4bf":"#111111",color:isOverview?"#000000":"#737373",fontSize:13,fontWeight:isOverview?600:400,fontFamily:"inherit",border:isOverview?"none":"1px solid #222222"}}>Overview</button>{reps.filter(r=>!r.id.includes("SEED_FLAG")).map(r=><button key={r.id} onClick={()=>setActiveRep(r.id)} style={{padding:"8px 16px",borderRadius:8,cursor:"pointer",background:activeRep===r.id?"#2dd4bf":"#111111",color:activeRep===r.id?"#000000":"#737373",fontSize:13,fontWeight:activeRep===r.id?600:400,fontFamily:"inherit",border:activeRep===r.id?"none":"1px solid #222222"}}>{r.name}</button>)}</div>
-    <Card style={{marginBottom:20,background:"linear-gradient(135deg,#0a0a0a,#111111)"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:16}}><div><div style={{fontSize:20,fontWeight:800,color:"#e5e5e5"}}>{isOverview?"Midwest Educational Furnishings":rep.name}</div><div style={{fontSize:13,color:"#a3a3a3"}}>{isOverview?"All team members - All territories":rep.territory+" - "+rep.tier+(commRate>0?" - "+pct(commRate*100)+" rate":"")}</div></div><div style={{display:"flex",gap:20,flexWrap:"wrap"}}><div style={{textAlign:"center"}}><div style={{fontSize:12,color:"#a3a3a3"}}>Total Pipeline</div><div style={{fontSize:22,fontWeight:700,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalRev)}</div></div><div style={{textAlign:"center"}}><div style={{fontSize:12,color:"#a3a3a3"}}>Quoting</div><div style={{fontSize:22,fontWeight:700,color:"#8b5cf6",fontFamily:"'JetBrains Mono',monospace"}}>{quotingJobs.length}</div></div><div style={{textAlign:"center"}}><div style={{fontSize:12,color:"#a3a3a3"}}>Active</div><div style={{fontSize:22,fontWeight:700,color:"#a78bfa",fontFamily:"'JetBrains Mono',monospace"}}>{activeJobs.length}</div></div><div style={{textAlign:"center"}}><div style={{fontSize:12,color:"#a3a3a3"}}>Paid Revenue</div><div style={{fontSize:22,fontWeight:700,color:"#34d399",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(paidRev)}</div></div>{!isOverview&&commRate>0&&<div style={{textAlign:"center"}}><div style={{fontSize:12,color:"#a3a3a3"}}>Commission</div><div style={{fontSize:22,fontWeight:700,color:"#fbbf24",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalRev*commRate)}</div></div>}</div></div></Card>
+  // CRM: Activities from audit trails
+  const allActivities=rj.flatMap(j=>(j.auditTrail||[]).map(a=>({...a,jobName:j.name,jobId:j.id}))).sort((a,b)=>new Date(b.time)-new Date(a.time)).slice(0,30);
+  // CRM: Tasks from job notes (lines starting with "TASK:")
+  const allTasks=rj.flatMap(j=>{const notes=(j.orderNotes||"").split("\n").filter(l=>l.startsWith("TASK:")).map(l=>({text:l.replace("TASK:","").trim(),jobId:j.id,jobName:j.name,done:l.includes("[DONE]")}));return notes});
+  // CRM: Notes from job notes (lines starting with "NOTE:")
+  const allNotes=rj.flatMap(j=>{const notes=(j.orderNotes||"").split("\n").filter(l=>l.startsWith("NOTE:")).map(l=>({text:l.replace("NOTE:","").trim(),jobId:j.id,jobName:j.name,time:l.match(/\d{1,2}\/\d{1,2}\/\d{4}/)?.[0]||""}));return notes}).reverse().slice(0,20);
 
-    {isOverview&&<Card style={{marginBottom:16}}><div style={{fontSize:14,fontWeight:700,color:"#e5e5e5",marginBottom:12}}>Team Performance</div>{reps.filter(r=>!r.id.includes("SEED_FLAG")).map(r=>{const rJobs=jobs.filter(j=>j.salesRep===r.id);const rv=rJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);return <div key={r.id} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderBottom:"1px solid #222222",cursor:"pointer"}} onClick={()=>setActiveRep(r.id)}><div style={{width:36,height:36,borderRadius:8,background:"#1a1a1a",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,color:"#2dd4bf"}}>{r.name.split(" ").map(n=>n[0]).join("")}</div><div style={{flex:1}}><div style={{fontSize:13,fontWeight:600,color:"#e5e5e5"}}>{r.name}</div><div style={{fontSize:12,color:"#a3a3a3"}}>{r.territory} - {r.tier}</div></div><div style={{textAlign:"right"}}><div style={{fontSize:13,fontWeight:600,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(rv)}</div><div style={{fontSize:12,color:"#a3a3a3"}}>{rJobs.length} jobs</div></div></div>})}</Card>}
+  const addNote=(jobId)=>{if(!noteText.trim())return;const job=jobs.find(j=>j.id===jobId);if(!job)return;const stamp=new Date().toLocaleDateString();const line="NOTE: "+noteText.trim()+" ("+stamp+")";updateJob(jobId,{orderNotes:(job.orderNotes||"")+"\n"+line});setNoteText("");notify("Note added")};
+  const addTask=(jobId)=>{if(!taskText.trim())return;const job=jobs.find(j=>j.id===jobId);if(!job)return;const line="TASK: "+taskText.trim()+(taskDue?" [due:"+taskDue+"]":"");updateJob(jobId,{orderNotes:(job.orderNotes||"")+"\n"+line});setTaskText("");setTaskDue("");notify("Task added")};
 
-    <div className="resp-grid-2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}}>
-      <Card><div style={{fontSize:14,fontWeight:700,color:"#e5e5e5",marginBottom:12}}>Pipeline by Phase</div>{["Quoting","In Progress","Invoiced","Complete"].map(phase=>{const pj=rj.filter(j=>j.phase===phase);const pRev=pj.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);return <div key={phase} style={{display:"flex",alignItems:"center",gap:12,padding:"8px 0",borderBottom:"1px solid #222222"}}><Badge label={phase} color={statusColor(phase)}/><span style={{flex:1,fontSize:12,color:"#a3a3a3"}}>{pj.length} jobs</span><span style={{fontSize:13,fontWeight:600,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(pRev)}</span></div>})}</Card>
-      <Card><div style={{fontSize:14,fontWeight:700,color:"#e5e5e5",marginBottom:12}}>Pending Deliveries ({pendingItems.length})</div>{pendingItems.length===0?<div style={{fontSize:12,color:"#34d399"}}>All deliveries complete</div>:pendingItems.slice(0,8).map(item=><div key={item.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderBottom:"1px solid #222222"}}><div><div style={{fontSize:12,color:"#a3a3a3"}}>{item.description}</div><div style={{fontSize:12,color:"#a3a3a3"}}>{jobs.find(j=>j.id===item.jobId)?.name}</div></div><span style={{fontSize:12,color:"#fbbf24",fontFamily:"'JetBrains Mono',monospace"}}>{fmtN(item.qtyOrdered-item.qtyReceived)} pending</span></div>)}</Card>
+  const kpi=(label,value,color)=><div style={{textAlign:"center",padding:"14px 10px",background:"#0a0a0a",borderRadius:10,flex:"1 1 100px"}}><div style={{fontSize:22,fontWeight:800,color:color||"#f0f0f0",fontFamily:"'JetBrains Mono',monospace",letterSpacing:-1}}>{value}</div><div style={{fontSize:11,color:"#9a9a9a",marginTop:2}}>{label}</div></div>;
+
+  return <div style={{animation:"fadeUp 0.4s"}}><Header title="Sales Portal" sub="Pipeline management, CRM, and team performance"/>
+    {/* Rep selector */}
+    <div style={{display:"flex",gap:6,marginBottom:20,flexWrap:"wrap",overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+      <button onClick={()=>setActiveRep("overview")} style={{padding:"8px 16px",borderRadius:8,cursor:"pointer",background:isOverview?"#2dd4bf":"#111",color:isOverview?"#000":"#737373",fontSize:13,fontWeight:isOverview?600:400,fontFamily:"inherit",border:isOverview?"none":"1px solid rgba(255,255,255,0.06)",whiteSpace:"nowrap",flexShrink:0}}>Overview</button>
+      {reps.filter(r=>!r.id.includes("SEED_FLAG")).map(r=><button key={r.id} onClick={()=>setActiveRep(r.id)} style={{padding:"8px 16px",borderRadius:8,cursor:"pointer",background:activeRep===r.id?"#2dd4bf":"#111",color:activeRep===r.id?"#000":"#737373",fontSize:13,fontWeight:activeRep===r.id?600:400,fontFamily:"inherit",border:activeRep===r.id?"none":"1px solid rgba(255,255,255,0.06)",whiteSpace:"nowrap",flexShrink:0}}>{r.name}</button>)}
     </div>
-    <Card><div style={{fontSize:14,fontWeight:700,color:"#e5e5e5",marginBottom:12}}>{isOverview?"All Jobs":"Jobs for "+rep.name}</div><Tbl columns={[
-      {header:"Job",render:r=><span style={{fontWeight:600,color:"#e5e5e5"}}>{r.name}</span>},
-      {header:"Customer",render:r=>customers.find(c=>c.id===r.customer)?.name},
-      {header:"Rep",render:r=>reps.find(rep=>rep.id===r.salesRep)?.name||"--"},
-      {header:"Phase",render:r=><Badge label={r.phase} color={statusColor(r.phase)}/>},
-      {header:"Revenue",render:r=><span style={{fontFamily:"'JetBrains Mono',monospace"}}>{fmt(getJobFinancials(r.id).totalRevenue)}</span>},
-      {header:"Payment",render:r=><Badge label={r.paymentStatus} color={statusColor(r.paymentStatus)}/>},
-      {header:"Due",render:r=><span style={{fontSize:12,color:r.dueDate&&new Date(r.dueDate)<new Date()?"#f87171":"#525252"}}>{r.dueDate||"TBD"}</span>},
-    ]} data={rj}/></Card>
+
+    {/* Hero stats */}
+    <Card style={{marginBottom:20,background:"linear-gradient(135deg,rgba(45,212,191,0.03),rgba(167,139,250,0.03))",border:"1px solid rgba(45,212,191,0.08)"}}>
+      <div style={{marginBottom:16}}><div style={{fontSize:22,fontWeight:800,color:"#f0f0f0"}}>{isOverview?"Midwest Educational Furnishings":rep.name}</div><div style={{fontSize:13,color:"#9a9a9a"}}>{isOverview?"All team -- All territories":rep.territory+" -- "+rep.tier+(commRate>0?" -- "+pct(commRate*100)+" rate":"")}</div></div>
+      <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+        {kpi("Pipeline",fmt(totalRev),"#2dd4bf")}
+        {kpi("Won Revenue",fmt(wonRev),"#34d399")}
+        {kpi("Avg Margin",pct(avgMargin),avgMargin>=30?"#34d399":"#fbbf24")}
+        {kpi("Active",activeJobs.length,"#a78bfa")}
+        {kpi("Quoting",quotingJobs.length,"#8b5cf6")}
+        {kpi("Win Rate",winRate+"%",winRate>=70?"#34d399":"#fbbf24")}
+        {!isOverview&&commRate>0&&kpi("Commission",fmt(totalRev*commRate),"#fbbf24")}
+      </div>
+    </Card>
+
+    {/* CRM Tabs */}
+    <div style={{display:"flex",gap:0,marginBottom:20,background:"#111",borderRadius:10,padding:3,overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+      {[["pipeline","Pipeline"],["activity","Activity Feed"],["tasks","Tasks"],["notes","Notes"],["team","Team"]].map(([id,label])=>
+        <button key={id} onClick={()=>setCrmTab(id)} style={{padding:"10px 18px",borderRadius:8,border:"none",cursor:"pointer",background:crmTab===id?"#2dd4bf":"transparent",color:crmTab===id?"#000":"#737373",fontSize:13,fontWeight:crmTab===id?600:400,fontFamily:"inherit",whiteSpace:"nowrap",flexShrink:0}}>{label}</button>
+      )}
+    </div>
+
+    {/* PIPELINE */}
+    {crmTab==="pipeline"&&<>
+      <div className="resp-grid-2" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:16,marginBottom:20}}>
+        <Card><div style={{fontSize:15,fontWeight:700,color:"#f0f0f0",marginBottom:14}}>Pipeline by Phase</div>
+          {["Quoting","In Progress","Invoiced","Complete"].map(phase=>{const pj=rj.filter(j=>j.phase===phase);const pRev=pj.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const maxRev=Math.max(...["Quoting","In Progress","Invoiced","Complete"].map(p=>rj.filter(j=>j.phase===p).reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0)),1);return <div key={phase} style={{marginBottom:14}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:13,color:"#c4c4c4"}}>{phase} ({pj.length})</span><span style={{fontSize:13,fontWeight:700,color:statusColor(phase),fontFamily:"'JetBrains Mono',monospace"}}>{fmt(pRev)}</span></div><div style={{height:6,background:"rgba(255,255,255,0.04)",borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:(maxRev>0?(pRev/maxRev*100):0)+"%",background:statusColor(phase),borderRadius:3}}/></div></div>})}
+        </Card>
+        <Card><div style={{fontSize:15,fontWeight:700,color:"#f0f0f0",marginBottom:14}}>Pending Deliveries ({pendingItems.length})</div>
+          {pendingItems.length===0?<div style={{fontSize:13,color:"#34d399",padding:"12px 0"}}>All deliveries complete</div>:pendingItems.slice(0,6).map(item=><div key={item.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}><div style={{flex:1,minWidth:0}}><div style={{fontSize:12,color:"#c4c4c4",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{item.description}</div><div style={{fontSize:11,color:"#737373"}}>{jobs.find(j=>j.id===item.jobId)?.name}</div></div><span style={{fontSize:12,color:"#fbbf24",fontFamily:"'JetBrains Mono',monospace",flexShrink:0}}>{fmtN(item.qtyOrdered-item.qtyReceived)} pending</span></div>)}
+        </Card>
+      </div>
+      {/* Job cards */}
+      <Card><div style={{fontSize:15,fontWeight:700,color:"#f0f0f0",marginBottom:14}}>{isOverview?"All Jobs":"Jobs for "+rep.name} ({rj.length})</div>
+        {rj.sort((a,b)=>new Date(b.createdDate)-new Date(a.createdDate)).map(j=>{const f=getJobFinancials(j.id);const cust=customers.find(c=>c.id===j.customer);return <div key={j.id} onClick={()=>{setSelectedJob(j.id);setPage("jobs")}} className="hover-lift" style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 16px",background:"#0a0a0a",borderRadius:10,marginBottom:8,cursor:"pointer",border:"1px solid rgba(255,255,255,0.04)",transition:"all 0.2s",flexWrap:"wrap",gap:8}}>
+          <div style={{flex:1,minWidth:200}}><div style={{fontSize:14,fontWeight:600,color:"#f0f0f0",marginBottom:4}}>{j.name}</div><div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}><Badge label={j.phase} color={statusColor(j.phase)}/><Badge label={j.paymentStatus} color={statusColor(j.paymentStatus)}/><span style={{fontSize:12,color:"#9a9a9a"}}>{cust?.name}</span></div></div>
+          <div style={{textAlign:"right"}}><div style={{fontSize:15,fontWeight:700,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(f.totalRevenue)}</div><div style={{fontSize:11,color:"#737373"}}>{f.margin.toFixed(0)}% margin</div></div>
+        </div>})}
+      </Card>
+    </>}
+
+    {/* ACTIVITY FEED */}
+    {crmTab==="activity"&&<Card>
+      <div style={{fontSize:15,fontWeight:700,color:"#f0f0f0",marginBottom:14}}>Activity Feed</div>
+      {allActivities.length===0?<div style={{fontSize:13,color:"#737373",padding:"12px 0"}}>No activity recorded yet. Changes to jobs will appear here automatically.</div>:
+      allActivities.map((a,i)=><div key={i} style={{display:"flex",gap:14,padding:"12px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+        <div style={{width:10,height:10,borderRadius:"50%",background:a.type==="edit"?"#2dd4bf":"#a78bfa",marginTop:4,flexShrink:0}}/>
+        <div style={{flex:1}}>
+          <div style={{fontSize:13,color:"#e5e5e5",lineHeight:1.5}}>{a.fields?a.fields.map(f=>f.field+" changed to \""+String(f.to)+"\"").join(", "):a.type}</div>
+          <div style={{fontSize:12,color:"#9a9a9a",marginTop:2}}>{a.jobName} -- {new Date(a.time).toLocaleDateString()} {new Date(a.time).toLocaleTimeString()}</div>
+        </div>
+      </div>)}
+    </Card>}
+
+    {/* TASKS */}
+    {crmTab==="tasks"&&<>
+      <Card style={{marginBottom:16,border:"1px solid rgba(45,212,191,0.12)"}}>
+        <div style={{fontSize:15,fontWeight:700,color:"#2dd4bf",marginBottom:12}}>Add Task</div>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+          <input value={taskText} onChange={e=>setTaskText(e.target.value)} placeholder="Task description..." style={{...inputStyle,flex:1,minWidth:200}}/>
+          <input type="date" value={taskDue} onChange={e=>setTaskDue(e.target.value)} style={{...inputStyle,width:150}}/>
+          <select id="taskJob" style={{...inputStyle,width:180}}>{rj.map(j=><option key={j.id} value={j.id}>{j.name}</option>)}</select>
+          <Btn onClick={()=>{const sel=document.getElementById("taskJob");if(sel)addTask(sel.value)}}>Add Task</Btn>
+        </div>
+      </Card>
+      <Card><div style={{fontSize:15,fontWeight:700,color:"#f0f0f0",marginBottom:14}}>Open Tasks ({allTasks.filter(t=>!t.done).length})</div>
+        {allTasks.filter(t=>!t.done).length===0?<div style={{fontSize:13,color:"#737373"}}>No open tasks. Add one above.</div>:
+        allTasks.filter(t=>!t.done).map((t,i)=><div key={i} style={{display:"flex",gap:12,alignItems:"center",padding:"10px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+          <div style={{width:8,height:8,borderRadius:"50%",background:"#fbbf24",flexShrink:0}}/>
+          <div style={{flex:1}}><div style={{fontSize:13,color:"#e5e5e5"}}>{t.text}</div><div style={{fontSize:11,color:"#737373"}}>{t.jobName}</div></div>
+        </div>)}
+      </Card>
+    </>}
+
+    {/* NOTES */}
+    {crmTab==="notes"&&<>
+      <Card style={{marginBottom:16,border:"1px solid rgba(167,139,250,0.12)"}}>
+        <div style={{fontSize:15,fontWeight:700,color:"#a78bfa",marginBottom:12}}>Add Note</div>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+          <textarea value={noteText} onChange={e=>setNoteText(e.target.value)} placeholder="Meeting notes, follow-up items, observations..." rows={2} style={{...inputStyle,flex:1,minWidth:200,resize:"vertical"}}/>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            <select id="noteJob" style={{...inputStyle,width:180}}>{rj.map(j=><option key={j.id} value={j.id}>{j.name}</option>)}</select>
+            <Btn v="ghost" onClick={()=>{const sel=document.getElementById("noteJob");if(sel)addNote(sel.value)}}>Save Note</Btn>
+          </div>
+        </div>
+      </Card>
+      <Card><div style={{fontSize:15,fontWeight:700,color:"#f0f0f0",marginBottom:14}}>Recent Notes</div>
+        {allNotes.length===0?<div style={{fontSize:13,color:"#737373"}}>No notes yet. Notes persist to the database with each job.</div>:
+        allNotes.map((n,i)=><div key={i} style={{padding:"12px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+          <div style={{fontSize:13,color:"#e5e5e5",lineHeight:1.6}}>{n.text}</div>
+          <div style={{fontSize:11,color:"#9a9a9a",marginTop:4}}>{n.jobName}{n.time?" -- "+n.time:""}</div>
+        </div>)}
+      </Card>
+    </>}
+
+    {/* TEAM */}
+    {crmTab==="team"&&isOverview&&<Card>
+      <div style={{fontSize:15,fontWeight:700,color:"#f0f0f0",marginBottom:14}}>Team Performance</div>
+      {reps.filter(r=>!r.id.includes("SEED_FLAG")).map(r=>{const rJobs=jobs.filter(j=>j.salesRep===r.id);const rv=rJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const pRev=rJobs.filter(j=>j.paymentStatus==="paid").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const comm=rv*(r.commissionRate||0);return <div key={r.id} onClick={()=>setActiveRep(r.id)} className="hover-lift" style={{display:"flex",alignItems:"center",gap:14,padding:"16px",background:"#0a0a0a",borderRadius:12,marginBottom:10,cursor:"pointer",border:"1px solid rgba(255,255,255,0.04)",transition:"all 0.2s"}}>
+        <div style={{width:44,height:44,borderRadius:10,background:"linear-gradient(135deg,rgba(45,212,191,0.12),rgba(167,139,250,0.12))",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:800,color:"#2dd4bf"}}>{r.name.split(" ").map(n=>n[0]).join("")}</div>
+        <div style={{flex:1}}><div style={{fontSize:15,fontWeight:600,color:"#f0f0f0"}}>{r.name}</div><div style={{fontSize:12,color:"#9a9a9a"}}>{r.territory} -- {r.tier} -- {rJobs.length} jobs</div></div>
+        <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>
+          <div style={{textAlign:"center"}}><div style={{fontSize:16,fontWeight:700,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(rv)}</div><div style={{fontSize:10,color:"#737373"}}>Pipeline</div></div>
+          {r.commissionRate>0&&<div style={{textAlign:"center"}}><div style={{fontSize:16,fontWeight:700,color:"#fbbf24",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(comm)}</div><div style={{fontSize:10,color:"#737373"}}>Commission</div></div>}
+        </div>
+      </div>})}
+    </Card>}
+    {crmTab==="team"&&!isOverview&&<Card><div style={{fontSize:13,color:"#9a9a9a"}}>Switch to Overview to see all team members.</div></Card>}
   </div>;
 }
 
@@ -1564,6 +1682,7 @@ function PlaybookPage({jobs,reps,vendors,customers,lineItems,getJobFinancials,se
   const [search,setSearch]=useState("");
   // customSops comes from props (Supabase-backed)
   const [showNewSop,setShowNewSop]=useState(false);
+  const [editingSop,setEditingSop]=useState(null);
   const [newSop,setNewSop]=useState({title:'',cat:'Company',content:'',icon:'file'});
   // addSop/deleteSop come from props
   const iconOpts=['shield','send','users','receipt','download','dollar','file','truck','package','check','alert','chart','brain','edit','settings','book'];
@@ -1576,7 +1695,7 @@ function PlaybookPage({jobs,reps,vendors,customers,lineItems,getJobFinancials,se
       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16}}>
         <span onClick={()=>setActiveDoc(null)} style={{color:"#525252",cursor:"pointer",fontSize:13}} onMouseEnter={e=>e.currentTarget.style.color="#2dd4bf"} onMouseLeave={e=>e.currentTarget.style.color="#525252"}>Playbook</span>
         <span style={{color:"#333",fontSize:13}}>/</span>
-        <span style={{color:"#e5e5e5",fontSize:13,fontWeight:600}}>{doc.title}</span>{doc.custom&&<Btn v="danger" style={{fontSize:11,padding:"3px 10px",marginLeft:12}} onClick={()=>{deleteSop(doc.id);setActiveDoc(null);notify("SOP deleted")}}>Delete</Btn>}
+        <span style={{color:"#e5e5e5",fontSize:13,fontWeight:600}}>{doc.title}</span>{doc.custom&&<><Btn v="ghost" style={{fontSize:11,padding:"3px 10px",marginLeft:12}} onClick={()=>{setEditingSop(doc);setActiveDoc(null)}}>Edit</Btn><Btn v="danger" style={{fontSize:11,padding:"3px 10px",marginLeft:4}} onClick={()=>{deleteSop(doc.id);setActiveDoc(null);notify("SOP deleted")}}>Delete</Btn></>}
       </div>
       <Card style={{border:"1px solid rgba(45,212,191,0.1)",background:"linear-gradient(180deg,rgba(45,212,191,0.02),transparent)"}}>
         <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:28}}>
@@ -1689,6 +1808,18 @@ function PlaybookPage({jobs,reps,vendors,customers,lineItems,getJobFinancials,se
         <textarea value={newSop.content} onChange={e=>setNewSop({...newSop,content:e.target.value})} placeholder={"SECTION HEADER\nContent goes here.\n\nWORKFLOW STEPS\n1. First step: Do this\n2. Second step: Then this\n3. Third step: Finally this\n\nKEY NOTES\n- Important point\n- Another point"} rows={10} style={{...inputStyle,resize:"vertical",minHeight:180,lineHeight:1.6}}/>
       </div>
       <div style={{display:"flex",gap:8}}><Btn onClick={()=>{if(!newSop.title||!newSop.content){notify("Title and content are required","error");return}const sop={id:"SOP-"+Math.random().toString(36).slice(2,8),title:newSop.title,cat:newSop.cat,icon:newSop.icon,content:newSop.content,custom:true};addSop(sop);setNewSop({title:"",cat:"Company",content:"",icon:"file"});setShowNewSop(false);notify("SOP created")}}>Save SOP</Btn><Btn v="secondary" onClick={()=>setShowNewSop(false)}>Cancel</Btn></div>
+    </Card>}
+    {editingSop&&<Card style={{marginBottom:24,border:"1px solid rgba(167,139,250,0.2)",background:"linear-gradient(135deg,rgba(167,139,250,0.02),transparent)"}}>
+      <div style={{fontSize:15,fontWeight:700,color:"#a78bfa",marginBottom:16}}>Edit SOP</div>
+      <div className="resp-grid-3" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:14}}>
+        <div><label style={{fontSize:12,color:"#9a9a9a",display:"block",marginBottom:4}}>Title</label><input value={editingSop.title} onChange={e=>setEditingSop({...editingSop,title:e.target.value})} style={inputStyle}/></div>
+        <div><label style={{fontSize:12,color:"#9a9a9a",display:"block",marginBottom:4}}>Category</label><select value={editingSop.cat} onChange={e=>setEditingSop({...editingSop,cat:e.target.value})} style={inputStyle}>{catOpts.map(c=><option key={c}>{c}</option>)}</select></div>
+        <div><label style={{fontSize:12,color:"#9a9a9a",display:"block",marginBottom:4}}>Icon</label><div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{iconOpts.slice(0,12).map(ic=><div key={ic} onClick={()=>setEditingSop({...editingSop,icon:ic})} style={{width:28,height:28,borderRadius:6,background:editingSop.icon===ic?"rgba(167,139,250,0.15)":"transparent",border:"1px solid "+(editingSop.icon===ic?"#a78bfa":"rgba(255,255,255,0.06)"),display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",color:editingSop.icon===ic?"#a78bfa":"#525252",transition:"all 0.15s"}}><I n={ic} s={13}/></div>)}</div></div>
+      </div>
+      <div style={{marginBottom:14}}><label style={{fontSize:12,color:"#9a9a9a",display:"block",marginBottom:4}}>Content</label>
+        <textarea value={editingSop.content} onChange={e=>setEditingSop({...editingSop,content:e.target.value})} rows={10} style={{...inputStyle,resize:"vertical",minHeight:180,lineHeight:1.6}}/>
+      </div>
+      <div style={{display:"flex",gap:8}}><Btn onClick={()=>{if(!editingSop.title){notify("Title required","error");return}deleteSop(editingSop.id);addSop({...editingSop});setEditingSop(null);notify("SOP updated")}}>Save Changes</Btn><Btn v="secondary" onClick={()=>setEditingSop(null)}>Cancel</Btn></div>
     </Card>}
     {cats.map(cat=>{const cd=filtered.filter(s=>s.cat===cat);if(!cd.length)return null;return <div key={cat} style={{marginBottom:32}}>
       <div style={{fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:1.5,color:"#444",marginBottom:12}}>{cat}</div>
@@ -1819,14 +1950,55 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,brain
   const [openaiKeyInput,setOpenaiKeyInput]=useState(()=>localStorage.getItem('mw_openai_key')||'');
   const saveKeys=()=>{if(claudeKeyInput)localStorage.setItem('mw_claude_key',claudeKeyInput);else localStorage.removeItem('mw_claude_key');if(openaiKeyInput)localStorage.setItem('mw_openai_key',openaiKeyInput);else localStorage.removeItem('mw_openai_key');notify(claudeKeyInput||openaiKeyInput?'AI key saved -- Brain is now powered by '+(claudeKeyInput?'Claude':'ChatGPT'):'Keys cleared -- using local mode');setShowApiKey(false)};
   const activeProvider = localStorage.getItem('mw_claude_key') ? 'Claude API' : localStorage.getItem('mw_openai_key') ? 'ChatGPT API' : 'Local mode';
-  return <div style={{animation:"fadeUp 0.4s",display:"flex",flexDirection:"column",height:"calc(100vh - 48px)"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:20}}><div><h2 style={{fontSize:22,fontWeight:700,color:"#e5e5e5",marginBottom:4,letterSpacing:-0.5}}>Midwest Brain</h2><p style={{fontSize:13,color:"#a3a3a3"}}>{activeProvider}{' - '}14 years of institutional knowledge</p></div><Btn v="secondary" onClick={()=>setShowApiKey(!showApiKey)} style={{fontSize:11}}><I n="settings" s={14}/> {showApiKey?'Hide':'AI Setup'}</Btn></div>
-    {showApiKey&&<Card style={{marginBottom:12,border:"1px solid #2dd4bf30"}}><div style={{fontSize:13,fontWeight:600,color:"#2dd4bf",marginBottom:8}}>AI API Keys (Claude or ChatGPT -- only one needed)</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:8}}><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Claude API Key (Anthropic)</label><input type="password" value={claudeKeyInput} onChange={e=>setClaudeKeyInput(e.target.value)} placeholder="sk-ant-..." style={inputStyle}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>OpenAI API Key (ChatGPT)</label><input type="password" value={openaiKeyInput} onChange={e=>setOpenaiKeyInput(e.target.value)} placeholder="sk-..." style={inputStyle}/></div></div><div style={{display:"flex",gap:8}}><Btn onClick={saveKeys}>Save</Btn><Btn v="secondary" onClick={()=>{setClaudeKeyInput('');setOpenaiKeyInput('');localStorage.removeItem('mw_claude_key');localStorage.removeItem('mw_openai_key');notify('Keys cleared')}}>Clear All</Btn></div><div style={{fontSize:12,color:"#8a8a8a",marginTop:6}}>Claude: console.anthropic.com - OpenAI: platform.openai.com/api-keys - Keys stay in your browser only. If both are set, Claude takes priority.</div></Card>}
-    <Card style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",padding:0}}>
-      <div style={{flex:1,overflow:"auto",padding:20}}>{history.map((msg,i)=><div key={i} style={{marginBottom:16,maxWidth:"80%",marginLeft:msg.role==="user"?"auto":0}}><div style={{padding:"12px 16px",borderRadius:12,background:msg.role==="user"?"#2dd4bf":msg.role==="system"?"#1e213044":"#1a1a1a",color:msg.role==="user"?"#000000":"#a3a3a3",fontSize:13,lineHeight:1.6,whiteSpace:"pre-wrap"}}>{msg.content.split("**").map((part,pi)=>pi%2===1?<strong key={pi} style={{color:msg.role==="user"?"#000000":"#e5e5e5"}}>{part}</strong>:part)}</div><div style={{fontSize:12,color:"#8a8a8a",marginTop:4,textAlign:msg.role==="user"?"right":"left"}}>{msg.role==="user"?"You":"Midwest Brain"}</div></div>)}{brainLoading&&<div style={{padding:"12px 16px",background:"#1a1a1a",borderRadius:12,maxWidth:"80%",fontSize:13,color:"#a3a3a3"}}><span style={{animation:"pulse 1.5s infinite"}}>Searching operational data...</span></div>}</div>
-      <div style={{padding:16,borderTop:"1px solid #222222",display:"flex",gap:8}}><input value={brainQuery} onChange={e=>setBrainQuery(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleQuery()} placeholder="Ask anything -- vendors, pricing, job status, commissions..." style={{flex:1,padding:"10px 16px",background:"#1a1a1a",border:"1px solid rgba(255,255,255,0.06)",borderRadius:8,color:"#d4d4d4",fontSize:13,outline:"none",fontFamily:"inherit"}}/><Btn onClick={handleQuery} style={{padding:"10px 20px"}}><I n="send" s={14}/> Ask</Btn></div>
-    </Card>
+  return <div style={{animation:"fadeUp 0.4s",display:"flex",flexDirection:"column",height:"calc(100vh - 48px)"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:12}}>
+      <div>
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:4}}>
+          <div style={{width:36,height:36,borderRadius:10,background:"linear-gradient(135deg,rgba(45,212,191,0.15),rgba(167,139,250,0.15))",display:"flex",alignItems:"center",justifyContent:"center"}}><I n="brain" s={18}/></div>
+          <h2 style={{fontSize:22,fontWeight:800,color:"#f0f0f0",letterSpacing:-0.5}}>Midwest Brain</h2>
+          <div style={{padding:"3px 10px",borderRadius:20,background:activeProvider.includes("Claude")?"rgba(45,212,191,0.12)":activeProvider.includes("ChatGPT")?"rgba(52,211,153,0.12)":"rgba(255,255,255,0.04)",fontSize:11,fontWeight:600,color:activeProvider.includes("Claude")?"#2dd4bf":activeProvider.includes("ChatGPT")?"#34d399":"#737373"}}>{activeProvider}</div>
+        </div>
+        <p style={{fontSize:13,color:"#9a9a9a"}}>Ask anything about your business -- live data from {jobs.length} jobs, {vendors.length} vendors, {customers.length} customers</p>
+      </div>
+      <Btn v="secondary" onClick={()=>setShowApiKey(!showApiKey)} style={{fontSize:12}}><I n="settings" s={13}/> {showApiKey?"Close":"AI Setup"}</Btn>
+    </div>
+
+    {showApiKey&&<Card style={{marginBottom:16,border:"1px solid rgba(45,212,191,0.15)",background:"linear-gradient(135deg,rgba(45,212,191,0.02),transparent)"}}>
+      <div style={{fontSize:14,fontWeight:700,color:"#2dd4bf",marginBottom:12}}>AI Configuration</div>
+      <div className="resp-grid-2" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:12,marginBottom:12}}>
+        <div><label style={{fontSize:12,color:"#9a9a9a",display:"block",marginBottom:4}}>Claude API Key (Anthropic)</label><input type="password" value={claudeKeyInput} onChange={e=>setClaudeKeyInput(e.target.value)} placeholder="sk-ant-..." style={inputStyle}/></div>
+        <div><label style={{fontSize:12,color:"#9a9a9a",display:"block",marginBottom:4}}>OpenAI API Key</label><input type="password" value={openaiKeyInput} onChange={e=>setOpenaiKeyInput(e.target.value)} placeholder="sk-..." style={inputStyle}/></div>
+      </div>
+      <div style={{display:"flex",gap:8,marginBottom:8}}><Btn onClick={saveKeys}>Save Keys</Btn><Btn v="secondary" onClick={()=>{setClaudeKeyInput("");setOpenaiKeyInput("");localStorage.removeItem("mw_claude_key");localStorage.removeItem("mw_openai_key");notify("Keys cleared")}}>Clear</Btn></div>
+      <div style={{fontSize:11,color:"#737373"}}>Keys are stored in your browser only. Claude takes priority if both are set.</div>
+    </Card>}
+
+    {/* Suggested queries */}
+    {history.length<=1&&<div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}}>
+      {suggestedQueries.slice(0,4).map((q,i)=><button key={i} onClick={()=>{setBrainQuery(q);}} style={{padding:"8px 14px",borderRadius:20,border:"1px solid rgba(45,212,191,0.15)",background:"transparent",color:"#2dd4bf",fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(45,212,191,0.08)"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>{q}</button>)}
+    </div>}
+
+    {/* Chat area */}
+    <div style={{flex:1,display:"flex",flexDirection:"column",background:"#0a0a0a",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
+      <div style={{flex:1,overflow:"auto",padding:"20px 16px"}}>
+        {history.map((msg,i)=><div key={i} style={{marginBottom:16,maxWidth:"85%",marginLeft:msg.role==="user"?"auto":0}}>
+          <div style={{padding:"14px 18px",borderRadius:msg.role==="user"?"16px 16px 4px 16px":"16px 16px 16px 4px",background:msg.role==="user"?"linear-gradient(135deg,#2dd4bf,#14b8a6)":msg.role==="system"?"rgba(167,139,250,0.06)":"#111",color:msg.role==="user"?"#000":"#c4c4c4",fontSize:13,lineHeight:1.7,whiteSpace:"pre-wrap",border:msg.role==="user"?"none":"1px solid rgba(255,255,255,0.04)"}}>
+            {msg.content.split("**").map((part,pi)=>pi%2===1?<strong key={pi} style={{color:msg.role==="user"?"#000":"#f0f0f0"}}>{part}</strong>:part)}
+          </div>
+          <div style={{fontSize:11,color:"#737373",marginTop:4,textAlign:msg.role==="user"?"right":"left",paddingLeft:msg.role==="user"?0:4,paddingRight:msg.role==="user"?4:0}}>{msg.role==="user"?"You":"Midwest Brain"}</div>
+        </div>)}
+        {brainLoading&&<div style={{maxWidth:"85%"}}><div style={{padding:"14px 18px",background:"#111",borderRadius:"16px 16px 16px 4px",border:"1px solid rgba(255,255,255,0.04)"}}><div style={{display:"flex",gap:6}}><div style={{width:6,height:6,borderRadius:"50%",background:"#2dd4bf",animation:"pulse 1s infinite"}}/>
+          <div style={{width:6,height:6,borderRadius:"50%",background:"#a78bfa",animation:"pulse 1s 0.2s infinite"}}/>
+          <div style={{width:6,height:6,borderRadius:"50%",background:"#34d399",animation:"pulse 1s 0.4s infinite"}}/></div></div></div>}
+      </div>
+      <div style={{padding:"12px 16px",borderTop:"1px solid rgba(255,255,255,0.04)",display:"flex",gap:8,background:"#0a0a0a"}}>
+        <input value={brainQuery} onChange={e=>setBrainQuery(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleQuery()} placeholder="Ask about vendors, margins, deliveries, commissions..." style={{flex:1,padding:"12px 16px",background:"#111",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,color:"#e5e5e5",fontSize:13,outline:"none",fontFamily:"inherit"}}/>
+        <Btn onClick={handleQuery} style={{padding:"12px 20px",borderRadius:10}}><I n="send" s={15}/></Btn>
+      </div>
+    </div>
   </div>;
 }
+
 
 // ===============================================================
 // DIRECTORY -- Vendors, Customers, Sales Reps (full CRUD + sort)
