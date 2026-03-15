@@ -1526,7 +1526,7 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
     {crmTab==="tasks"&&<TasksKanban jobs={rj} allJobs={jobs} reps={reps} updateJob={updateJob} notify={notify} inputStyle={inputStyle} customSops={customSops} addSop={addSop} deleteSop={deleteSop}/>}
 
     {/* NOTES */}
-    {crmTab==="notes"&&<NotesView customSops={customSops} addSop={addSop} deleteSop={deleteSop} jobs={rj} reps={reps} notify={notify} inputStyle={inputStyle} triggerPrint={ctx?.triggerPrint}/>}
+    {crmTab==="notes"&&<NotesView customSops={customSops} addSop={addSop} deleteSop={deleteSop} jobs={rj} reps={reps} notify={notify} triggerPrint={ctx?.triggerPrint}/>}
 
     {/* TEAM */}
     {crmTab==="team"&&!repDetail&&<Card>
@@ -1901,114 +1901,92 @@ function PlaybookPage({jobs,reps,vendors,customers,lineItems,getJobFinancials,se
 // ===============================================================
 // TASKS KANBAN (drag-and-drop, used in Sales Portal + standalone)
 // ===============================================================
-function TasksKanban({jobs,allJobs,reps,updateJob,notify,inputStyle,customSops,addSop,deleteSop,filterRep,filterJob,viewMode}){
+function TasksKanban({jobs,allJobs,reps,updateJob,notify,customSops,addSop,deleteSop,filterRep,filterJob,viewMode}){
   const [showAdd,setShowAdd]=useState(false);
   const [editTask,setEditTask]=useState(null);
   const [form,setForm]=useState({text:"",due:"",assignees:[],status:"To Do",jobId:"",notes:"",link:"",priority:"normal"});
   const [dragId,setDragId]=useState(null);
 
-  // Load tasks from sops table (cat="Task")
   const allTasks=(customSops||[]).filter(s=>s.cat==="Task").map(s=>{try{const d=JSON.parse(s.content);return{...d,id:s.id,sopId:s.id}}catch{return{id:s.id,sopId:s.id,text:s.title,status:"To Do",assignees:[],due:"",jobId:"",jobName:"",notes:"",link:"",priority:"normal"}}});
-
-  // Filters
-  const filtered=allTasks.filter(t=>{
-    if(filterRep&&filterRep!=="all"&&!(t.assignees||[]).includes(filterRep))return false;
-    if(filterJob&&filterJob!=="all"&&t.jobId!==filterJob)return false;
-    return true;
-  });
-
+  const filtered=allTasks.filter(t=>{if(filterRep&&filterRep!=="all"&&!(t.assignees||[]).includes(filterRep))return false;if(filterJob&&filterJob!=="all"&&t.jobId!==filterJob)return false;return true});
   const cols={"To Do":[],"In Progress":[],"Done":[]};
   filtered.forEach(t=>{const s=t.status||"To Do";if(cols[s])cols[s].push(t);else cols["To Do"].push(t)});
   const colColors={"To Do":"#fbbf24","In Progress":"#2dd4bf","Done":"#34d399"};
-  const priColors={"high":"#f87171","normal":"#737373","low":"#525252"};
+  const priColors={"high":"#f87171","normal":"#525252","low":"#333"};
 
-  const saveTask=(taskData,existingId)=>{
-    const jobName=taskData.jobId?(allJobs||jobs).find(j=>j.id===taskData.jobId)?.name||"":"";
-    const sop={id:existingId||("TASK-"+Math.random().toString(36).slice(2,8)),title:taskData.text,cat:"Task",icon:"check",content:JSON.stringify({...taskData,jobName}),custom:true};
-    if(existingId)deleteSop(existingId);
-    addSop(sop);
-    notify(existingId?"Task updated":"Task created");
-  };
-
-  const moveTask=(taskId,newStatus)=>{const t=allTasks.find(x=>x.id===taskId);if(!t)return;saveTask({...t,status:newStatus},t.sopId);};
-  const deleteTask=(id)=>{deleteSop(id);notify("Task deleted")};
-
+  const saveTask=(td,existingId)=>{const jn=td.jobId?(allJobs||jobs).find(j=>j.id===td.jobId)?.name||"":"";const sop={id:existingId||("TASK-"+Math.random().toString(36).slice(2,8)),title:td.text||"Untitled",cat:"Task",icon:"check",content:JSON.stringify({...td,jobName:jn}),custom:true};if(existingId)deleteSop(existingId);addSop(sop);notify(existingId?"Task updated":"Task created")};
+  const moveTask=(id,newStatus)=>{const t=allTasks.find(x=>x.id===id);if(t)saveTask({...t,status:newStatus},t.sopId)};
   const handleDragStart=(e,id)=>{setDragId(id);e.dataTransfer.setData("taskId",id);e.dataTransfer.effectAllowed="move"};
   const handleDrop=(e,status)=>{e.preventDefault();const id=e.dataTransfer.getData("taskId")||dragId;if(id)moveTask(id,status);setDragId(null)};
   const handleDragOver=(e)=>{e.preventDefault();e.dataTransfer.dropEffect="move"};
 
-  // Day-of-week view
+  const createTask=(overrides)=>{if(!form.text.trim())return;saveTask({...form,...overrides,jobId:form.jobId||""});setForm({text:"",due:"",assignees:[],status:"To Do",jobId:"",notes:"",link:"",priority:"normal"});setShowAdd(false)};
+
+  // Week view
   const days=["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
-  const getDayTasks=(day)=>{const today=new Date();const dow=today.getDay();const dayIdx=days.indexOf(day);const diff=dayIdx-(dow===0?6:dow-1);const targetDate=new Date(today);targetDate.setDate(today.getDate()+diff);const ds=targetDate.toISOString().split("T")[0];return filtered.filter(t=>t.due===ds)};
+  const getDayStr=(dayIdx)=>{const today=new Date();const dow=today.getDay();const diff=dayIdx-(dow===0?6:dow-1);const d=new Date(today);d.setDate(today.getDate()+diff);return d.toISOString().split("T")[0]};
 
   if(viewMode==="week") return <div>
     <div className="resp-grid-3" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:8}}>
-      {days.map(day=>{const dt=getDayTasks(day);const today=new Date();const dow=today.getDay();const isToday=days.indexOf(day)===(dow===0?6:dow-1);return <div key={day} style={{background:isToday?"rgba(45,212,191,0.04)":"#0a0a0a",borderRadius:12,border:"1px solid "+(isToday?"rgba(45,212,191,0.15)":"rgba(255,255,255,0.04)"),padding:12,minHeight:120}}>
-        <div style={{fontSize:12,fontWeight:700,color:isToday?"#2dd4bf":"#9a9a9a",marginBottom:10}}>{day}{isToday&&<span style={{marginLeft:6,fontSize:10,color:"#2dd4bf"}}>TODAY</span>}</div>
+      {days.map((day,di)=>{const ds=getDayStr(di);const dt=filtered.filter(t=>t.due===ds);const today=new Date();const dow=today.getDay();const isToday=di===(dow===0?6:dow-1);return <div key={day} style={{background:isToday?"rgba(45,212,191,0.04)":"#0a0a0a",borderRadius:12,border:"1px solid "+(isToday?"rgba(45,212,191,0.15)":"rgba(255,255,255,0.04)"),padding:12,minHeight:120}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+          <span style={{fontSize:12,fontWeight:700,color:isToday?"#2dd4bf":"#9a9a9a"}}>{day}{isToday&&<span style={{marginLeft:6,fontSize:10}}>TODAY</span>}</span>
+          <button onClick={()=>{setForm(f=>({...f,due:ds,status:"To Do"}));setShowAdd(true)}} style={{width:20,height:20,borderRadius:5,border:"1px dashed rgba(255,255,255,0.12)",background:"transparent",color:"#2dd4bf",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontFamily:"inherit"}}>+</button>
+        </div>
         {dt.length===0&&<div style={{fontSize:11,color:"#333",textAlign:"center",padding:8}}>No tasks</div>}
-        {dt.map(t=><div key={t.id} onClick={()=>setEditTask(t)} style={{padding:8,background:"#111",borderRadius:8,marginBottom:6,fontSize:12,color:"#e5e5e5",cursor:"pointer",borderLeft:"3px solid "+colColors[t.status||"To Do"]}}>{t.text}</div>)}
+        {dt.map(t=><div key={t.id} onClick={()=>setEditTask(t)} style={{padding:"8px 10px",background:"#111",borderRadius:8,marginBottom:6,fontSize:13,fontWeight:500,color:t.status==="Done"?"#525252":"#e5e5e5",textDecoration:t.status==="Done"?"line-through":"none",cursor:"pointer",borderLeft:"3px solid "+colColors[t.status||"To Do"]}}>{t.text}</div>)}
       </div>})}
     </div>
+    {showAdd&&<AddTaskForm form={form} setForm={setForm} jobs={jobs} reps={reps} createTask={createTask} onClose={()=>setShowAdd(false)} inputStyle={inputStyle}/>}
+    {editTask&&<EditTaskOverlay task={editTask} setEditTask={setEditTask} jobs={jobs} reps={reps} saveTask={saveTask} deleteSop={deleteSop} notify={notify} inputStyle={inputStyle}/>}
   </div>;
 
   return <div>
-    {/* Add task form */}
-    {showAdd&&<Card style={{marginBottom:16,border:"1px solid rgba(45,212,191,0.15)"}}>
-      <div style={{fontSize:16,fontWeight:700,color:"#2dd4bf",marginBottom:14}}>New Task</div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:10,marginBottom:12}}>
-        <div style={{gridColumn:"1/-1"}}><input value={form.text} onChange={e=>setForm({...form,text:e.target.value})} onKeyDown={e=>{if(e.key==="Enter"&&form.text.trim()){saveTask({...form,jobId:form.jobId||jobs[0]?.id||""});setForm({text:"",due:"",assignees:[],status:"To Do",jobId:"",notes:"",link:"",priority:"normal"});setShowAdd(false)}}} placeholder="What needs to be done?" style={{...inputStyle,fontSize:15,padding:"14px 16px"}}/></div>
-        <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Due Date</label><input type="date" value={form.due} onChange={e=>setForm({...form,due:e.target.value})} style={inputStyle}/></div>
-        <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Project</label><select value={form.jobId} onChange={e=>setForm({...form,jobId:e.target.value})} style={inputStyle}><option value="">None</option>{jobs.map(j=><option key={j.id} value={j.id}>{j.name}</option>)}</select></div>
-        <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Priority</label><select value={form.priority} onChange={e=>setForm({...form,priority:e.target.value})} style={inputStyle}><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option></select></div>
-        <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Assign</label><div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{reps.filter(r=>!r.id.includes("SEED_FLAG")).map(r=>{const on=(form.assignees||[]).includes(r.name);return <button key={r.id} onClick={()=>setForm({...form,assignees:on?form.assignees.filter(a=>a!==r.name):[...(form.assignees||[]),r.name]})} style={{padding:"4px 10px",borderRadius:6,border:"1px solid "+(on?"#2dd4bf":"rgba(255,255,255,0.08)"),background:on?"rgba(45,212,191,0.1)":"transparent",color:on?"#2dd4bf":"#737373",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>{r.name.split(" ")[0]}</button>})}</div></div>
-        <div style={{gridColumn:"1/-1"}}><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Notes</label><textarea value={form.notes||""} onChange={e=>setForm({...form,notes:e.target.value})} rows={2} placeholder="Additional details..." style={{...inputStyle,resize:"vertical"}}/></div>
-        <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Link</label><input value={form.link||""} onChange={e=>setForm({...form,link:e.target.value})} placeholder="https://..." style={inputStyle}/></div>
-      </div>
-      <div style={{display:"flex",gap:8}}><Btn onClick={()=>{if(!form.text.trim())return;saveTask({...form,jobId:form.jobId||jobs[0]?.id||""});setForm({text:"",due:"",assignees:[],status:"To Do",jobId:"",notes:"",link:"",priority:"normal"});setShowAdd(false)}}>Create Task</Btn><Btn v="secondary" onClick={()=>setShowAdd(false)}>Cancel</Btn></div>
-    </Card>}
-
-    {/* Edit overlay */}
-    {editTask&&<div onClick={()=>setEditTask(null)} style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.7)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:"#111",borderRadius:16,border:"1px solid rgba(45,212,191,0.15)",padding:24,width:"100%",maxWidth:500,maxHeight:"80vh",overflow:"auto"}}>
-        <div style={{fontSize:18,fontWeight:700,color:"#f0f0f0",marginBottom:16}}>Edit Task</div>
-        <div style={{display:"flex",flexDirection:"column",gap:10}}>
-          <input value={editTask.text} onChange={e=>setEditTask({...editTask,text:e.target.value})} style={{...inputStyle,fontSize:15,fontWeight:600}}/>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:8}}>
-            <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Status</label><select value={editTask.status||"To Do"} onChange={e=>setEditTask({...editTask,status:e.target.value})} style={inputStyle}><option>To Do</option><option>In Progress</option><option>Done</option></select></div>
-            <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Due</label><input type="date" value={editTask.due||""} onChange={e=>setEditTask({...editTask,due:e.target.value})} style={inputStyle}/></div>
-            <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Priority</label><select value={editTask.priority||"normal"} onChange={e=>setEditTask({...editTask,priority:e.target.value})} style={inputStyle}><option value="low">Low</option><option value="normal">Normal</option><option value="high">High</option></select></div>
-            <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Project</label><select value={editTask.jobId||""} onChange={e=>setEditTask({...editTask,jobId:e.target.value})} style={inputStyle}><option value="">None</option>{jobs.map(j=><option key={j.id} value={j.id}>{j.name}</option>)}</select></div>
-          </div>
-          <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Assign</label><div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{reps.filter(r=>!r.id.includes("SEED_FLAG")).map(r=>{const on=(editTask.assignees||[]).includes(r.name);return <button key={r.id} onClick={()=>setEditTask({...editTask,assignees:on?(editTask.assignees||[]).filter(a=>a!==r.name):[...(editTask.assignees||[]),r.name]})} style={{padding:"4px 10px",borderRadius:6,border:"1px solid "+(on?"#2dd4bf":"rgba(255,255,255,0.08)"),background:on?"rgba(45,212,191,0.1)":"transparent",color:on?"#2dd4bf":"#737373",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>{r.name.split(" ")[0]}</button>})}</div></div>
-          <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Notes</label><textarea value={editTask.notes||""} onChange={e=>setEditTask({...editTask,notes:e.target.value})} rows={3} style={{...inputStyle,resize:"vertical"}}/></div>
-          <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Link</label><input value={editTask.link||""} onChange={e=>setEditTask({...editTask,link:e.target.value})} placeholder="https://..." style={inputStyle}/></div>
-        </div>
-        <div style={{display:"flex",gap:8,marginTop:16}}><Btn onClick={()=>{saveTask(editTask,editTask.sopId);setEditTask(null)}}>Save Changes</Btn><Btn v="danger" onClick={()=>{deleteTask(editTask.sopId);setEditTask(null)}}>Delete</Btn><Btn v="secondary" onClick={()=>setEditTask(null)}>Close</Btn></div>
-      </div>
-    </div>}
-
-    {/* Kanban */}
+    {showAdd&&<AddTaskForm form={form} setForm={setForm} jobs={jobs} reps={reps} createTask={createTask} onClose={()=>setShowAdd(false)} inputStyle={inputStyle}/>}
+    {editTask&&<EditTaskOverlay task={editTask} setEditTask={setEditTask} jobs={jobs} reps={reps} saveTask={saveTask} deleteSop={deleteSop} notify={notify} inputStyle={inputStyle}/>}
     <div className="resp-grid-3" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:14}}>
       {["To Do","In Progress","Done"].map(status=><div key={status} onDrop={e=>handleDrop(e,status)} onDragOver={handleDragOver} style={{background:"#0a0a0a",borderRadius:14,border:"1px solid rgba(255,255,255,0.04)",padding:16,minHeight:200,transition:"border-color 0.2s"}} onDragEnter={e=>{e.currentTarget.style.borderColor=colColors[status]+"60"}} onDragLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.04)"}}>
-        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}>
-          <div style={{width:12,height:12,borderRadius:"50%",background:colColors[status]}}/>
-          <span style={{fontSize:16,fontWeight:800,color:"#f0f0f0"}}>{status}</span>
-          <span style={{fontSize:13,color:"#525252",background:"rgba(255,255,255,0.04)",padding:"2px 10px",borderRadius:12,marginLeft:"auto",fontFamily:"'JetBrains Mono',monospace"}}>{cols[status].length}</span>
-          <button onClick={()=>{setShowAdd(true);setForm(f=>({...f,status}))}} style={{width:28,height:28,borderRadius:8,border:"1px dashed rgba(255,255,255,0.12)",background:"transparent",color:"#2dd4bf",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontFamily:"inherit"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="#2dd4bf";e.currentTarget.style.background="rgba(45,212,191,0.06)"}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.12)";e.currentTarget.style.background="transparent"}}>+</button>
-        </div>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}><div style={{width:12,height:12,borderRadius:"50%",background:colColors[status]}}/><span style={{fontSize:16,fontWeight:800,color:"#f0f0f0"}}>{status}</span><span style={{fontSize:13,color:"#525252",background:"rgba(255,255,255,0.04)",padding:"2px 10px",borderRadius:12,marginLeft:"auto",fontFamily:"'JetBrains Mono',monospace"}}>{cols[status].length}</span><button onClick={()=>{setForm(f=>({...f,status}));setShowAdd(true)}} style={{width:28,height:28,borderRadius:8,border:"1px dashed rgba(255,255,255,0.12)",background:"transparent",color:"#2dd4bf",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontFamily:"inherit"}}>+</button></div>
         {cols[status].length===0&&<div style={{fontSize:13,color:"#333",padding:"28px 0",textAlign:"center",border:"1px dashed rgba(255,255,255,0.06)",borderRadius:10}}>Drop tasks here</div>}
         {cols[status].map(t=><div key={t.id} draggable onDragStart={e=>handleDragStart(e,t.id)} onClick={()=>setEditTask(t)} style={{padding:"14px 16px",background:"#111",borderRadius:12,marginBottom:10,border:"1px solid rgba(255,255,255,0.04)",cursor:"grab",transition:"all 0.15s",borderLeft:"3px solid "+(priColors[t.priority]||"#525252")}} onMouseEnter={e=>{e.currentTarget.style.borderColor="rgba(45,212,191,0.15)";e.currentTarget.style.transform="translateY(-1px)"}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.04)";e.currentTarget.style.transform="translateY(0)"}}>
           <div style={{fontSize:15,fontWeight:600,color:status==="Done"?"#737373":"#f0f0f0",textDecoration:status==="Done"?"line-through":"none",marginBottom:8,lineHeight:1.4}}>{t.text}</div>
-          <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
-            {t.jobName&&<span style={{fontSize:11,padding:"2px 8px",borderRadius:5,background:"rgba(45,212,191,0.06)",color:"#2dd4bf"}}>{t.jobName}</span>}
-            {t.due&&<span style={{fontSize:11,padding:"2px 8px",borderRadius:5,background:"rgba(251,191,36,0.06)",color:"#fbbf24"}}>{t.due}</span>}
-            {(t.assignees||[]).map(a=><span key={a} style={{fontSize:11,padding:"2px 8px",borderRadius:5,background:"rgba(167,139,250,0.06)",color:"#a78bfa"}}>{a}</span>)}
-            {t.priority==="high"&&<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(248,113,113,0.08)",color:"#f87171",fontWeight:600}}>HIGH</span>}
-            {t.notes&&<span style={{fontSize:10,color:"#525252"}}>+notes</span>}
-            {t.link&&<span style={{fontSize:10,color:"#525252"}}>+link</span>}
-          </div>
+          <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>{t.jobName&&<span style={{fontSize:11,padding:"2px 8px",borderRadius:5,background:"rgba(45,212,191,0.06)",color:"#2dd4bf"}}>{t.jobName}</span>}{t.due&&<span style={{fontSize:11,padding:"2px 8px",borderRadius:5,background:"rgba(251,191,36,0.06)",color:"#fbbf24"}}>{t.due}</span>}{(t.assignees||[]).map(a=><span key={a} style={{fontSize:11,padding:"2px 8px",borderRadius:5,background:"rgba(167,139,250,0.06)",color:"#a78bfa"}}>{a}</span>)}{t.priority==="high"&&<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(248,113,113,0.08)",color:"#f87171",fontWeight:600}}>HIGH</span>}</div>
         </div>)}
       </div>)}
+    </div>
+  </div>;
+}
+
+// Add Task Form (shared)
+function AddTaskForm({form,setForm,jobs,reps,createTask,onClose,inputStyle}){
+  return <Card style={{marginBottom:16,border:"1px solid rgba(45,212,191,0.15)"}}>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:10,marginBottom:12}}>
+      <div style={{gridColumn:"1/-1"}}><input value={form.text} onChange={e=>setForm({...form,text:e.target.value})} onKeyDown={e=>{if(e.key==="Enter"&&form.text.trim())createTask()}} autoFocus placeholder="What needs to be done?" style={{...inputStyle,fontSize:15,padding:"14px 16px"}}/></div>
+      <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Due Date</label><input type="date" value={form.due} onChange={e=>setForm({...form,due:e.target.value})} style={inputStyle}/></div>
+      <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Project</label><select value={form.jobId} onChange={e=>setForm({...form,jobId:e.target.value})} style={inputStyle}><option value="">None</option>{jobs.map(j=><option key={j.id} value={j.id}>{j.name}</option>)}</select></div>
+      <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Priority</label><select value={form.priority} onChange={e=>setForm({...form,priority:e.target.value})} style={inputStyle}><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select></div>
+      <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Assign</label><div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{reps.filter(r=>!r.id.includes("SEED_FLAG")).map(r=>{const on=(form.assignees||[]).includes(r.name);return <button key={r.id} onClick={()=>setForm({...form,assignees:on?form.assignees.filter(a=>a!==r.name):[...(form.assignees||[]),r.name]})} style={{padding:"4px 10px",borderRadius:6,border:"1px solid "+(on?"#2dd4bf":"rgba(255,255,255,0.08)"),background:on?"rgba(45,212,191,0.1)":"transparent",color:on?"#2dd4bf":"#737373",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>{r.name.split(" ")[0]}</button>})}</div></div>
+    </div>
+    <div style={{display:"flex",gap:8}}><Btn onClick={()=>createTask()}>Create</Btn><Btn v="secondary" onClick={onClose}>Cancel</Btn></div>
+  </Card>;
+}
+
+// Edit Task Overlay (click blank space to close)
+function EditTaskOverlay({task,setEditTask,jobs,reps,saveTask,deleteSop,notify,inputStyle}){
+  const [t,setT]=useState({...task});
+  return <div onClick={()=>{saveTask(t,t.sopId);setEditTask(null)}} style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(0,0,0,0.75)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+    <div onClick={e=>e.stopPropagation()} style={{background:"#0a0a0a",borderRadius:16,border:"1px solid rgba(45,212,191,0.15)",padding:24,width:"100%",maxWidth:480,maxHeight:"85vh",overflow:"auto"}}>
+      <input value={t.text} onChange={e=>setT({...t,text:e.target.value})} style={{...inputStyle,fontSize:18,fontWeight:700,background:"transparent",border:"none",padding:"8px 0",color:"#f0f0f0",marginBottom:12}}/>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:8,marginBottom:12}}>
+        <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Status</label><select value={t.status||"To Do"} onChange={e=>setT({...t,status:e.target.value})} style={inputStyle}><option>To Do</option><option>In Progress</option><option>Done</option></select></div>
+        <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Due</label><input type="date" value={t.due||""} onChange={e=>setT({...t,due:e.target.value})} style={inputStyle}/></div>
+        <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Priority</label><select value={t.priority||"normal"} onChange={e=>setT({...t,priority:e.target.value})} style={inputStyle}><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select></div>
+        <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Project</label><select value={t.jobId||""} onChange={e=>setT({...t,jobId:e.target.value})} style={inputStyle}><option value="">None</option>{jobs.map(j=><option key={j.id} value={j.id}>{j.name}</option>)}</select></div>
+      </div>
+      <div style={{marginBottom:12}}><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Assign</label><div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{reps.filter(r=>!r.id.includes("SEED_FLAG")).map(r=>{const on=(t.assignees||[]).includes(r.name);return <button key={r.id} onClick={()=>setT({...t,assignees:on?(t.assignees||[]).filter(a=>a!==r.name):[...(t.assignees||[]),r.name]})} style={{padding:"4px 10px",borderRadius:6,border:"1px solid "+(on?"#2dd4bf":"rgba(255,255,255,0.08)"),background:on?"rgba(45,212,191,0.1)":"transparent",color:on?"#2dd4bf":"#737373",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>{r.name.split(" ")[0]}</button>})}</div></div>
+      <div style={{marginBottom:12}}><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Notes</label><textarea value={t.notes||""} onChange={e=>setT({...t,notes:e.target.value})} rows={3} placeholder="Details, context, follow-ups..." style={{...inputStyle,resize:"vertical"}}/></div>
+      <div style={{marginBottom:16}}><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Link</label><input value={t.link||""} onChange={e=>setT({...t,link:e.target.value})} placeholder="https://..." style={inputStyle}/></div>
+      <div style={{display:"flex",gap:8}}><Btn onClick={()=>{saveTask(t,t.sopId);setEditTask(null)}}>Save</Btn><Btn v="danger" onClick={()=>{deleteSop(t.sopId);setEditTask(null);notify("Deleted")}}>Delete</Btn><Btn v="secondary" onClick={()=>{saveTask(t,t.sopId);setEditTask(null)}}>Close</Btn></div>
     </div>
   </div>;
 }
@@ -2017,117 +1995,116 @@ function TasksPage({jobs,reps,updateJob,notify,customSops,addSop,deleteSop}){
   const [viewMode,setViewMode]=useState("kanban");
   const [filterRep,setFilterRep]=useState("all");
   const [filterJob,setFilterJob]=useState("all");
-  const openTasks=(customSops||[]).filter(s=>s.cat==="Task").filter(s=>{try{return JSON.parse(s.content).status!=="Done"}catch{return true}}).length;
-  return <div style={{animation:"fadeUp 0.4s"}}>
-    <Header title="Tasks" sub={openTasks+" open tasks"}/>
+  const open=(customSops||[]).filter(s=>s.cat==="Task").filter(s=>{try{return JSON.parse(s.content).status!=="Done"}catch{return true}}).length;
+  return <div style={{animation:"fadeUp 0.4s"}}><Header title="Tasks" sub={open+" open tasks"}/>
     <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
       <div style={{display:"flex",gap:0,background:"#111",borderRadius:8,padding:3}}>{[["kanban","Board"],["week","Week"]].map(([v,l])=><button key={v} onClick={()=>setViewMode(v)} style={{padding:"6px 14px",borderRadius:6,border:"none",cursor:"pointer",background:viewMode===v?"#2dd4bf":"transparent",color:viewMode===v?"#000":"#737373",fontSize:12,fontWeight:viewMode===v?600:400,fontFamily:"inherit"}}>{l}</button>)}</div>
       <select value={filterRep} onChange={e=>setFilterRep(e.target.value)} style={{...inputStyle,width:160,padding:"6px 10px",fontSize:12}}><option value="all">Everyone</option>{reps.filter(r=>!r.id.includes("SEED_FLAG")).map(r=><option key={r.id} value={r.name}>{r.name}</option>)}</select>
       <select value={filterJob} onChange={e=>setFilterJob(e.target.value)} style={{...inputStyle,width:180,padding:"6px 10px",fontSize:12}}><option value="all">All Projects</option>{jobs.map(j=><option key={j.id} value={j.id}>{j.name}</option>)}</select>
     </div>
-    <TasksKanban jobs={jobs} allJobs={jobs} reps={reps} updateJob={updateJob} notify={notify} inputStyle={inputStyle} customSops={customSops} addSop={addSop} deleteSop={deleteSop} filterRep={filterRep} filterJob={filterJob} viewMode={viewMode}/>
+    <TasksKanban jobs={jobs} allJobs={jobs} reps={reps} updateJob={updateJob} notify={notify} customSops={customSops} addSop={addSop} deleteSop={deleteSop} filterRep={filterRep} filterJob={filterJob} viewMode={viewMode}/>
   </div>;
 }
 
-function NotesView({customSops,addSop,deleteSop,jobs,reps,notify,inputStyle,triggerPrint}){
-  const [title,setTitle]=useState("");
+// ===============================================================
+// NOTES
+// ===============================================================
+function NotesView({customSops,addSop,deleteSop,jobs,reps,notify,triggerPrint}){
   const [content,setContent]=useState("");
-  const [folder,setFolder]=useState("All");
+  const [folder,setFolder]=useState("General");
+  const [newFolder,setNewFolder]=useState("");
+  const [showNewFolder,setShowNewFolder]=useState(false);
   const [editId,setEditId]=useState(null);
-  const [editTitle,setEditTitle]=useState("");
   const [editContent,setEditContent]=useState("");
-  const [editFolder,setEditFolder]=useState("");
   const [search,setSearch]=useState("");
   const [activeNote,setActiveNote]=useState(null);
+  const [checklistMode,setChecklistMode]=useState(false);
 
   const notes=(customSops||[]).filter(s=>s.cat==="Notes").sort((a,b)=>b.id.localeCompare(a.id));
-  const folders=["All",...[...new Set(notes.map(n=>{try{const d=JSON.parse(n.content);return d.folder||"General"}catch{return "General"}}))].sort()];
+  const parseNote=(n)=>{try{return JSON.parse(n.content)}catch{return{text:n.content,folder:"General",items:[]}}};
+  const allFolders=[...new Set(notes.map(n=>{const d=parseNote(n);return d.folder||"General"}))].sort();
+  const folders=["All",...allFolders];
+
   const filtered=notes.filter(n=>{
-    if(search){const q=search.toLowerCase();if(!n.title.toLowerCase().includes(q)&&!n.content.toLowerCase().includes(q))return false}
-    if(folder!=="All"){try{const d=JSON.parse(n.content);if((d.folder||"General")!==folder)return false}catch{if(folder!=="General")return false}}
+    if(search){const q=search.toLowerCase();if(!n.title.toLowerCase().includes(q)){const d=parseNote(n);if(!(d.text||"").toLowerCase().includes(q))return false}}
+    if(folder!=="All"){const d=parseNote(n);if((d.folder||"General")!==folder)return false}
     return true;
   });
 
-  const parseNote=(note)=>{try{return JSON.parse(note.content)}catch{return{text:note.content,folder:"General",tags:[],checklist:[]}}};
+  const saveNote=()=>{
+    const text=content.trim();if(!text)return;
+    const title=text.split("\n")[0].slice(0,60)||"Untitled";
+    const data={text,folder:folder==="All"?"General":folder,date:new Date().toISOString(),items:[]};
+    addSop({id:"NOTE-"+Math.random().toString(36).slice(2,8),title,cat:"Notes",icon:"file",content:JSON.stringify(data),custom:true});
+    setContent("");notify("Note saved");
+  };
 
-  const saveNote=()=>{if(!title.trim())return;const data={text:content,folder:folder==="All"?"General":folder,date:new Date().toISOString(),tags:[],checklist:[]};addSop({id:"NOTE-"+Math.random().toString(36).slice(2,8),title:title.trim(),cat:"Notes",icon:"file",content:JSON.stringify(data),custom:true});setTitle("");setContent("");notify("Note saved")};
+  const updateNote=(note,newText)=>{const data=parseNote(note);const title=(newText||data.text||"").split("\n")[0].slice(0,60)||"Untitled";deleteSop(note.id);addSop({...note,title,content:JSON.stringify({...data,text:newText||data.text})});notify("Note updated")};
 
-  const updateNote=(note,updates)=>{const data=parseNote(note);const merged={...data,...updates};deleteSop(note.id);addSop({...note,title:updates.title||note.title,content:JSON.stringify(merged)});notify("Note updated")};
+  const toggleItem=(note,idx)=>{const data=parseNote(note);const lines=(data.text||"").split("\n");if(idx<lines.length){const l=lines[idx];if(l.match(/^\[x\]/))lines[idx]=l.replace(/^\[x\]/,"[ ]");else if(l.match(/^\[ \]/))lines[idx]=l.replace(/^\[ \]/,"[x]");updateNote(note,lines.join("\n"))}};
 
-  const exportNotePDF=(note)=>{const data=parseNote(note);const body=String(data.text||note.content||"").split("<").join("&lt;");const html="<div style=\"font-family:sans-serif;max-width:700px;margin:0 auto;padding:40px\"><h1>"+note.title+"</h1><div style=\"font-size:12px;color:#888;margin-bottom:20px\">"+(data.date?new Date(data.date).toLocaleDateString():"")+"</div><div style=\"font-size:14px;line-height:1.8;white-space:pre-wrap\">"+body+"</div></div>";if(triggerPrint)triggerPrint(note.title,html);else{const w=window.open("","_blank");w.document.write(html);w.print()}};
+  const addChecklist=()=>{setContent(c=>c+(c?"\n":"")+"[ ] ")};
+  const addBullet=()=>{setContent(c=>c+(c?"\n":"")+"- ")};
 
-  // Toggle checklist item
-  const toggleCheck=(noteObj,lineIdx)=>{const data=parseNote(noteObj);const lines=(data.text||"").split("\n");if(lineIdx<lines.length){const l=lines[lineIdx];if(l.startsWith("- [x] "))lines[lineIdx]="- [ ] "+l.slice(6);else if(l.startsWith("- [ ] "))lines[lineIdx]="- [x] "+l.slice(6);updateNote(noteObj,{text:lines.join("\n")})}};
+  const exportPDF=(note)=>{const data=parseNote(note);const body=String(data.text||"").split("<").join("&lt;");const html="<div style=\"font-family:sans-serif;max-width:700px;margin:0 auto;padding:40px\"><h1>"+note.title+"</h1><div style=\"font-size:12px;color:#888;margin-bottom:20px\">"+(data.date?new Date(data.date).toLocaleDateString():"")+"</div><div style=\"font-size:14px;line-height:1.8;white-space:pre-wrap\">"+body+"</div></div>";if(triggerPrint)triggerPrint(note.title,html);else{const w=window.open("","_blank");w.document.write(html);w.print()}};
+
+  const createFolder=()=>{if(!newFolder.trim())return;setFolder(newFolder.trim());setShowNewFolder(false);setNewFolder("");notify("Folder created")};
 
   const viewing=activeNote?notes.find(n=>n.id===activeNote):null;
   const viewData=viewing?parseNote(viewing):null;
 
   return <div className="notes-layout" style={{display:"flex",gap:16,minHeight:400}}>
     {/* Sidebar */}
-    <div style={{width:260,flexShrink:0,display:"flex",flexDirection:"column",gap:10}}>
-      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search notes..." style={{...inputStyle,padding:"8px 12px",fontSize:12}}/>
-      <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:4}}>{folders.map(f=><button key={f} onClick={()=>setFolder(f)} style={{padding:"4px 10px",borderRadius:6,border:"none",background:folder===f?"#2dd4bf":"rgba(255,255,255,0.04)",color:folder===f?"#000":"#737373",fontSize:11,fontWeight:folder===f?600:400,cursor:"pointer",fontFamily:"inherit"}}>{f}</button>)}</div>
-      <div style={{flex:1,overflow:"auto",display:"flex",flexDirection:"column",gap:6}}>
-        <div onClick={()=>{setActiveNote(null);setEditId(null)}} style={{padding:"10px 12px",borderRadius:10,background:!activeNote?"rgba(45,212,191,0.06)":"transparent",border:"1px solid "+(!activeNote?"rgba(45,212,191,0.15)":"rgba(255,255,255,0.04)"),cursor:"pointer",transition:"all 0.15s"}}>
-          <div style={{fontSize:13,fontWeight:600,color:"#2dd4bf"}}>+ New Note</div>
-        </div>
-        {filtered.map(n=>{const d=parseNote(n);return <div key={n.id} onClick={()=>{setActiveNote(n.id);setEditId(null)}} style={{padding:"10px 12px",borderRadius:10,background:activeNote===n.id?"rgba(255,255,255,0.04)":"transparent",border:"1px solid "+(activeNote===n.id?"rgba(255,255,255,0.08)":"transparent"),cursor:"pointer",transition:"all 0.15s"}}>
-          <div style={{fontSize:13,fontWeight:600,color:activeNote===n.id?"#f0f0f0":"#c4c4c4",marginBottom:2}}>{n.title}</div>
-          <div style={{fontSize:11,color:"#525252"}}>{d.date?new Date(d.date).toLocaleDateString():""}{d.folder&&d.folder!=="General"?" | "+d.folder:""}</div>
-        </div>})}
+    <div style={{width:240,flexShrink:0,display:"flex",flexDirection:"column",gap:8}}>
+      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search..." style={{...inputStyle,padding:"8px 12px",fontSize:12}}/>
+      <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{folders.map(f=><button key={f} onClick={()=>setFolder(f)} style={{padding:"4px 8px",borderRadius:6,border:"none",background:folder===f?"#2dd4bf":"rgba(255,255,255,0.04)",color:folder===f?"#000":"#737373",fontSize:11,fontWeight:folder===f?600:400,cursor:"pointer",fontFamily:"inherit"}}>{f}</button>)}<button onClick={()=>setShowNewFolder(true)} style={{padding:"4px 8px",borderRadius:6,border:"1px dashed rgba(255,255,255,0.1)",background:"transparent",color:"#525252",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>+</button></div>
+      {showNewFolder&&<div style={{display:"flex",gap:4}}><input value={newFolder} onChange={e=>setNewFolder(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")createFolder()}} placeholder="Folder name" autoFocus style={{...inputStyle,padding:"4px 8px",fontSize:11,flex:1}}/><Btn style={{fontSize:10,padding:"4px 8px"}} onClick={createFolder}>Add</Btn></div>}
+      <div style={{flex:1,overflow:"auto",display:"flex",flexDirection:"column",gap:4}}>
+        <div onClick={()=>{setActiveNote(null);setEditId(null)}} style={{padding:"10px 12px",borderRadius:10,background:!activeNote?"rgba(45,212,191,0.06)":"transparent",border:"1px solid "+(!activeNote?"rgba(45,212,191,0.15)":"transparent"),cursor:"pointer"}}><div style={{fontSize:13,fontWeight:600,color:"#2dd4bf"}}>+ New Note</div></div>
+        {filtered.map(n=>{const d=parseNote(n);return <div key={n.id} onClick={()=>{setActiveNote(n.id);setEditId(null)}} style={{padding:"10px 12px",borderRadius:10,background:activeNote===n.id?"rgba(255,255,255,0.04)":"transparent",border:"1px solid "+(activeNote===n.id?"rgba(255,255,255,0.08)":"transparent"),cursor:"pointer"}}><div style={{fontSize:13,fontWeight:600,color:activeNote===n.id?"#f0f0f0":"#c4c4c4",marginBottom:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{n.title}</div><div style={{fontSize:11,color:"#525252"}}>{d.date?new Date(d.date).toLocaleDateString():""}</div></div>})}
       </div>
     </div>
 
-    {/* Main area */}
+    {/* Main */}
     <div style={{flex:1,minWidth:0}}>
+      {/* New note composer */}
       {!viewing&&<div>
-        <input value={title} onChange={e=>setTitle(e.target.value)} placeholder="Note title..." style={{...inputStyle,fontSize:18,fontWeight:700,border:"none",background:"transparent",padding:"12px 0",color:"#f0f0f0",marginBottom:8}}/>
-        <div style={{display:"flex",gap:8,marginBottom:12}}>
-          <select value={folder==="All"?"General":folder} onChange={e=>setFolder(e.target.value)} style={{...inputStyle,width:140,padding:"6px 10px",fontSize:12}}><option>General</option>{folders.filter(f=>f!=="All"&&f!=="General").map(f=><option key={f}>{f}</option>)}<option value="__new">+ New Folder</option></select>
-          <select style={{...inputStyle,width:160,padding:"6px 10px",fontSize:12}} id="noteJobTag"><option value="">No project</option>{jobs.map(j=><option key={j.id} value={j.id}>{j.name}</option>)}</select>
+        <div style={{display:"flex",gap:8,marginBottom:10,flexWrap:"wrap"}}>
+          <select value={folder==="All"?"General":folder} onChange={e=>{if(e.target.value==="__new"){setShowNewFolder(true)}else{setFolder(e.target.value)}}} style={{...inputStyle,width:140,padding:"6px 10px",fontSize:12}}>{allFolders.map(f=><option key={f}>{f}</option>)}<option value="__new">+ New Folder</option></select>
+          <button onClick={addChecklist} style={{padding:"4px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.08)",background:"transparent",color:"#737373",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>+ Checklist</button>
+          <button onClick={addBullet} style={{padding:"4px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.08)",background:"transparent",color:"#737373",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>+ Bullet</button>
         </div>
-        <textarea value={content} onChange={e=>setContent(e.target.value)} placeholder={"Write your note...\n\nTips:\n- [ ] Checklist item (toggleable)\n- Bullet point\n1. Numbered list\n@name to tag someone"} rows={12} style={{...inputStyle,resize:"vertical",minHeight:200,lineHeight:1.8,background:"#0a0a0a",border:"1px solid rgba(255,255,255,0.06)",borderRadius:12,padding:16}}/>
-        <div style={{display:"flex",gap:8,marginTop:12}}><Btn disabled={!title.trim()} onClick={saveNote}>Save Note</Btn></div>
+        <textarea value={content} onChange={e=>setContent(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){const lines=content.split("\n");const last=lines[lines.length-1]||"";if(last.startsWith("[ ] ")||last.startsWith("[x] ")){e.preventDefault();setContent(c=>c+"\n[ ] ")}else if(last.startsWith("- ")){e.preventDefault();setContent(c=>c+"\n- ")}}}} placeholder={"Start writing...\n\nFirst line becomes the title.\nPress Enter after a checklist or bullet to continue the list."} rows={16} style={{width:"100%",padding:20,background:"#000",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,color:"#e5e5e5",fontSize:14,lineHeight:1.8,fontFamily:"inherit",resize:"vertical",minHeight:300,outline:"none"}}/>
+        <div style={{display:"flex",gap:8,marginTop:12}}><Btn onClick={saveNote}>Save Note</Btn></div>
       </div>}
 
+      {/* View note */}
       {viewing&&!editId&&<div>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,gap:12}}>
-          <div><div style={{fontSize:22,fontWeight:800,color:"#f0f0f0",marginBottom:4}}>{viewing.title}</div><div style={{fontSize:12,color:"#525252"}}>{viewData.date?new Date(viewData.date).toLocaleDateString():""}{viewData.folder&&viewData.folder!=="General"?" | "+viewData.folder:""}</div></div>
-          <div style={{display:"flex",gap:6,flexShrink:0}}>
-            <Btn v="ghost" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>{setEditId(viewing.id);setEditTitle(viewing.title);setEditContent(viewData.text||viewing.content);setEditFolder(viewData.folder||"General")}}>Edit</Btn>
-            <Btn v="ghost" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>exportNotePDF(viewing)}>PDF</Btn>
-            <Btn v="danger" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>{deleteSop(viewing.id);setActiveNote(null);notify("Deleted")}}>Delete</Btn>
-          </div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,gap:12,flexWrap:"wrap"}}>
+          <div style={{flex:1}}><div style={{fontSize:22,fontWeight:800,color:"#f0f0f0",marginBottom:4}}>{viewing.title}</div><div style={{fontSize:12,color:"#525252"}}>{viewData?.date?new Date(viewData.date).toLocaleDateString():""}{viewData?.folder&&viewData.folder!=="General"?" | "+viewData.folder:""}</div></div>
+          <div style={{display:"flex",gap:6,flexShrink:0}}><Btn v="ghost" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>{setEditId(viewing.id);setEditContent(viewData?.text||viewing.content||"")}}>Edit</Btn><Btn v="ghost" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>exportPDF(viewing)}>PDF</Btn><Btn v="danger" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>{deleteSop(viewing.id);setActiveNote(null);notify("Deleted")}}>Delete</Btn></div>
         </div>
         <div style={{fontSize:14,color:"#c4c4c4",lineHeight:1.9}}>
-          {(viewData.text||viewing.content||"").split("\n").map((line,i)=>{
-            if(line.startsWith("- [x] "))return <div key={i} style={{display:"flex",gap:8,alignItems:"center",padding:"3px 0",cursor:"pointer"}} onClick={()=>toggleCheck(viewing,i)}><Check checked={true} size={16}/><span style={{textDecoration:"line-through",color:"#525252"}}>{line.slice(6)}</span></div>;
-            if(line.startsWith("- [ ] "))return <div key={i} style={{display:"flex",gap:8,alignItems:"center",padding:"3px 0",cursor:"pointer"}} onClick={()=>toggleCheck(viewing,i)}><Check checked={false} size={16}/><span>{line.slice(6)}</span></div>;
-            if(line.startsWith("- "))return <div key={i} style={{display:"flex",gap:8,alignItems:"flex-start",padding:"2px 0"}}><div style={{width:5,height:5,borderRadius:"50%",background:"#2dd4bf",marginTop:7,flexShrink:0}}/><span>{line.slice(2)}</span></div>;
-            if(/^\d+\.\s/.test(line))return <div key={i} style={{display:"flex",gap:8,padding:"2px 0"}}><span style={{color:"#a78bfa",fontWeight:600,minWidth:20}}>{line.match(/^\d+/)[0]}.</span><span>{line.replace(/^\d+\.\s/,"")}</span></div>;
-            if(line.startsWith("@"))return <div key={i} style={{padding:"2px 0"}}><span style={{color:"#a78bfa",fontWeight:600}}>{line}</span></div>;
-            return <div key={i} style={{padding:"2px 0",minHeight:line?"auto":12}}>{line}</div>;
+          {(viewData?.text||viewing.content||"").split("\n").map((line,i)=>{
+            if(line.match(/^\[x\] /))return <div key={i} style={{display:"flex",gap:10,alignItems:"center",padding:"4px 0",cursor:"pointer"}} onClick={()=>toggleItem(viewing,i)}><Check checked={true} size={18}/><span style={{textDecoration:"line-through",color:"#525252"}}>{line.slice(4)}</span></div>;
+            if(line.match(/^\[ \] /))return <div key={i} style={{display:"flex",gap:10,alignItems:"center",padding:"4px 0",cursor:"pointer"}} onClick={()=>toggleItem(viewing,i)}><Check checked={false} size={18}/><span>{line.slice(4)}</span></div>;
+            if(line.startsWith("- "))return <div key={i} style={{display:"flex",gap:10,alignItems:"flex-start",padding:"3px 0"}}><div style={{width:6,height:6,borderRadius:"50%",background:"#2dd4bf",marginTop:8,flexShrink:0}}/><span>{line.slice(2)}</span></div>;
+            return <div key={i} style={{padding:"2px 0",minHeight:line?"auto":16}}>{line}</div>;
           })}
         </div>
       </div>}
 
+      {/* Edit note */}
       {editId&&<div>
-        <input value={editTitle} onChange={e=>setEditTitle(e.target.value)} style={{...inputStyle,fontSize:18,fontWeight:700,border:"none",background:"transparent",padding:"12px 0",color:"#f0f0f0",marginBottom:8}}/>
-        <textarea value={editContent} onChange={e=>setEditContent(e.target.value)} rows={12} style={{...inputStyle,resize:"vertical",minHeight:200,lineHeight:1.8,background:"#0a0a0a",border:"1px solid rgba(167,139,250,0.15)",borderRadius:12,padding:16}}/>
-        <div style={{display:"flex",gap:8,marginTop:12}}>
-          <Btn onClick={()=>{const note=notes.find(n=>n.id===editId);if(note){const data=parseNote(note);updateNote(note,{text:editContent,title:editTitle})}setEditId(null)}}>Save</Btn>
-          <Btn v="secondary" onClick={()=>setEditId(null)}>Cancel</Btn>
-        </div>
+        <textarea value={editContent} onChange={e=>setEditContent(e.target.value)} rows={16} style={{width:"100%",padding:20,background:"#000",border:"1px solid rgba(167,139,250,0.15)",borderRadius:14,color:"#e5e5e5",fontSize:14,lineHeight:1.8,fontFamily:"inherit",resize:"vertical",minHeight:300,outline:"none"}}/>
+        <div style={{display:"flex",gap:8,marginTop:12}}><Btn onClick={()=>{const note=notes.find(n=>n.id===editId);if(note)updateNote(note,editContent);setEditId(null);setActiveNote(editId)}}>Save</Btn><Btn v="secondary" onClick={()=>setEditId(null)}>Cancel</Btn></div>
       </div>}
     </div>
   </div>;
 }
 
 function NotesPage({customSops,addSop,deleteSop,jobs,reps,notify,triggerPrint}){
-  return <div style={{animation:"fadeUp 0.4s"}}>
-    <Header title="Notes" sub={(customSops||[]).filter(s=>s.cat==="Notes").length+" notes saved"}/>
-    <NotesView customSops={customSops} addSop={addSop} deleteSop={deleteSop} jobs={jobs} reps={reps} notify={notify} inputStyle={inputStyle} triggerPrint={triggerPrint}/>
-  </div>;
+  return <div style={{animation:"fadeUp 0.4s"}}><Header title="Notes" sub={(customSops||[]).filter(s=>s.cat==="Notes").length+" notes saved"}/><NotesView customSops={customSops} addSop={addSop} deleteSop={deleteSop} jobs={jobs} reps={reps} notify={notify} triggerPrint={triggerPrint}/></div>;
 }
 
 function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading}){
