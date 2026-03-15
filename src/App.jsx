@@ -336,16 +336,19 @@ export default function MidwestAIOS() {
   };
   const addRep = rep => { const newRep = {...rep, id: "S-"+uid()}; setReps(p => [...p, newRep]); db.saveRep(newRep); };
   const deleteRep = async (id) => { if (!await confirm("Delete this sales rep? Their jobs will be unassigned.")) return; setReps(p => p.filter(r => r.id !== id)); db.deleteRep(id); };
+  const forceDeleteRep = (id) => { setReps(p => p.filter(r => r.id !== id)); db.deleteRep(id); };
   const addCustomer = c => { const nc = {...c, id: "C-"+uid()}; setCustomers(p => [...p, nc]); db.saveCustomer(nc); };
   const updateCustomer = (id, u) => {
     setCustomers(p => { const updated = p.map(c => c.id===id ? {...c,...u} : c); const cust = updated.find(c=>c.id===id); if(cust) db.saveCustomer(cust); return updated; });
   };
   const deleteCustomer = async (id) => { if (!await confirm("Delete this customer? Their jobs will be unlinked.")) return; setCustomers(p => p.filter(c => c.id !== id)); db.deleteCustomer(id); };
+  const forceDeleteCustomer = (id) => { setCustomers(p => p.filter(c => c.id !== id)); db.deleteCustomer(id); };
   const addVendor = v => { const nv = {...v, id: "V-"+uid()}; setVendors(p => [...p, nv]); db.saveVendor(nv); };
   const updateVendor = (id, u) => {
     setVendors(p => { const updated = p.map(v => v.id===id ? {...v,...u} : v); const ven = updated.find(v=>v.id===id); if(ven) db.saveVendor(ven); return updated; });
   };
   const deleteVendor = async (id) => { if (!await confirm("Delete this vendor? Line items will be unlinked.")) return; setVendors(p => p.filter(v => v.id !== id)); db.deleteVendor(id); };
+  const forceDeleteVendor = (id) => { setVendors(p => p.filter(v => v.id !== id)); db.deleteVendor(id); };
 
   // Badge counts for sidebar
   const pendingDeliveries = lineItems.filter(i=>i.qtyReceived<i.qtyOrdered).length;
@@ -367,7 +370,7 @@ export default function MidwestAIOS() {
     {id:"qbsetup",label:"QuickBooks",icon:"settings"},
   ];
 
-  const ctx = {jobs,setJobs,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,setPage:p=>{setPage(p);setMobileMenuOpen(false)},viewCustomer:id=>{setPage("customer360");window._viewCustId=id},brainQuery,setBrainQuery,brainLoading,setBrainLoading,qbConfig,setQbConfig,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter,pendingCommPreview,setPendingCommPreview};
+  const ctx = {jobs,setJobs,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,forceDeleteVendor,forceDeleteCustomer,forceDeleteRep,setPage:p=>{setPage(p);setMobileMenuOpen(false)},viewCustomer:id=>{setPage("customer360");window._viewCustId=id},brainQuery,setBrainQuery,brainLoading,setBrainLoading,qbConfig,setQbConfig,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter,pendingCommPreview,setPendingCommPreview};
 
   if (!appReady) return (
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",width:"100vw",background:"#0a0a0a",fontFamily:"'Satoshi',sans-serif"}}>
@@ -1802,8 +1805,13 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,brain
 // ===============================================================
 // DIRECTORY -- Vendors, Customers, Sales Reps (full CRUD + sort)
 // ===============================================================
-function DirectoryPage({vendors,customers,reps,updateVendor,addVendor,deleteVendor,updateCustomer,addCustomer,deleteCustomer,updateRep,addRep,deleteRep,notify,jobs,lineItems,getJobFinancials,getJobItems,setPage,confirm}){
-  const [tab,setTab]=useState("vendors");
+function DirectoryPage({vendors,customers,reps,updateVendor,addVendor,deleteVendor,forceDeleteVendor,forceDeleteCustomer,forceDeleteRep,updateCustomer,addCustomer,deleteCustomer,updateRep,addRep,deleteRep,notify,jobs,lineItems,getJobFinancials,getJobItems,setPage,confirm}){
+  
+  // Custom checkbox component
+  const Check=({checked,onChange,onClick,size})=>{const sz=size||18;return <div onClick={e=>{if(onClick)onClick(e);if(onChange)onChange()}} style={{width:sz,height:sz,borderRadius:5,border:"2px solid "+(checked?"#2dd4bf":"rgba(255,255,255,0.15)"),background:checked?"#2dd4bf":"transparent",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"all 0.15s cubic-bezier(0.4,0,0.2,1)",flexShrink:0}} onMouseEnter={e=>{if(!checked)e.currentTarget.style.borderColor="rgba(45,212,191,0.5)"}} onMouseLeave={e=>{if(!checked)e.currentTarget.style.borderColor="rgba(255,255,255,0.15)"}}>{checked&&<svg width={sz-6} height={sz-6} viewBox="0 0 12 12" fill="none"><path d="M2.5 6L5 8.5L9.5 3.5" stroke="#000" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}</div>};
+  const CheckMinus=({checked,onChange,size})=>{const sz=size||18;return <div onClick={onChange} style={{width:sz,height:sz,borderRadius:5,border:"2px solid "+(checked?"#2dd4bf":"rgba(255,255,255,0.15)"),background:checked?"#2dd4bf":"transparent",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"all 0.15s",flexShrink:0}}>{checked&&<svg width={sz-6} height={sz-6} viewBox="0 0 12 12" fill="none"><path d="M2.5 6H9.5" stroke="#000" strokeWidth="2" strokeLinecap="round"/></svg>}</div>};
+
+const [tab,setTab]=useState("vendors");
   const [editId,setEditId]=useState(null);
   const [form,setForm]=useState({});
   const [adding,setAdding]=useState(false);
@@ -1854,15 +1862,12 @@ function DirectoryPage({vendors,customers,reps,updateVendor,addVendor,deleteVend
     if(selected.size===0)return;
     const ok=await confirm("Delete "+selected.size+" "+tab+"? This cannot be undone.");
     if(!ok)return;
-    let count=0;
-    for(const id of selected){
-      if(tab==="vendors"){deleteVendor(id)}
-      else if(tab==="customers"){deleteCustomer(id)}
-      else{deleteRep(id)}
-      count++;
-    }
+    const ids=[...selected];
+    if(tab==="vendors") ids.forEach(id=>forceDeleteVendor(id));
+    else if(tab==="customers") ids.forEach(id=>forceDeleteCustomer(id));
+    else ids.forEach(id=>forceDeleteRep(id));
     setSelected(new Set());
-    notify(count+" "+tab+" deleted");
+    notify(ids.length+" "+tab+" deleted");
   };
   const handleBulkEdit=(field,value)=>{
     for(const id of selected){
@@ -1937,17 +1942,17 @@ function DirectoryPage({vendors,customers,reps,updateVendor,addVendor,deleteVend
 
     {/* Sort + Select All */}
     <div style={{marginBottom:8,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-      <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer"}}><input type="checkbox" checked={selected.size===filteredList.length&&filteredList.length>0} onChange={selectAll} style={{accentColor:"#2dd4bf"}}/><span style={{fontSize:12,color:"#737373"}}>Select All</span></label>
+      <div style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer"}} onClick={selectAll}>{selected.size>0&&selected.size<filteredList.length?<CheckMinus checked={true} onChange={selectAll}/>:<Check checked={selected.size===filteredList.length&&filteredList.length>0} onChange={selectAll}/>}<span style={{fontSize:12,color:selected.size>0?"#2dd4bf":"#737373",fontWeight:selected.size>0?600:400}}>{selected.size>0?selected.size+" of "+filteredList.length+" selected":"Select All"}</span></div>
       <div style={{width:1,height:16,background:"rgba(255,255,255,0.06)"}}/>
       <span style={{fontSize:12,color:"#a3a3a3"}}>Sort by:</span>
       {(tab==="vendors"?["name","category","contact"]:tab==="customers"?["name","type","contact"]:["name","territory","tier"]).map(s=><button key={s} onClick={()=>setSort(s)} style={{fontSize:12,padding:"3px 10px",borderRadius:6,border:"none",cursor:"pointer",background:sort===s?"#2dd4bf22":"transparent",color:sort===s?"#2dd4bf":"#525252",fontFamily:"inherit"}}>{s}</button>)}
     </div>
 
-    {tab==="vendors"&&<Tbl columns={[{header:"",render:r=><input type="checkbox" checked={selected.has(r.id)} onChange={()=>toggleSelect(r.id)} onClick={e=>e.stopPropagation()} style={{accentColor:"#2dd4bf"}}/>},{header:"Name",render:r=><span style={{fontWeight:600,color:"#e5e5e5"}}>{r.name}</span>},{header:"Contact",render:r=>r.contact},{header:"Email",render:r=><span style={{color:"#2dd4bf"}}>{r.email}</span>},{header:"Phone",render:r=>r.phone},{header:"Category",render:r=>r.category},{header:"Discount",render:r=><span style={{fontFamily:"'JetBrains Mono',monospace",color:"#34d399",fontWeight:600}}>{r.discountRate?(r.discountRate*100).toFixed(0)+"%":"--"}</span>},{header:"",render:r=><Btn v="ghost" style={{fontSize:12,padding:"3px 8px"}} onClick={e=>{e.stopPropagation();startEdit(r)}}>Edit</Btn>}]} data={filteredList}/>}
+    {tab==="vendors"&&<Tbl columns={[{header:"",render:r=><Check checked={selected.has(r.id)} onChange={()=>toggleSelect(r.id)} onClick={e=>e.stopPropagation()}/>},{header:"Name",render:r=><span style={{fontWeight:600,color:"#e5e5e5"}}>{r.name}</span>},{header:"Contact",render:r=>r.contact},{header:"Email",render:r=><span style={{color:"#2dd4bf"}}>{r.email}</span>},{header:"Phone",render:r=>r.phone},{header:"Category",render:r=>r.category},{header:"Discount",render:r=><span style={{fontFamily:"'JetBrains Mono',monospace",color:"#34d399",fontWeight:600}}>{r.discountRate?(r.discountRate*100).toFixed(0)+"%":"--"}</span>},{header:"",render:r=><Btn v="ghost" style={{fontSize:12,padding:"3px 8px"}} onClick={e=>{e.stopPropagation();startEdit(r)}}>Edit</Btn>}]} data={filteredList}/>}
 
-    {tab==="customers"&&<Tbl columns={[{header:"",render:r=><input type="checkbox" checked={selected.has(r.id)} onChange={()=>toggleSelect(r.id)} onClick={e=>e.stopPropagation()} style={{accentColor:"#2dd4bf"}}/>},{header:"Name",render:r=><span onClick={e=>{e.stopPropagation();setCustDetail(custDetail?.id===r.id?null:r)}} style={{fontWeight:600,color:"#2dd4bf",cursor:"pointer"}}>{r.name}</span>},{header:"Contact",render:r=>r.contact},{header:"Email",render:r=><span style={{color:"#2dd4bf"}}>{r.email}</span>},{header:"Phone",render:r=>r.phone},{header:"Type",render:r=><Badge label={r.type||"--"} color="#a78bfa"/>},{header:"Address",render:r=><span style={{fontSize:12,color:"#c4c4c4"}}>{r.address||"--"}</span>},{header:"",render:r=><Btn v="ghost" style={{fontSize:12,padding:"3px 8px"}} onClick={e=>{e.stopPropagation();startEdit(r)}}>Edit</Btn>}]} data={filteredList}/>}
+    {tab==="customers"&&<Tbl columns={[{header:"",render:r=><Check checked={selected.has(r.id)} onChange={()=>toggleSelect(r.id)} onClick={e=>e.stopPropagation()}/>},{header:"Name",render:r=><span onClick={e=>{e.stopPropagation();setCustDetail(custDetail?.id===r.id?null:r)}} style={{fontWeight:600,color:"#2dd4bf",cursor:"pointer"}}>{r.name}</span>},{header:"Contact",render:r=>r.contact},{header:"Email",render:r=><span style={{color:"#2dd4bf"}}>{r.email}</span>},{header:"Phone",render:r=>r.phone},{header:"Type",render:r=><Badge label={r.type||"--"} color="#a78bfa"/>},{header:"Address",render:r=><span style={{fontSize:12,color:"#c4c4c4"}}>{r.address||"--"}</span>},{header:"",render:r=><Btn v="ghost" style={{fontSize:12,padding:"3px 8px"}} onClick={e=>{e.stopPropagation();startEdit(r)}}>Edit</Btn>}]} data={filteredList}/>}
 
-    {tab==="reps"&&<Tbl columns={[{header:"",render:r=><input type="checkbox" checked={selected.has(r.id)} onChange={()=>toggleSelect(r.id)} onClick={e=>e.stopPropagation()} style={{accentColor:"#2dd4bf"}}/>},{header:"Name",render:r=><span style={{fontWeight:600,color:"#e5e5e5"}}>{r.name}</span>},{header:"Email",render:r=><span style={{color:"#2dd4bf"}}>{r.email}</span>},{header:"Territory",render:r=>r.territory},{header:"Tier",render:r=><Badge label={r.tier} color="#8b5cf6"/>},{header:"Rate",render:r=><span style={{fontFamily:"'JetBrains Mono',monospace",color:"#2dd4bf"}}>{(r.commissionRate*100).toFixed(1)}%</span>},{header:"",render:r=><Btn v="ghost" style={{fontSize:12,padding:"3px 8px"}} onClick={e=>{e.stopPropagation();startEdit(r)}}>Edit</Btn>}]} data={filteredList}/>}
+    {tab==="reps"&&<Tbl columns={[{header:"",render:r=><Check checked={selected.has(r.id)} onChange={()=>toggleSelect(r.id)} onClick={e=>e.stopPropagation()}/>},{header:"Name",render:r=><span style={{fontWeight:600,color:"#e5e5e5"}}>{r.name}</span>},{header:"Email",render:r=><span style={{color:"#2dd4bf"}}>{r.email}</span>},{header:"Territory",render:r=>r.territory},{header:"Tier",render:r=><Badge label={r.tier} color="#8b5cf6"/>},{header:"Rate",render:r=><span style={{fontFamily:"'JetBrains Mono',monospace",color:"#2dd4bf"}}>{(r.commissionRate*100).toFixed(1)}%</span>},{header:"",render:r=><Btn v="ghost" style={{fontSize:12,padding:"3px 8px"}} onClick={e=>{e.stopPropagation();startEdit(r)}}>Edit</Btn>}]} data={filteredList}/>}
   </div>;
 }
 
