@@ -371,6 +371,8 @@ export default function MidwestAIOS() {
     {id:"commissions",label:"Commissions",icon:"dollar"},
     {id:"salesportal",label:"Sales Portal",icon:"users"},
     {id:"playbook",label:"Playbook & SOPs",icon:"book"},
+    {id:"tasks",label:"Tasks",icon:"check"},
+    {id:"notes",label:"Notes",icon:"file"},
     {id:"brain",label:"Midwest Brain",icon:"brain"},
     {id:"exitready",label:"Exit Readiness",icon:"shield"},
     {id:"qbsetup",label:"QuickBooks",icon:"settings"},
@@ -452,6 +454,8 @@ export default function MidwestAIOS() {
           {page==="salesportal"&&<SalesPortalPage {...ctx}/>}
           {page==="playbook"&&<PlaybookPage {...ctx}/>}
           {page==="customer360"&&<Customer360Page {...ctx}/>}
+          {page==="tasks"&&<TasksPage {...ctx}/>}
+          {page==="notes"&&<NotesPage {...ctx}/>}
           {page==="brain"&&<BrainPage {...ctx}/>}
           {page==="exitready"&&<ExitReadinessPage {...ctx}/>}
           {page==="qbsetup"&&<QBSetupPage {...ctx}/>}
@@ -1512,86 +1516,10 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
     </Card>}
 
     {/* TASKS */}
-    {crmTab==="tasks"&&<>
-      {/* Inline add task */}
-      {showAddTask&&<Card style={{marginBottom:16,border:"1px solid rgba(45,212,191,0.15)"}}>
-        <div style={{fontSize:15,fontWeight:700,color:"#2dd4bf",marginBottom:14}}>New Task</div>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:10,marginBottom:12}}>
-          <div style={{gridColumn:"span 2"}}><label style={{fontSize:11,color:"#9a9a9a",display:"block",marginBottom:3}}>Description</label><input value={taskText} onChange={e=>setTaskText(e.target.value)} placeholder="What needs to be done..." style={inputStyle}/></div>
-          <div><label style={{fontSize:11,color:"#9a9a9a",display:"block",marginBottom:3}}>Due Date</label><input type="date" value={taskDue} onChange={e=>setTaskDue(e.target.value)} style={inputStyle}/></div>
-          <div><label style={{fontSize:11,color:"#9a9a9a",display:"block",marginBottom:3}}>Project</label><select id="taskJobK" style={inputStyle}>{rj.map(j=><option key={j.id} value={j.id}>{j.name}</option>)}</select></div>
-          <div><label style={{fontSize:11,color:"#9a9a9a",display:"block",marginBottom:3}}>Status</label><select value={taskStatus} onChange={e=>setTaskStatus(e.target.value)} style={inputStyle}><option>To Do</option><option>In Progress</option><option>Done</option></select></div>
-          <div><label style={{fontSize:11,color:"#9a9a9a",display:"block",marginBottom:3}}>Assign To</label>
-            <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{reps.filter(r=>!r.id.includes("SEED_FLAG")).map(r=>{const on=taskAssignees.includes(r.name);return <button key={r.id} onClick={()=>setTaskAssignees(on?taskAssignees.filter(a=>a!==r.name):[...taskAssignees,r.name])} style={{padding:"3px 8px",borderRadius:5,border:"1px solid "+(on?"#2dd4bf":"rgba(255,255,255,0.08)"),background:on?"rgba(45,212,191,0.1)":"transparent",color:on?"#2dd4bf":"#737373",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>{r.name.split(" ")[0]}</button>})}</div>
-          </div>
-        </div>
-        <div style={{display:"flex",gap:8}}><Btn onClick={()=>{const sel=document.getElementById("taskJobK");if(sel)addTask(sel.value,taskStatus)}}>Create Task</Btn><Btn v="secondary" onClick={()=>setShowAddTask(false)}>Cancel</Btn></div>
-      </Card>}
-      {/* Kanban */}
-      {(()=>{
-        const taskStatuses=["To Do","In Progress","Done"];
-        const statusColors={"To Do":"#fbbf24","In Progress":"#2dd4bf","Done":"#34d399"};
-        const categorized={"To Do":[],"In Progress":[],"Done":[]};
-        allTasks.forEach(t=>{if(t.done)categorized["Done"].push(t);else if(t.inProgress)categorized["In Progress"].push(t);else categorized["To Do"].push(t)});
-        const moveTask=(task,newStatus)=>{const job=jobs.find(j=>j.id===task.jobId);if(!job)return;const lines=(job.orderNotes||"").split("\n");const cleanText=task.text.replace(/\[DONE\]/g,"").replace(/\[IP\]/g,"").replace(/\[due:[^\]]+\]/g,"").replace(/\[assign:[^\]]+\]/g,"").trim();const idx=lines.findIndex(l=>l.includes("TASK:")&&l.includes(cleanText.substring(0,20)));if(idx>=0){let cl=lines[idx].replace("[DONE]","").replace("[IP]","").trim();if(newStatus==="Done")cl+=" [DONE]";else if(newStatus==="In Progress")cl+=" [IP]";lines[idx]=cl;updateJob(task.jobId,{orderNotes:lines.join("\n")});notify("Task moved to "+newStatus)}};
-        return <div className="resp-grid-3" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:14}}>
-          {taskStatuses.map(status=><div key={status} style={{background:"#0a0a0a",borderRadius:12,border:"1px solid rgba(255,255,255,0.04)",padding:16,minHeight:180}}>
-            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
-              <div style={{width:8,height:8,borderRadius:"50%",background:statusColors[status]}}/>
-              <span style={{fontSize:13,fontWeight:700,color:"#e5e5e5"}}>{status}</span>
-              <span style={{fontSize:11,color:"#737373",marginLeft:"auto"}}>{categorized[status].length}</span>
-              <button onClick={()=>{setShowAddTask(true);setTaskStatus(status)}} style={{width:22,height:22,borderRadius:6,border:"1px solid rgba(255,255,255,0.08)",background:"transparent",color:"#2dd4bf",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontFamily:"inherit"}}>+</button>
-            </div>
-            {categorized[status].length===0&&<div style={{fontSize:12,color:"#525252",padding:"16px 0",textAlign:"center"}}>No tasks</div>}
-            {categorized[status].map((t,i)=><div key={i} style={{padding:"10px 12px",background:"#111",borderRadius:8,marginBottom:8,border:"1px solid rgba(255,255,255,0.04)"}}>
-              <div style={{fontSize:13,color:status==="Done"?"#737373":"#e5e5e5",textDecoration:status==="Done"?"line-through":"none",marginBottom:4}}>{t.text.replace("[DONE]","").replace("[IP]","").replace(/\[due:[^\]]+\]/g,"").replace(/\[assign:[^\]]+\]/g,"").trim()}</div>
-              <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginBottom:6}}>
-                <span style={{fontSize:11,color:"#525252"}}>{t.jobName}</span>
-                {t.due&&<span style={{fontSize:10,color:"#fbbf24"}}>due {t.due}</span>}
-                {t.assignees.map(a=><span key={a} style={{fontSize:10,padding:"1px 6px",borderRadius:4,background:"rgba(167,139,250,0.1)",color:"#a78bfa"}}>{a}</span>)}
-              </div>
-              <select value={status} onChange={e=>moveTask(t,e.target.value)} style={{padding:"3px 8px",borderRadius:5,border:"1px solid rgba(255,255,255,0.08)",background:"#0a0a0a",color:statusColors[status],fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
-                {taskStatuses.map(s=><option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>)}
-          </div>)}
-        </div>
-      })()}
-    </>}
+    {crmTab==="tasks"&&<TasksKanban jobs={rj} allJobs={jobs} reps={reps} updateJob={updateJob} notify={notify} inputStyle={inputStyle}/>}
 
-        {/* NOTES */}
-    {crmTab==="notes"&&<>
-      <Card style={{marginBottom:16,border:"1px solid rgba(167,139,250,0.12)"}}>
-        <div style={{fontSize:15,fontWeight:700,color:"#a78bfa",marginBottom:12}}>Add Note</div>
-        <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:10}}>
-          <input value={noteText} onChange={e=>setNoteText(e.target.value)} placeholder="Note title..." style={{...inputStyle,flex:1,minWidth:200}}/>
-          <select id="noteJobN" style={{...inputStyle,width:180}}>{rj.map(j=><option key={j.id} value={j.id}>{j.name}</option>)}</select>
-        </div>
-        <textarea value={taskDue} onChange={e=>setTaskDue(e.target.value)} placeholder="Meeting notes, follow-up items, observations..." rows={3} style={{...inputStyle,resize:"vertical",minHeight:80}}/>
-        <div style={{marginTop:10}}><Btn v="ghost" onClick={()=>{if(!noteText.trim()){notify("Enter a title","error");return}const sel=document.getElementById("noteJobN");const jobName=sel?rj.find(j=>j.id===sel.value)?.name||"General":"General";const stamp=new Date().toLocaleDateString()+" "+new Date().toLocaleTimeString();const content="DATE: "+stamp+"\nJOB: "+jobName+"\n\n"+(taskDue||noteText);addSop({id:"NOTE-"+Math.random().toString(36).slice(2,8),title:noteText.trim(),cat:"Notes",icon:"file",content:content,custom:true});setNoteText("");setTaskDue("");notify("Note saved")}}>Save Note</Btn></div>
-      </Card>
-      <div style={{fontSize:15,fontWeight:700,color:"#f0f0f0",marginBottom:14}}>Saved Notes</div>
-      {customSops.filter(s=>s.cat==="Notes").length===0&&<Card><div style={{fontSize:13,color:"#737373",padding:"12px 0"}}>No notes yet. Notes save permanently to the database.</div></Card>}
-      {customSops.filter(s=>s.cat==="Notes").sort((a,b)=>b.id.localeCompare(a.id)).map(note=>{
-        const isEd=editingNoteId===note.id;
-        return <Card key={note.id} style={{marginBottom:10,border:"1px solid rgba(255,255,255,0.04)"}}>
-          {!isEd?<>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-              <div style={{fontSize:14,fontWeight:600,color:"#e5e5e5"}}>{note.title}</div>
-              <div style={{display:"flex",gap:6}}>
-                <Btn v="ghost" style={{fontSize:10,padding:"2px 8px"}} onClick={()=>{setEditingNoteId(note.id);setEditNoteTitle(note.title);setEditNoteContent(note.content)}}>Edit</Btn>
-                <Btn v="danger" style={{fontSize:10,padding:"2px 8px"}} onClick={()=>{deleteSop(note.id);notify("Note deleted")}}>Delete</Btn>
-              </div>
-            </div>
-            <div style={{fontSize:12,color:"#9a9a9a",lineHeight:1.7,whiteSpace:"pre-wrap"}}>{note.content}</div>
-          </>:<>
-            <input value={editNoteTitle} onChange={e=>setEditNoteTitle(e.target.value)} style={{...inputStyle,marginBottom:8,fontWeight:600}}/>
-            <textarea value={editNoteContent} onChange={e=>setEditNoteContent(e.target.value)} rows={4} style={{...inputStyle,resize:"vertical",minHeight:80,marginBottom:8}}/>
-            <div style={{display:"flex",gap:6}}><Btn onClick={()=>{deleteSop(note.id);addSop({...note,title:editNoteTitle,content:editNoteContent});setEditingNoteId(null);notify("Note updated")}}>Save</Btn><Btn v="secondary" onClick={()=>setEditingNoteId(null)}>Cancel</Btn></div>
-          </>}
-        </Card>
-      })}
-    </>}
+    {/* NOTES */}
+    {crmTab==="notes"&&<NotesView customSops={customSops} addSop={addSop} deleteSop={deleteSop} jobs={rj} reps={reps} notify={notify} inputStyle={inputStyle}/>}
 
     {/* TEAM */}
     {crmTab==="team"&&!repDetail&&<Card>
@@ -1961,6 +1889,148 @@ function PlaybookPage({jobs,reps,vendors,customers,lineItems,getJobFinancials,se
   </div>;
 }
 
+
+
+// ===============================================================
+// TASKS KANBAN (drag-and-drop, used in Sales Portal + standalone)
+// ===============================================================
+function TasksKanban({jobs,allJobs,reps,updateJob,notify,inputStyle,standalone}){
+  const [showAdd,setShowAdd]=useState(false);
+  const [taskText,setTaskText]=useState("");
+  const [taskDue,setTaskDue]=useState("");
+  const [taskAssignees,setTaskAssignees]=useState([]);
+  const [addStatus,setAddStatus]=useState("To Do");
+  const [addJobId,setAddJobId]=useState(jobs[0]?.id||"");
+  const [dragId,setDragId]=useState(null);
+
+  const allTasks=jobs.flatMap(j=>{return(j.orderNotes||"").split("\n").filter(l=>l.startsWith("TASK:")).map((l,idx)=>{const am=l.match(/\[assign:([^\]]+)\]/);const dm=l.match(/\[due:([^\]]+)\]/);return{id:j.id+"-"+idx,raw:l,text:l.replace("TASK:","").replace(/\[DONE\]/g,"").replace(/\[IP\]/g,"").replace(/\[due:[^\]]+\]/g,"").replace(/\[assign:[^\]]+\]/g,"").trim(),jobId:j.id,jobName:j.name,done:l.includes("[DONE]"),inProgress:l.includes("[IP]"),assignees:am?am[1].split(","):[],due:dm?dm[1]:""}})});
+
+  const cols={"To Do":[],"In Progress":[],"Done":[]};
+  allTasks.forEach(t=>{if(t.done)cols["Done"].push(t);else if(t.inProgress)cols["In Progress"].push(t);else cols["To Do"].push(t)});
+  const colColors={"To Do":"#fbbf24","In Progress":"#2dd4bf","Done":"#34d399"};
+
+  const moveTask=(task,newStatus)=>{const job=(allJobs||jobs).find(j=>j.id===task.jobId);if(!job)return;const lines=(job.orderNotes||"").split("\n");const searchText=task.text.substring(0,25);const idx=lines.findIndex(l=>l.startsWith("TASK:")&&l.includes(searchText));if(idx>=0){let cl=lines[idx].replace("[DONE]","").replace("[IP]","").trim();if(newStatus==="Done")cl+=" [DONE]";else if(newStatus==="In Progress")cl+=" [IP]";lines[idx]=cl;updateJob(task.jobId,{orderNotes:lines.join("\n")});notify("Task moved to "+newStatus)}};
+
+  const addTask=()=>{if(!taskText.trim()||!addJobId)return;const job=(allJobs||jobs).find(j=>j.id===addJobId);if(!job)return;const assignStr=taskAssignees.length>0?" [assign:"+taskAssignees.join(",")+"]":"";const statusTag=addStatus==="In Progress"?" [IP]":addStatus==="Done"?" [DONE]":"";const line="TASK: "+taskText.trim()+(taskDue?" [due:"+taskDue+"]":"")+assignStr+statusTag;updateJob(addJobId,{orderNotes:(job.orderNotes||"")+"\n"+line});setTaskText("");setTaskDue("");setTaskAssignees([]);setShowAdd(false);notify("Task created")};
+
+  const handleDragStart=(e,taskId)=>{setDragId(taskId);e.dataTransfer.setData("taskId",taskId);e.dataTransfer.effectAllowed="move"};
+  const handleDrop=(e,status)=>{e.preventDefault();const tid=e.dataTransfer.getData("taskId")||dragId;if(!tid)return;const task=allTasks.find(t=>t.id===tid);if(task)moveTask(task,status);setDragId(null)};
+  const handleDragOver=(e)=>{e.preventDefault();e.dataTransfer.dropEffect="move"};
+
+  return <div>
+    {/* Add task form */}
+    {showAdd&&<Card style={{marginBottom:16,border:"1px solid rgba(45,212,191,0.15)",background:"linear-gradient(135deg,rgba(45,212,191,0.02),transparent)"}}>
+      <div style={{fontSize:15,fontWeight:700,color:"#2dd4bf",marginBottom:14}}>New Task</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:10,marginBottom:12}}>
+        <div style={{gridColumn:"1/-1"}}><label style={{fontSize:11,color:"#9a9a9a",display:"block",marginBottom:3}}>What needs to be done?</label><input value={taskText} onChange={e=>setTaskText(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")addTask()}} placeholder="Task description..." style={inputStyle}/></div>
+        <div><label style={{fontSize:11,color:"#9a9a9a",display:"block",marginBottom:3}}>Due Date</label><input type="date" value={taskDue} onChange={e=>setTaskDue(e.target.value)} style={inputStyle}/></div>
+        <div><label style={{fontSize:11,color:"#9a9a9a",display:"block",marginBottom:3}}>Project</label><select value={addJobId} onChange={e=>setAddJobId(e.target.value)} style={inputStyle}>{jobs.map(j=><option key={j.id} value={j.id}>{j.name}</option>)}</select></div>
+        <div><label style={{fontSize:11,color:"#9a9a9a",display:"block",marginBottom:3}}>Status</label><select value={addStatus} onChange={e=>setAddStatus(e.target.value)} style={inputStyle}><option>To Do</option><option>In Progress</option><option>Done</option></select></div>
+        <div><label style={{fontSize:11,color:"#9a9a9a",display:"block",marginBottom:3}}>Assign</label><div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{reps.filter(r=>!r.id.includes("SEED_FLAG")).map(r=>{const on=taskAssignees.includes(r.name);return <button key={r.id} onClick={()=>setTaskAssignees(on?taskAssignees.filter(a=>a!==r.name):[...taskAssignees,r.name])} style={{padding:"3px 8px",borderRadius:5,border:"1px solid "+(on?"#2dd4bf":"rgba(255,255,255,0.08)"),background:on?"rgba(45,212,191,0.1)":"transparent",color:on?"#2dd4bf":"#737373",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>{r.name.split(" ")[0]}</button>})}</div></div>
+      </div>
+      <div style={{display:"flex",gap:8}}><Btn onClick={addTask}>Create Task</Btn><Btn v="secondary" onClick={()=>setShowAdd(false)}>Cancel</Btn></div>
+    </Card>}
+
+    {/* Kanban board */}
+    <div className="resp-grid-3" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:14}}>
+      {["To Do","In Progress","Done"].map(status=><div key={status} onDrop={e=>handleDrop(e,status)} onDragOver={handleDragOver} style={{background:"#0a0a0a",borderRadius:12,border:"1px solid rgba(255,255,255,0.04)",padding:16,minHeight:200,transition:"border-color 0.2s"}} onDragEnter={e=>{e.currentTarget.style.borderColor=colColors[status]+"60"}} onDragLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.04)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
+          <div style={{width:10,height:10,borderRadius:"50%",background:colColors[status]}}/>
+          <span style={{fontSize:14,fontWeight:700,color:"#e5e5e5"}}>{status}</span>
+          <span style={{fontSize:12,color:"#737373",background:"rgba(255,255,255,0.04)",padding:"2px 8px",borderRadius:10,marginLeft:"auto"}}>{cols[status].length}</span>
+          <button onClick={()=>{setShowAdd(true);setAddStatus(status)}} style={{width:24,height:24,borderRadius:6,border:"1px dashed rgba(255,255,255,0.12)",background:"transparent",color:"#2dd4bf",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontFamily:"inherit",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="#2dd4bf";e.currentTarget.style.background="rgba(45,212,191,0.06)"}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.12)";e.currentTarget.style.background="transparent"}}>+</button>
+        </div>
+        {cols[status].length===0&&<div style={{fontSize:12,color:"#525252",padding:"24px 0",textAlign:"center",border:"1px dashed rgba(255,255,255,0.06)",borderRadius:8}}>Drop tasks here</div>}
+        {cols[status].map(t=><div key={t.id} draggable onDragStart={e=>handleDragStart(e,t.id)} style={{padding:"12px 14px",background:"#111",borderRadius:10,marginBottom:8,border:"1px solid rgba(255,255,255,0.04)",cursor:"grab",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="#2dd4bf30";e.currentTarget.style.transform="translateY(-1px)"}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.04)";e.currentTarget.style.transform="translateY(0)"}}>
+          <div style={{fontSize:13,color:status==="Done"?"#737373":"#f0f0f0",textDecoration:status==="Done"?"line-through":"none",marginBottom:6,lineHeight:1.4}}>{t.text}</div>
+          <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+            <span style={{fontSize:11,color:"#525252"}}>{t.jobName}</span>
+            {t.due&&<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(251,191,36,0.08)",color:"#fbbf24"}}>{t.due}</span>}
+            {t.assignees.map(a=><span key={a} style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(167,139,250,0.08)",color:"#a78bfa"}}>{a}</span>)}
+          </div>
+        </div>)}
+      </div>)}
+    </div>
+  </div>;
+}
+
+// ===============================================================
+// STANDALONE TASKS PAGE
+// ===============================================================
+function TasksPage({jobs,reps,updateJob,notify}){
+  return <div style={{animation:"fadeUp 0.4s"}}>
+    <Header title="Tasks" sub={"Drag and drop to change status -- "+jobs.reduce((s,j)=>(j.orderNotes||"").split("\n").filter(l=>l.startsWith("TASK:")&&!l.includes("[DONE]")).length+s,0)+" open tasks"}/>
+    <TasksKanban jobs={jobs} allJobs={jobs} reps={reps} updateJob={updateJob} notify={notify} inputStyle={inputStyle} standalone={true}/>
+  </div>;
+}
+
+// ===============================================================
+// NOTES VIEW (reusable for Sales Portal + standalone)
+// ===============================================================
+function NotesView({customSops,addSop,deleteSop,jobs,reps,notify,inputStyle}){
+  const [title,setTitle]=useState("");
+  const [content,setContent]=useState("");
+  const [editId,setEditId]=useState(null);
+  const [editTitle,setEditTitle]=useState("");
+  const [editContent,setEditContent]=useState("");
+  const [search,setSearch]=useState("");
+  const notes=customSops.filter(s=>s.cat==="Notes").sort((a,b)=>b.id.localeCompare(a.id));
+  const filtered=search?notes.filter(n=>n.title.toLowerCase().includes(search.toLowerCase())||n.content.toLowerCase().includes(search.toLowerCase())):notes;
+
+  return <div>
+    {/* Composer */}
+    <Card style={{marginBottom:20,border:"1px solid rgba(167,139,250,0.1)",background:"linear-gradient(180deg,rgba(167,139,250,0.02),transparent)"}}>
+      <div style={{marginBottom:12}}>
+        <input value={title} onChange={e=>setTitle(e.target.value)} placeholder="Note title..." style={{...inputStyle,fontSize:15,fontWeight:600,border:"none",background:"transparent",padding:"8px 0",color:"#f0f0f0"}}/>
+      </div>
+      <textarea value={content} onChange={e=>setContent(e.target.value)} placeholder="Write your note... meeting notes, follow-ups, observations, ideas..." rows={4} style={{...inputStyle,resize:"vertical",minHeight:100,lineHeight:1.7,background:"transparent",border:"1px solid rgba(255,255,255,0.04)",borderRadius:10}}/>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:12}}>
+        <select id="noteJobS" style={{...inputStyle,width:200,padding:"6px 10px",fontSize:12}}><option value="">General</option>{jobs.map(j=><option key={j.id} value={j.id}>{j.name}</option>)}</select>
+        <Btn disabled={!title.trim()} onClick={()=>{if(!title.trim())return;const sel=document.getElementById("noteJobS");const jobName=sel&&sel.value?jobs.find(j=>j.id===sel.value)?.name||"General":"General";const stamp=new Date().toLocaleDateString()+" "+new Date().toLocaleTimeString();addSop({id:"NOTE-"+Math.random().toString(36).slice(2,8),title:title.trim(),cat:"Notes",icon:"file",content:"DATE: "+stamp+"\nJOB: "+jobName+"\n\n"+content,custom:true});setTitle("");setContent("");notify("Note saved")}}>Save Note</Btn>
+      </div>
+    </Card>
+
+    {/* Search */}
+    {notes.length>3&&<div style={{marginBottom:16}}><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search notes..." style={{...inputStyle,maxWidth:360}}/></div>}
+
+    {/* Notes list */}
+    {filtered.length===0&&<Card style={{textAlign:"center",padding:40}}><div style={{color:"#525252",fontSize:14}}>No notes yet. Write one above.</div></Card>}
+    {filtered.map(note=>{const isEd=editId===note.id;const lines=note.content.split("\n");const dateLine=lines.find(l=>l.startsWith("DATE:"));const jobLine=lines.find(l=>l.startsWith("JOB:"));const body=lines.filter(l=>!l.startsWith("DATE:")&&!l.startsWith("JOB:")).join("\n").trim();
+      return <Card key={note.id} style={{marginBottom:12,border:isEd?"1px solid rgba(167,139,250,0.2)":"1px solid rgba(255,255,255,0.04)",transition:"border-color 0.2s"}}>
+        {!isEd?<>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,marginBottom:8}}>
+            <div style={{flex:1}}>
+              <div style={{fontSize:16,fontWeight:700,color:"#f0f0f0",marginBottom:4}}>{note.title}</div>
+              <div style={{display:"flex",gap:8,fontSize:11,color:"#737373"}}>
+                {dateLine&&<span>{dateLine.replace("DATE:","").trim()}</span>}
+                {jobLine&&jobLine.replace("JOB:","").trim()!=="General"&&<span style={{color:"#a78bfa"}}>{jobLine.replace("JOB:","").trim()}</span>}
+              </div>
+            </div>
+            <div style={{display:"flex",gap:4,flexShrink:0}}>
+              <button onClick={()=>{setEditId(note.id);setEditTitle(note.title);setEditContent(note.content)}} style={{width:28,height:28,borderRadius:6,border:"1px solid rgba(255,255,255,0.06)",background:"transparent",color:"#a3a3a3",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}><I n="edit" s={13}/></button>
+              <button onClick={()=>{deleteSop(note.id);notify("Note deleted")}} style={{width:28,height:28,borderRadius:6,border:"1px solid rgba(248,113,113,0.15)",background:"transparent",color:"#f87171",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}><I n="close" s={13}/></button>
+            </div>
+          </div>
+          {body&&<div style={{fontSize:13,color:"#c4c4c4",lineHeight:1.8,whiteSpace:"pre-wrap"}}>{body}</div>}
+        </>:<>
+          <input value={editTitle} onChange={e=>setEditTitle(e.target.value)} style={{...inputStyle,fontSize:15,fontWeight:600,marginBottom:8,background:"transparent",border:"1px solid rgba(167,139,250,0.15)"}}/>
+          <textarea value={editContent} onChange={e=>setEditContent(e.target.value)} rows={5} style={{...inputStyle,resize:"vertical",minHeight:100,lineHeight:1.7,marginBottom:10}}/>
+          <div style={{display:"flex",gap:8}}><Btn onClick={()=>{deleteSop(note.id);addSop({...note,title:editTitle,content:editContent});setEditId(null);notify("Note updated")}}>Save</Btn><Btn v="secondary" onClick={()=>setEditId(null)}>Cancel</Btn></div>
+        </>}
+      </Card>
+    })}
+  </div>;
+}
+
+// ===============================================================
+// STANDALONE NOTES PAGE
+// ===============================================================
+function NotesPage({customSops,addSop,deleteSop,jobs,reps,notify}){
+  return <div style={{animation:"fadeUp 0.4s"}}>
+    <Header title="Notes" sub={customSops.filter(s=>s.cat==="Notes").length+" notes saved to database"}/>
+    <NotesView customSops={customSops} addSop={addSop} deleteSop={deleteSop} jobs={jobs} reps={reps} notify={notify} inputStyle={inputStyle}/>
+  </div>;
+}
 
 function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading}){
   const [history,setHistory]=useState([{role:"system",content:"Welcome to the Midwest Brain. I have access to all your live data -- vendors, jobs, deliveries, financials. Ask me anything."}]);
