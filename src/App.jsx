@@ -316,6 +316,7 @@ export default function MidwestAIOS() {
     setLineItems(p => p.filter(li => li.id !== id));
     db.deleteLineItem(id);
   };
+  const forceDeleteLineItem = (id) => { setLineItems(p => p.filter(li => li.id !== id)); db.deleteLineItem(id); };
   const updateJob = (id, u) => {
     setJobs(p => { const old=p.find(j=>j.id===id);const updated = p.map(j => j.id===id ? {...j,...u} : j); const job = updated.find(j=>j.id===id); if(job){const skip=new Set(["activities","docStatuses","auditTrail"]);const changes=Object.keys(u).filter(k=>!skip.has(k)&&String(old?.[k])!==String(u[k]));if(changes.length>0){const log={time:new Date().toISOString(),type:"edit",entity:"job",entityId:id,fields:changes.map(k=>({field:k,from:old?.[k],to:u[k]}))};const trail=[log,...(job.auditTrail||[])].slice(0,200);job.auditTrail=trail}db.saveJob(job)} return updated; });
   };
@@ -375,7 +376,7 @@ export default function MidwestAIOS() {
     {id:"qbsetup",label:"QuickBooks",icon:"settings"},
   ];
 
-  const ctx = {jobs,setJobs,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,forceDeleteVendor,forceDeleteCustomer,forceDeleteRep,setPage:p=>{setPage(p);setMobileMenuOpen(false)},viewCustomer:id=>{setPage("customer360");window._viewCustId=id},brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,qbConfig,setQbConfig,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter,pendingCommPreview,setPendingCommPreview};
+  const ctx = {jobs,setJobs,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,forceDeleteVendor,forceDeleteLineItem,forceDeleteCustomer,forceDeleteRep,setPage:p=>{setPage(p);setMobileMenuOpen(false)},viewCustomer:id=>{setPage("customer360");window._viewCustId=id},brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,qbConfig,setQbConfig,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter,pendingCommPreview,setPendingCommPreview};
 
   if (!appReady) return (
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",width:"100vw",background:"#0a0a0a",fontFamily:"'Satoshi',sans-serif"}}>
@@ -836,7 +837,11 @@ function JobDetail({job,ctx}){
   const [addingItem,setAddingItem]=useState(false);
   const [newItem,setNewItem]=useState({description:"",vendor:"",tag:"",manufacturer:"",modelNumber:"",color:"",group:"",listPrice:"",unitCost:"",unitPrice:"",shippingPerUnit:"",installPerUnit:"",qtyOrdered:"",qtyReceived:0,qtyInvoiced:0});
   const [editingItem,setEditingItem]=useState(null);
-  const [groupBy,setGroupBy]=useState("none"); // none, group, vendor, tag
+  const [groupBy,setGroupBy]=useState("none");
+  const [selectedItems,setSelectedItems]=useState(new Set());
+  const toggleItem=(id)=>{const s=new Set(selectedItems);if(s.has(id))s.delete(id);else s.add(id);setSelectedItems(s)};
+  const selectAllItems=()=>{if(selectedItems.size===items.length)setSelectedItems(new Set());else setSelectedItems(new Set(items.map(i=>i.id)))};
+  const bulkDeleteItems=async()=>{if(selectedItems.size===0)return;const ok=await ctx.confirm("Delete "+selectedItems.size+" line items? This cannot be undone.");if(!ok)return;const ids=[...selectedItems];ids.forEach(id=>{ctx.forceDeleteLineItem?ctx.forceDeleteLineItem(id):deleteLineItem(id)});setSelectedItems(new Set());notify(ids.length+" items deleted")}; // none, group, vendor, tag
   const [activityInput,setActivityInput]=useState("");
   const activities = job.activities || [];
   const addActivity=(text)=>{const entry={text,time:new Date().toISOString(),id:Math.random().toString(36).slice(2)};const next=[entry,...activities];updateJob(job.id,{activities:next})};
@@ -892,7 +897,13 @@ function JobDetail({job,ctx}){
     {addingItem&&<Card style={{marginBottom:20,border:"1px solid #05966930"}}><div style={{fontSize:14,fontWeight:700,marginBottom:12,color:"#34d399"}}>Add Line Item</div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:8,marginBottom:8}}><div style={{position:"relative"}}><label style={{fontSize:12,color:"#a78bfa",display:"block",marginBottom:3}}>Group / Section</label><input value={newItem.group} onChange={e=>setNewItem({...newItem,group:e.target.value})} placeholder="e.g. Cafeteria 179, Library" style={{...inputStyle,fontSize:12,borderColor:"#a78bfa30"}} list="group-list"/><datalist id="group-list">{[...new Set(items.map(i=>i.group).filter(Boolean))].map(g=><option key={g} value={g}/>)}</datalist></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:3}}>Tag/Room</label><input value={newItem.tag} onChange={e=>setNewItem({...newItem,tag:e.target.value})} placeholder="e.g. 100A" style={{...inputStyle,fontSize:12}}/></div><div style={{position:"relative"}}><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:3}}>Vendor / Manufacturer</label><input value={newItem.manufacturer} onChange={e=>{const val=e.target.value;const match=vendors.find(v=>v.name.toLowerCase()===val.toLowerCase());const lp=parseFloat(newItem.listPrice)||0;setNewItem({...newItem,manufacturer:val,vendor:match?match.id:newItem.vendor,...(match&&lp>0?{unitCost:Math.round(lp*(1-match.discountRate)*100)/100}:{})})}} placeholder="Type to search vendors..." style={{...inputStyle,fontSize:12}} list="vendor-list"/><datalist id="vendor-list">{vendors.map(v=><option key={v.id} value={v.name}>{v.name}{v.discountRate?" ("+((v.discountRate*100).toFixed(0))+"% off)":""}</option>)}</datalist>{newItem.vendor&&vendors.find(v=>v.id===newItem.vendor)&&<div style={{display:"flex",alignItems:"center",gap:6,marginTop:2}}><span style={{fontSize:10,color:"#34d399"}}>Matched: {vendors.find(v=>v.id===newItem.vendor)?.name}</span><input type="number" value={vendors.find(v=>v.id===newItem.vendor)?.discountRate?Math.round(vendors.find(v=>v.id===newItem.vendor).discountRate*100):""} onChange={e=>{const dr=(parseFloat(e.target.value)||0)/100;updateVendor(newItem.vendor,{discountRate:dr});const lp=parseFloat(newItem.listPrice)||0;if(lp>0)setNewItem(prev=>({...prev,unitCost:Math.round(lp*(1-dr)*100)/100}));items.filter(li=>li.vendor===newItem.vendor&&li.listPrice).forEach(li=>{updateLineItem(li.id,{unitCost:Math.round((li.listPrice||0)*(1-dr)*100)/100})})}} style={{...inputStyle,width:40,fontSize:10,padding:"2px 4px",textAlign:"right"}} placeholder="0"/><span style={{fontSize:10,color:"#34d399"}}>% discount</span></div>}</div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:3}}>Model #</label><input value={newItem.modelNumber} onChange={e=>setNewItem({...newItem,modelNumber:e.target.value})} placeholder="e.g. 714" style={{...inputStyle,fontSize:12}}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:3}}>Color/Finish</label><input value={newItem.color} onChange={e=>setNewItem({...newItem,color:e.target.value})} placeholder="e.g. Black/Chrome" style={{...inputStyle,fontSize:12}}/></div></div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:8,marginBottom:8}}><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:3}}>Description</label><input value={newItem.description} onChange={e=>setNewItem({...newItem,description:e.target.value})} style={{...inputStyle,fontSize:12}} placeholder="Item description"/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:3}}>List Price</label><input type="number" value={newItem.listPrice} onChange={e=>{const lp=parseFloat(e.target.value)||0;const calc=autoCalcFromList(lp,newItem.vendor);setNewItem({...newItem,listPrice:e.target.value,...calc})}} style={{...inputStyle,fontSize:12}} placeholder="0.00"/></div><div><label style={{fontSize:12,color:"#34d399",display:"block",marginBottom:3}}>Net Cost (auto)</label><input type="number" value={newItem.unitCost} onChange={e=>setNewItem({...newItem,unitCost:e.target.value})} style={{...inputStyle,fontSize:12,borderColor:"#05966930"}} placeholder="0.00"/></div><div><label style={{fontSize:12,color:"#2dd4bf",display:"block",marginBottom:3}}>Your Price</label><input type="number" value={newItem.unitPrice} onChange={e=>setNewItem({...newItem,unitPrice:e.target.value})} style={{...inputStyle,fontSize:12,borderColor:"#2dd4bf30"}} placeholder="0.00"/></div></div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:8,marginBottom:12}}><div><label style={{fontSize:12,color:"#fbbf24",display:"block",marginBottom:3}}>Shipping/Unit</label><input type="number" value={newItem.shippingPerUnit} onChange={e=>setNewItem({...newItem,shippingPerUnit:e.target.value})} placeholder="" style={{...inputStyle,fontSize:12,borderColor:"#fbbf2430"}}/></div><div><label style={{fontSize:12,color:"#a78bfa",display:"block",marginBottom:3}}>Install/Unit</label><input type="number" value={newItem.installPerUnit} onChange={e=>setNewItem({...newItem,installPerUnit:e.target.value})} placeholder="" style={{...inputStyle,fontSize:12,borderColor:"#a78bfa30"}}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:3}}>Qty Ordered</label><input type="number" value={newItem.qtyOrdered} onChange={e=>setNewItem({...newItem,qtyOrdered:e.target.value})} style={{...inputStyle,fontSize:12}}/></div><div style={{display:"flex",alignItems:"flex-end"}}>{newItem.qtyOrdered>0&&newItem.unitPrice>0&&<div style={{fontSize:12,color:"#2dd4bf",padding:"8px 0"}}>Total: {fmt(((parseFloat(newItem.unitPrice)||0)+(parseFloat(newItem.shippingPerUnit)||0)+(parseFloat(newItem.installPerUnit)||0))*(parseInt(newItem.qtyOrdered)||0))}</div>}</div></div>{newItem.listPrice>0&&<div style={{fontSize:12,color:"#34d399",marginBottom:8}}>Vendor discount: {((vendors.find(v=>v.id===newItem.vendor)?.discountRate||0)*100).toFixed(0)}% off list -- Cost: {fmt(newItem.unitCost)} -- Sell: {fmt(newItem.unitPrice)} -- Margin: {newItem.unitPrice>0?((1-newItem.unitCost/newItem.unitPrice)*100).toFixed(1):0}%</div>}<div style={{display:"flex",gap:8}}><Btn onClick={saveNewItem}>Add Item</Btn><Btn v="secondary" onClick={()=>setAddingItem(false)}>Cancel</Btn></div></Card>}
 
     <Header title="Line Items" sub="Click any cell value to edit inline -- changes propagate across all views"/>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}><div style={{display:"flex",gap:4,alignItems:"center"}}><span style={{fontSize:12,color:"#a3a3a3",marginRight:4}}>Group by:</span>{[["none","None"],["group","Section"],["vendor","Vendor"],["tag","Tag"]].map(([v,l])=><button key={v} onClick={()=>setGroupBy(v)} style={{padding:"4px 10px",borderRadius:6,border:"none",cursor:"pointer",background:groupBy===v?"#a78bfa20":"transparent",color:groupBy===v?"#a78bfa":"#555",fontSize:12,fontFamily:"inherit",fontWeight:groupBy===v?600:400}}>{l}</button>)}</div><Btn v="ghost" style={{fontSize:12}} onClick={()=>setEditingItem(editingItem==="ALL"?null:"ALL")}>{editingItem==="ALL"?"Done Editing":"Edit All"}</Btn></div>
+    {/* Bulk select bar */}
+    {selectedItems.size>0&&<div style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",background:"rgba(45,212,191,0.06)",border:"1px solid rgba(45,212,191,0.15)",borderRadius:10,marginBottom:10,flexWrap:"wrap"}}>
+      <span style={{fontSize:13,fontWeight:600,color:"#2dd4bf"}}>{selectedItems.size} item{selectedItems.size>1?"s":""} selected</span>
+      <Btn v="danger" style={{fontSize:11,padding:"4px 10px"}} onClick={bulkDeleteItems}><I n="close" s={11}/> Delete Selected</Btn>
+      <Btn v="secondary" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>setSelectedItems(new Set())}>Clear</Btn>
+    </div>}
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}><div style={{display:"flex",gap:4,alignItems:"center"}}><Check checked={selectedItems.size===items.length&&items.length>0} onChange={selectAllItems}/><span style={{fontSize:12,color:selectedItems.size>0?"#2dd4bf":"#a3a3a3",marginRight:8}}>{selectedItems.size>0?selectedItems.size+"/"+items.length:"All"}</span><span style={{fontSize:12,color:"#a3a3a3",marginRight:4}}>Group by:</span>{[["none","None"],["group","Section"],["vendor","Vendor"],["tag","Tag"]].map(([v,l])=><button key={v} onClick={()=>setGroupBy(v)} style={{padding:"4px 10px",borderRadius:6,border:"none",cursor:"pointer",background:groupBy===v?"#a78bfa20":"transparent",color:groupBy===v?"#a78bfa":"#555",fontSize:12,fontFamily:"inherit",fontWeight:groupBy===v?600:400}}>{l}</button>)}</div><Btn v="ghost" style={{fontSize:12}} onClick={()=>setEditingItem(editingItem==="ALL"?null:"ALL")}>{editingItem==="ALL"?"Done Editing":"Edit All"}</Btn></div>
     <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch",borderRadius:10,border:"1px solid #222222"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:1500}}><thead><tr style={{background:"#111111"}}>{["Tag","Manuf.","Disc%","Model #","Description","Color","List","Net Each","Your Price","Ship/Unit","Install/Unit","Qty","Recd","Status","Total",""].map((h,i,arr)=><th key={i} style={{padding:"6px 8px",textAlign:i>=5?"right":"left",fontWeight:600,color:"#a3a3a3",fontSize:11,textTransform:"uppercase",letterSpacing:0.8,borderBottom:"1px solid #222222",whiteSpace:"nowrap",...(i===arr.length-1?{position:"sticky",right:0,background:"#111111",zIndex:2}:{})}}>{h}</th>)}</tr></thead><tbody>{(()=>{
       const grouped=groupBy==="none"?[["",items]]:Object.entries(items.reduce((g,i)=>{const k=groupBy==="group"?(i.group||"Ungrouped"):groupBy==="vendor"?(vendors.find(v=>v.id===i.vendor)?.name||"Unknown"):groupBy==="tag"?(i.tag||"No Tag"):"";if(!g[k])g[k]=[];g[k].push(i);return g},{}));
       return grouped.map(([grp,grpItems])=>{
@@ -1425,12 +1436,15 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
   // CRM: Activities from audit trails
   const allActivities=rj.flatMap(j=>(j.auditTrail||[]).map(a=>({...a,jobName:j.name,jobId:j.id}))).sort((a,b)=>new Date(b.time)-new Date(a.time)).slice(0,30);
   // CRM: Tasks from job notes (lines starting with "TASK:")
-  const allTasks=rj.flatMap(j=>{const notes=(j.orderNotes||"").split("\n").filter(l=>l.startsWith("TASK:")).map(l=>({text:l.replace("TASK:","").trim(),jobId:j.id,jobName:j.name,done:l.includes("[DONE]")}));return notes});
+  const allTasks=rj.flatMap(j=>{const notes=(j.orderNotes||"").split("\n").filter(l=>l.startsWith("TASK:")).map(l=>{const assignMatch=l.match(/\[assign:([^\]]+)\]/);const dueMatch=l.match(/\[due:([^\]]+)\]/);return{text:l.replace("TASK:","").trim(),jobId:j.id,jobName:j.name,done:l.includes("[DONE]"),inProgress:l.includes("[IP]"),assignees:assignMatch?assignMatch[1].split(","):[],due:dueMatch?dueMatch[1]:""}});return notes});
   // CRM: Notes from job notes (lines starting with "NOTE:")
   const allNotes=rj.flatMap(j=>{const notes=(j.orderNotes||"").split("\n").filter(l=>l.startsWith("NOTE:")).map(l=>({text:l.replace("NOTE:","").trim(),jobId:j.id,jobName:j.name,time:l.match(/\d{1,2}\/\d{1,2}\/\d{4}/)?.[0]||""}));return notes}).reverse().slice(0,20);
 
   const addNote=(jobId)=>{if(!noteText.trim())return;const job=jobs.find(j=>j.id===jobId);if(!job)return;const stamp=new Date().toLocaleDateString();const line="NOTE: "+noteText.trim()+" ("+stamp+")";updateJob(jobId,{orderNotes:(job.orderNotes||"")+"\n"+line});setNoteText("");notify("Note added")};
-  const addTask=(jobId)=>{if(!taskText.trim())return;const job=jobs.find(j=>j.id===jobId);if(!job)return;const line="TASK: "+taskText.trim()+(taskDue?" [due:"+taskDue+"]":"");updateJob(jobId,{orderNotes:(job.orderNotes||"")+"\n"+line});setTaskText("");setTaskDue("");notify("Task added")};
+  const [taskAssignees,setTaskAssignees]=useState([]);
+  const [taskStatus,setTaskStatus]=useState("To Do");
+  const [showAddTask,setShowAddTask]=useState(false);
+  const addTask=(jobId,status)=>{if(!taskText.trim())return;const job=jobs.find(j=>j.id===jobId);if(!job)return;const assignStr=taskAssignees.length>0?" [assign:"+taskAssignees.join(",")+"]":"";const statusTag=status==="In Progress"?" [IP]":status==="Done"?" [DONE]":"";const line="TASK: "+taskText.trim()+(taskDue?" [due:"+taskDue+"]":"")+assignStr+statusTag;updateJob(jobId,{orderNotes:(job.orderNotes||"")+"\n"+line});setTaskText("");setTaskDue("");setTaskAssignees([]);setTaskStatus("To Do");setShowAddTask(false);notify("Task added")};
 
   const kpi=(label,value,color)=><div style={{textAlign:"center",padding:"14px 10px",background:"#0a0a0a",borderRadius:10,flex:"1 1 100px"}}><div style={{fontSize:22,fontWeight:800,color:color||"#f0f0f0",fontFamily:"'JetBrains Mono',monospace",letterSpacing:-1}}>{value}</div><div style={{fontSize:11,color:"#9a9a9a",marginTop:2}}>{label}</div></div>;
 
@@ -1496,80 +1510,86 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
 
     {/* TASKS */}
     {crmTab==="tasks"&&<>
-      <Card style={{marginBottom:16,border:"1px solid rgba(45,212,191,0.12)"}}>
-        <div style={{fontSize:15,fontWeight:700,color:"#2dd4bf",marginBottom:12}}>Add Task</div>
-        <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-          <input value={taskText} onChange={e=>setTaskText(e.target.value)} placeholder="Task description..." style={{...inputStyle,flex:1,minWidth:200}}/>
-          <input type="date" value={taskDue} onChange={e=>setTaskDue(e.target.value)} style={{...inputStyle,width:140}}/>
-          <select id="taskJob" style={{...inputStyle,width:180}}>{rj.map(j=><option key={j.id} value={j.id}>{j.name}</option>)}</select>
-          <Btn onClick={()=>{const sel=document.getElementById("taskJob");if(sel)addTask(sel.value)}}>Add Task</Btn>
+      {/* Inline add task */}
+      {showAddTask&&<Card style={{marginBottom:16,border:"1px solid rgba(45,212,191,0.15)"}}>
+        <div style={{fontSize:15,fontWeight:700,color:"#2dd4bf",marginBottom:14}}>New Task</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:10,marginBottom:12}}>
+          <div style={{gridColumn:"span 2"}}><label style={{fontSize:11,color:"#9a9a9a",display:"block",marginBottom:3}}>Description</label><input value={taskText} onChange={e=>setTaskText(e.target.value)} placeholder="What needs to be done..." style={inputStyle}/></div>
+          <div><label style={{fontSize:11,color:"#9a9a9a",display:"block",marginBottom:3}}>Due Date</label><input type="date" value={taskDue} onChange={e=>setTaskDue(e.target.value)} style={inputStyle}/></div>
+          <div><label style={{fontSize:11,color:"#9a9a9a",display:"block",marginBottom:3}}>Project</label><select id="taskJobK" style={inputStyle}>{rj.map(j=><option key={j.id} value={j.id}>{j.name}</option>)}</select></div>
+          <div><label style={{fontSize:11,color:"#9a9a9a",display:"block",marginBottom:3}}>Status</label><select value={taskStatus} onChange={e=>setTaskStatus(e.target.value)} style={inputStyle}><option>To Do</option><option>In Progress</option><option>Done</option></select></div>
+          <div><label style={{fontSize:11,color:"#9a9a9a",display:"block",marginBottom:3}}>Assign To</label>
+            <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{reps.filter(r=>!r.id.includes("SEED_FLAG")).map(r=>{const on=taskAssignees.includes(r.name);return <button key={r.id} onClick={()=>setTaskAssignees(on?taskAssignees.filter(a=>a!==r.name):[...taskAssignees,r.name])} style={{padding:"3px 8px",borderRadius:5,border:"1px solid "+(on?"#2dd4bf":"rgba(255,255,255,0.08)"),background:on?"rgba(45,212,191,0.1)":"transparent",color:on?"#2dd4bf":"#737373",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>{r.name.split(" ")[0]}</button>})}</div>
+          </div>
         </div>
-      </Card>
-      {/* Kanban columns */}
+        <div style={{display:"flex",gap:8}}><Btn onClick={()=>{const sel=document.getElementById("taskJobK");if(sel)addTask(sel.value,taskStatus)}}>Create Task</Btn><Btn v="secondary" onClick={()=>setShowAddTask(false)}>Cancel</Btn></div>
+      </Card>}
+      {/* Kanban */}
       {(()=>{
         const taskStatuses=["To Do","In Progress","Done"];
         const statusColors={"To Do":"#fbbf24","In Progress":"#2dd4bf","Done":"#34d399"};
         const categorized={"To Do":[],"In Progress":[],"Done":[]};
-        allTasks.forEach(t=>{
-          if(t.done||t.text.includes("[DONE]"))categorized["Done"].push(t);
-          else if(t.text.includes("[IP]"))categorized["In Progress"].push(t);
-          else categorized["To Do"].push(t);
-        });
-        const moveTask=(task,newStatus)=>{
-          const job=jobs.find(j=>j.id===task.jobId);if(!job)return;
-          const lines=(job.orderNotes||"").split("\n");
-          const idx=lines.findIndex(l=>l.includes(task.text.split("[")[0].trim()));
-          if(idx>=0){
-            let clean=lines[idx].replace("[DONE]","").replace("[IP]","").trim();
-            if(newStatus==="Done")clean+=" [DONE]";
-            else if(newStatus==="In Progress")clean+=" [IP]";
-            lines[idx]=clean;
-            updateJob(task.jobId,{orderNotes:lines.join("\n")});
-            notify("Task moved to "+newStatus);
-          }
-        };
+        allTasks.forEach(t=>{if(t.done)categorized["Done"].push(t);else if(t.inProgress)categorized["In Progress"].push(t);else categorized["To Do"].push(t)});
+        const moveTask=(task,newStatus)=>{const job=jobs.find(j=>j.id===task.jobId);if(!job)return;const lines=(job.orderNotes||"").split("\n");const cleanText=task.text.replace(/\[DONE\]/g,"").replace(/\[IP\]/g,"").replace(/\[due:[^\]]+\]/g,"").replace(/\[assign:[^\]]+\]/g,"").trim();const idx=lines.findIndex(l=>l.includes("TASK:")&&l.includes(cleanText.substring(0,20)));if(idx>=0){let cl=lines[idx].replace("[DONE]","").replace("[IP]","").trim();if(newStatus==="Done")cl+=" [DONE]";else if(newStatus==="In Progress")cl+=" [IP]";lines[idx]=cl;updateJob(task.jobId,{orderNotes:lines.join("\n")});notify("Task moved to "+newStatus)}};
         return <div className="resp-grid-3" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:14}}>
-          {taskStatuses.map(status=><div key={status} style={{background:"#0a0a0a",borderRadius:12,border:"1px solid rgba(255,255,255,0.04)",padding:16,minHeight:200}}>
+          {taskStatuses.map(status=><div key={status} style={{background:"#0a0a0a",borderRadius:12,border:"1px solid rgba(255,255,255,0.04)",padding:16,minHeight:180}}>
             <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14}}>
               <div style={{width:8,height:8,borderRadius:"50%",background:statusColors[status]}}/>
               <span style={{fontSize:13,fontWeight:700,color:"#e5e5e5"}}>{status}</span>
               <span style={{fontSize:11,color:"#737373",marginLeft:"auto"}}>{categorized[status].length}</span>
+              <button onClick={()=>{setShowAddTask(true);setTaskStatus(status)}} style={{width:22,height:22,borderRadius:6,border:"1px solid rgba(255,255,255,0.08)",background:"transparent",color:"#2dd4bf",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontFamily:"inherit"}}>+</button>
             </div>
-            {categorized[status].length===0&&<div style={{fontSize:12,color:"#525252",padding:"20px 0",textAlign:"center"}}>No tasks</div>}
-            {categorized[status].map((t,i)=><div key={i} style={{padding:"10px 12px",background:"#111",borderRadius:8,marginBottom:8,border:"1px solid rgba(255,255,255,0.04)",cursor:"pointer"}}>
-              <div style={{fontSize:13,color:status==="Done"?"#737373":"#e5e5e5",textDecoration:status==="Done"?"line-through":"none",marginBottom:6}}>{t.text.replace("[DONE]","").replace("[IP]","").replace(/\[due:[^\]]+\]/g,"").trim()}</div>
-              <div style={{fontSize:11,color:"#525252",marginBottom:8}}>{t.jobName}{(()=>{const m=t.text.match(/\[due:([^\]]+)\]/);return m?" -- due: "+m[1]:""})()}</div>
-              <div style={{display:"flex",gap:4}}>
-                {status!=="To Do"&&<button onClick={()=>moveTask(t,"To Do")} style={{padding:"2px 8px",borderRadius:4,border:"1px solid rgba(255,255,255,0.08)",background:"transparent",color:"#fbbf24",fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>To Do</button>}
-                {status!=="In Progress"&&<button onClick={()=>moveTask(t,"In Progress")} style={{padding:"2px 8px",borderRadius:4,border:"1px solid rgba(255,255,255,0.08)",background:"transparent",color:"#2dd4bf",fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>In Progress</button>}
-                {status!=="Done"&&<button onClick={()=>moveTask(t,"Done")} style={{padding:"2px 8px",borderRadius:4,border:"1px solid rgba(255,255,255,0.08)",background:"transparent",color:"#34d399",fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>Done</button>}
+            {categorized[status].length===0&&<div style={{fontSize:12,color:"#525252",padding:"16px 0",textAlign:"center"}}>No tasks</div>}
+            {categorized[status].map((t,i)=><div key={i} style={{padding:"10px 12px",background:"#111",borderRadius:8,marginBottom:8,border:"1px solid rgba(255,255,255,0.04)"}}>
+              <div style={{fontSize:13,color:status==="Done"?"#737373":"#e5e5e5",textDecoration:status==="Done"?"line-through":"none",marginBottom:4}}>{t.text.replace("[DONE]","").replace("[IP]","").replace(/\[due:[^\]]+\]/g,"").replace(/\[assign:[^\]]+\]/g,"").trim()}</div>
+              <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginBottom:6}}>
+                <span style={{fontSize:11,color:"#525252"}}>{t.jobName}</span>
+                {t.due&&<span style={{fontSize:10,color:"#fbbf24"}}>due {t.due}</span>}
+                {t.assignees.map(a=><span key={a} style={{fontSize:10,padding:"1px 6px",borderRadius:4,background:"rgba(167,139,250,0.1)",color:"#a78bfa"}}>{a}</span>)}
               </div>
+              <select value={status} onChange={e=>moveTask(t,e.target.value)} style={{padding:"3px 8px",borderRadius:5,border:"1px solid rgba(255,255,255,0.08)",background:"#0a0a0a",color:statusColors[status],fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
+                {taskStatuses.map(s=><option key={s} value={s}>{s}</option>)}
+              </select>
             </div>)}
           </div>)}
         </div>
       })()}
     </>}
 
-    {/* NOTES */}
+        {/* NOTES */}
     {crmTab==="notes"&&<>
       <Card style={{marginBottom:16,border:"1px solid rgba(167,139,250,0.12)"}}>
         <div style={{fontSize:15,fontWeight:700,color:"#a78bfa",marginBottom:12}}>Add Note</div>
-        <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-          <input value={noteText} onChange={e=>setNoteText(e.target.value)} placeholder="Note title or subject..." style={{...inputStyle,flex:1,minWidth:200}}/>
-          <select id="noteJob" style={{...inputStyle,width:180}}>{rj.map(j=><option key={j.id} value={j.id}>{j.name}</option>)}</select>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:10}}>
+          <input value={noteText} onChange={e=>setNoteText(e.target.value)} placeholder="Note title..." style={{...inputStyle,flex:1,minWidth:200}}/>
+          <select id="noteJobN" style={{...inputStyle,width:180}}>{rj.map(j=><option key={j.id} value={j.id}>{j.name}</option>)}</select>
         </div>
-        <textarea value={taskDue} onChange={e=>setTaskDue(e.target.value)} placeholder="Meeting notes, follow-up items, observations..." rows={3} style={{...inputStyle,marginTop:10,resize:"vertical",minHeight:80}}/>
-        <div style={{marginTop:10}}><Btn v="ghost" onClick={()=>{if(!noteText.trim()){notify("Enter a title","error");return}const sel=document.getElementById("noteJob");const jobName=sel?rj.find(j=>j.id===sel.value)?.name||"General":"General";const stamp=new Date().toLocaleDateString()+" "+new Date().toLocaleTimeString();const content="DATE: "+stamp+"\nJOB: "+jobName+"\n\n"+(taskDue||noteText);addSop({id:"NOTE-"+Math.random().toString(36).slice(2,8),title:noteText.trim(),cat:"Notes",icon:"file",content:content,custom:true});setNoteText("");setTaskDue("");notify("Note saved to database")}}>Save Note</Btn></div>
+        <textarea value={taskDue} onChange={e=>setTaskDue(e.target.value)} placeholder="Meeting notes, follow-up items, observations..." rows={3} style={{...inputStyle,resize:"vertical",minHeight:80}}/>
+        <div style={{marginTop:10}}><Btn v="ghost" onClick={()=>{if(!noteText.trim()){notify("Enter a title","error");return}const sel=document.getElementById("noteJobN");const jobName=sel?rj.find(j=>j.id===sel.value)?.name||"General":"General";const stamp=new Date().toLocaleDateString()+" "+new Date().toLocaleTimeString();const content="DATE: "+stamp+"\nJOB: "+jobName+"\n\n"+(taskDue||noteText);addSop({id:"NOTE-"+Math.random().toString(36).slice(2,8),title:noteText.trim(),cat:"Notes",icon:"file",content:content,custom:true});setNoteText("");setTaskDue("");notify("Note saved")}}>Save Note</Btn></div>
       </Card>
       <div style={{fontSize:15,fontWeight:700,color:"#f0f0f0",marginBottom:14}}>Saved Notes</div>
-      {customSops.filter(s=>s.cat==="Notes").length===0&&<Card><div style={{fontSize:13,color:"#737373",padding:"12px 0"}}>No notes yet. Notes save permanently to the database and appear in the Playbook under the Notes category.</div></Card>}
-      {customSops.filter(s=>s.cat==="Notes").sort((a,b)=>b.id.localeCompare(a.id)).map(note=><Card key={note.id} style={{marginBottom:10,border:"1px solid rgba(255,255,255,0.04)"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-          <div style={{fontSize:14,fontWeight:600,color:"#e5e5e5"}}>{note.title}</div>
-          <Btn v="danger" style={{fontSize:10,padding:"2px 8px"}} onClick={()=>{deleteSop(note.id);notify("Note deleted")}}>Delete</Btn>
-        </div>
-        <div style={{fontSize:12,color:"#9a9a9a",lineHeight:1.7,whiteSpace:"pre-wrap"}}>{note.content}</div>
-      </Card>)}
+      {customSops.filter(s=>s.cat==="Notes").length===0&&<Card><div style={{fontSize:13,color:"#737373",padding:"12px 0"}}>No notes yet. Notes save permanently to the database.</div></Card>}
+      {customSops.filter(s=>s.cat==="Notes").sort((a,b)=>b.id.localeCompare(a.id)).map(note=>{
+        const [isEditing,setIsEditing]=useState(false);
+        const [editTitle,setEditTitle]=useState(note.title);
+        const [editContent,setEditContent]=useState(note.content);
+        return <Card key={note.id} style={{marginBottom:10,border:"1px solid rgba(255,255,255,0.04)"}}>
+          {!isEditing?<>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+              <div style={{fontSize:14,fontWeight:600,color:"#e5e5e5"}}>{note.title}</div>
+              <div style={{display:"flex",gap:6}}>
+                <Btn v="ghost" style={{fontSize:10,padding:"2px 8px"}} onClick={()=>setIsEditing(true)}>Edit</Btn>
+                <Btn v="danger" style={{fontSize:10,padding:"2px 8px"}} onClick={()=>{deleteSop(note.id);notify("Note deleted")}}>Delete</Btn>
+              </div>
+            </div>
+            <div style={{fontSize:12,color:"#9a9a9a",lineHeight:1.7,whiteSpace:"pre-wrap"}}>{note.content}</div>
+          </>:<>
+            <input value={editTitle} onChange={e=>setEditTitle(e.target.value)} style={{...inputStyle,marginBottom:8,fontWeight:600}}/>
+            <textarea value={editContent} onChange={e=>setEditContent(e.target.value)} rows={4} style={{...inputStyle,resize:"vertical",minHeight:80,marginBottom:8}}/>
+            <div style={{display:"flex",gap:6}}><Btn onClick={()=>{deleteSop(note.id);addSop({...note,title:editTitle,content:editContent});setIsEditing(false);notify("Note updated")}}>Save</Btn><Btn v="secondary" onClick={()=>setIsEditing(false)}>Cancel</Btn></div>
+          </>}
+        </Card>
+      })}
     </>}
 
     {/* TEAM */}
@@ -1799,7 +1819,7 @@ function PlaybookPage({jobs,reps,vendors,customers,lineItems,getJobFinancials,se
       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16}}>
         <span onClick={()=>setActiveDoc(null)} style={{color:"#525252",cursor:"pointer",fontSize:13}} onMouseEnter={e=>e.currentTarget.style.color="#2dd4bf"} onMouseLeave={e=>e.currentTarget.style.color="#525252"}>Playbook</span>
         <span style={{color:"#333",fontSize:13}}>/</span>
-        <span style={{color:"#e5e5e5",fontSize:13,fontWeight:600}}>{doc.title}</span>{doc.custom&&<><Btn v="ghost" style={{fontSize:11,padding:"3px 10px",marginLeft:12}} onClick={()=>{setEditingSop(doc);setActiveDoc(null)}}>Edit</Btn><Btn v="danger" style={{fontSize:11,padding:"3px 10px",marginLeft:4}} onClick={()=>{deleteSop(doc.id);setActiveDoc(null);notify("SOP deleted")}}>Delete</Btn></>}
+        <span style={{color:"#e5e5e5",fontSize:13,fontWeight:600}}>{doc.title}</span><Btn v="ghost" style={{fontSize:11,padding:"3px 10px",marginLeft:12}} onClick={()=>{if(doc.custom){setEditingSop(doc)}else{setEditingSop({...doc,id:"SOP-"+Math.random().toString(36).slice(2,8),custom:true})}setActiveDoc(null)}}>{doc.custom?"Edit":"Edit Copy"}</Btn>{doc.custom&&<Btn v="danger" style={{fontSize:11,padding:"3px 10px",marginLeft:4}} onClick={()=>{deleteSop(doc.id);setActiveDoc(null);notify("SOP deleted")}}>Delete</Btn>}
       </div>
       <Card style={{border:"1px solid rgba(45,212,191,0.1)",background:"linear-gradient(180deg,rgba(45,212,191,0.02),transparent)"}}>
         <div style={{display:"flex",alignItems:"center",gap:14,marginBottom:28}}>
