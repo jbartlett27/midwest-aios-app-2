@@ -1802,16 +1802,19 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,brain
 // ===============================================================
 // DIRECTORY -- Vendors, Customers, Sales Reps (full CRUD + sort)
 // ===============================================================
-function DirectoryPage({vendors,customers,reps,updateVendor,addVendor,deleteVendor,updateCustomer,addCustomer,deleteCustomer,updateRep,addRep,deleteRep,notify}){
+function DirectoryPage({vendors,customers,reps,updateVendor,addVendor,deleteVendor,updateCustomer,addCustomer,deleteCustomer,updateRep,addRep,deleteRep,notify,jobs,lineItems,getJobFinancials,getJobItems,setPage,confirm}){
   const [tab,setTab]=useState("vendors");
   const [editId,setEditId]=useState(null);
   const [form,setForm]=useState({});
   const [adding,setAdding]=useState(false);
   const [sort,setSort]=useState("name");
   const [dirSearch,setDirSearch]=useState("");
+  const [selected,setSelected]=useState(new Set());
+  const [bulkAction,setBulkAction]=useState(null);
+  const [custDetail,setCustDetail]=useState(null);
 
-  const startEdit=(item)=>{setEditId(item.id);setForm({...item});setAdding(false)};
-  const startAdd=()=>{setAdding(true);setEditId(null);
+  const startEdit=(item)=>{setEditId(item.id);setForm({...item});setAdding(false);setSelected(new Set())};
+  const startAdd=()=>{setAdding(true);setEditId(null);setSelected(new Set());
     if(tab==="vendors") setForm({name:"",contact:"",email:"",phone:"",category:"",address:""});
     if(tab==="customers") setForm({name:"",contact:"",email:"",phone:"",type:"K-12 District",address:""});
     if(tab==="reps") setForm({name:"",email:"",territory:"",commissionRate:0.05,tier:"Associate"});
@@ -1838,36 +1841,116 @@ function DirectoryPage({vendors,customers,reps,updateVendor,addVendor,deleteVend
     setEditId(null);notify("Deleted");
   };
   const cancel=()=>{setEditId(null);setAdding(false);setForm({})};
-  // render helper (NOT a React component -- prevents remount/focus loss on each keystroke)
   const field = (k, l, type) => <div key={k}><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>{l}</label>{type==="select-tier"?<select value={form[k]||""} onChange={e=>setForm(prev=>({...prev,[k]:e.target.value}))} style={inputStyle}>{["Associate","Mid-Level","Senior"].map(t=><option key={t}>{t}</option>)}</select>:<input type={type||"text"} value={form[k]==null?"":form[k]} onChange={e=>setForm(prev=>({...prev,[k]:e.target.value}))} style={inputStyle}/>}</div>;
 
-  const sortedVendors=[...vendors].filter(v=>{const s=dirSearch.toLowerCase();return !s||v.name.toLowerCase().includes(s)||v.contact.toLowerCase().includes(s)||v.category.toLowerCase().includes(s)||v.email.toLowerCase().includes(s)}).sort((a,b)=>(a[sort]||"").toString().localeCompare((b[sort]||"").toString()));
-  const sortedCustomers=[...customers].filter(c=>{const s=dirSearch.toLowerCase();return !s||c.name.toLowerCase().includes(s)||c.contact.toLowerCase().includes(s)||c.type.toLowerCase().includes(s)||c.email.toLowerCase().includes(s)}).sort((a,b)=>(a[sort]||"").toString().localeCompare((b[sort]||"").toString()));
-  const sortedReps=[...reps].filter(r=>{const s=dirSearch.toLowerCase();return !s||r.name.toLowerCase().includes(s)||r.territory.toLowerCase().includes(s)||r.tier.toLowerCase().includes(s)||r.email.toLowerCase().includes(s)}).sort((a,b)=>(a[sort]||"").toString().localeCompare((b[sort]||"").toString()));
+  // Bulk operations
+  const toggleSelect=(id)=>{const s=new Set(selected);if(s.has(id))s.delete(id);else s.add(id);setSelected(s)};
+  const list=tab==="vendors"?vendors:tab==="customers"?customers:reps;
+  const filteredList=tab==="vendors"?[...vendors].filter(v=>{const s=dirSearch.toLowerCase();return !s||v.name.toLowerCase().includes(s)||v.contact.toLowerCase().includes(s)||v.category.toLowerCase().includes(s)||v.email.toLowerCase().includes(s)}).sort((a,b)=>(a[sort]||"").toString().localeCompare((b[sort]||"").toString()))
+    :tab==="customers"?[...customers].filter(c=>{const s=dirSearch.toLowerCase();return !s||c.name.toLowerCase().includes(s)||(c.contact||"").toLowerCase().includes(s)||(c.type||"").toLowerCase().includes(s)||(c.email||"").toLowerCase().includes(s)}).sort((a,b)=>(a[sort]||"").toString().localeCompare((b[sort]||"").toString()))
+    :[...reps].filter(r=>{const s=dirSearch.toLowerCase();return !s||r.name.toLowerCase().includes(s)||(r.territory||"").toLowerCase().includes(s)||(r.tier||"").toLowerCase().includes(s)||(r.email||"").toLowerCase().includes(s)}).sort((a,b)=>(a[sort]||"").toString().localeCompare((b[sort]||"").toString()));
+  const selectAll=()=>{if(selected.size===filteredList.length)setSelected(new Set());else setSelected(new Set(filteredList.map(i=>i.id)))};
+  const handleBulkDelete=async()=>{
+    if(selected.size===0)return;
+    const ok=await confirm("Delete "+selected.size+" "+tab+"? This cannot be undone.");
+    if(!ok)return;
+    let count=0;
+    for(const id of selected){
+      if(tab==="vendors"){deleteVendor(id)}
+      else if(tab==="customers"){deleteCustomer(id)}
+      else{deleteRep(id)}
+      count++;
+    }
+    setSelected(new Set());
+    notify(count+" "+tab+" deleted");
+  };
+  const handleBulkEdit=(field,value)=>{
+    for(const id of selected){
+      if(tab==="vendors") updateVendor(id,{[field]:value});
+      else if(tab==="customers") updateCustomer(id,{[field]:value});
+      else updateRep(id,{[field]:value});
+    }
+    notify(selected.size+" "+tab+" updated");
+    setBulkAction(null);
+  };
+
+  // Customer analytics mini-view
+  const CustAnalytics=({cust})=>{
+    const cJobs=jobs.filter(j=>j.customer===cust.id);
+    const totalSpend=cJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
+    const totalCost=cJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalCost,0);
+    const avgMargin=totalSpend>0?(1-totalCost/totalSpend)*100:0;
+    const totalItems=cJobs.reduce((s,j)=>s+getJobItems(j.id).length,0);
+    const totalOrdered=cJobs.reduce((s,j)=>s+getJobItems(j.id).reduce((a,i)=>a+i.qtyOrdered,0),0);
+    const totalReceived=cJobs.reduce((s,j)=>s+getJobItems(j.id).reduce((a,i)=>a+i.qtyReceived,0),0);
+    const paidJobs=cJobs.filter(j=>j.paymentStatus==="paid").length;
+    const activeJobs=cJobs.filter(j=>j.phase!=="Complete"&&j.phase!=="Quoting").length;
+    // Vendor breakdown
+    const vSpend={};
+    cJobs.forEach(j=>{getJobItems(j.id).forEach(i=>{const v=vendors.find(v=>v.id===i.vendor);if(v)vSpend[v.name]=(vSpend[v.name]||0)+i.unitCost*i.qtyOrdered})});
+    const topV=Object.entries(vSpend).sort((a,b)=>b[1]-a[1]).slice(0,4);
+    return <Card style={{marginBottom:16,border:"1px solid rgba(45,212,191,0.12)",background:"linear-gradient(180deg,rgba(45,212,191,0.02),transparent)"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+        <div><div style={{fontSize:18,fontWeight:800,color:"#f0f0f0"}}>{cust.name}</div><div style={{fontSize:12,color:"#737373"}}>{cust.contact} {cust.email?" | "+cust.email:""} {cust.phone?" | "+cust.phone:""}</div></div>
+        <div style={{display:"flex",gap:8}}><Btn v="ghost" style={{fontSize:12}} onClick={()=>{window._viewCustId=cust.id;setPage("customer360")}}>Full Profile</Btn><Btn v="secondary" style={{fontSize:12}} onClick={()=>setCustDetail(null)}>Close</Btn></div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(100px,1fr))",gap:12,marginBottom:16}}>
+        <div style={{textAlign:"center",padding:12,background:"#0a0a0a",borderRadius:10}}><div style={{fontSize:20,fontWeight:700,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalSpend)}</div><div style={{fontSize:10,color:"#737373"}}>Lifetime Spend</div></div>
+        <div style={{textAlign:"center",padding:12,background:"#0a0a0a",borderRadius:10}}><div style={{fontSize:20,fontWeight:700,color:"#a78bfa",fontFamily:"'JetBrains Mono',monospace"}}>{cJobs.length}</div><div style={{fontSize:10,color:"#737373"}}>Total Jobs</div></div>
+        <div style={{textAlign:"center",padding:12,background:"#0a0a0a",borderRadius:10}}><div style={{fontSize:20,fontWeight:700,color:avgMargin>=30?"#34d399":avgMargin>=20?"#fbbf24":"#f87171",fontFamily:"'JetBrains Mono',monospace"}}>{avgMargin.toFixed(1)}%</div><div style={{fontSize:10,color:"#737373"}}>Avg Margin</div></div>
+        <div style={{textAlign:"center",padding:12,background:"#0a0a0a",borderRadius:10}}><div style={{fontSize:20,fontWeight:700,color:"#fbbf24",fontFamily:"'JetBrains Mono',monospace"}}>{activeJobs}</div><div style={{fontSize:10,color:"#737373"}}>Active</div></div>
+        <div style={{textAlign:"center",padding:12,background:"#0a0a0a",borderRadius:10}}><div style={{fontSize:20,fontWeight:700,color:"#34d399",fontFamily:"'JetBrains Mono',monospace"}}>{paidJobs}/{cJobs.filter(j=>j.phase!=="Quoting").length||1}</div><div style={{fontSize:10,color:"#737373"}}>Paid</div></div>
+        <div style={{textAlign:"center",padding:12,background:"#0a0a0a",borderRadius:10}}><div style={{fontSize:20,fontWeight:700,color:"#e5e5e5",fontFamily:"'JetBrains Mono',monospace"}}>{totalItems}</div><div style={{fontSize:10,color:"#737373"}}>Line Items</div></div>
+      </div>
+      {cJobs.length>0&&<div style={{marginBottom:12}}><div style={{fontSize:12,fontWeight:600,color:"#a3a3a3",marginBottom:8}}>Jobs</div>{cJobs.sort((a,b)=>new Date(b.createdDate)-new Date(a.createdDate)).map(j=>{const f=getJobFinancials(j.id);return <div key={j.id} onClick={()=>{window._viewCustId=cust.id;setPage("jobs");}} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px",background:"#0a0a0a",borderRadius:8,marginBottom:4,cursor:"pointer"}} onMouseEnter={e=>e.currentTarget.style.background="#111"} onMouseLeave={e=>e.currentTarget.style.background="#0a0a0a"}><div><span style={{fontSize:12,fontWeight:600,color:"#e5e5e5"}}>{j.name}</span><span style={{fontSize:11,color:"#525252",marginLeft:8}}>{j.createdDate}</span></div><div style={{display:"flex",gap:8,alignItems:"center"}}><Badge label={j.phase} color={statusColor(j.phase)}/><span style={{fontSize:12,fontWeight:600,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(f.totalRevenue)}</span></div></div>})}</div>}
+      {topV.length>0&&<div><div style={{fontSize:12,fontWeight:600,color:"#a3a3a3",marginBottom:8}}>Top Vendors</div>{topV.map(([n,s])=><div key={n} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:12}}><span style={{color:"#c4c4c4"}}>{n}</span><span style={{color:"#a78bfa",fontFamily:"'JetBrains Mono',monospace",fontWeight:600}}>{fmt(s)}</span></div>)}</div>}
+      {totalOrdered>0&&<div style={{marginTop:12}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#737373",marginBottom:3}}><span>Delivery Progress</span><span>{totalReceived}/{totalOrdered} units</span></div><div style={{height:6,background:"#111",borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:(totalReceived/totalOrdered*100)+"%",background:"linear-gradient(90deg,#2dd4bf,#34d399)",borderRadius:3}}/></div></div>}
+    </Card>
+  };
 
   return <div style={{animation:"fadeUp 0.4s"}}><Header title="Directory" sub="Manage all vendors, customers, and sales reps -- edit, add, sort" action={<Btn onClick={startAdd}><I n="plus" s={14}/> Add {tab==="vendors"?"Vendor":tab==="customers"?"Customer":"Sales Rep"}</Btn>}/>
     <div style={{display:"flex",gap:12,marginBottom:20,alignItems:"center",flexWrap:"wrap"}}>
-      <div style={{display:"flex",gap:4,background:"#111111",padding:4,borderRadius:10}}>{[["vendors","Vendors ("+vendors.length+")"],["customers","Customers ("+customers.length+")"],["reps","Sales Reps ("+reps.length+")"]].map(([id,label])=><button key={id} onClick={()=>{setTab(id);setEditId(null);setAdding(false);setSort("name");setDirSearch("")}} style={{padding:"8px 16px",borderRadius:8,border:"none",cursor:"pointer",background:tab===id?"#2dd4bf":"transparent",color:tab===id?"#000000":"#525252",fontSize:13,fontWeight:tab===id?600:400,fontFamily:"inherit"}}>{label}</button>)}</div>
+      <div style={{display:"flex",gap:4,background:"#111111",padding:4,borderRadius:10}}>{[["vendors","Vendors ("+vendors.length+")"],["customers","Customers ("+customers.length+")"],["reps","Sales Reps ("+reps.length+")"]].map(([id,label])=><button key={id} onClick={()=>{setTab(id);setEditId(null);setAdding(false);setSort("name");setDirSearch("");setSelected(new Set());setCustDetail(null)}} style={{padding:"8px 16px",borderRadius:8,border:"none",cursor:"pointer",background:tab===id?"#2dd4bf":"transparent",color:tab===id?"#000000":"#525252",fontSize:13,fontWeight:tab===id?600:400,fontFamily:"inherit"}}>{label}</button>)}</div>
       <input value={dirSearch} onChange={e=>setDirSearch(e.target.value)} placeholder={"Search "+tab+"..."} style={{...inputStyle,maxWidth:260,background:"#111111",border:"1px solid #222222",padding:"8px 14px"}}/>
     </div>
 
+    {/* Bulk action bar */}
+    {selected.size>0&&<div style={{display:"flex",alignItems:"center",gap:12,padding:"10px 16px",background:"rgba(45,212,191,0.06)",border:"1px solid rgba(45,212,191,0.15)",borderRadius:10,marginBottom:16,flexWrap:"wrap"}}>
+      <span style={{fontSize:13,fontWeight:600,color:"#2dd4bf"}}>{selected.size} selected</span>
+      <Btn v="danger" style={{fontSize:12,padding:"5px 12px"}} onClick={handleBulkDelete}><I n="close" s={12}/> Delete Selected</Btn>
+      {tab==="customers"&&<Btn v="ghost" style={{fontSize:12,padding:"5px 12px"}} onClick={()=>setBulkAction(bulkAction?"":("type"))}>Set Type</Btn>}
+      {tab==="vendors"&&<Btn v="ghost" style={{fontSize:12,padding:"5px 12px"}} onClick={()=>setBulkAction(bulkAction?"":"category")}>Set Category</Btn>}
+      <Btn v="secondary" style={{fontSize:12,padding:"5px 12px"}} onClick={()=>setSelected(new Set())}>Clear Selection</Btn>
+      {bulkAction==="type"&&<div style={{display:"flex",gap:8,alignItems:"center"}}><select onChange={e=>{if(e.target.value)handleBulkEdit("type",e.target.value)}} style={{...inputStyle,width:160,padding:"5px 10px"}}><option value="">Choose type...</option><option>K-12 District</option><option>University</option><option>Government</option><option>Private</option><option>Non-Profit</option><option>Corporate</option></select></div>}
+      {bulkAction==="category"&&<div style={{display:"flex",gap:8,alignItems:"center"}}><select onChange={e=>{if(e.target.value)handleBulkEdit("category",e.target.value)}} style={{...inputStyle,width:180,padding:"5px 10px"}}><option value="">Choose category...</option><option>Classroom Furniture</option><option>Collaborative Tables</option><option>Seating</option><option>Science Lab</option><option>Early Childhood</option><option>AV Equipment</option><option>Storage</option><option>Library</option><option>Cafeteria</option><option>Office</option></select></div>}
+    </div>}
+
     {(adding||editId)&&<Card style={{marginBottom:16,border:"1px solid #2dd4bf30"}}><div style={{fontSize:14,fontWeight:700,marginBottom:12,color:"#2dd4bf"}}>{adding?"Add New":"Edit"} {tab==="vendors"?"Vendor":tab==="customers"?"Customer":"Sales Rep"}</div>
-      {tab==="vendors"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:12}}>{field("name","Company Name")}{field("contact","Contact Person")}{field("email","Email")}{field("phone","Phone")}{field("category","Category")}{field("address","Address")}<div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Discount Rate (%)</label><input type="number" step="1" value={((form.discountRate||0)*100).toFixed(0)} onChange={e=>setForm(prev=>({...prev,discountRate:parseFloat(e.target.value)/100||0}))} style={inputStyle}/></div>{field("discountType","Discount Type")}<div style={{gridColumn:"span 1"}}><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Discount Notes</label><textarea value={form.discountNotes||""} onChange={e=>setForm(prev=>({...prev,discountNotes:e.target.value}))} placeholder="Volume thresholds, freight terms, special pricing..." rows={3} style={{...inputStyle,resize:"vertical",minHeight:60}}/></div></div>}
+      {tab==="vendors"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:12}}>{field("name","Company Name")}{field("contact","Contact Person")}{field("email","Email")}{field("phone","Phone")}{field("category","Category")}{field("address","Address")}<div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Discount Rate (%)</label><input type="number" step="1" value={((form.discountRate||0)*100).toFixed(0)} onChange={e=>setForm(prev=>({...prev,discountRate:parseFloat(e.target.value)/100||0}))} style={inputStyle}/></div>{field("discountType","Discount Type")}<div style={{gridColumn:"span 1"}}><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Discount Notes</label><textarea value={form.discountNotes||""} onChange={e=>setForm(prev=>({...prev,discountNotes:e.target.value}))} placeholder="Volume thresholds, freight terms..." rows={3} style={{...inputStyle,resize:"vertical",minHeight:60}}/></div></div>}
       {tab==="customers"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:12}}>{field("name","Organization Name")}{field("contact","Contact Person")}{field("email","Email")}{field("phone","Phone")}{field("type","Type")}{field("address","Address")}</div>}
       {tab==="reps"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:12}}>{field("name","Name")}{field("email","Email")}{field("territory","Territory")}{field("tier","Tier","select-tier")}<div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Commission Rate (%)</label><input type="number" step="0.5" value={((form.commissionRate||0)*100).toFixed(1)} onChange={e=>setForm(prev=>({...prev,commissionRate:parseFloat(e.target.value)/100||0}))} style={inputStyle}/></div></div>}
       <div style={{display:"flex",gap:8}}><Btn onClick={save}>{adding?"Add":"Save Changes"}</Btn><Btn v="secondary" onClick={cancel}>Cancel</Btn>{editId&&<Btn v="danger" onClick={()=>del(editId)}>Delete</Btn>}</div>
     </Card>}
 
-    {tab==="vendors"&&<><div style={{marginBottom:8,display:"flex",gap:8,alignItems:"center"}}><span style={{fontSize:12,color:"#a3a3a3"}}>Sort by:</span>{["name","category","contact"].map(s=><button key={s} onClick={()=>setSort(s)} style={{fontSize:12,padding:"3px 10px",borderRadius:6,border:"none",cursor:"pointer",background:sort===s?"#2dd4bf22":"transparent",color:sort===s?"#2dd4bf":"#525252",fontFamily:"inherit"}}>{s}</button>)}</div>
-      <Tbl columns={[{header:"Name",render:r=><span onClick={e=>{e.stopPropagation();window._viewCustId=r.id;ctx.setPage("customer360")}} style={{fontWeight:600,color:"#2dd4bf",cursor:"pointer"}}>{r.name}</span>},{header:"Contact",render:r=>r.contact},{header:"Email",render:r=><span style={{color:"#2dd4bf"}}>{r.email}</span>},{header:"Phone",render:r=>r.phone},{header:"Category",render:r=>r.category},{header:"Discount",render:r=><span style={{fontFamily:"'JetBrains Mono',monospace",color:"#34d399",fontWeight:600}}>{r.discountRate?(r.discountRate*100).toFixed(0)+'%':'--'}</span>},{header:"Discount Notes",render:r=><span style={{fontSize:12,color:"#c4c4c4"}}>{r.discountNotes||"--"}</span>},{header:"",render:r=><Btn v="ghost" style={{fontSize:12,padding:"3px 8px"}} onClick={e=>{e.stopPropagation();startEdit(r)}}>Edit</Btn>}]} data={sortedVendors}/></>}
+    {/* Customer analytics panel */}
+    {custDetail&&tab==="customers"&&<CustAnalytics cust={custDetail}/>}
 
-    {tab==="customers"&&<><div style={{marginBottom:8,display:"flex",gap:8,alignItems:"center"}}><span style={{fontSize:12,color:"#a3a3a3"}}>Sort by:</span>{["name","type","contact"].map(s=><button key={s} onClick={()=>setSort(s)} style={{fontSize:12,padding:"3px 10px",borderRadius:6,border:"none",cursor:"pointer",background:sort===s?"#2dd4bf22":"transparent",color:sort===s?"#2dd4bf":"#525252",fontFamily:"inherit"}}>{s}</button>)}</div>
-      <Tbl columns={[{header:"Name",render:r=><span style={{fontWeight:600,color:"#e5e5e5"}}>{r.name}</span>},{header:"Contact",render:r=>r.contact},{header:"Email",render:r=><span style={{color:"#2dd4bf"}}>{r.email}</span>},{header:"Phone",render:r=>r.phone},{header:"Type",render:r=> <Badge label={r.type} color="#a78bfa"/>},{header:"Address",render:r=><span style={{fontSize:12,color:"#c4c4c4"}}>{r.address||"--"}</span>},{header:"",render:r=><Btn v="ghost" style={{fontSize:12,padding:"3px 8px"}} onClick={e=>{e.stopPropagation();startEdit(r)}}>Edit</Btn>}]} data={sortedCustomers}/></>}
+    {/* Sort + Select All */}
+    <div style={{marginBottom:8,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+      <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer"}}><input type="checkbox" checked={selected.size===filteredList.length&&filteredList.length>0} onChange={selectAll} style={{accentColor:"#2dd4bf"}}/><span style={{fontSize:12,color:"#737373"}}>Select All</span></label>
+      <div style={{width:1,height:16,background:"rgba(255,255,255,0.06)"}}/>
+      <span style={{fontSize:12,color:"#a3a3a3"}}>Sort by:</span>
+      {(tab==="vendors"?["name","category","contact"]:tab==="customers"?["name","type","contact"]:["name","territory","tier"]).map(s=><button key={s} onClick={()=>setSort(s)} style={{fontSize:12,padding:"3px 10px",borderRadius:6,border:"none",cursor:"pointer",background:sort===s?"#2dd4bf22":"transparent",color:sort===s?"#2dd4bf":"#525252",fontFamily:"inherit"}}>{s}</button>)}
+    </div>
 
-    {tab==="reps"&&<><div style={{marginBottom:8,display:"flex",gap:8,alignItems:"center"}}><span style={{fontSize:12,color:"#a3a3a3"}}>Sort by:</span>{["name","territory","tier"].map(s=><button key={s} onClick={()=>setSort(s)} style={{fontSize:12,padding:"3px 10px",borderRadius:6,border:"none",cursor:"pointer",background:sort===s?"#2dd4bf22":"transparent",color:sort===s?"#2dd4bf":"#525252",fontFamily:"inherit"}}>{s}</button>)}</div>
-      <Tbl columns={[{header:"Name",render:r=><span style={{fontWeight:600,color:"#e5e5e5"}}>{r.name}</span>},{header:"Email",render:r=><span style={{color:"#2dd4bf"}}>{r.email}</span>},{header:"Territory",render:r=>r.territory},{header:"Tier",render:r=> <Badge label={r.tier} color="#8b5cf6"/>},{header:"Rate",render:r=><span style={{fontFamily:"'JetBrains Mono',monospace",color:"#2dd4bf"}}>{(r.commissionRate*100).toFixed(1)}%</span>},{header:"",render:r=><Btn v="ghost" style={{fontSize:12,padding:"3px 8px"}} onClick={e=>{e.stopPropagation();startEdit(r)}}>Edit</Btn>}]} data={sortedReps}/></>}
+    {tab==="vendors"&&<Tbl columns={[{header:"",render:r=><input type="checkbox" checked={selected.has(r.id)} onChange={()=>toggleSelect(r.id)} onClick={e=>e.stopPropagation()} style={{accentColor:"#2dd4bf"}}/>},{header:"Name",render:r=><span style={{fontWeight:600,color:"#e5e5e5"}}>{r.name}</span>},{header:"Contact",render:r=>r.contact},{header:"Email",render:r=><span style={{color:"#2dd4bf"}}>{r.email}</span>},{header:"Phone",render:r=>r.phone},{header:"Category",render:r=>r.category},{header:"Discount",render:r=><span style={{fontFamily:"'JetBrains Mono',monospace",color:"#34d399",fontWeight:600}}>{r.discountRate?(r.discountRate*100).toFixed(0)+"%":"--"}</span>},{header:"",render:r=><Btn v="ghost" style={{fontSize:12,padding:"3px 8px"}} onClick={e=>{e.stopPropagation();startEdit(r)}}>Edit</Btn>}]} data={filteredList}/>}
+
+    {tab==="customers"&&<Tbl columns={[{header:"",render:r=><input type="checkbox" checked={selected.has(r.id)} onChange={()=>toggleSelect(r.id)} onClick={e=>e.stopPropagation()} style={{accentColor:"#2dd4bf"}}/>},{header:"Name",render:r=><span onClick={e=>{e.stopPropagation();setCustDetail(custDetail?.id===r.id?null:r)}} style={{fontWeight:600,color:"#2dd4bf",cursor:"pointer"}}>{r.name}</span>},{header:"Contact",render:r=>r.contact},{header:"Email",render:r=><span style={{color:"#2dd4bf"}}>{r.email}</span>},{header:"Phone",render:r=>r.phone},{header:"Type",render:r=><Badge label={r.type||"--"} color="#a78bfa"/>},{header:"Address",render:r=><span style={{fontSize:12,color:"#c4c4c4"}}>{r.address||"--"}</span>},{header:"",render:r=><Btn v="ghost" style={{fontSize:12,padding:"3px 8px"}} onClick={e=>{e.stopPropagation();startEdit(r)}}>Edit</Btn>}]} data={filteredList}/>}
+
+    {tab==="reps"&&<Tbl columns={[{header:"",render:r=><input type="checkbox" checked={selected.has(r.id)} onChange={()=>toggleSelect(r.id)} onClick={e=>e.stopPropagation()} style={{accentColor:"#2dd4bf"}}/>},{header:"Name",render:r=><span style={{fontWeight:600,color:"#e5e5e5"}}>{r.name}</span>},{header:"Email",render:r=><span style={{color:"#2dd4bf"}}>{r.email}</span>},{header:"Territory",render:r=>r.territory},{header:"Tier",render:r=><Badge label={r.tier} color="#8b5cf6"/>},{header:"Rate",render:r=><span style={{fontFamily:"'JetBrains Mono',monospace",color:"#2dd4bf"}}>{(r.commissionRate*100).toFixed(1)}%</span>},{header:"",render:r=><Btn v="ghost" style={{fontSize:12,padding:"3px 8px"}} onClick={e=>{e.stopPropagation();startEdit(r)}}>Edit</Btn>}]} data={filteredList}/>}
   </div>;
 }
+
 
 // ===============================================================
 // EXIT READINESS
