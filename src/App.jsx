@@ -1248,22 +1248,6 @@ function DocumentsPage({jobs,lineItems,vendors,customers,reps,getJobItems,getJob
   useEffect(()=>{if(window.BroadcastChannel){const bc=new BroadcastChannel("mw_quote_approval");bc.onmessage=(e)=>{if(e.data?.docNum){setDocStatus(e.data.docNum,"approved");notify("Quote "+e.data.docNum+" approved by customer!")}};return()=>bc.close()}},[]);
   //
   useEffect(()=>{const check=()=>{const keys=Object.keys(localStorage).filter(k=>k.startsWith("quote_approved_"));keys.forEach(k=>{const docNum=k.replace("quote_approved_","");if(docNum){setDocStatus(docNum,"approved");localStorage.removeItem(k);notify("Quote "+docNum+" approved by customer!")}})};check();const interval=setInterval(check,3000);return()=>clearInterval(interval)},[]);
-    // Find which job this doc belongs to and persist to Supabase
-    const jobId = docNum.includes('-') ? jobs.find(j => {
-      const jPart = j.id.replace(/[^A-Z0-9]/gi,'').slice(-4).toUpperCase();
-      return docNum.includes(jPart);
-    })?.id : null;
-    if (jobId) {
-      const job = jobs.find(j => j.id === jobId);
-      if (job) {
-        const updated = {...(job.docStatuses || {}), [docNum]: status};
-        updateJob(jobId, {docStatuses: updated});
-      }
-    } else {
-      // Commission statements -- store on first job or use localStorage fallback
-      const all = {...allDocStatuses, ...localStatuses, [docNum]: status};
-      localStorage.setItem('mw_doc_statuses_fallback', JSON.stringify(all));
-    }
   };
   // Invoice PO selections - persist via docStatuses
   const getInvPOs = (invDocNum) => {
