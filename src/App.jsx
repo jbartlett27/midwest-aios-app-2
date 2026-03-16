@@ -1202,7 +1202,7 @@ function DeliveryPage({jobs,lineItems,vendors,customers,getItemStatus,getJobItem
 // ===============================================================
 // DOCUMENTS -- Quotes, POs, Invoices, Commission Statements
 // ===============================================================
-function DocumentsPage({jobs,lineItems,vendors,customers,reps,getJobItems,getJobFinancials,updateJob,updateLineItem,notify,qbConfig,setPage,triggerPrint,pendingCommPreview,setPendingCommPreview,...ctx}){
+function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItems,getJobFinancials,updateJob,updateLineItem,notify,qbConfig,setPage,triggerPrint,pendingCommPreview,setPendingCommPreview,customSops,addSop,deleteSop,...ctx}){
   const [tab,setTab]=useState("quotes");
   useEffect(()=>{if(pendingCommPreview){setPreviewDoc(pendingCommPreview);setTab("preview");setPendingCommPreview(null)}},[pendingCommPreview]);
   const [previewDoc,setPreviewDoc]=useState(null);
@@ -1245,12 +1245,10 @@ function DocumentsPage({jobs,lineItems,vendors,customers,reps,getJobItems,getJob
     // 4. localStorage backup
     try { const fb = JSON.parse(localStorage.getItem("mw_doc_statuses_fallback") || "{}"); fb[docNum] = status; localStorage.setItem("mw_doc_statuses_fallback", JSON.stringify(fb)); } catch {}
     try{localStorage.removeItem("quote_approved_"+docNum)}catch{};
-
-  // Check for quote approvals from shared customer links (localStorage polling + BroadcastChannel)
-  useEffect(()=>{if(window.BroadcastChannel){const bc=new BroadcastChannel("mw_quote_approval");bc.onmessage=(e)=>{if(e.data?.docNum){setDocStatus(e.data.docNum,"approved");notify("Quote "+e.data.docNum+" approved by customer!")}};return()=>bc.close()}},[]);
-  //
-  useEffect(()=>{const check=()=>{const keys=Object.keys(localStorage).filter(k=>k.startsWith("quote_approved_"));keys.forEach(k=>{const docNum=k.replace("quote_approved_","");if(docNum){setDocStatus(docNum,"approved");localStorage.removeItem(k);notify("Quote "+docNum+" approved by customer!")}})};check();const interval=setInterval(check,3000);return()=>clearInterval(interval)},[]);
   };
+
+  // Check for quote approvals from shared customer links
+  useEffect(()=>{const check=()=>{const keys=Object.keys(localStorage).filter(k=>k.startsWith("quote_approved_"));keys.forEach(k=>{const dn=k.replace("quote_approved_","");if(dn){setDocStatus(dn,"approved");localStorage.removeItem(k);notify("Quote "+dn+" approved by customer!")}})};check();const iv=setInterval(check,3000);return()=>clearInterval(iv)},[]);
   // Invoice PO selections - persist via docStatuses
   const getInvPOs = (invDocNum) => {
     const key = "invPO:" + invDocNum;
