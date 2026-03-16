@@ -2300,6 +2300,8 @@ Answer questions using ONLY the data above. Be specific with real numbers and na
     setBrainLoading(true);
 
     try {
+      const ctx = buildContext();
+      const msgs = [...history.filter(h=>h.role==="user"||h.role==="assistant").slice(-6).map(h=>({role:h.role,content:h.content})),{role:"user",content:q}];
       const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
@@ -2311,18 +2313,31 @@ Answer questions using ONLY the data above. Be specific with real numbers and na
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
           max_tokens: 2048,
-          system: buildContext(),
-          messages: [
-            ...history.filter(h=>h.role==="user"||h.role==="assistant").slice(-6).map(h=>({role:h.role,content:h.content})),
-            {role:"user",content:q}
-          ]
+          system: ctx,
+          messages: msgs
         })
       });
       const data = await response.json();
-      const answer = data.content?.[0]?.text || data.error?.message || "No response received.";
-      setHistory(p => [...p, { role: "assistant", content: answer }]);
+      if (data.content && data.content[0]) {
+        setHistory(p => [...p, { role: "assistant", content: data.content[0].text }]);
+      } else if (data.error) {
+        // If model not found, try alternate model
+        if (data.error.message?.includes("model") || data.error.type === "not_found_error") {
+          const r2 = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: {"Content-Type": "application/json","x-api-key": CLAUDE_KEY,"anthropic-version": "2023-06-01","anthropic-dangerous-direct-browser-access": "true"},
+            body: JSON.stringify({model: "claude-3-5-sonnet-20241022", max_tokens: 2048, system: ctx, messages: msgs})
+          });
+          const d2 = await r2.json();
+          setHistory(p => [...p, { role: "assistant", content: d2.content?.[0]?.text || "Error: " + JSON.stringify(d2.error || d2) }]);
+        } else {
+          setHistory(p => [...p, { role: "assistant", content: "API Error: " + data.error.message + " (type: " + data.error.type + ")" }]);
+        }
+      } else {
+        setHistory(p => [...p, { role: "assistant", content: "Unexpected response: " + JSON.stringify(data).slice(0, 200) }]);
+      }
     } catch (err) {
-      setHistory(p => [...p, { role: "assistant", content: "Error connecting to Claude: " + err.message }]);
+      setHistory(p => [...p, { role: "assistant", content: "Connection error: " + err.message }]);
     }
     setBrainLoading(false);
   };
