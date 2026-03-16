@@ -2060,11 +2060,12 @@ function TasksKanban({jobs,allJobs,reps,updateJob,notify,customSops,addSop,delet
 // Edit Task Overlay (click blank space to close)
 function EditTaskOverlay({task,setEditTask,jobs,reps,saveTask,deleteSop,notify,inputStyle}){
   const [t,setT]=useState({...task});
-  const doSave=()=>{if(t.text?.trim()){saveTask(t,t.isNew?null:t.sopId)}setEditTask(null)};
-  return <div onClick={(e)=>{if(e.target===e.currentTarget){setEditTask(null)}}} style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(10,10,10,0.75)",backdropFilter:"blur(40px) saturate(180%)",WebkitBackdropFilter:"blur(40px) saturate(180%)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+  const handleSave=()=>{if(t.text?.trim()){saveTask(t,t.isNew?null:t.sopId)}setEditTask(null)};
+  const handleDelete=()=>{const id=t.sopId||t.id;if(id){deleteSop(id)}setEditTask(null);notify("Task deleted")};
+  return <div onClick={(e)=>{if(e.target===e.currentTarget)setEditTask(null)}} style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(10,10,10,0.75)",backdropFilter:"blur(40px) saturate(180%)",WebkitBackdropFilter:"blur(40px) saturate(180%)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
     <div onClick={e=>e.stopPropagation()} style={{background:"#0a0a0a",borderRadius:16,border:"1px solid rgba(45,212,191,0.15)",padding:24,width:"100%",maxWidth:480,maxHeight:"85vh",overflow:"auto"}}>
       <div style={{fontSize:16,fontWeight:700,color:t.isNew?"#2dd4bf":"#f0f0f0",marginBottom:12}}>{t.isNew?"New Task":"Edit Task"}</div>
-      <input value={t.text} onChange={e=>setT({...t,text:e.target.value})} autoFocus placeholder="What needs to be done?" style={{...inputStyle,fontSize:18,fontWeight:700,background:"transparent",border:"none",padding:"8px 0",color:"#f0f0f0",marginBottom:12}}/>
+      <input value={t.text||""} onChange={e=>setT({...t,text:e.target.value})} autoFocus placeholder="What needs to be done?" style={{...inputStyle,fontSize:18,fontWeight:700,background:"transparent",border:"none",padding:"8px 0",color:"#f0f0f0",marginBottom:12}}/>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:8,marginBottom:12}}>
         <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Status</label><select value={t.status||"To Do"} onChange={e=>setT({...t,status:e.target.value})} style={inputStyle}><option>To Do</option><option>In Progress</option><option>Done</option></select></div>
         <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Due</label><input type="date" value={t.due||""} onChange={e=>setT({...t,due:e.target.value})} style={inputStyle}/></div>
@@ -2074,7 +2075,7 @@ function EditTaskOverlay({task,setEditTask,jobs,reps,saveTask,deleteSop,notify,i
       <div style={{marginBottom:12}}><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Assign</label><div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{reps.filter(r=>!r.id.includes("SEED_FLAG")).map(r=>{const on=(t.assignees||[]).includes(r.name);return <button key={r.id} onClick={()=>setT({...t,assignees:on?(t.assignees||[]).filter(a=>a!==r.name):[...(t.assignees||[]),r.name]})} style={{padding:"4px 10px",borderRadius:6,border:"1px solid "+(on?"#2dd4bf":"rgba(255,255,255,0.08)"),background:on?"rgba(45,212,191,0.1)":"transparent",color:on?"#2dd4bf":"#737373",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>{r.name.split(" ")[0]}</button>})}</div></div>
       <div style={{marginBottom:12}}><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Notes</label><textarea value={t.notes||""} onChange={e=>setT({...t,notes:e.target.value})} rows={3} placeholder="Details, context, follow-ups..." style={{...inputStyle,resize:"vertical"}}/></div>
       <div style={{marginBottom:16}}><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Link</label><input value={t.link||""} onChange={e=>setT({...t,link:e.target.value})} placeholder="https://..." style={inputStyle}/></div>
-      <div style={{display:"flex",gap:8}}><Btn onClick={doSave}>Save</Btn><Btn v="danger" onClick={()=>{if(!t.isNew&&t.sopId)deleteSop(t.sopId);setEditTask(null);notify("Deleted")}}>Delete</Btn><Btn v="secondary" onClick={()=>setEditTask(null)}>Cancel</Btn></div>
+      <div style={{display:"flex",gap:8}}><Btn onClick={handleSave}>Save</Btn><Btn v="danger" onClick={handleDelete}>Delete</Btn><Btn v="secondary" onClick={()=>setEditTask(null)}>Cancel</Btn></div>
     </div>
   </div>;
 }
