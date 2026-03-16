@@ -1211,33 +1211,38 @@ function DocumentsPage({jobs,lineItems,vendors,customers,reps,getJobItems,getJob
   const lsApprovals=(()=>{try{const a={};Object.keys(localStorage).filter(k=>k.startsWith("quote_approved_")).forEach(k=>{const dn=k.replace("quote_approved_","");if(dn)a[dn]="approved"});return a}catch{return {}}})();
   const docStatuses = {...allDocStatuses, ...localStatuses, ...lsApprovals};
   const setDocStatus = (docNum, status) => {
+    // 1. Immediate UI update
     setLocalStatuses(prev => ({...prev, [docNum]: status}));
-    // Persist to Supabase: find the job and update its docStatuses
-    let found = false;
-    for (const j of jobs) {
-      const ds = j.docStatuses || {};
-      // Check if this job already has this docNum
-      if (ds[docNum] !== undefined) {
-        updateJob(j.id, {docStatuses: {...ds, [docNum]: status}});
-        found = true; break;
-      }
-      // Generate all possible docNums for this job and check
+    // 2. Persist to Supabase by finding the job and saving directly
+    setJobs(currentJobs => {
       const sn = (prefix, a, b) => prefix + (a||"").replace(/[^A-Z0-9]/gi,"").slice(-4).toUpperCase() + "-" + (b||"").replace(/[^A-Z0-9]/gi,"").slice(-4).toUpperCase();
-      const possibleNums = [sn("QT-",j.id,j.customer), sn("INV-",j.id,j.customer)];
-      // PO nums need vendor ids
-      const jItems = getJobItems ? getJobItems(j.id) : [];
-      const vids = [...new Set(jItems.map(i=>i.vendor))];
-      vids.forEach(vid => possibleNums.push(sn("PO-",j.id,vid)));
-      // Commission
-      if (j.salesRep) possibleNums.push(sn("COMM-",j.salesRep,"stmt"));
-      if (possibleNums.includes(docNum)) {
-        updateJob(j.id, {docStatuses: {...(j.docStatuses||{}), [docNum]: status}});
-        found = true; break;
+      for (const j of currentJobs) {
+        // Generate all docNums for this job
+        const nums = [sn("QT-",j.id,j.customer), sn("INV-",j.id,j.customer)];
+        if (j.salesRep) nums.push(sn("COMM-",j.salesRep,"stmt"));
+        const jItems = (getJobItems ? getJobItems(j.id) : []);
+        [...new Set(jItems.map(i=>i.vendor))].forEach(vid => nums.push(sn("PO-",j.id,vid)));
+        // Also check if already stored
+        if ((j.docStatuses||{})[docNum] !== undefined) nums.push(docNum);
+        if (nums.includes(docNum)) {
+          const newDS = {...(j.docStatuses||{}), [docNum]: status};
+          const updatedJob = {...j, docStatuses: newDS};
+          db.saveJob(updatedJob);
+          return currentJobs.map(jj => jj.id === j.id ? updatedJob : jj);
+        }
       }
-    }
-    if (!found) {
-      try { const fb = JSON.parse(localStorage.getItem("mw_doc_statuses_fallback") || "{}"); fb[docNum] = status; localStorage.setItem("mw_doc_statuses_fallback", JSON.stringify(fb)); } catch {}
-    }
+      // Fallback: store on first job
+      if (currentJobs.length > 0) {
+        const j = currentJobs[0];
+        const newDS = {...(j.docStatuses||{}), [docNum]: status};
+        const updatedJob = {...j, docStatuses: newDS};
+        db.saveJob(updatedJob);
+        return currentJobs.map(jj => jj.id === j.id ? updatedJob : jj);
+      }
+      return currentJobs;
+    });
+    // 3. Also save to localStorage as immediate cross-tab backup
+    try { const fb = JSON.parse(localStorage.getItem("mw_doc_statuses_fallback") || "{}"); fb[docNum] = status; localStorage.setItem("mw_doc_statuses_fallback", JSON.stringify(fb)); } catch {}
     try{localStorage.removeItem("quote_approved_"+docNum)}catch{};
 
   // Check for quote approvals from shared customer links (localStorage polling + BroadcastChannel)
