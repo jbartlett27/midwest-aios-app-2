@@ -1206,33 +1206,41 @@ function DocumentsPage({jobs,lineItems,vendors,customers,reps,getJobItems,getJob
   const [previewDoc,setPreviewDoc]=useState(null);
   const [pushing,setPushing]=useState(false);
   // Doc statuses stored IN each job record in Supabase -- persists across browsers, deploys, cache clears
-  const allDocStatuses = jobs.reduce((acc, j) => ({...acc, ...(j.docStatuses || {})}), (() => { try { return JSON.parse(localStorage.getItem("mw_doc_statuses_fallback")||"{}"); } catch { return {}; } })());
+  const allDocStatuses = jobs.reduce((acc, j) => ({...acc, ...(j.docStatuses || {})}), {});
+  // Also load from sops table backup (cat="DocStatuses")
+  const sopStatusRecord = (customSops||[]).find(s=>s.id==="DOC_STATUSES_GLOBAL");
+  const sopStatuses = sopStatusRecord ? (()=>{try{return JSON.parse(sopStatusRecord.content)}catch{return {}}})() : {};
+  // Also load from localStorage
+  const lsFallback = (()=>{try{return JSON.parse(localStorage.getItem("mw_doc_statuses_fallback")||"{}")}catch{return {}}})();
+  // Merge: sops backup overrides jobs, localStorage overrides sops
+  const mergedDocStatuses = {...allDocStatuses, ...sopStatuses, ...lsFallback};
   const [localStatuses, setLocalStatuses] = useState({});
   const lsApprovals=(()=>{try{const a={};Object.keys(localStorage).filter(k=>k.startsWith("quote_approved_")).forEach(k=>{const dn=k.replace("quote_approved_","");if(dn)a[dn]="approved"});return a}catch{return {}}})();
-  const docStatuses = {...allDocStatuses, ...localStatuses, ...lsApprovals};
+  const docStatuses = {...mergedDocStatuses, ...localStatuses, ...lsApprovals};
   const setDocStatus = (docNum, status) => {
     // 1. Immediate UI
     setLocalStatuses(prev => ({...prev, [docNum]: status}));
-    // 2. Find the job that owns this docNum and persist to Supabase
+    // 2. Save to sops table (guaranteed to work - same as tasks/notes)
+    const allStatuses = {...mergedDocStatuses, ...localStatuses, [docNum]: status};
+    const sopRecord = {id:"DOC_STATUSES_GLOBAL",title:"Document Statuses",cat:"DocStatuses",icon:"file",content:JSON.stringify(allStatuses),custom:true};
+    // Use addSop which does upsert
+    addSop(sopRecord);
+    // 3. Also try to save on the job record
     const sn = (prefix, a, b) => prefix + (a||"").replace(/[^A-Z0-9]/gi,"").slice(-4).toUpperCase() + "-" + (b||"").replace(/[^A-Z0-9]/gi,"").slice(-4).toUpperCase();
-    let targetJob = null;
     for (const j of jobs) {
       const nums = [sn("QT-",j.id,j.customer), sn("INV-",j.id,j.customer)];
       if (j.salesRep) nums.push(sn("COMM-",j.salesRep,"stmt"));
       const jItems = getJobItems ? getJobItems(j.id) : [];
       [...new Set(jItems.map(i=>i.vendor))].forEach(vid => nums.push(sn("PO-",j.id,vid)));
       if ((j.docStatuses||{})[docNum] !== undefined) nums.push(docNum);
-      if (nums.includes(docNum)) { targetJob = j; break; }
+      if (nums.includes(docNum)) {
+        const newDS = {...(j.docStatuses||{}), [docNum]: status};
+        setJobs(p => p.map(jj => jj.id === j.id ? {...jj, docStatuses: newDS} : jj));
+        db.saveJob({...j, docStatuses: newDS});
+        break;
+      }
     }
-    if (!targetJob && jobs.length > 0) targetJob = jobs[0];
-    if (targetJob) {
-      const newDS = {...(targetJob.docStatuses||{}), [docNum]: status};
-      // Update React state
-      setJobs(p => p.map(j => j.id === targetJob.id ? {...j, docStatuses: newDS} : j));
-      // Persist to Supabase directly (outside state updater)
-      db.saveJob({...targetJob, docStatuses: newDS});
-    }
-    // 3. localStorage backup
+    // 4. localStorage backup
     try { const fb = JSON.parse(localStorage.getItem("mw_doc_statuses_fallback") || "{}"); fb[docNum] = status; localStorage.setItem("mw_doc_statuses_fallback", JSON.stringify(fb)); } catch {}
     try{localStorage.removeItem("quote_approved_"+docNum)}catch{};
 
@@ -1971,7 +1979,7 @@ function PlaybookPage({jobs,reps,vendors,customers,lineItems,getJobFinancials,se
     {id:"seasonal",cat:"Strategic",title:"Seasonal Planning & Capacity",icon:"chart",content:"SEASONAL PLANNING\nTHE SCHOOL CALENDAR DRIVES EVERYTHING.\n\nJANUARY THROUGH APRIL\n- Quoting season. Districts plan budgets.\n- Focus: respond to RFPs, build relationships, spec products.\n- Longest lead time items should be identified early.\n\nMAY THROUGH JUNE\n- Ordering season. Budgets approved, POs issued.\n- Focus: get orders to manufacturers ASAP.\n- Confirm delivery dates with every vendor.\n\nJUNE THROUGH AUGUST\n- Delivery and installation. CRITICAL WINDOW.\n- Focus: coordinate deliveries, manage partial shipments.\n- Invoice immediately upon receipt.\n- 60-70% of annual revenue books in this period.\n\nSEPTEMBER\n- HARD DEADLINE. School starts.\n- All furniture must be installed and rooms ready.\n- Escalate any outstanding deliveries.\n\nOCTOBER THROUGH DECEMBER\n- Slower period. Collections focus.\n- Review overdue payments.\n- Plan next year's strategy.\n- Update vendor relationships and discount rates."},
   ];
 
-  const allSops=[...sops,...customSops].filter(s=>s.cat!=="Notes"&&s.cat!=="Task");
+  const allSops=[...sops,...customSops].filter(s=>s.cat!=="Notes"&&s.cat!=="Task"&&s.cat!=="DocStatuses");
   const cats=[...new Set(allSops.map(s=>s.cat))];
   const filtered=search?allSops.filter(s=>s.title.toLowerCase().includes(search.toLowerCase())||s.content.toLowerCase().includes(search.toLowerCase())):allSops;
 
