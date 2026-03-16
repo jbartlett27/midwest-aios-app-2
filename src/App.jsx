@@ -249,7 +249,6 @@ function ShareQuotePortal({quoteData,onApprove}){
 export default function MidwestAIOS() {
   // Shared quote portal - check URL hash on load
   const [sharedQuote,setSharedQuote]=useState(()=>{try{const h=window.location.hash;if(h.startsWith("#quote=")){return JSON.parse(atob(h.slice(7)))}return null}catch{return null}});
-  if(sharedQuote)return <ShareQuotePortal quoteData={sharedQuote} onApprove={()=>setSharedQuote({...sharedQuote,approved:true})}/>;
 
   const [page, setPage] = useState("dashboard");
 
@@ -443,6 +442,9 @@ export default function MidwestAIOS() {
       </div>
     </div>
   );
+
+  // Shared quote portal
+  if(sharedQuote)return <ShareQuotePortal quoteData={sharedQuote} onApprove={()=>setSharedQuote({...sharedQuote,approved:true})}/>;
 
   return (
     <div style={{display:"flex",height:"100vh",width:"100vw",fontFamily:"'Satoshi','Satoshi',sans-serif",background:"#000000",color:"#d4d4d4",overflow:"hidden"}}>
