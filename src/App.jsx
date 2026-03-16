@@ -2214,172 +2214,155 @@ function NotesPage({customSops,addSop,deleteSop,jobs,reps,notify,triggerPrint}){
   return <div style={{animation:"fadeUp 0.4s"}}><Header title="Notes" sub={(customSops||[]).filter(s=>s.cat==="Notes").length+" notes saved"}/><NotesView customSops={customSops} addSop={addSop} deleteSop={deleteSop} jobs={jobs} reps={reps} notify={notify} triggerPrint={triggerPrint}/></div>;
 }
 
-function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading}){
-  const [history,setHistory]=useState([{role:"system",content:"Welcome to the Midwest Brain. I have access to all your live data -- vendors, jobs, deliveries, financials. Ask me anything."}]);
-  const suggestedQueries=["What is our total pipeline revenue?","Which vendor do we spend the most with?","Show me all jobs that are In Progress","What is Jim Harris\'s commission?","Which deliveries are pending?","What is our average margin across all jobs?"];
-  
-  const buildAnswer = (q) => {
-    const ql = q.toLowerCase();
-    
-    // --- VENDOR QUERIES ------------------------------------
-    const matchedVendor = vendors.find(v => ql.includes(v.name.toLowerCase().split(' ')[0].toLowerCase()));
-    if (matchedVendor || ql.includes("vendor")) {
-      if (matchedVendor) {
-        const vendorItems = lineItems.filter(li => li.vendor === matchedVendor.id);
-        const totalSpend = vendorItems.reduce((s, i) => s + i.unitCost * i.qtyOrdered, 0);
-        const jobIds = [...new Set(vendorItems.map(i => i.jobId))];
-        const avgCost = vendorItems.length ? totalSpend / vendorItems.reduce((s, i) => s + i.qtyOrdered, 0) : 0;
-        return `**${matchedVendor.name}**\n\nContact: ${matchedVendor.contact}\nEmail: ${matchedVendor.email}\nPhone: ${matchedVendor.phone}\nCategory: ${matchedVendor.category}\nAddress: ${matchedVendor.address || 'Not set'}\n\n**History from your data:**\n- Total spend: ${fmt(totalSpend)}\n- ${vendorItems.length} line items across ${jobIds.length} jobs\n- Average unit cost: ${fmt(avgCost)}\n- Jobs: ${jobIds.map(id => jobs.find(j => j.id === id)?.name || id).join(', ')}`;
-      }
-      return `**All Vendors (${vendors.length}):**\n\n${vendors.map(v => { const spend = lineItems.filter(li => li.vendor === v.id).reduce((s, i) => s + i.unitCost * i.qtyOrdered, 0); return `- **${v.name}** (${v.category}) -- ${fmt(spend)} total spend -- ${v.contact}`; }).join('\n')}`;
-    }
-    
-    // --- CUSTOMER QUERIES ----------------------------------
-    const matchedCust = customers.find(c => ql.includes(c.name.toLowerCase().split(' ')[0].toLowerCase()));
-    if (matchedCust || ql.includes("customer") || ql.includes("school") || ql.includes("district")) {
-      if (matchedCust) {
-        const custJobs = jobs.filter(j => j.customer === matchedCust.id);
-        const totalRev = custJobs.reduce((s, j) => s + getJobFinancials(j.id).totalRevenue, 0);
-        const avgMargin = custJobs.length ? custJobs.reduce((s, j) => s + getJobFinancials(j.id).margin, 0) / custJobs.length : 0;
-        return `**${matchedCust.name}** (${matchedCust.type})\n\nContact: ${matchedCust.contact}\nEmail: ${matchedCust.email}\nPhone: ${matchedCust.phone}\nAddress: ${matchedCust.address || 'Not set'}\n\n**History:**\n- ${custJobs.length} jobs -- ${fmt(totalRev)} total revenue\n- Average margin: ${pct(avgMargin)}\n- Jobs: ${custJobs.map(j => `${j.name} (${j.phase})`).join(', ')}`;
-      }
-      return `**All Customers (${customers.length}):**\n\n${customers.map(c => { const rev = jobs.filter(j => j.customer === c.id).reduce((s, j) => s + getJobFinancials(j.id).totalRevenue, 0); return `- **${c.name}** (${c.type}) -- ${fmt(rev)} revenue -- ${c.contact}`; }).join('\n')}`;
-    }
-    
-    // --- COMMISSION QUERIES --------------------------------
-    if (ql.includes("commission") || ql.includes("sales rep") || ql.includes("rep")) {
-      return `**Commission Structure (Live Data):**\n\n${reps.map(rep => { const rv = jobs.filter(j => j.salesRep === rep.id).reduce((s, j) => s + getJobFinancials(j.id).totalRevenue, 0); const paidRv = jobs.filter(j => j.salesRep === rep.id && j.paymentStatus === 'paid').reduce((s, j) => s + getJobFinancials(j.id).totalRevenue, 0); return `- **${rep.name}** (${rep.tier}) -- ${(rep.commissionRate * 100).toFixed(1)}% rate\n  Pipeline: ${fmt(rv)} -- Earned: ${fmt(paidRv * rep.commissionRate)} -- Projected: ${fmt(rv * rep.commissionRate)}`; }).join('\n\n')}\n\n**Total pipeline:** ${fmt(jobs.reduce((s, j) => s + getJobFinancials(j.id).totalRevenue, 0))}`;
-    }
-    
-    // --- JOB QUERIES ---------------------------------------
-    if (ql.includes("job") || ql.includes("status") || ql.includes("active") || ql.includes("project")) {
-      const byPhase = {};
-      jobs.forEach(j => { byPhase[j.phase] = (byPhase[j.phase] || 0) + 1; });
-      return `**Jobs (${jobs.length} total):**\n\n${Object.entries(byPhase).map(([phase, count]) => `- ${phase}: ${count}`).join('\n')}\n\n${jobs.map(j => { const f = getJobFinancials(j.id); return `- **${j.name}** (${j.id})\n  ${j.phase} -- ${fmt(f.totalRevenue)} -- ${fmtN(f.totalReceived)}/${fmtN(f.totalOrdered)} delivered -- ${j.paymentStatus}`; }).join('\n\n')}`;
-    }
-    
-    // --- MARGIN QUERIES ------------------------------------
-    if (ql.includes("margin") || ql.includes("profit") || ql.includes("profitab")) {
-      const margins = jobs.map(j => ({ name: j.name, ...getJobFinancials(j.id) }));
-      const avgMargin = margins.reduce((s, m) => s + m.margin, 0) / margins.length;
-      const best = margins.sort((a, b) => b.margin - a.margin)[0];
-      const worst = margins.sort((a, b) => a.margin - b.margin)[0];
-      return `**Margin Analysis (Live Data):**\n\n- Average margin across all jobs: **${pct(avgMargin)}**\n- Best margin: **${best?.name}** at ${pct(best?.margin || 0)}\n- Lowest margin: **${worst?.name}** at ${pct(worst?.margin || 0)}\n- Total profit: ${fmt(margins.reduce((s, m) => s + m.totalRevenue - m.totalCost, 0))}\n\n${margins.sort((a, b) => b.margin - a.margin).map(m => `- ${m.name}: ${pct(m.margin)} margin -- ${fmt(m.totalRevenue)} revenue`).join('\n')}`;
-    }
-    
-    // --- DELIVERY QUERIES ----------------------------------
-    if (ql.includes("delivery") || ql.includes("partial") || ql.includes("shipment") || ql.includes("outstanding")) {
-      const pending = lineItems.filter(i => i.qtyReceived < i.qtyOrdered);
-      const totalOrd = lineItems.reduce((s, i) => s + i.qtyOrdered, 0);
-      const totalRcv = lineItems.reduce((s, i) => s + i.qtyReceived, 0);
-      return `**Delivery Status (Live Data):**\n\n- Overall: ${fmtN(totalRcv)} / ${fmtN(totalOrd)} units received (${pct(totalOrd ? totalRcv / totalOrd * 100 : 0)})\n- ${pending.length} line items still pending\n\n**Outstanding items:**\n${pending.map(i => { const job = jobs.find(j => j.id === i.jobId); const vendor = vendors.find(v => v.id === i.vendor); return `- ${i.description} -- ${fmtN(i.qtyOrdered - i.qtyReceived)} outstanding -- ${vendor?.name || 'Unknown'} -- ${job?.name || 'Unknown job'}`; }).join('\n')}`;
-    }
-    
-    // --- INVOICE QUERIES -----------------------------------
-    if (ql.includes("invoice") || ql.includes("billing") || ql.includes("receivable")) {
-      const uninvoiced = lineItems.filter(i => i.qtyReceived > i.qtyInvoiced);
-      const uninvTotal = uninvoiced.reduce((s, i) => s + i.unitPrice * (i.qtyReceived - i.qtyInvoiced), 0);
-      return `**Invoice Status (Live Data):**\n\n- ${uninvoiced.length} line items received but not yet invoiced\n- Uninvoiced value: **${fmt(uninvTotal)}**\n\n**Ready to invoice:**\n${uninvoiced.map(i => { const job = jobs.find(j => j.id === i.jobId); return `- ${i.description} -- ${fmtN(i.qtyReceived - i.qtyInvoiced)} units x ${fmt(i.unitPrice)} = ${fmt(i.unitPrice * (i.qtyReceived - i.qtyInvoiced))} -- ${job?.name || ''}`; }).join('\n')}`;
-    }
-    
-    // --- REVENUE / FINANCIAL QUERIES -----------------------
-    if (ql.includes("revenue") || ql.includes("financial") || ql.includes("money") || ql.includes("total")) {
-      const totalRev = jobs.reduce((s, j) => s + getJobFinancials(j.id).totalRevenue, 0);
-      const totalCost = jobs.reduce((s, j) => s + getJobFinancials(j.id).totalCost, 0);
-      const byRep = reps.map(r => ({ name: r.name, rev: jobs.filter(j => j.salesRep === r.id).reduce((s, j) => s + getJobFinancials(j.id).totalRevenue, 0) }));
-      return `**Financial Overview (Live Data):**\n\n- Total pipeline revenue: **${fmt(totalRev)}**\n- Total cost: ${fmt(totalCost)}\n- Total profit: **${fmt(totalRev - totalCost)}**\n- Average margin: ${pct(jobs.reduce((s, j) => s + getJobFinancials(j.id).margin, 0) / jobs.length)}\n\n**Revenue by Rep:**\n${byRep.map(r => `- ${r.name}: ${fmt(r.rev)}`).join('\n')}\n\n**By Payment Status:**\n- Paid: ${fmt(jobs.filter(j => j.paymentStatus === 'paid').reduce((s, j) => s + getJobFinancials(j.id).totalRevenue, 0))}\n- Partial: ${fmt(jobs.filter(j => j.paymentStatus === 'partial').reduce((s, j) => s + getJobFinancials(j.id).totalRevenue, 0))}\n- Unpaid: ${fmt(jobs.filter(j => j.paymentStatus === 'unpaid').reduce((s, j) => s + getJobFinancials(j.id).totalRevenue, 0))}`;
-    }
-    
-    // --- DEFAULT -------------------------------------------
-    return `I have access to your full database with **${jobs.length} jobs**, **${vendors.length} vendors**, **${customers.length} customers**, **${reps.length} reps**, and **${lineItems.length} line items**.\n\nTry asking:\n- "Show me all vendors" or "Tell me about Virco"\n- "What are our margins?"\n- "Commission breakdown"\n- "What's outstanding for delivery?"\n- "Revenue overview"\n- "Uninvoiced items"\n- "Tell me about Lincoln" (any customer name)\n- "Active job status"`;
+function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJobItems,brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading}){
+  const [history,setHistory]=useState([{role:"system",content:"Welcome to the Midwest Brain. I'm connected to Claude and have access to all your live data -- jobs, vendors, customers, deliveries, financials, SOPs, notes, and tasks. Ask me anything."}]);
+  const suggestedQueries=["What is our total pipeline revenue?","Which vendor do we spend the most with?","Show me all jobs that are In Progress","What is our average margin?","Which reps have the highest revenue?","List all overdue deliveries","Summarize our commission obligations","What SOPs do we have documented?"];
+  const chatRef=useRef(null);
+  useEffect(()=>{if(chatRef.current)chatRef.current.scrollTop=chatRef.current.scrollHeight},[history]);
+
+  const CLAUDE_KEY = "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";
+
+  const buildContext = () => {
+    const totalRev = jobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
+    const totalCost = jobs.reduce((s,j)=>s+getJobFinancials(j.id).totalCost,0);
+    const avgMargin = jobs.length?jobs.reduce((s,j)=>s+getJobFinancials(j.id).margin,0)/jobs.length:0;
+    const totalOrdered = lineItems.reduce((s,i)=>s+i.qtyOrdered,0);
+    const totalReceived = lineItems.reduce((s,i)=>s+i.qtyReceived,0);
+    const totalInvoiced = lineItems.reduce((s,i)=>s+i.qtyInvoiced,0);
+    const pendingDel = lineItems.filter(i=>i.qtyReceived<i.qtyOrdered).length;
+    const readyToInvoice = lineItems.filter(i=>i.qtyReceived>i.qtyInvoiced).length;
+
+    const jobDetails = jobs.map(j=>{
+      const f=getJobFinancials(j.id);const items=getJobItems?getJobItems(j.id):[];const cust=customers.find(c=>c.id===j.customer);const rep=reps.find(r=>r.id===j.salesRep);
+      return `${j.name}: phase=${j.phase}, customer=${cust?.name||"?"}, rep=${rep?.name||"?"}, revenue=$${f.totalRevenue.toFixed(0)}, cost=$${f.totalCost.toFixed(0)}, margin=${f.margin.toFixed(1)}%, delivered=${f.totalReceived}/${f.totalOrdered}, payment=${j.paymentStatus}, terms=${j.terms||"Net 30"}, created=${j.createdDate}, due=${j.dueDate||"none"}, ${items.length} line items`;
+    }).join("\n");
+
+    const vendorDetails = vendors.map(v=>{
+      const spend=lineItems.filter(i=>i.vendor===v.id).reduce((s,i)=>s+i.unitCost*i.qtyOrdered,0);
+      const itemCount=lineItems.filter(i=>i.vendor===v.id).length;
+      return `${v.name}: category=${v.category}, discount=${(v.discountRate*100).toFixed(0)}%, spend=$${spend.toFixed(0)}, ${itemCount} items, contact=${v.contact||""}, email=${v.email||""}, phone=${v.phone|""}`;
+    }).join("\n");
+
+    const customerDetails = customers.map(c=>{
+      const cJobs=jobs.filter(j=>j.customer===c.id);const rev=cJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
+      return `${c.name}: type=${c.type||""}, ${cJobs.length} jobs, revenue=$${rev.toFixed(0)}, contact=${c.contact||""}, email=${c.email||""}, phone=${c.phone||""}`;
+    }).join("\n");
+
+    const repDetails = reps.filter(r=>!r.id.includes("SEED_FLAG")).map(r=>{
+      const rJobs=jobs.filter(j=>j.salesRep===r.id);const rev=rJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const comm=rev*(r.commissionRate||0);
+      return `${r.name}: territory=${r.territory}, rate=${((r.commissionRate||0)*100).toFixed(1)}%, tier=${r.tier}, ${rJobs.length} jobs, revenue=$${rev.toFixed(0)}, commission=$${comm.toFixed(0)}`;
+    }).join("\n");
+
+    const sopsList = (customSops||[]).filter(s=>s.cat!=="Task"&&s.cat!=="Notes"&&s.cat!=="DocStatuses").map(s=>`SOP: ${s.title} (${s.cat})`).join("\n");
+    const tasksList = (customSops||[]).filter(s=>s.cat==="Task").map(s=>{try{const d=JSON.parse(s.content);return `Task: ${d.text||s.title}, status=${d.status||"To Do"}, due=${d.due||"none"}, assignees=${(d.assignees||[]).join(",")}, priority=${d.priority||"normal"}`}catch{return `Task: ${s.title}`}}).join("\n");
+    const notesList = (customSops||[]).filter(s=>s.cat==="Notes").map(s=>`Note: ${s.title}`).join("\n");
+
+    return `You are the Midwest Brain, the AI assistant for Midwest Educational Furnishings, Inc. -- a 14-year educational furniture company based in Kildeer, IL (21191 N Valley Rd, Kildeer, IL 60047, phone 847-847-1865). Owners: Dave and Maureen Welter. Admin: Lisa Monchunski. Territory: IL and WI. Focus: K-12 education furniture.
+
+FINANCIAL SUMMARY:
+Total Pipeline Revenue: $${totalRev.toFixed(0)}
+Total Cost: $${totalCost.toFixed(0)}
+Average Margin: ${avgMargin.toFixed(1)}%
+Total Profit: $${(totalRev-totalCost).toFixed(0)}
+Items Ordered: ${totalOrdered}, Received: ${totalReceived}, Invoiced: ${totalInvoiced}
+Pending Deliveries: ${pendingDel} items
+Ready to Invoice: ${readyToInvoice} items
+
+JOBS (${jobs.length}):
+${jobDetails}
+
+VENDORS (${vendors.length}):
+${vendorDetails}
+
+CUSTOMERS (${customers.length}):
+${customerDetails}
+
+SALES REPS (${reps.filter(r=>!r.id.includes("SEED_FLAG")).length}):
+${repDetails}
+
+SOPS & DOCUMENTATION:
+${sopsList||"No SOPs documented yet"}
+
+TASKS:
+${tasksList||"No tasks"}
+
+NOTES:
+${notesList||"No notes"}
+
+Answer questions using ONLY the data above. Be specific with real numbers and names. Use bullet points and bold headers for readability. If asked about something not in the data, say so clearly.`;
   };
 
-  const handleQuery = () => {
+  const handleQuery = async () => {
     if (!brainQuery.trim()) return;
     const q = brainQuery.trim();
     setBrainQuery("");
     setHistory(p => [...p, { role: "user", content: q }]);
     setBrainLoading(true);
-    
-    // Try AI API (Claude or OpenAI)
-    const claudeKey = localStorage.getItem('mw_claude_key');
-    const openaiKey = localStorage.getItem('mw_openai_key');
-    const apiKey = claudeKey || openaiKey;
-    const provider = claudeKey ? 'claude' : openaiKey ? 'openai' : null;
-    
-    if (apiKey && provider) {
-      const snap = `VENDORS(${vendors.length}):${vendors.map(v=>v.name+'('+v.category+') '+v.contact+' '+v.email+' '+v.phone).join('; ')}. CUSTOMERS(${customers.length}):${customers.map(c=>c.name+'('+c.type+') '+c.contact).join('; ')}. REPS(${reps.length}):${reps.map(r=>r.name+' '+r.territory+' '+(r.commissionRate*100).toFixed(1)+'% '+r.tier).join('; ')}. JOBS(${jobs.length}):${jobs.map(j=>{const f=getJobFinancials(j.id);return j.name+' '+j.phase+' $'+f.totalRevenue.toFixed(0)+' margin:'+f.margin.toFixed(1)+'% '+f.totalReceived+'/'+f.totalOrdered+'delivered '+j.paymentStatus+' start:'+j.startDate+' due:'+j.dueDate}).join('; ')}. PENDING_DELIVERY:${lineItems.filter(i=>i.qtyReceived<i.qtyOrdered).length} READY_TO_INVOICE:${lineItems.filter(i=>i.qtyReceived>i.qtyInvoiced).length}`;
-      const sysMsg = 'You are the Midwest Brain for Midwest Educational Furnishings, a 14yr educational furniture company in Indiana. Answer from the live data below. Use **bold** headers and bullet points. Be concise and specific with real numbers.\n\nDATA:\n'+snap;
-      
-      const callAI = provider === 'claude'
-        ? fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:1024,system:sysMsg,messages:[{role:'user',content:q}]})}).then(r=>r.json()).then(d=>d.content?.[0]?.text||'No response')
-        : fetch('https://api.openai.com/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+apiKey},body:JSON.stringify({model:'gpt-4o',max_tokens:1024,messages:[{role:'system',content:sysMsg},{role:'user',content:q}]})}).then(r=>r.json()).then(d=>d.choices?.[0]?.message?.content||'No response');
-      
-      callAI.then(answer=>{setHistory(p=>[...p,{role:"assistant",content:answer}]);setBrainLoading(false);})
-      .catch(()=>{const answer=buildAnswer(q);setHistory(p=>[...p,{role:"assistant",content:answer}]);setBrainLoading(false);});
-    } else {
-      setTimeout(()=>{const answer=buildAnswer(q);setHistory(p=>[...p,{role:"assistant",content:answer}]);setBrainLoading(false);},400);
+
+    try {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": CLAUDE_KEY,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true"
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 2048,
+          system: buildContext(),
+          messages: [
+            ...history.filter(h=>h.role==="user"||h.role==="assistant").slice(-6).map(h=>({role:h.role,content:h.content})),
+            {role:"user",content:q}
+          ]
+        })
+      });
+      const data = await response.json();
+      const answer = data.content?.[0]?.text || data.error?.message || "No response received.";
+      setHistory(p => [...p, { role: "assistant", content: answer }]);
+    } catch (err) {
+      setHistory(p => [...p, { role: "assistant", content: "Error connecting to Claude: " + err.message }]);
     }
+    setBrainLoading(false);
   };
-  // AI API key management
-  const [showApiKey,setShowApiKey]=useState(false);
-  const [claudeKeyInput,setClaudeKeyInput]=useState(()=>localStorage.getItem('mw_claude_key')||'');
-  const [openaiKeyInput,setOpenaiKeyInput]=useState(()=>localStorage.getItem('mw_openai_key')||'');
-  const saveKeys=()=>{if(claudeKeyInput)localStorage.setItem('mw_claude_key',claudeKeyInput);else localStorage.removeItem('mw_claude_key');if(openaiKeyInput)localStorage.setItem('mw_openai_key',openaiKeyInput);else localStorage.removeItem('mw_openai_key');notify(claudeKeyInput||openaiKeyInput?'AI key saved -- Brain is now powered by '+(claudeKeyInput?'Claude':'ChatGPT'):'Keys cleared -- using local mode');setShowApiKey(false)};
-  const activeProvider = localStorage.getItem('mw_claude_key') ? 'Claude API' : localStorage.getItem('mw_openai_key') ? 'ChatGPT API' : 'Local mode';
-  return <div style={{animation:"fadeUp 0.4s",display:"flex",flexDirection:"column",height:"calc(100vh - 48px)"}}>
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:12}}>
-      <div>
-        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:4}}>
-          <div style={{width:36,height:36,borderRadius:10,background:"linear-gradient(135deg,rgba(45,212,191,0.15),rgba(167,139,250,0.15))",display:"flex",alignItems:"center",justifyContent:"center"}}><I n="brain" s={18}/></div>
-          <h2 style={{fontSize:22,fontWeight:800,color:"#f0f0f0",letterSpacing:-0.5}}>Midwest Brain</h2>
-          <div style={{padding:"3px 10px",borderRadius:20,background:activeProvider.includes("Claude")?"rgba(45,212,191,0.12)":activeProvider.includes("ChatGPT")?"rgba(52,211,153,0.12)":"rgba(255,255,255,0.04)",fontSize:11,fontWeight:600,color:activeProvider.includes("Claude")?"#2dd4bf":activeProvider.includes("ChatGPT")?"#34d399":"#737373"}}>{activeProvider}</div>
-        </div>
-        <p style={{fontSize:13,color:"#9a9a9a"}}>Ask anything about your business -- live data from {jobs.length} jobs, {vendors.length} vendors, {customers.length} customers</p>
-      </div>
-      <Btn v="secondary" onClick={()=>setShowApiKey(!showApiKey)} style={{fontSize:12}}><I n="settings" s={13}/> {showApiKey?"Close":"AI Setup"}</Btn>
+
+  const renderMsg = (text) => {
+    return text.split("\n").map((line,i) => {
+      const bold = line.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+      if (line.startsWith("- ") || line.startsWith("* ")) return <div key={i} style={{display:"flex",gap:8,padding:"2px 0"}}><div style={{width:5,height:5,borderRadius:"50%",background:"#2dd4bf",marginTop:7,flexShrink:0}}/><span dangerouslySetInnerHTML={{__html:bold.slice(2)}}/></div>;
+      if (bold !== line) return <div key={i} style={{padding:"2px 0"}} dangerouslySetInnerHTML={{__html:bold}}/>;
+      return <div key={i} style={{padding:"2px 0",minHeight:line?"auto":8}}>{line}</div>;
+    });
+  };
+
+  return <div style={{animation:"fadeUp 0.4s"}}>
+    <Header title="Brain" sub="Connected to Claude Sonnet 4"/>
+    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16}}>
+      <div style={{width:10,height:10,borderRadius:"50%",background:"#34d399",boxShadow:"0 0 8px #34d39980"}}/>
+      <span style={{fontSize:13,color:"#34d399",fontWeight:600}}>Live</span>
+      <span style={{fontSize:12,color:"#737373"}}>Claude has access to {jobs.length} jobs, {vendors.length} vendors, {customers.length} customers, {lineItems.length} line items, {(customSops||[]).filter(s=>s.cat==="Task").length} tasks, {(customSops||[]).filter(s=>s.cat==="Notes").length} notes</span>
     </div>
-
-    {showApiKey&&<Card style={{marginBottom:16,border:"1px solid rgba(45,212,191,0.15)",background:"linear-gradient(135deg,rgba(45,212,191,0.02),transparent)"}}>
-      <div style={{fontSize:14,fontWeight:700,color:"#2dd4bf",marginBottom:12}}>AI Configuration</div>
-      <div className="resp-grid-2" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:12,marginBottom:12}}>
-        <div><label style={{fontSize:12,color:"#9a9a9a",display:"block",marginBottom:4}}>Claude API Key (Anthropic)</label><input type="password" value={claudeKeyInput} onChange={e=>setClaudeKeyInput(e.target.value)} placeholder="sk-ant-..." style={inputStyle}/></div>
-        <div><label style={{fontSize:12,color:"#9a9a9a",display:"block",marginBottom:4}}>OpenAI API Key</label><input type="password" value={openaiKeyInput} onChange={e=>setOpenaiKeyInput(e.target.value)} placeholder="sk-..." style={inputStyle}/></div>
-      </div>
-      <div style={{display:"flex",gap:8,marginBottom:8}}><Btn onClick={saveKeys}>Save Keys</Btn><Btn v="secondary" onClick={()=>{setClaudeKeyInput("");setOpenaiKeyInput("");localStorage.removeItem("mw_claude_key");localStorage.removeItem("mw_openai_key");notify("Keys cleared")}}>Clear</Btn></div>
-      <div style={{fontSize:11,color:"#737373"}}>Keys are stored in your browser only. Claude takes priority if both are set.</div>
-    </Card>}
-
-    {/* Suggested queries */}
-    {history.length<=1&&<div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}}>
-      {suggestedQueries.slice(0,4).map((q,i)=><button key={i} onClick={()=>{setBrainQuery(q);}} style={{padding:"8px 14px",borderRadius:20,border:"1px solid rgba(45,212,191,0.15)",background:"transparent",color:"#2dd4bf",fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(45,212,191,0.08)"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>{q}</button>)}
-    </div>}
-
     {/* Chat area */}
-    <div style={{flex:1,display:"flex",flexDirection:"column",background:"#0a0a0a",borderRadius:14,border:"1px solid rgba(255,255,255,0.06)",overflow:"hidden"}}>
-      <div style={{flex:1,overflow:"auto",padding:"20px 16px"}}>
-        {history.map((msg,i)=><div key={i} style={{marginBottom:16,maxWidth:"85%",marginLeft:msg.role==="user"?"auto":0}}>
-          <div style={{padding:"14px 18px",borderRadius:msg.role==="user"?"16px 16px 4px 16px":"16px 16px 16px 4px",background:msg.role==="user"?"linear-gradient(135deg,#2dd4bf,#14b8a6)":msg.role==="system"?"rgba(167,139,250,0.06)":"#111",color:msg.role==="user"?"#000":"#c4c4c4",fontSize:13,lineHeight:1.7,whiteSpace:"pre-wrap",border:msg.role==="user"?"none":"1px solid rgba(255,255,255,0.04)"}}>
-            {msg.content.split("**").map((part,pi)=>pi%2===1?<strong key={pi} style={{color:msg.role==="user"?"#000":"#f0f0f0"}}>{part}</strong>:part)}
-          </div>
-          <div style={{fontSize:11,color:"#737373",marginTop:4,textAlign:msg.role==="user"?"right":"left",paddingLeft:msg.role==="user"?0:4,paddingRight:msg.role==="user"?4:0}}>{msg.role==="user"?"You":"Midwest Brain"}</div>
+    <Card style={{padding:0,overflow:"hidden",marginBottom:16}}>
+      <div ref={chatRef} style={{height:400,overflowY:"auto",padding:16,display:"flex",flexDirection:"column",gap:12,background:"#0a0a0a"}}>
+        {history.map((msg,i)=><div key={i} style={{display:"flex",justifyContent:msg.role==="user"?"flex-end":"flex-start"}}>
+          <div style={{maxWidth:"85%",padding:"10px 14px",borderRadius:msg.role==="user"?"14px 14px 4px 14px":"14px 14px 14px 4px",background:msg.role==="user"?"linear-gradient(135deg,#2dd4bf,#14b8a6)":msg.role==="system"?"rgba(167,139,250,0.08)":"#111",color:msg.role==="user"?"#000":"#e5e5e5",fontSize:13,lineHeight:1.7}}>{msg.role==="system"?<span style={{color:"#a78bfa"}}>{msg.content}</span>:renderMsg(msg.content)}</div>
         </div>)}
-        {brainLoading&&<div style={{maxWidth:"85%"}}><div style={{padding:"14px 18px",background:"#111",borderRadius:"16px 16px 16px 4px",border:"1px solid rgba(255,255,255,0.04)"}}><div style={{display:"flex",gap:6}}><div style={{width:6,height:6,borderRadius:"50%",background:"#2dd4bf",animation:"pulse 1s infinite"}}/>
-          <div style={{width:6,height:6,borderRadius:"50%",background:"#a78bfa",animation:"pulse 1s 0.2s infinite"}}/>
-          <div style={{width:6,height:6,borderRadius:"50%",background:"#34d399",animation:"pulse 1s 0.4s infinite"}}/></div></div></div>}
+        {brainLoading&&<div style={{display:"flex",gap:4,padding:8}}><div style={{width:6,height:6,borderRadius:"50%",background:"#2dd4bf",animation:"pulse 1s infinite"}}/>
+          <div style={{width:6,height:6,borderRadius:"50%",background:"#2dd4bf",animation:"pulse 1s infinite 0.2s"}}/>
+          <div style={{width:6,height:6,borderRadius:"50%",background:"#2dd4bf",animation:"pulse 1s infinite 0.4s"}}/></div>}
       </div>
-      <div style={{padding:"12px 16px",borderTop:"1px solid rgba(255,255,255,0.04)",display:"flex",gap:8,background:"#0a0a0a"}}>
-        <input value={brainQuery} onChange={e=>setBrainQuery(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleQuery()} placeholder="Ask about vendors, margins, deliveries, commissions..." style={{flex:1,padding:"12px 16px",background:"#111",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,color:"#e5e5e5",fontSize:13,outline:"none",fontFamily:"inherit"}}/>
-        <Btn onClick={handleQuery} style={{padding:"12px 20px",borderRadius:10}}><I n="send" s={15}/></Btn>
+      <div style={{display:"flex",gap:8,padding:12,borderTop:"1px solid #1a1a1a",background:"#0a0a0a"}}>
+        <input value={brainQuery} onChange={e=>setBrainQuery(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")handleQuery()}} placeholder="Ask the Brain anything..." style={{flex:1,padding:"10px 14px",background:"#000",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,color:"#e5e5e5",fontSize:13,outline:"none",fontFamily:"inherit"}}/>
+        <button onClick={handleQuery} disabled={brainLoading} style={{padding:"10px 20px",borderRadius:10,border:"none",background:"#2dd4bf",color:"#000",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",opacity:brainLoading?0.5:1}}>Send</button>
       </div>
-    </div>
+    </Card>
+    {/* Suggested queries */}
+    {history.length<=1&&<div style={{display:"flex",flexWrap:"wrap",gap:8}}>{suggestedQueries.map(q=><button key={q} onClick={()=>{setBrainQuery(q);setTimeout(()=>{handleQuery()},50)}} style={{padding:"8px 14px",borderRadius:8,border:"1px solid rgba(45,212,191,0.15)",background:"transparent",color:"#2dd4bf",fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"all 0.2s"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(45,212,191,0.06)"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>{q}</button>)}</div>}
   </div>;
 }
 
-
-// ===============================================================
-// DIRECTORY -- Vendors, Customers, Sales Reps (full CRUD + sort)
-// ===============================================================
 function DirectoryPage({vendors,customers,reps,updateVendor,addVendor,deleteVendor,forceDeleteVendor,forceDeleteCustomer,forceDeleteRep,updateCustomer,addCustomer,deleteCustomer,updateRep,addRep,deleteRep,notify,jobs,lineItems,getJobFinancials,getJobItems,setPage,confirm}){
   
   // Custom checkbox component
