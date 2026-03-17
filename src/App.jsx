@@ -558,6 +558,18 @@ const sharedScreen = sharedQuote ? <ShareQuotePortal quoteData={sharedQuote} onA
         </div>
       </div>
       <style>{`
+          input[type="date"], input[type="datetime-local"], input[type="month"], input[type="week"], input[type="time"] {
+            color-scheme: dark;
+          }
+          input[type="date"]::-webkit-calendar-picker-indicator,
+          input[type="datetime-local"]::-webkit-calendar-picker-indicator {
+            filter: invert(1);
+            cursor: pointer;
+          }
+          select {
+            color-scheme: dark;
+          }
+
         input[type="date"]{color-scheme:dark}
         input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(0.8) brightness(1.2)}
         @keyframes slideIn{from{opacity:0;transform:translateY(-12px)}to{opacity:1;transform:translateY(0)}}
