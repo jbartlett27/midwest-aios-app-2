@@ -484,7 +484,8 @@ function MidwestAIOSInner() {
 
 
 
-if (sharedScreen) return sharedScreen;
+const sharedScreen = sharedQuote ? <ShareQuotePortal quoteData={sharedQuote} onApprove={()=>setSharedQuote({...sharedQuote,approved:true})}/> : null;
+  if (sharedScreen) return sharedScreen;
   if (!appReady) return loadingScreen;
   if (!currentUser) return loginScreen;
 
