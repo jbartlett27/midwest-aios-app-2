@@ -975,7 +975,7 @@ function JobsPage(ctx){
         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,paddingBottom:8,borderBottom:"2px solid "+statusColor(phase)}}><div style={{width:8,height:8,borderRadius:"50%",background:statusColor(phase)}}/><span style={{fontSize:13,fontWeight:700,color:"#e5e5e5"}}>{phase}</span><span style={{fontSize:12,color:"#a3a3a3",marginLeft:"auto"}}>{sortedJobs.filter(j=>j.phase===phase).length}</span></div>
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
           {sortedJobs.filter(j=>j.phase===phase).map(job=>{const f=getJobFinancials(job.id);return <div key={job.id} draggable onDragStart={e=>handleDragStart(e,job.id)} onClick={()=>setSelectedJob(job.id)} style={{background:"#1a1a1a",borderRadius:8,padding:12,cursor:"grab",border:"1px solid rgba(255,255,255,0.06)",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="#2dd4bf44";e.currentTarget.style.transform="translateY(-1px)"}} onMouseLeave={e=>{e.currentTarget.style.borderColor="#333333";e.currentTarget.style.transform="translateY(0)"}}>
-            <div style={{fontSize:13,fontWeight:600,color:"#e5e5e5",marginBottom:4}}><span style={{fontFamily:"'JetBrains Mono',monospace",color:"#525252",fontSize:11,marginRight:6}}>{ctx.jobNum?.(job.id)}</span>{job.name}</div>
+            <div style={{fontSize:13,fontWeight:600,color:"#e5e5e5",marginBottom:4}}><span style={{fontFamily:"'JetBrains Mono',monospace",color:"#525252",fontSize:11,marginRight:6}}>{jobNum?.(job.id)}</span>{job.name}</div>
             <div style={{fontSize:12,color:"#a3a3a3",marginBottom:6}}>{customers.find(c=>c.id===job.customer)?.name}</div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <span style={{fontSize:12,fontWeight:600,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(f.totalRevenue)}</span>
@@ -1153,7 +1153,7 @@ function JobDetail({job,ctx}){
 // ===============================================================
 // DELIVERY CALENDAR
 // ===============================================================
-function DeliveryCalendar({jobs,lineItems,vendors,customers,getJobItems,setPage,setSelectedJob,notify}){
+function DeliveryCalendar({jobs,lineItems,vendors,customers,getJobItems,setPage,setSelectedJob,notify,jobNum}){
   const [monthOffset,setMonthOffset]=useState(0);
   const now=new Date();
   const viewDate=new Date(now.getFullYear(),now.getMonth()+monthOffset,1);
@@ -1204,7 +1204,7 @@ function DeliveryCalendar({jobs,lineItems,vendors,customers,getJobItems,setPage,
 // ===============================================================
 // DELIVERY TRACKER -- Real updates to state
 // ===============================================================
-function DeliveryPage({jobs,lineItems,vendors,customers,getItemStatus,getJobItems,updateLineItem,setPage,setSelectedJob,notify}){
+function DeliveryPage({jobs,lineItems,vendors,customers,getItemStatus,getJobItems,updateLineItem,setPage,setSelectedJob,notify,jobNum}){
   const [deliveryView,setDeliveryView]=useState("tracker");
   const [delFilter,setDelFilter]=useState("pending");
   const [receiveModal,setReceiveModal]=useState(null);
@@ -1241,7 +1241,7 @@ function DeliveryPage({jobs,lineItems,vendors,customers,getItemStatus,getJobItem
       return <Card key={job.id} style={{marginBottom:16}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
           <div>
-            <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:15,fontWeight:700,color:"#e5e5e5"}}><span style={{fontFamily:"'JetBrains Mono',monospace",color:"#525252",fontSize:11,marginRight:6}}>{ctx.jobNum?.(job.id)}</span>{job.name}</span><Badge label={job.phase} color={statusColor(job.phase)}/></div>
+            <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:15,fontWeight:700,color:"#e5e5e5"}}><span style={{fontFamily:"'JetBrains Mono',monospace",color:"#525252",fontSize:11,marginRight:6}}>{jobNum?.(job.id)}</span>{job.name}</span><Badge label={job.phase} color={statusColor(job.phase)}/></div>
             <div style={{fontSize:12,color:"#a3a3a3",marginTop:2}}>{job.id} - {items.length} items pending - {fmtN(totalOut)} units outstanding</div>
           </div>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
@@ -1603,7 +1603,7 @@ function CommissionsPage({jobs,reps,customers,updateRep,addRep,deleteRep,getJobF
 // ===============================================================
 // SALES PORTAL
 // ===============================================================
-function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobItems,vendors,setPage,setSelectedJob,updateJob,notify,addSop,deleteSop,customSops,triggerPrint}){
+function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobItems,vendors,setPage,setSelectedJob,updateJob,notify,addSop,deleteSop,customSops,triggerPrint,jobNum}){
   const [activeRep,setActiveRep]=useState("overview");
   const [crmTab,setCrmTab]=useState("pipeline");
   const [noteText,setNoteText]=useState("");
@@ -1789,7 +1789,7 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
 // ===============================================================
 // CUSTOMER 360 - Full Customer Profile
 // ===============================================================
-function Customer360Page({jobs,lineItems,vendors,customers,reps,getJobFinancials,getJobItems,setPage,setSelectedJob,notify,updateCustomer}){
+function Customer360Page({jobs,lineItems,vendors,customers,reps,getJobFinancials,getJobItems,setPage,setSelectedJob,notify,updateCustomer,jobNum}){
   const custId=window._viewCustId||customers[0]?.id;
   const cust=customers.find(c=>c.id===custId);
   if(!cust) return <div style={{animation:"fadeUp 0.4s"}}><Header title="Customer Profile" sub="Select a customer from the Directory"/><Card style={{textAlign:"center",padding:40}}><div style={{color:"#737373",fontSize:14}}>No customer selected. Go to Directory and click a customer name.</div></Card></div>;
