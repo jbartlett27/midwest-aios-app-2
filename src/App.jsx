@@ -440,8 +440,10 @@ function MidwestAIOSInner() {
     {id:"brain",label:"Midwest Brain",icon:"brain"},
     {id:"exitready",label:"Exit Readiness",icon:"shield"},
     {id:"qbsetup",label:"QuickBooks",icon:"settings"},
+    {id:"usermgmt",label:"Users & Permissions",icon:"shield"},
   ].filter(item => {
     if (userRole === "admin") return true;
+    if (item.id === "usermgmt") return false;
     if (userRole === "office") return !["financials","commissions","exitready"].includes(item.id);
     if (userRole === "sales") return ["dashboard","jobs","documents","deliveries","tasks","notes","brain","salesportal"].includes(item.id);
     return true;
@@ -466,20 +468,28 @@ function MidwestAIOSInner() {
 
 
   // Login screen
-  const [loginMode, setLoginMode] = useState("login"); // login or register
-  const [regRole, setRegRole] = useState("sales");
   // Login screen rendered conditionally in main return
-  const loginScreen = <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",width:"100vw",background:"#000",fontFamily:"'Satoshi',sans-serif",position:"relative"}}>
-    <div style={{position:"absolute",inset:0,overflow:"hidden"}}><div style={{position:"absolute",top:"-20%",left:"-10%",width:"50vw",height:"50vw",borderRadius:"50%",background:"radial-gradient(circle,rgba(45,212,191,0.06) 0%,transparent 70%)",animation:"floatA 12s ease-in-out infinite"}}/><div style={{position:"absolute",bottom:"-15%",right:"-10%",width:"40vw",height:"40vw",borderRadius:"50%",background:"radial-gradient(circle,rgba(167,139,250,0.05) 0%,transparent 70%)",animation:"floatA 15s ease-in-out infinite reverse"}}/></div>
-    <style>{"@keyframes floatA{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-20px,30px) scale(0.95)}} @keyframes slideIn{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}} @keyframes gPulse{0%,100%{box-shadow:0 0 20px rgba(45,212,191,0.1)}50%{box-shadow:0 0 40px rgba(45,212,191,0.2)}}"}</style>
-    <div style={{width:"100%",maxWidth:420,padding:32,position:"relative",zIndex:1,animation:"slideIn 0.6s ease-out"}}>
-      <div style={{textAlign:"center",marginBottom:36}}><div style={{display:"inline-flex",width:72,height:72,borderRadius:18,overflow:"hidden",marginBottom:16,animation:"gPulse 3s ease-in-out infinite"}}><img src={MW_LOGO} alt="MW" style={{height:72,width:72,objectFit:"contain"}}/></div><div style={{fontSize:22,fontWeight:800,color:"#f0f0f0"}}>Midwest Educational Furnishings</div><div style={{fontSize:13,color:"#525252",marginTop:6,letterSpacing:1}}>AI OPERATING SYSTEM</div></div>
-      <div style={{background:"rgba(17,17,17,0.8)",backdropFilter:"blur(20px)",borderRadius:20,border:"1px solid rgba(255,255,255,0.06)",padding:28,boxShadow:"0 20px 60px rgba(0,0,0,0.5)"}}>
-        <div style={{display:"flex",gap:2,background:"#0a0a0a",padding:3,borderRadius:10,marginBottom:24}}><button onClick={()=>setLoginMode("login")} style={{flex:1,padding:8,borderRadius:8,border:"none",background:loginMode==="login"?"#2dd4bf":"transparent",color:loginMode==="login"?"#000":"#525252",fontSize:13,fontWeight:loginMode==="login"?700:400,cursor:"pointer",fontFamily:"inherit"}}>Sign In</button><button onClick={()=>setLoginMode("register")} style={{flex:1,padding:8,borderRadius:8,border:"none",background:loginMode==="register"?"#a78bfa":"transparent",color:loginMode==="register"?"#000":"#525252",fontSize:13,fontWeight:loginMode==="register"?700:400,cursor:"pointer",fontFamily:"inherit"}}>New User</button></div>
-        {loginMode==="login"&&<div><input id="lu" placeholder="Username" autoFocus style={{width:"100%",padding:"12px 16px",background:"#000",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,color:"#f0f0f0",fontSize:16,fontFamily:"inherit",outline:"none",boxSizing:"border-box",marginBottom:12}}/><input id="lp" type="password" placeholder="Password" style={{width:"100%",padding:"12px 16px",background:"#000",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,color:"#f0f0f0",fontSize:16,fontFamily:"inherit",outline:"none",boxSizing:"border-box",marginBottom:16}} onKeyDown={e=>{if(e.key==="Enter")document.getElementById("loginBtn").click()}}/>{loginError&&<div style={{fontSize:12,color:"#f87171",marginBottom:12,textAlign:"center",padding:"8px",background:"rgba(248,113,113,0.06)",borderRadius:8}}>{loginError}</div>}<button id="loginBtn" onClick={async()=>{setLoginError("");const u=document.getElementById("lu").value.trim().toLowerCase();const p=document.getElementById("lp").value;if(!u||!p){setLoginError("Enter username and password");return}const user=await db.loginUser(u,p);if(user){setCurrentUser(user);sessionStorage.setItem("mw_user",JSON.stringify(user))}else{setLoginError("Invalid username or password")}}} style={{width:"100%",padding:13,borderRadius:12,border:"none",background:"linear-gradient(135deg,#2dd4bf,#14b8a6)",color:"#000",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Sign In</button></div>}
-        {loginMode==="register"&&<div><input id="rn" placeholder="Full Name" style={{width:"100%",padding:"12px 16px",background:"#000",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,color:"#f0f0f0",fontSize:16,fontFamily:"inherit",outline:"none",boxSizing:"border-box",marginBottom:12}}/><input id="ru" placeholder="Username" style={{width:"100%",padding:"12px 16px",background:"#000",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,color:"#f0f0f0",fontSize:16,fontFamily:"inherit",outline:"none",boxSizing:"border-box",marginBottom:12}}/><input id="rp" type="password" placeholder="Password" style={{width:"100%",padding:"12px 16px",background:"#000",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,color:"#f0f0f0",fontSize:16,fontFamily:"inherit",outline:"none",boxSizing:"border-box",marginBottom:12}}/><div style={{display:"flex",gap:4,marginBottom:12}}>{[{v:"admin",l:"Admin",c:"#2dd4bf"},{v:"office",l:"Office",c:"#a78bfa"},{v:"sales",l:"Sales",c:"#fbbf24"}].map(r=><button key={r.v} onClick={()=>setRegRole(r.v)} style={{flex:1,padding:8,borderRadius:8,border:"1px solid "+(regRole===r.v?r.c+"50":"#222"),background:regRole===r.v?r.c+"15":"transparent",color:regRole===r.v?r.c:"#525252",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>{r.l}</button>)}</div>{regRole==="sales"&&<select id="rrep" style={{width:"100%",padding:"12px 16px",background:"#000",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,color:"#f0f0f0",fontSize:16,fontFamily:"inherit",outline:"none",boxSizing:"border-box",marginBottom:12}}><option value="">Link to sales rep...</option><option value="S004">Jim Harris</option><option value="S005">Jim Lindner</option><option value="S006">Jackie Biller</option></select>}{loginError&&<div style={{fontSize:12,color:"#f87171",marginBottom:12,textAlign:"center",padding:"8px",background:"rgba(248,113,113,0.06)",borderRadius:8}}>{loginError}</div>}<button onClick={async()=>{setLoginError("");const name=document.getElementById("rn").value.trim();const u=document.getElementById("ru").value.trim().toLowerCase();const p=document.getElementById("rp").value;if(!name||!u||!p){setLoginError("All fields required");return}const rep_id=regRole==="sales"?(document.getElementById("rrep")?.value||""):"";const user={id:"USR-"+Math.random().toString(36).slice(2,8),username:u,password:p,role:regRole,rep_id,name};const res=await db.saveUser(user);if(res?.ok){setCurrentUser(user);sessionStorage.setItem("mw_user",JSON.stringify(user))}else{setLoginError("Username may already exist")}}} style={{width:"100%",padding:13,borderRadius:12,border:"none",background:"linear-gradient(135deg,#a78bfa,#8b5cf6)",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Create Account</button></div>}
+  const loginScreen = <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",width:"100vw",background:"#000",fontFamily:"'Satoshi',sans-serif",position:"relative",overflow:"hidden"}}>
+    <div style={{position:"absolute",inset:0}}>
+      <div style={{position:"absolute",top:"-15%",left:"-5%",width:"45vw",height:"45vw",borderRadius:"50%",background:"radial-gradient(circle,rgba(45,212,191,0.08) 0%,transparent 65%)",animation:"floatA 14s ease-in-out infinite"}}/>
+      <div style={{position:"absolute",bottom:"-10%",right:"-5%",width:"35vw",height:"35vw",borderRadius:"50%",background:"radial-gradient(circle,rgba(167,139,250,0.06) 0%,transparent 65%)",animation:"floatA 18s ease-in-out infinite reverse"}}/>
+    </div>
+    <style>{"@keyframes floatA{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-15px,20px) scale(0.97)}}"}</style>
+    <div style={{width:"100%",maxWidth:400,padding:32,position:"relative",zIndex:1}}>
+      <div style={{textAlign:"center",marginBottom:40}}>
+        <div style={{display:"inline-block",width:100,height:100,borderRadius:22,overflow:"hidden",marginBottom:20,boxShadow:"0 0 40px rgba(45,212,191,0.15)"}}><img src={MW_LOGO} alt="MW" style={{height:100,width:100,objectFit:"contain"}}/></div>
+        <div style={{fontSize:24,fontWeight:800,color:"#f0f0f0",fontFamily:"'Satoshi',sans-serif",letterSpacing:-0.5}}>Midwest Educational Furnishings</div>
+        <div style={{fontSize:14,color:"#a3a3a3",marginTop:8,letterSpacing:2,fontFamily:"'JetBrains Mono',monospace"}}>AI OPERATING SYSTEM</div>
       </div>
-      <div style={{textAlign:"center",marginTop:20,fontSize:11,color:"#333"}}>Designing Spaces | Building Futures | WBE Certified</div>
+      <div style={{background:"rgba(17,17,17,0.45)",backdropFilter:"blur(8px) saturate(220%) brightness(1.15)",WebkitBackdropFilter:"blur(8px) saturate(220%) brightness(1.15)",borderRadius:22,border:"1px solid rgba(255,255,255,0.12)",padding:32,boxShadow:"0 24px 64px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08)"}}>
+        <div style={{fontSize:18,fontWeight:700,color:"#f0f0f0",marginBottom:6}}>Sign In</div>
+        <div style={{fontSize:13,color:"#a3a3a3",marginBottom:24}}>Enter your credentials to access the system</div>
+        <div style={{marginBottom:16}}><label style={{fontSize:13,color:"#c4c4c4",display:"block",marginBottom:6}}>Username</label><input id="lu" placeholder="Enter username" autoFocus autoComplete="username" style={{width:"100%",padding:"14px 16px",background:"rgba(0,0,0,0.5)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,color:"#f0f0f0",fontSize:16,fontFamily:"'Satoshi',sans-serif",outline:"none",boxSizing:"border-box",transition:"border 0.2s"}} onFocus={e=>e.target.style.borderColor="rgba(45,212,191,0.4)"} onBlur={e=>e.target.style.borderColor="rgba(255,255,255,0.08)"}/></div>
+        <div style={{marginBottom:24}}><label style={{fontSize:13,color:"#c4c4c4",display:"block",marginBottom:6}}>Password</label><input id="lp" type="password" placeholder="Enter password" autoComplete="current-password" style={{width:"100%",padding:"14px 16px",background:"rgba(0,0,0,0.5)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,color:"#f0f0f0",fontSize:16,fontFamily:"'Satoshi',sans-serif",outline:"none",boxSizing:"border-box",transition:"border 0.2s"}} onFocus={e=>e.target.style.borderColor="rgba(45,212,191,0.4)"} onBlur={e=>e.target.style.borderColor="rgba(255,255,255,0.08)"} onKeyDown={e=>{if(e.key==="Enter")document.getElementById("loginBtn").click()}}/></div>
+        {loginError&&<div style={{fontSize:13,color:"#f87171",marginBottom:16,textAlign:"center",padding:"10px 14px",background:"rgba(248,113,113,0.06)",borderRadius:10,border:"1px solid rgba(248,113,113,0.12)"}}>{loginError}</div>}
+        <button id="loginBtn" onClick={async()=>{setLoginError("");const u=document.getElementById("lu").value.trim().toLowerCase();const p=document.getElementById("lp").value;if(!u||!p){setLoginError("Enter username and password");return}const user=await db.loginUser(u,p);if(user){setCurrentUser(user);sessionStorage.setItem("mw_user",JSON.stringify(user))}else{setLoginError("Invalid username or password")}}} style={{width:"100%",padding:"14px",borderRadius:12,border:"none",background:"linear-gradient(135deg,#2dd4bf,#14b8a6)",color:"#000",fontSize:15,fontWeight:700,cursor:"pointer",fontFamily:"'Satoshi',sans-serif",transition:"all 0.2s",boxShadow:"0 4px 20px rgba(45,212,191,0.25)"}} onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-1px)";e.currentTarget.style.boxShadow="0 8px 28px rgba(45,212,191,0.35)"}} onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="0 4px 20px rgba(45,212,191,0.25)"}}>Sign In</button>
+      </div>
+      <div style={{textAlign:"center",marginTop:24,fontSize:13,color:"#525252",fontFamily:"'Satoshi',sans-serif"}}>Designing Spaces | Building Futures | WBE Certified</div>
     </div>
   </div>;
 
@@ -558,6 +568,7 @@ const sharedScreen = sharedQuote ? <ShareQuotePortal quoteData={sharedQuote} onA
           {page==="brain"&&<BrainPage {...ctx}/>}
           {page==="exitready"&&<ExitReadinessPage {...ctx}/>}
           {page==="qbsetup"&&<QBSetupPage {...ctx}/>}
+          {page==="usermgmt"&&<UserMgmtPage {...ctx}/>}
         </div>
       </div>
       <style>{`
@@ -2571,6 +2582,71 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
         </Card>)}
       </div>
     </div>}
+  </div>;
+}
+
+function UserMgmtPage({notify,reps}){
+  const [users,setUsers]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [showAdd,setShowAdd]=useState(false);
+  const [newUser,setNewUser]=useState({name:"",username:"",password:"",role:"sales",rep_id:""});
+
+  useEffect(()=>{(async()=>{const data=await db.fetchUsers();if(data)setUsers(data);setLoading(false)})()},[]);
+
+  const addUser=async()=>{if(!newUser.name||!newUser.username||!newUser.password){notify("All fields required");return}const user={id:"USR-"+Math.random().toString(36).slice(2,8).toUpperCase(),username:newUser.username.trim().toLowerCase(),password:newUser.password,role:newUser.role,rep_id:newUser.role==="sales"?newUser.rep_id:"",name:newUser.name.trim()};const res=await db.saveUser(user);if(res?.ok){setUsers(p=>[...p,user]);setNewUser({name:"",username:"",password:"",role:"sales",rep_id:""});setShowAdd(false);notify("User created: "+user.name)}else{notify("Error creating user -- username may exist")}};
+
+  const deleteUser=async(id)=>{if(!confirm("Delete this user?"))return;await db.deleteUser(id);setUsers(p=>p.filter(u=>u.id!==id));notify("User deleted")};
+
+  const roleColor={admin:"#2dd4bf",office:"#a78bfa",sales:"#fbbf24"};
+
+  return <div style={{animation:"fadeUp 0.4s"}}>
+    <Header title="Users & Permissions" sub="Manage team access"/>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
+      <div style={{fontSize:13,color:"#a3a3a3"}}>{users.length} user{users.length!==1?"s":""} configured</div>
+      <Btn onClick={()=>setShowAdd(!showAdd)}>{showAdd?"Cancel":"+ Add User"}</Btn>
+    </div>
+
+    {showAdd&&<Card style={{padding:20,marginBottom:16,border:"1px solid rgba(45,212,191,0.15)"}}>
+      <div style={{fontSize:15,fontWeight:700,color:"#2dd4bf",marginBottom:14}}>New User</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:10,marginBottom:12}}>
+        <div><label style={{fontSize:13,color:"#c4c4c4",display:"block",marginBottom:4}}>Full Name</label><input value={newUser.name} onChange={e=>setNewUser({...newUser,name:e.target.value})} style={{width:"100%",padding:"10px 14px",background:"#000",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,color:"#f0f0f0",fontSize:14,fontFamily:"inherit",outline:"none",boxSizing:"border-box"}} placeholder="Full name"/></div>
+        <div><label style={{fontSize:13,color:"#c4c4c4",display:"block",marginBottom:4}}>Username</label><input value={newUser.username} onChange={e=>setNewUser({...newUser,username:e.target.value})} style={{width:"100%",padding:"10px 14px",background:"#000",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,color:"#f0f0f0",fontSize:14,fontFamily:"inherit",outline:"none",boxSizing:"border-box"}} placeholder="Username"/></div>
+        <div><label style={{fontSize:13,color:"#c4c4c4",display:"block",marginBottom:4}}>Password</label><input value={newUser.password} onChange={e=>setNewUser({...newUser,password:e.target.value})} type="password" style={{width:"100%",padding:"10px 14px",background:"#000",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,color:"#f0f0f0",fontSize:14,fontFamily:"inherit",outline:"none",boxSizing:"border-box"}} placeholder="Password"/></div>
+      </div>
+      <div style={{marginBottom:12}}><label style={{fontSize:13,color:"#c4c4c4",display:"block",marginBottom:6}}>Role</label><div style={{display:"flex",gap:6}}>{[{v:"admin",l:"Admin",d:"Full access to everything"},{v:"office",l:"Office Manager",d:"All except financials & commissions"},{v:"sales",l:"Sales Rep",d:"Own jobs only"}].map(r=><button key={r.v} onClick={()=>setNewUser({...newUser,role:r.v})} style={{flex:1,padding:"10px",borderRadius:10,border:"1px solid "+(newUser.role===r.v?roleColor[r.v]+"60":"#222"),background:newUser.role===r.v?roleColor[r.v]+"12":"transparent",color:newUser.role===r.v?roleColor[r.v]:"#737373",fontSize:13,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s",textAlign:"center"}}><div style={{fontWeight:600,marginBottom:2}}>{r.l}</div><div style={{fontSize:11,opacity:0.7}}>{r.d}</div></button>)}</div></div>
+      {newUser.role==="sales"&&<div style={{marginBottom:12}}><label style={{fontSize:13,color:"#c4c4c4",display:"block",marginBottom:4}}>Link to Sales Rep</label><select value={newUser.rep_id} onChange={e=>setNewUser({...newUser,rep_id:e.target.value})} style={{width:"100%",padding:"10px 14px",background:"#000",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,color:"#f0f0f0",fontSize:14,fontFamily:"inherit",outline:"none",boxSizing:"border-box"}}><option value="">Select rep...</option>{reps.filter(r=>!r.id.includes("SEED_FLAG")).map(r=><option key={r.id} value={r.id}>{r.name} -- {r.territory}</option>)}</select></div>}
+      <Btn onClick={addUser}>Create User</Btn>
+    </Card>}
+
+    {loading?<div style={{textAlign:"center",padding:40,color:"#737373"}}>Loading users...</div>:
+    <div style={{display:"grid",gap:10}}>
+      {users.map(u=><Card key={u.id} style={{padding:16}} hover>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+          <div style={{display:"flex",alignItems:"center",gap:12}}>
+            <div style={{width:40,height:40,borderRadius:12,background:(roleColor[u.role]||"#525252")+"15",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:800,color:roleColor[u.role]||"#525252",fontFamily:"'JetBrains Mono',monospace"}}>{(u.name||"?")[0]}</div>
+            <div>
+              <div style={{fontSize:15,fontWeight:600,color:"#f0f0f0"}}>{u.name}</div>
+              <div style={{fontSize:13,color:"#a3a3a3",fontFamily:"'JetBrains Mono',monospace"}}>{u.username}</div>
+            </div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <Badge label={u.role} color={roleColor[u.role]||"#525252"}/>
+            {u.rep_id&&<span style={{fontSize:12,color:"#737373"}}>{reps.find(r=>r.id===u.rep_id)?.name||u.rep_id}</span>}
+            {u.id!=="USR-000"&&<button onClick={()=>deleteUser(u.id)} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #333",background:"transparent",color:"#737373",fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.color="#f87171";e.currentTarget.style.borderColor="#f87171"}} onMouseLeave={e=>{e.currentTarget.style.color="#737373";e.currentTarget.style.borderColor="#333"}}>Remove</button>}
+          </div>
+        </div>
+        <div style={{marginTop:10,fontSize:12,color:"#525252"}}>{u.role==="admin"?"Full access: all jobs, financials, commissions, settings":u.role==="office"?"All except: financials, commissions, exit readiness":"Sees only assigned jobs, no financial details"}</div>
+      </Card>)}
+    </div>}
+
+    <Card style={{marginTop:20,padding:16,border:"1px solid rgba(167,139,250,0.1)"}}>
+      <div style={{fontSize:14,fontWeight:700,color:"#a78bfa",marginBottom:8}}>Permission Levels</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(250px,1fr))",gap:12}} className="resp-grid-3">
+        <div style={{padding:12,background:"#000",borderRadius:10}}><div style={{fontSize:13,fontWeight:600,color:"#2dd4bf",marginBottom:6}}>Admin</div><div style={{fontSize:12,color:"#a3a3a3",lineHeight:1.6}}>Full access to all pages including Command Center, Job Records, Documents, Financials, Commissions, Exit Readiness, Brain, Data Import, QuickBooks, and Users & Permissions.</div></div>
+        <div style={{padding:12,background:"#000",borderRadius:10}}><div style={{fontSize:13,fontWeight:600,color:"#a78bfa",marginBottom:6}}>Office Manager</div><div style={{fontSize:12,color:"#a3a3a3",lineHeight:1.6}}>Access to all operational pages: Jobs, Documents, Deliveries, Directory, Tasks, Notes, Sales Portal, Playbook, and Brain. Cannot see Financials, Commissions, or Exit Readiness.</div></div>
+        <div style={{padding:12,background:"#000",borderRadius:10}}><div style={{fontSize:13,fontWeight:600,color:"#fbbf24",marginBottom:6}}>Sales Rep</div><div style={{fontSize:12,color:"#a3a3a3",lineHeight:1.6}}>Sees only their own assigned jobs. Access to Dashboard (own data), Job Records, Documents, Deliveries, Tasks, Notes, Brain, and Sales Portal. Cannot see other reps' data.</div></div>
+      </div>
+    </Card>
   </div>;
 }
 
