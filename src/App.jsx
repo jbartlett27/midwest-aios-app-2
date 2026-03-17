@@ -982,6 +982,12 @@ function DiscInput({initial,onCommit,style}){
   const [val,setVal]=useState(String(initial||""));
   return <input type="number" value={val} onClick={e=>e.stopPropagation()} onMouseDown={e=>e.stopPropagation()} onChange={e=>{setVal(e.target.value);const pct=parseFloat(e.target.value);if(!isNaN(pct))onCommit(pct)}} style={style} placeholder="0" min="0" max="100" step="1"/>;
 }
+function QuoteColToggle({jobId}){
+  const [qvc,setQvc]=useState(()=>{try{return JSON.parse(localStorage.getItem("mw_qvc_"+jobId)||localStorage.getItem("mw_hidden_cols")||'{"manuf":true,"model":true,"shippingEach":true,"installEach":true}')}catch{return {manuf:true,model:true,shippingEach:true,installEach:true}}});
+  const cols=[{key:"tag",label:"Tag"},{key:"manuf",label:"Manuf."},{key:"model",label:"Model #"},{key:"description",label:"Description"},{key:"color",label:"Color"},{key:"qty",label:"Qty"},{key:"shippingEach",label:"Shipping Each"},{key:"shippingTotal",label:"Shipping Total"},{key:"installEach",label:"Install Each"},{key:"installTotal",label:"Install Total"},{key:"unitPrice",label:"Your Price"},{key:"lineTotal",label:"Line Total"}];
+  const toggle=(key)=>{const next={...qvc,[key]:!qvc[key]};setQvc(next);try{localStorage.setItem("mw_qvc_"+jobId,JSON.stringify(next));localStorage.setItem("mw_hidden_cols",JSON.stringify(next))}catch{}};
+  return <div style={{display:"flex",flexWrap:"wrap",gap:4}}>{cols.map(c=>{const hidden=!!qvc[c.key];return <button key={c.key} onClick={()=>toggle(c.key)} style={{padding:"5px 12px",borderRadius:8,border:"1px solid "+(hidden?"#333":"#2dd4bf"),background:hidden?"transparent":"rgba(45,212,191,0.08)",color:hidden?"#525252":"#2dd4bf",fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s",fontWeight:hidden?400:600}}>{hidden?"":"\u2713 "}{c.label}</button>})}</div>;
+}
 function JobDetail({job,ctx}){
   if(!job||!ctx)return <div style={{padding:40,textAlign:"center",color:"#f87171"}}>Missing job data. <button onClick={()=>ctx?.setSelectedJob?.(null)} style={{color:"#2dd4bf",background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",textDecoration:"underline"}}>Back to jobs</button></div>;
   const {getJobFinancials,getJobItems,getItemStatus,vendors,customers,reps,updateJob,addJob,addLineItem,updateLineItem,deleteLineItem,deleteJob,setSelectedJob,notify,lineItems,jobs,triggerPrint,updateVendor}=ctx;
@@ -1032,7 +1038,7 @@ function JobDetail({job,ctx}){
       {/* Quote Column Visibility */}
       <Card style={{padding:14,marginBottom:16,border:"1px solid rgba(45,212,191,0.1)"}}>
         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,flexWrap:"wrap"}}><div style={{fontSize:13,fontWeight:700,color:"#2dd4bf"}}>Quote Columns</div><span style={{fontSize:11,color:"#737373"}}>Select which columns appear on quotes for this project</span></div>
-        <div style={{display:"flex",flexWrap:"wrap",gap:4}}>{[{key:"tag",label:"Tag"},{key:"manuf",label:"Manuf."},{key:"model",label:"Model #"},{key:"description",label:"Description"},{key:"color",label:"Color"},{key:"qty",label:"Qty"},{key:"shippingEach",label:"Shipping Each"},{key:"shippingTotal",label:"Shipping Total"},{key:"installEach",label:"Install Each"},{key:"installTotal",label:"Install Total"},{key:"unitPrice",label:"Your Price"},{key:"lineTotal",label:"Line Total"}].map(c=>{const qvc=(()=>{try{return JSON.parse(localStorage.getItem("mw_qvc_"+job.id)||localStorage.getItem("mw_hidden_cols")||"{}") }catch{return {"manuf":true,"model":true,"shippingEach":true,"installEach":true}}})();const hidden=!!qvc[c.key];return <button key={c.key} onClick={()=>{const next={...qvc,[c.key]:!hidden};try{localStorage.setItem("mw_qvc_"+job.id,JSON.stringify(next));localStorage.setItem("mw_hidden_cols",JSON.stringify(next))}catch{}}} style={{padding:"5px 12px",borderRadius:8,border:"1px solid "+(hidden?"#333":"#2dd4bf"),background:hidden?"transparent":"rgba(45,212,191,0.08)",color:hidden?"#525252":"#2dd4bf",fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s",fontWeight:hidden?400:600}}>{hidden?"":"\u2713 "}{c.label}</button>})}</div>
+        <QuoteColToggle jobId={job.id}/>
       </Card>
       </div>
 
