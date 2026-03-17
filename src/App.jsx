@@ -1265,10 +1265,10 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
   const [hiddenCols,setHiddenCols]=useState(()=>{try{return JSON.parse(localStorage.getItem("mw_hidden_cols")||'{"manuf":true,"model":true,"shippingEach":true,"installEach":true}')}catch{return {manuf:true,model:true,shippingEach:true,installEach:true}}});
   const toggleCol=(col)=>{const next={...hiddenCols,[col]:!hiddenCols[col]};setHiddenCols(next);try{localStorage.setItem("mw_hidden_cols",JSON.stringify(next))}catch{};if(previewDoc?.job?.id){updateJob(previewDoc.job.id,{quoteVisibleCols:next})}};
   const allQuoteCols=[{key:"tag",label:"Tag"},{key:"manuf",label:"Manuf."},{key:"model",label:"Model #"},{key:"description",label:"Description"},{key:"color",label:"Color"},{key:"qty",label:"Qty"},{key:"shippingEach",label:"Shipping Each"},{key:"shippingTotal",label:"Shipping Total"},{key:"installEach",label:"Install Each"},{key:"installTotal",label:"Install Total"},{key:"unitPrice",label:"Your Price"},{key:"lineTotal",label:"Line Total"}];
-  const activeHidden=previewDoc?.data?.hiddenCols||hiddenCols;const visibleCols=allQuoteCols.filter(c=>!activeHidden[c.key]);
   const projectNum=(jobId)=>{const sorted=[...jobs].sort((a,b)=>(a.createdDate||'').localeCompare(b.createdDate||'')||a.id.localeCompare(b.id));const idx=sorted.findIndex(j=>j.id===jobId);return 'MW-'+String(idx+1).padStart(4,'0')};
   useEffect(()=>{if(pendingCommPreview){setPreviewDoc(pendingCommPreview);setTab("preview");setPendingCommPreview(null)}},[pendingCommPreview]);
   const [previewDoc,setPreviewDoc]=useState(null);
+    const activeHidden=previewDoc?.data?.hiddenCols||hiddenCols;const visibleCols=allQuoteCols.filter(c=>!activeHidden[c.key]);
   const [pushing,setPushing]=useState(false);
   // Doc statuses stored IN each job record in Supabase -- persists across browsers, deploys, cache clears
   const allDocStatuses = jobs.reduce((acc, j) => ({...acc, ...(j.docStatuses || {})}), {});
