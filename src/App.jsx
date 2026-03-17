@@ -112,21 +112,6 @@ const inputStyle = {width:"100%",padding:"11px 14px",background:"#0a0a0a",border
 // --- SHARED COMPONENTS ---------------------------------------
 const Card = ({children,style,onClick,hover}) => <div onClick={onClick} style={{background:"#111111",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,padding:22,cursor:onClick?"pointer":"default",transition:"all 0.25s cubic-bezier(0.4,0,0.2,1)",...style}} onMouseEnter={e=>{if(hover||onClick){e.currentTarget.style.borderColor="rgba(45,212,191,0.2)";e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow="0 8px 32px rgba(0,0,0,0.2)"}}} onMouseLeave={e=>{if(hover||onClick){e.currentTarget.style.borderColor="rgba(255,255,255,0.06)";e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="none"}}}>{children}</div>;
 const Badge = ({label,color}) => <span style={{display:"inline-flex",padding:"3px 8px",borderRadius:5,fontSize:11,fontWeight:600,letterSpacing:0.5,textTransform:"uppercase",background:`${color}12`,color:`${color}cc`,transition:"opacity 0.2s"}}>{label}</span>;
-function AnimNum({value}){const [display,setDisplay]=useState(value);const prev=useRef(value);useEffect(()=>{if(prev.current===value)return;const from=typeof prev.current==="string"?parseFloat(prev.current.replace(/[^0-9.-]/g,""))||0:prev.current;const to=typeof value==="string"?parseFloat(value.replace(/[^0-9.-]/g,""))||0:value;if(isNaN(from)||isNaN(to)||from===to){setDisplay(value);prev.current=value;return}const start=performance.now();const dur=400;const tick=(t)=>{const p=Math.min((t-start)/dur,1);const eased=1-Math.pow(1-p,3);const curr=from+(to-from)*eased;const isUSD=typeof value==="string"&&value.includes("$");const isPct=typeof value==="string"&&value.includes("%");setDisplay(isUSD?fmt(curr):isPct?pct(curr):typeof value==="number"?Math.round(curr):value);if(p<1)requestAnimationFrame(tick)};requestAnimationFrame(tick);prev.current=value},[value]);return display}
-const StatCard = ({label,value,sub,icon,color="#2dd4bf"}) => <Card style={{display:"flex",flexDirection:"column",gap:4,padding:"14px 16px"}}><span style={{fontSize:10,color:"#737373",fontWeight:600,textTransform:"uppercase",letterSpacing:1.5}}>{label}</span><div style={{fontSize:"clamp(18px,4vw,30px)",fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace",letterSpacing:-1,lineHeight:1}}><AnimNum value={value}/></div>{sub&&<div style={{fontSize:11,color:"#525252",marginTop:1}}>{sub}</div>}</Card>;
-const Header = ({title,sub,action}) => <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:24,flexWrap:"wrap",gap:12}}><div><h2 style={{fontSize:24,fontWeight:700,color:"#f0f0f0",marginBottom:4,letterSpacing:-0.5}}>{title}</h2>{sub&&<p style={{fontSize:13,color:"#737373"}}>{sub}</p>}</div>{action}</div>;
-const Btn = ({children,onClick,v="primary",style:s}) => {const st={primary:{background:"#2dd4bf",color:"#000000",fontWeight:600},secondary:{background:"transparent",color:"#a3a3a3",border:"1px solid rgba(255,255,255,0.1)"},ghost:{background:"transparent",color:"#2dd4bf",border:"1px solid rgba(45,212,191,0.15)"},danger:{background:"rgba(248,113,113,0.08)",color:"#f87171",border:"1px solid rgba(248,113,113,0.15)"}};return <button onClick={onClick} style={{padding:"8px 16px",borderRadius:8,border:"none",cursor:"pointer",fontSize:13,fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:6,transition:"all 0.2s cubic-bezier(0.4,0,0.2,1)",...st[v],...s}} onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-1px)";if(v==="primary")e.currentTarget.style.boxShadow="0 4px 16px rgba(45,212,191,0.3)"}} onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="none"}}>{children}</button>};
-const Bar = ({value,max,color="#2dd4bf",height=7}) => <div style={{width:"100%",height,background:"rgba(255,255,255,0.04)",borderRadius:height,overflow:"hidden"}}><div style={{width:`${Math.min((value/(max||1))*100,100)}%`,height:"100%",background:color,borderRadius:height,transition:"width 0.6s cubic-bezier(0.25,0.1,0.25,1)"}}/></div>;
-
-const Tbl = ({columns,data,onRowClick}) => <div style={{overflowX:"auto",borderRadius:10,border:"1px solid #222222"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}><thead><tr style={{background:"#111111"}}>{columns.map((c,i)=><th key={i} style={{padding:"10px 14px",textAlign:"left",fontWeight:600,color:"#a3a3a3",fontSize:12,textTransform:"uppercase",letterSpacing:0.8,borderBottom:"1px solid #222222"}}>{c.header}</th>)}</tr></thead><tbody>{data.map((row,ri)=><tr key={row.id||ri} onClick={()=>onRowClick?.(row)} style={{cursor:onRowClick?"pointer":"default",transition:"background 0.15s",background:ri%2===1?"rgba(255,255,255,0.015)":"transparent"}} onMouseEnter={e=>{e.currentTarget.style.background=onRowClick?"#2dd4bf0a":"rgba(255,255,255,0.03)"}} onMouseLeave={e=>{e.currentTarget.style.background=ri%2===1?"rgba(255,255,255,0.015)":"transparent"}}>{columns.map((c,ci)=><td key={ci} style={{padding:"10px 14px",borderBottom:"1px solid rgba(255,255,255,0.02)",color:"#a3a3a3"}}>{c.render?c.render(row):row[c.key]}</td>)}</tr>)}</tbody></table></div>;
-
-import { db } from './supabase';
-import CsvUploadPage from './CsvUpload';
-
-// --- PDF EXPORT: zero dependencies, works everywhere ---------
-// Reusable checkbox components
-const Check=({checked,onChange,onClick,size})=>{const sz=size||18;return <div onClick={e=>{if(onClick)onClick(e);if(onChange)onChange()}} style={{width:sz,height:sz,borderRadius:5,border:"2px solid "+(checked?"#2dd4bf":"rgba(255,255,255,0.15)"),background:checked?"#2dd4bf":"transparent",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"all 0.15s cubic-bezier(0.4,0,0.2,1)",flexShrink:0}} onMouseEnter={e=>{if(!checked)e.currentTarget.style.borderColor="rgba(45,212,191,0.5)"}} onMouseLeave={e=>{if(!checked)e.currentTarget.style.borderColor="rgba(255,255,255,0.15)"}}>{checked&&<svg width={sz-6} height={sz-6} viewBox="0 0 12 12" fill="none"><path d="M2.5 6L5 8.5L9.5 3.5" stroke="#000" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}</div>};
-const CheckMinus=({checked,onChange,size})=>{const sz=size||18;return <div onClick={onChange} style={{width:sz,height:sz,borderRadius:5,border:"2px solid "+(checked?"#2dd4bf":"rgba(255,255,255,0.15)"),background:checked?"#2dd4bf":"transparent",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"all 0.15s",flexShrink:0}}>{checked&&<svg width={sz-6} height={sz-6} viewBox="0 0 12 12" fill="none"><path d="M2.5 6H9.5" stroke="#000" strokeWidth="2" strokeLinecap="round"/></svg>}</div>};
 
 function usePrintOverlay() {
   const triggerPrint = (title, html) => {
@@ -573,6 +558,8 @@ const sharedScreen = sharedQuote ? <ShareQuotePortal quoteData={sharedQuote} onA
         </div>
       </div>
       <style>{`
+        input[type="date"]{color-scheme:dark}
+        input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(0.8) brightness(1.2)}
         @keyframes slideIn{from{opacity:0;transform:translateY(-12px)}to{opacity:1;transform:translateY(0)}}
         @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
         @keyframes countUp{from{opacity:0;transform:translateY(8px) scale(0.95)}to{opacity:1;transform:translateY(0) scale(1)}}
@@ -644,6 +631,57 @@ const sharedScreen = sharedQuote ? <ShareQuotePortal quoteData={sharedQuote} onA
 // ===============================================================
 // DASHBOARD
 // ===============================================================
+function AnimNum({value}){
+  const [display,setDisplay]=useState("");
+  const prevRef=useRef(0);
+  useEffect(()=>{
+    const str=String(value||"");const numMatch=str.match(/[\d,.]+/);
+    if(!numMatch){setDisplay(str);return}
+    const target=parseFloat(numMatch[0].replace(/,/g,""));const prefix=str.slice(0,numMatch.index);const suffix=str.slice(numMatch.index+numMatch[0].length);
+    const start=prevRef.current;const diff=target-start;const duration=700;const startTime=performance.now();
+    const hasDec=str.includes(".");const isCurrency=str.includes("$");
+    const fmt2=n=>{if(isCurrency)return prefix+new Intl.NumberFormat("en-US",{minimumFractionDigits:hasDec?2:0,maximumFractionDigits:hasDec?2:0}).format(Math.abs(n))+suffix;return prefix+new Intl.NumberFormat("en-US",{minimumFractionDigits:hasDec?1:0,maximumFractionDigits:hasDec?1:0}).format(Math.abs(n))+suffix};
+    const step=(now)=>{const elapsed=now-startTime;const progress=Math.min(elapsed/duration,1);const eased=1-Math.pow(1-progress,3);
+      const current=start+diff*eased;setDisplay(fmt2(current));
+      if(progress<1)requestAnimationFrame(step);else{setDisplay(str);prevRef.current=target}};
+    requestAnimationFrame(step);
+  },[value]);
+  return <>{display||value}</>;
+}
+
+function AnimatedNumber({value,prefix="",suffix="",duration=600}){
+  const [display,setDisplay]=useState(0);
+  const ref=useRef(null);
+  useEffect(()=>{
+    const start=ref.current||0;const end=typeof value==="number"?value:parseFloat(String(value).replace(/[^0-9.-]/g,""))||0;
+    if(start===end){setDisplay(end);ref.current=end;return}
+    const startTime=performance.now();const diff=end-start;
+    const step=(now)=>{const elapsed=now-startTime;const progress=Math.min(elapsed/duration,1);const eased=1-Math.pow(1-progress,3);
+      const current=start+diff*eased;setDisplay(current);
+      if(progress<1)requestAnimationFrame(step);else{setDisplay(end);ref.current=end}};
+    requestAnimationFrame(step);
+    return()=>{ref.current=display};
+  },[value]);
+  const isNeg=display<0;const abs=Math.abs(display);
+  const formatted=abs>=1000?new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",minimumFractionDigits:0,maximumFractionDigits:0}).format(abs):abs>=1?new Intl.NumberFormat("en-US",{minimumFractionDigits:0,maximumFractionDigits:0}).format(abs):abs.toFixed(1);
+  return <>{prefix}{isNeg?"-":""}{typeof value==="string"&&value.startsWith("$")?"":""}{formatted}{suffix}</>;
+}
+
+function AnimatedPct({value,duration=600}){
+  const [display,setDisplay]=useState(0);
+  const ref=useRef(null);
+  useEffect(()=>{
+    const end=typeof value==="number"?value:parseFloat(String(value))||0;const start=ref.current||0;
+    if(start===end){setDisplay(end);ref.current=end;return}
+    const startTime=performance.now();const diff=end-start;
+    const step=(now)=>{const elapsed=now-startTime;const progress=Math.min(elapsed/duration,1);const eased=1-Math.pow(1-progress,3);
+      setDisplay(start+diff*eased);if(progress<1)requestAnimationFrame(step);else{setDisplay(end);ref.current=end}};
+    requestAnimationFrame(step);
+    return()=>{ref.current=display};
+  },[value]);
+  return <>{display.toFixed(1)}%</>;
+}
+
 function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJobItems,setPage,setSelectedJob,dateFilter,setDateFilter,jobNum,notify}){
   // Date filtering
   const now = new Date();
@@ -2516,13 +2554,13 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
     const w=window.open("","_blank");w.document.write(html);w.document.close();w.print();
   };
 
-  const kpi=(label,value,sub,color)=><Card style={{padding:16,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:6}}>{label}</div><div style={{fontSize:"clamp(18px,4vw,28px)",fontWeight:800,color:color||"#f0f0f0",fontFamily:"'JetBrains Mono',monospace",lineHeight:1}}>{value}</div>{sub&&<div style={{fontSize:12,color:"#a3a3a3",marginTop:6}}>{sub}</div>}</Card>;
+  const kpi=(label,value,sub,color)=><Card style={{padding:16,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:6}}>{label}</div><div style={{fontSize:"clamp(18px,4vw,28px)",fontWeight:800,color:color||"#f0f0f0",fontFamily:"'JetBrains Mono',monospace",lineHeight:1}}><AnimNum value={value}/></div>{sub&&<div style={{fontSize:12,color:"#a3a3a3",marginTop:6}}>{sub}</div>}</Card>;
 
   return <div style={{animation:"fadeUp 0.4s"}}>
     <Header title="Financials" sub="Financial Intelligence"/>
     <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
       <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{[{k:"month",l:"Month"},{k:"quarter",l:"Quarter"},{k:"ytd",l:"YTD"},{k:"year",l:"Past Year"},{k:"all",l:"All Time"}].map(p=><button key={p.k} onClick={()=>setPeriodPreset(p.k)} style={{padding:"6px 14px",borderRadius:8,border:"1px solid "+(period===p.k?"#2dd4bf":"#333"),background:period===p.k?"rgba(45,212,191,0.1)":"transparent",color:period===p.k?"#2dd4bf":"#737373",fontSize:12,fontWeight:period===p.k?600:400,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>{p.l}</button>)}</div>
-      <div style={{display:"flex",gap:6,alignItems:"center"}}><input type="date" value={dateFrom} onChange={e=>{setDateFrom(e.target.value);setPeriod("custom")}} style={{padding:"6px 10px",background:"#111",border:"1px solid #333",borderRadius:8,color:"#f0f0f0",fontSize:12,fontFamily:"inherit",outline:"none"}}/><span style={{color:"#525252",fontSize:12}}>to</span><input type="date" value={dateTo} onChange={e=>{setDateTo(e.target.value);setPeriod("custom")}} style={{padding:"6px 10px",background:"#111",border:"1px solid #333",borderRadius:8,color:"#f0f0f0",fontSize:12,fontFamily:"inherit",outline:"none"}}/></div>
+      <div style={{display:"flex",gap:6,alignItems:"center"}}><input type="date" value={dateFrom} onChange={e=>{setDateFrom(e.target.value);setPeriod("custom")}} style={{padding:"8px 12px",background:"rgba(17,17,17,0.45)",backdropFilter:"blur(8px) saturate(200%) brightness(1.1)",WebkitBackdropFilter:"blur(8px) saturate(200%) brightness(1.1)",border:"1px solid #333",borderRadius:8,color:"#f0f0f0",fontSize:12,fontFamily:"inherit",outline:"none"}}/><span style={{color:"#525252",fontSize:12}}>to</span><input type="date" value={dateTo} onChange={e=>{setDateTo(e.target.value);setPeriod("custom")}} style={{padding:"8px 12px",background:"rgba(17,17,17,0.45)",backdropFilter:"blur(8px) saturate(200%) brightness(1.1)",WebkitBackdropFilter:"blur(8px) saturate(200%) brightness(1.1)",border:"1px solid #333",borderRadius:8,color:"#f0f0f0",fontSize:12,fontFamily:"inherit",outline:"none"}}/></div>
       <div style={{fontSize:12,color:"#525252",fontFamily:"'JetBrains Mono',monospace"}}>{filteredJobs.length} job{filteredJobs.length!==1?"s":""}</div>
     </div>
         <div style={{display:"flex",gap:3,background:"#111",padding:3,borderRadius:8,marginBottom:16,flexWrap:"wrap"}}>{[["overview","Overview"],["pnl","P&L"],["ar","Receivables"],["margin","Margins"],["reports","Reports"]].map(([v,l])=><button key={v} onClick={()=>setTab(v)} style={{padding:"6px 14px",borderRadius:6,border:"none",cursor:"pointer",background:tab===v?"#2dd4bf":"transparent",color:tab===v?"#000":"#737373",fontSize:12,fontWeight:tab===v?600:400,fontFamily:"inherit",transition:"all 0.15s"}}>{l}</button>)}</div>
@@ -2563,12 +2601,12 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}><div style={{fontSize:18,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>Profit & Loss</div><Btn onClick={()=>generatePDF("pnl")}><I n="download" s={14}/> Export PDF</Btn></div>
       <div style={{borderBottom:"2px solid #222",padding:"10px 0",display:"flex",justifyContent:"space-between"}}><span style={{fontSize:15,fontWeight:700,color:"#f0f0f0"}}>REVENUE</span><span style={{fontSize:15,fontWeight:700,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalRev)}</span></div>
       {filteredJobs.map(j=>{const f=getJobFinancials(j.id);return <div key={j.id} style={{padding:"6px 16px",display:"flex",justifyContent:"space-between",borderBottom:"1px solid #111"}}><span style={{fontSize:13,color:"#a3a3a3"}}>{j.name}</span><span style={{fontSize:13,color:"#a3a3a3",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(f.totalRevenue)}</span></div>})}
-      <div style={{borderBottom:"2px solid #222",padding:"10px 0",display:"flex",justifyContent:"space-between",marginTop:12}}><span style={{fontSize:15,fontWeight:700,color:"#f0f0f0"}}>COST OF GOODS SOLD</span><span style={{fontSize:15,fontWeight:700,color:"#f87171",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalCost)}</span></div>
+      <div style={{borderBottom:"2px solid #222",padding:"10px 0",display:"flex",justifyContent:"space-between",marginTop:12}}><span style={{fontSize:15,fontWeight:700,color:"#f0f0f0"}}>COST OF GOODS SOLD</span><span style={{fontSize:15,fontWeight:700,color:"#f87171",fontFamily:"'JetBrains Mono',monospace"}}><AnimatedNumber value={totalCost} prefix="$"/></span></div>
       {vendorSpend.map(v=><div key={v.name} style={{padding:"6px 16px",display:"flex",justifyContent:"space-between",borderBottom:"1px solid #111"}}><span style={{fontSize:13,color:"#a3a3a3"}}>{v.name}</span><span style={{fontSize:13,color:"#a3a3a3",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(v.spend)}</span></div>)}
-      <div style={{background:"#0a0a0a",borderRadius:8,padding:"12px 0",marginTop:12,display:"flex",justifyContent:"space-between"}}><span style={{fontSize:15,fontWeight:700,color:"#f0f0f0",paddingLeft:4}}>GROSS PROFIT</span><span style={{fontSize:15,fontWeight:700,color:grossProfit>=0?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(grossProfit)} ({grossMargin.toFixed(1)}%)</span></div>
+      <div style={{background:"#0a0a0a",borderRadius:8,padding:"12px 0",marginTop:12,display:"flex",justifyContent:"space-between"}}><span style={{fontSize:15,fontWeight:700,color:"#f0f0f0",paddingLeft:4}}>GROSS PROFIT</span><span style={{fontSize:15,fontWeight:700,color:grossProfit>=0?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace"}}><AnimatedNumber value={grossProfit} prefix="$"/> ({grossMargin.toFixed(1)}%)</span></div>
       <div style={{borderBottom:"2px solid #222",padding:"10px 0",display:"flex",justifyContent:"space-between",marginTop:12}}><span style={{fontSize:15,fontWeight:700,color:"#f0f0f0"}}>OPERATING EXPENSES</span><span style={{fontSize:15,fontWeight:700,color:"#fbbf24",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalComm)}</span></div>
       <div style={{padding:"6px 16px",display:"flex",justifyContent:"space-between",borderBottom:"1px solid #111"}}><span style={{fontSize:13,color:"#a3a3a3"}}>Sales Commissions</span><span style={{fontSize:13,color:"#a3a3a3",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalComm)}</span></div>
-      <div style={{background:"#34d39908",borderRadius:8,padding:"14px 4px",marginTop:16,display:"flex",justifyContent:"space-between",border:"1px solid #34d39920"}}><span style={{fontSize:17,fontWeight:800,color:"#f0f0f0"}}>NET INCOME</span><span style={{fontSize:17,fontWeight:800,color:netIncome>=0?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(netIncome)}</span></div>
+      <div style={{background:"#34d39908",borderRadius:8,padding:"14px 4px",marginTop:16,display:"flex",justifyContent:"space-between",border:"1px solid #34d39920"}}><span style={{fontSize:17,fontWeight:800,color:"#f0f0f0"}}>NET INCOME</span><span style={{fontSize:17,fontWeight:800,color:netIncome>=0?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace"}}><AnimatedNumber value={netIncome} prefix="$"/></span></div>
     </Card>}
 
     {tab==="ar"&&<Card style={{padding:20}}>
@@ -2583,7 +2621,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}><div style={{fontSize:18,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>Job Margin Analysis</div><Btn onClick={()=>generatePDF("margin")}><I n="download" s={14}/> Export PDF</Btn></div>
       <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:450}}><thead><tr style={{borderBottom:"2px solid #222"}}>{["Job","Phase","Revenue","Cost","Profit","Margin"].map(h=><th key={h} style={{padding:"8px 6px",textAlign:h==="Job"||h==="Phase"?"left":"right",color:"#737373",fontSize:11,fontWeight:600}}>{h}</th>)}</tr></thead><tbody>
         {filteredJobs.map(j=>{const f=getJobFinancials(j.id);const profit=f.totalRevenue-f.totalCost;return <tr key={j.id} style={{borderBottom:"1px solid #111"}}><td style={{padding:"8px 6px",color:"#e5e5e5",fontWeight:500}}>{j.name}</td><td style={{padding:"8px 6px"}}><Badge label={j.phase} color={statusColor(j.phase)}/></td><td style={{padding:"8px 6px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(f.totalRevenue)}</td><td style={{padding:"8px 6px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",color:"#a3a3a3"}}>{fmt(f.totalCost)}</td><td style={{padding:"8px 6px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",color:profit>=0?"#34d399":"#f87171"}}>{fmt(profit)}</td><td style={{padding:"8px 6px",textAlign:"right",fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:f.margin>=30?"#34d399":f.margin>=20?"#fbbf24":"#f87171"}}>{f.margin.toFixed(1)}%</td></tr>})}
-        <tr style={{borderTop:"2px solid #222"}}><td style={{padding:"8px 6px",fontWeight:700}} colSpan={2}>TOTAL</td><td style={{padding:"8px 6px",textAlign:"right",fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalRev)}</td><td style={{padding:"8px 6px",textAlign:"right",fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalCost)}</td><td style={{padding:"8px 6px",textAlign:"right",fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:grossProfit>=0?"#34d399":"#f87171"}}>{fmt(grossProfit)}</td><td style={{padding:"8px 6px",textAlign:"right",fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}>{grossMargin.toFixed(1)}%</td></tr>
+        <tr style={{borderTop:"2px solid #222"}}><td style={{padding:"8px 6px",fontWeight:700}} colSpan={2}>TOTAL</td><td style={{padding:"8px 6px",textAlign:"right",fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalRev)}</td><td style={{padding:"8px 6px",textAlign:"right",fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}><AnimatedNumber value={totalCost} prefix="$"/></td><td style={{padding:"8px 6px",textAlign:"right",fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:grossProfit>=0?"#34d399":"#f87171"}}><AnimatedNumber value={grossProfit} prefix="$"/></td><td style={{padding:"8px 6px",textAlign:"right",fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}>{grossMargin.toFixed(1)}%</td></tr>
       </tbody></table></div>
     </Card>}
 
