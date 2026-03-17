@@ -250,6 +250,13 @@ export default function MidwestAIOS() {
   // Shared quote portal - check URL hash on load
   const [sharedQuote,setSharedQuote]=useState(()=>{try{const h=window.location.hash;if(h.startsWith("#quote=")){return JSON.parse(atob(h.slice(7)))}return null}catch{return null}});
 
+  // Auth state
+  const [currentUser, setCurrentUser] = useState(()=>{try{return JSON.parse(sessionStorage.getItem("mw_user"))}catch{return null}});
+  const [loginError, setLoginError] = useState("");
+  const userRole = currentUser?.role || null; // admin, office, sales
+  const userRepId = currentUser?.rep_id || null;
+  const logout = () => { setCurrentUser(null); sessionStorage.removeItem("mw_user"); };
+
   const [page, setPage] = useState("dashboard");
 
   const [pendingCommPreview, setPendingCommPreview] = useState(null);
@@ -427,10 +434,16 @@ export default function MidwestAIOS() {
     {id:"brain",label:"Midwest Brain",icon:"brain"},
     {id:"exitready",label:"Exit Readiness",icon:"shield"},
     {id:"qbsetup",label:"QuickBooks",icon:"settings"},
-  ];
+  ].filter(item => {
+    if (userRole === "admin") return true;
+    if (userRole === "office") return !["financials","commissions","exitready"].includes(item.id);
+    if (userRole === "sales") return ["dashboard","jobs","documents","deliveries","tasks","notes","brain","salesportal"].includes(item.id);
+    return true;
+  });
 
   const jobNum=(jobId)=>{const sorted=[...jobs].sort((a,b)=>(a.createdDate||'').localeCompare(b.createdDate||'')||a.id.localeCompare(b.id));const idx=sorted.findIndex(j=>j.id===jobId);return 'MW-'+String(idx+1).padStart(4,'0')};
-  const ctx = {jobs,setJobs,jobNum,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,forceDeleteVendor,forceDeleteLineItem,forceDeleteCustomer,forceDeleteRep,setPage:p=>{setPage(p);setMobileMenuOpen(false)},viewCustomer:id=>{setPage("customer360");window._viewCustId=id},brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,qbConfig,setQbConfig,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter,pendingCommPreview,setPendingCommPreview};
+  const visibleJobs = userRole === "sales" && userRepId ? jobs.filter(j => j.salesRep === userRepId) : jobs;
+  const ctx = {jobs:visibleJobs,allJobs:jobs,setJobs,jobNum,currentUser,userRole,userRepId,logout,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,forceDeleteVendor,forceDeleteLineItem,forceDeleteCustomer,forceDeleteRep,setPage:p=>{setPage(p);setMobileMenuOpen(false)},viewCustomer:id=>{setPage("customer360");window._viewCustId=id},brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,qbConfig,setQbConfig,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter,pendingCommPreview,setPendingCommPreview};
 
   if (!appReady) return (
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",width:"100vw",background:"#0a0a0a",fontFamily:"'Satoshi',sans-serif"}}>
@@ -445,10 +458,58 @@ export default function MidwestAIOS() {
     </div>
   );
 
-  // Shared quote portal
-  if(sharedQuote)return <ShareQuotePortal quoteData={sharedQuote} onApprove={()=>setSharedQuote({...sharedQuote,approved:true})}/>;
+  // Login screen
+  const [loginMode, setLoginMode] = useState("login"); // login or register
+  const [regRole, setRegRole] = useState("sales");
+  if(!currentUser)return <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",width:"100vw",background:"#000",fontFamily:"'Satoshi',sans-serif",overflow:"hidden",position:"relative"}}>
+    {/* Animated background */}
+    <div style={{position:"absolute",inset:0,overflow:"hidden"}}>
+      <div style={{position:"absolute",top:"-20%",left:"-10%",width:"50vw",height:"50vw",borderRadius:"50%",background:"radial-gradient(circle,rgba(45,212,191,0.06) 0%,transparent 70%)",animation:"floatOrb 12s ease-in-out infinite"}}/>
+      <div style={{position:"absolute",bottom:"-15%",right:"-10%",width:"40vw",height:"40vw",borderRadius:"50%",background:"radial-gradient(circle,rgba(167,139,250,0.05) 0%,transparent 70%)",animation:"floatOrb 15s ease-in-out infinite reverse"}}/>
+      <div style={{position:"absolute",top:"30%",right:"20%",width:"25vw",height:"25vw",borderRadius:"50%",background:"radial-gradient(circle,rgba(52,211,153,0.04) 0%,transparent 70%)",animation:"floatOrb 18s ease-in-out infinite 3s"}}/>
+    </div>
+    <style>{"@keyframes floatOrb{0%,100%{transform:translate(0,0) scale(1)}25%{transform:translate(30px,-20px) scale(1.05)}50%{transform:translate(-20px,30px) scale(0.95)}75%{transform:translate(15px,15px) scale(1.02)}} @keyframes slideUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}} @keyframes glowPulse{0%,100%{box-shadow:0 0 20px rgba(45,212,191,0.1)}50%{box-shadow:0 0 40px rgba(45,212,191,0.2)}}"}</style>
+    <div style={{width:"100%",maxWidth:420,padding:32,position:"relative",zIndex:1,animation:"slideUp 0.6s ease-out"}}>
+      {/* Logo + Header */}
+      <div style={{textAlign:"center",marginBottom:36}}>
+        <div style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:72,height:72,borderRadius:18,overflow:"hidden",marginBottom:16,animation:"glowPulse 3s ease-in-out infinite"}}><img src={MW_LOGO} alt="MW" style={{height:72,width:72,objectFit:"contain"}}/></div>
+        <div style={{fontSize:22,fontWeight:800,color:"#f0f0f0",letterSpacing:-0.5}}>Midwest Educational Furnishings</div>
+        <div style={{fontSize:13,color:"#525252",marginTop:6,letterSpacing:1}}>AI OPERATING SYSTEM</div>
+      </div>
+      {/* Card */}
+      <div style={{background:"rgba(17,17,17,0.8)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderRadius:20,border:"1px solid rgba(255,255,255,0.06)",padding:28,boxShadow:"0 20px 60px rgba(0,0,0,0.5)"}}>
+        {/* Tab toggle */}
+        <div style={{display:"flex",gap:2,background:"#0a0a0a",padding:3,borderRadius:10,marginBottom:24}}>
+          <button onClick={()=>setLoginMode("login")} style={{flex:1,padding:"8px",borderRadius:8,border:"none",background:loginMode==="login"?"#2dd4bf":"transparent",color:loginMode==="login"?"#000":"#525252",fontSize:13,fontWeight:loginMode==="login"?700:400,cursor:"pointer",fontFamily:"inherit",transition:"all 0.2s"}}>Sign In</button>
+          <button onClick={()=>setLoginMode("register")} style={{flex:1,padding:"8px",borderRadius:8,border:"none",background:loginMode==="register"?"#a78bfa":"transparent",color:loginMode==="register"?"#000":"#525252",fontSize:13,fontWeight:loginMode==="register"?700:400,cursor:"pointer",fontFamily:"inherit",transition:"all 0.2s"}}>New User</button>
+        </div>
 
-  return (
+        {loginMode==="login"?<form onSubmit={async e=>{e.preventDefault();setLoginError("");const fd=new FormData(e.target);const u=fd.get("username")?.trim().toLowerCase();const p=fd.get("password");if(!u||!p){setLoginError("Enter username and password");return}const user=await db.loginUser(u,p);if(user){setCurrentUser(user);sessionStorage.setItem("mw_user",JSON.stringify(user))}else{setLoginError("Invalid username or password")}}}>
+          <div style={{marginBottom:16}}><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:6,textTransform:"uppercase",letterSpacing:1}}>Username</label><input name="username" autoComplete="username" autoFocus style={{width:"100%",padding:"12px 16px",background:"#000",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,color:"#f0f0f0",fontSize:14,fontFamily:"inherit",outline:"none",boxSizing:"border-box",transition:"border 0.2s"}} placeholder="Enter username" onFocus={e=>e.target.style.borderColor="rgba(45,212,191,0.3)"} onBlur={e=>e.target.style.borderColor="rgba(255,255,255,0.08)"}/></div>
+          <div style={{marginBottom:24}}><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:6,textTransform:"uppercase",letterSpacing:1}}>Password</label><input name="password" type="password" autoComplete="current-password" style={{width:"100%",padding:"12px 16px",background:"#000",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,color:"#f0f0f0",fontSize:14,fontFamily:"inherit",outline:"none",boxSizing:"border-box",transition:"border 0.2s"}} placeholder="Enter password" onFocus={e=>e.target.style.borderColor="rgba(45,212,191,0.3)"} onBlur={e=>e.target.style.borderColor="rgba(255,255,255,0.08)"}/></div>
+          {loginError&&<div style={{fontSize:12,color:"#f87171",marginBottom:16,textAlign:"center",padding:"8px 12px",background:"rgba(248,113,113,0.06)",borderRadius:8,border:"1px solid rgba(248,113,113,0.15)"}}>{loginError}</div>}
+          <button type="submit" style={{width:"100%",padding:"13px",borderRadius:12,border:"none",background:"linear-gradient(135deg,#2dd4bf,#14b8a6)",color:"#000",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit",transition:"all 0.2s",boxShadow:"0 4px 16px rgba(45,212,191,0.2)"}} onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-1px)";e.currentTarget.style.boxShadow="0 6px 24px rgba(45,212,191,0.3)"}} onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="0 4px 16px rgba(45,212,191,0.2)"}}>Sign In</button>
+        </form>
+
+        :<form onSubmit={async e=>{e.preventDefault();setLoginError("");const fd=new FormData(e.target);const name=fd.get("name")?.trim();const u=fd.get("username")?.trim().toLowerCase();const p=fd.get("password");const p2=fd.get("password2");if(!name||!u||!p){setLoginError("All fields required");return}if(p!==p2){setLoginError("Passwords do not match");return}const id="USR-"+Math.random().toString(36).slice(2,8).toUpperCase();const user={id,username:u,password:p,role:regRole,rep_id:regRole==="sales"?fd.get("rep_id")||"":"",name};const res=await db.saveUser(user);if(res?.ok){setCurrentUser(user);sessionStorage.setItem("mw_user",JSON.stringify(user));notify("Account created: "+name)}else{setLoginError("Username may already exist")}}}>
+          <div style={{marginBottom:12}}><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:6,textTransform:"uppercase",letterSpacing:1}}>Full Name</label><input name="name" style={{width:"100%",padding:"12px 16px",background:"#000",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,color:"#f0f0f0",fontSize:14,fontFamily:"inherit",outline:"none",boxSizing:"border-box"}} placeholder="Full name" autoFocus/></div>
+          <div style={{marginBottom:12}}><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:6,textTransform:"uppercase",letterSpacing:1}}>Username</label><input name="username" autoComplete="off" style={{width:"100%",padding:"12px 16px",background:"#000",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,color:"#f0f0f0",fontSize:14,fontFamily:"inherit",outline:"none",boxSizing:"border-box"}} placeholder="Choose username"/></div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
+            <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:6,textTransform:"uppercase",letterSpacing:1}}>Password</label><input name="password" type="password" autoComplete="new-password" style={{width:"100%",padding:"12px 16px",background:"#000",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,color:"#f0f0f0",fontSize:14,fontFamily:"inherit",outline:"none",boxSizing:"border-box"}} placeholder="Password"/></div>
+            <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:6,textTransform:"uppercase",letterSpacing:1}}>Confirm</label><input name="password2" type="password" autoComplete="new-password" style={{width:"100%",padding:"12px 16px",background:"#000",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,color:"#f0f0f0",fontSize:14,fontFamily:"inherit",outline:"none",boxSizing:"border-box"}} placeholder="Confirm"/></div>
+          </div>
+          <div style={{marginBottom:12}}><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:6,textTransform:"uppercase",letterSpacing:1}}>Role</label><div style={{display:"flex",gap:4}}>{[{v:"admin",l:"Admin",c:"#2dd4bf"},{v:"office",l:"Office",c:"#a78bfa"},{v:"sales",l:"Sales",c:"#fbbf24"}].map(r=><button key={r.v} type="button" onClick={()=>setRegRole(r.v)} style={{flex:1,padding:"8px",borderRadius:8,border:"1px solid "+(regRole===r.v?r.c+"50":"#222"),background:regRole===r.v?r.c+"15":"transparent",color:regRole===r.v?r.c:"#525252",fontSize:12,fontWeight:regRole===r.v?600:400,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>{r.l}</button>)}</div></div>
+          {regRole==="sales"&&<div style={{marginBottom:12}}><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:6,textTransform:"uppercase",letterSpacing:1}}>Link to Sales Rep</label><select name="rep_id" style={{width:"100%",padding:"12px 16px",background:"#000",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,color:"#f0f0f0",fontSize:14,fontFamily:"inherit",outline:"none",boxSizing:"border-box"}}><option value="">Select rep...</option><option value="S004">Jim Harris</option><option value="S005">Jim Lindner</option><option value="S006">Jackie Biller</option></select></div>}
+          {loginError&&<div style={{fontSize:12,color:"#f87171",marginBottom:12,textAlign:"center",padding:"8px 12px",background:"rgba(248,113,113,0.06)",borderRadius:8,border:"1px solid rgba(248,113,113,0.15)"}}>{loginError}</div>}
+          <button type="submit" style={{width:"100%",padding:"13px",borderRadius:12,border:"none",background:"linear-gradient(135deg,#a78bfa,#8b5cf6)",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit",transition:"all 0.2s",boxShadow:"0 4px 16px rgba(167,139,250,0.2)"}} onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-1px)"}} onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)"}}>Create Account</button>
+        </form>}
+      </div>
+      <div style={{textAlign:"center",marginTop:20,fontSize:11,color:"#333"}}>Designing Spaces | Building Futures | WBE Certified</div>
+    </div>
+  </div>;
+
+
+return (
     <div style={{display:"flex",height:"100vh",width:"100vw",fontFamily:"'Satoshi','Satoshi',sans-serif",background:"#000000",color:"#d4d4d4",overflow:"hidden"}}>
       <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700&display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"/>
       {searchOpen&&<div style={{position:"fixed",inset:0,zIndex:99998,display:"flex",alignItems:"flex-start",justifyContent:"center",paddingTop:"15vh"}}><div onClick={()=>setSearchOpen(false)} style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.5)",backdropFilter:"blur(40px) saturate(180%)",WebkitBackdropFilter:"blur(40px) saturate(180%)"}}/><div style={{position:"relative",width:"100%",maxWidth:560,background:"#111111",borderRadius:16,border:"1px solid rgba(255,255,255,0.08)",boxShadow:"0 24px 80px rgba(0,0,0,0.5)",overflow:"hidden",animation:"fadeUp 0.2s cubic-bezier(0.25,0.1,0.25,1)"}}><div style={{padding:"16px 20px",borderBottom:"1px solid rgba(255,255,255,0.06)",display:"flex",alignItems:"center",gap:12}}><I n="search" s={18}/><input autoFocus value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} placeholder="Search jobs, vendors, customers, items..." style={{flex:1,background:"transparent",border:"none",outline:"none",color:"#e5e5e5",fontSize:16,fontFamily:"inherit"}}/><span style={{fontSize:12,color:"#333333",background:"#1a1a1a",padding:"2px 8px",borderRadius:4}}>ESC</span></div>{searchResults.length>0&&<div style={{maxHeight:400,overflow:"auto",padding:"8px"}}>{searchResults.map((r,i)=><div key={r.id+i} onClick={r.action} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",borderRadius:10,cursor:"pointer",transition:"background 0.15s"}} onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.06)"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><div style={{width:32,height:32,borderRadius:8,background:r.type==="Job"?"#2dd4bf18":r.type==="Vendor"?"#2563eb18":r.type==="Customer"?"#05966918":"#d9770618",display:"flex",alignItems:"center",justifyContent:"center"}}><I n={r.type==="Job"?"briefcase":r.type==="Vendor"?"package":r.type==="Customer"?"users":"file"} s={14}/></div><div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600,color:"#e5e5e5",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name}</div><div style={{fontSize:12,color:"#a3a3a3"}}>{r.sub}</div></div><Badge label={r.type} color={r.type==="Job"?"#2dd4bf":r.type==="Vendor"?"#a78bfa":"#34d399"}/></div>)}</div>}{searchQuery.length>=2&&searchResults.length===0&&<div style={{padding:40,textAlign:"center",color:"#333333",fontSize:13}}>No results for "{searchQuery}"</div>}{searchQuery.length<2&&<div style={{padding:30,textAlign:"center",color:"#333333",fontSize:12}}>Type at least 2 characters to search</div>}</div></div>}
@@ -499,6 +560,7 @@ export default function MidwestAIOS() {
       {/* MAIN */}
       <div style={{flex:1,overflow:"auto",background:"#000000"}}>
         <div className="main-content" style={{maxWidth:1400,margin:"0 auto",padding:"24px 32px"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:8,marginBottom:8}}><span style={{fontSize:12,color:"#a3a3a3"}}>{currentUser?.name}</span><Badge label={userRole} color={userRole==="admin"?"#2dd4bf":userRole==="office"?"#a78bfa":"#fbbf24"}/><button onClick={logout} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #222",background:"transparent",color:"#737373",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}} onMouseEnter={e=>e.currentTarget.style.color="#f87171"} onMouseLeave={e=>e.currentTarget.style.color="#737373"}>Logout</button></div>
           {page==="dashboard"&&<Dashboard {...ctx}/>}
           {page==="jobs"&&<JobsPage {...ctx}/>}
           {page==="directory"&&<DirectoryPage {...ctx}/>}
@@ -540,7 +602,8 @@ export default function MidwestAIOS() {
         select option{background:#111111!important;color:#e5e5e5!important;padding:8px!important}
         select::-ms-expand{display:none!important}
         button{-webkit-tap-highlight-color:transparent}
-        @media(max-width:768px){
+        .sales-hide{display:none!important}
+          @media(max-width:768px){
           .sidebar{position:fixed!important;left:-240px!important;top:0!important;bottom:0!important;width:220px!important;min-width:220px!important;z-index:10000!important;transition:left 0.3s cubic-bezier(0.4,0,0.2,1)!important;background:#000000!important}
           .sidebar.open{left:0px!important}
           .mobile-menu-btn{display:flex!important}
