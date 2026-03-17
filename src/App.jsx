@@ -382,7 +382,7 @@ function MidwestAIOSInner() {
   };
   const forceDeleteLineItem = (id) => { setLineItems(p => p.filter(li => li.id !== id)); db.deleteLineItem(id); };
   const updateJob = (id, u) => {
-    setJobs(p => { const old=p.find(j=>j.id===id);const updated = p.map(j => j.id===id ? {...j,...u} : j); const job = updated.find(j=>j.id===id); if(job){const skip=new Set(["activities","docStatuses","auditTrail"]);const changes=Object.keys(u).filter(k=>!skip.has(k)&&String(old?.[k])!==String(u[k]));if(changes.length>0){const log={time:new Date().toISOString(),type:"edit",entity:"job",entityId:id,fields:changes.map(k=>({field:k,from:old?.[k],to:u[k]}))};const trail=[log,...(job.auditTrail||[])].slice(0,200);job.auditTrail=trail}db.saveJob(job)} return updated; });
+    setJobs(p => { const old=p.find(j=>j.id===id);const updated = p.map(j => j.id===id ? {...j,...u} : j); const job = updated.find(j=>j.id===id); if(job){const skip=new Set(["activities","docStatuses","auditTrail"]);const changes=Object.keys(u).filter(k=>!skip.has(k)&&String(old?.[k])!==String(u[k]));if(changes.length>0){const log={time:new Date().toISOString(),type:"edit",entity:"job",entityId:id,user:currentUser?.name||"System",fields:changes.map(k=>({field:k,from:old?.[k],to:u[k]}))};const trail=[log,...(job.auditTrail||[])].slice(0,200);job.auditTrail=trail}db.saveJob(job)} return updated; });
   };
   const addJob = (job) => {
     setJobs(p => [...p, job]);
@@ -1020,7 +1020,7 @@ function JobDetail({job,ctx}){
   const bulkDeleteItems=async()=>{if(selectedItems.size===0)return;const ok=await ctx.confirm("Delete "+selectedItems.size+" line items? This cannot be undone.");if(!ok)return;const ids=[...selectedItems];ids.forEach(id=>{ctx.forceDeleteLineItem?ctx.forceDeleteLineItem(id):deleteLineItem(id)});setSelectedItems(new Set());notify(ids.length+" items deleted")}; // none, group, vendor, tag
   const [activityInput,setActivityInput]=useState("");
   const activities = job.activities || [];
-  const addActivity=(text)=>{const entry={text,time:new Date().toISOString(),id:Math.random().toString(36).slice(2)};const next=[entry,...activities];updateJob(job.id,{activities:next})};
+  const addActivity=(text)=>{const entry={text,time:new Date().toISOString(),id:Math.random().toString(36).slice(2),user:ctx.currentUser?.name||"System"};const next=[entry,...activities];updateJob(job.id,{activities:next})};
   const duplicateJob=()=>{const newId='JOB-'+new Date().getFullYear()+'-'+String(Math.floor(Math.random()*900)+100);const newJob={...job,id:newId,name:job.name+' (Copy)',phase:'Quoting',paymentStatus:'unpaid',createdDate:new Date().toISOString().split('T')[0],startDate:'',endDate:''};addJob(newJob);items.forEach(item=>{addLineItem({...item,id:'LI-'+Math.random().toString(36).slice(2,8),jobId:newId,qtyReceived:0,qtyInvoiced:0,deliveryDate:'',invoiceDate:''})});setSelectedJob(newId);notify('Job duplicated -- '+newId+' created with all line items')};
 
   const saveJob=()=>{updateJob(job.id,editJob);setEditing(false);notify("Job updated -- changes propagated everywhere")};
@@ -1143,7 +1143,7 @@ function JobDetail({job,ctx}){
     <Card style={{marginTop:32}}>
       <div style={{fontSize:14,fontWeight:700,color:"#e5e5e5",marginBottom:12}}>Activity Log</div>
       <div style={{display:"flex",gap:8,marginBottom:12}}><input value={activityInput} onChange={e=>setActivityInput(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&activityInput.trim()){addActivity(activityInput.trim());setActivityInput("")}}} placeholder="Add a note... (press Enter)" style={{...inputStyle,flex:1}}/><Btn onClick={()=>{if(activityInput.trim()){addActivity(activityInput.trim());setActivityInput("")}}}>Add Note</Btn></div>
-      <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:300,overflow:"auto"}}>{activities.length===0?<div style={{fontSize:12,color:"#8a8a8a",padding:12,textAlign:"center"}}>No activity yet. Add notes, status updates, or reminders.</div>:activities.map(a=><div key={a.id} style={{display:"flex",gap:10,padding:"8px 0",borderBottom:"1px solid #222222"}}><div style={{width:6,height:6,borderRadius:"50%",background:"#2dd4bf",marginTop:6,flexShrink:0}}/><div style={{flex:1}}><div style={{fontSize:12,color:"#a3a3a3"}}>{a.text}</div><div style={{fontSize:12,color:"#8a8a8a",marginTop:2}}>{new Date(a.time).toLocaleString()}</div></div></div>)}</div>
+      <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:300,overflow:"auto"}}>{activities.length===0?<div style={{fontSize:12,color:"#8a8a8a",padding:12,textAlign:"center"}}>No activity yet. Add notes, status updates, or reminders.</div>:activities.map(a=><div key={a.id} style={{display:"flex",gap:10,padding:"8px 0",borderBottom:"1px solid #222222"}}><div style={{width:6,height:6,borderRadius:"50%",background:"#2dd4bf",marginTop:6,flexShrink:0}}/><div style={{flex:1}}><div style={{fontSize:12,color:"#a3a3a3"}}>{a.text}</div><div style={{fontSize:12,color:"#8a8a8a",marginTop:2}}>{(a.user||"")+" "+new Date(a.time).toLocaleString()}</div></div></div>)}</div>
     </Card>
 
     </div>
@@ -1280,8 +1280,8 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
   const allQuoteCols=[{key:"tag",label:"Tag"},{key:"manuf",label:"Manuf."},{key:"model",label:"Model #"},{key:"description",label:"Description"},{key:"color",label:"Color"},{key:"qty",label:"Qty"},{key:"shippingEach",label:"Shipping Each"},{key:"shippingTotal",label:"Shipping Total"},{key:"installEach",label:"Install Each"},{key:"installTotal",label:"Install Total"},{key:"unitPrice",label:"Your Price"},{key:"lineTotal",label:"Line Total"}];
   const projectNum=(jobId)=>{const sorted=[...jobs].sort((a,b)=>(a.createdDate||'').localeCompare(b.createdDate||'')||a.id.localeCompare(b.id));const idx=sorted.findIndex(j=>j.id===jobId);return 'MW-'+String(idx+1).padStart(4,'0')};
   useEffect(()=>{if(pendingCommPreview){setPreviewDoc(pendingCommPreview);setTab("preview");setPendingCommPreview(null)}},[pendingCommPreview]);
-      const activeHidden=previewDoc?.data?.hiddenCols||hiddenCols;const visibleCols=allQuoteCols.filter(c=>!activeHidden[c.key]);
   const [pushing,setPushing]=useState(false);
+  const activeHidden=previewDoc?.data?.hiddenCols||hiddenCols;const visibleCols=allQuoteCols.filter(c=>!activeHidden[c.key]);
   // Doc statuses stored IN each job record in Supabase -- persists across browsers, deploys, cache clears
   const allDocStatuses = jobs.reduce((acc, j) => ({...acc, ...(j.docStatuses || {})}), {});
   // Also load from sops table backup (cat="DocStatuses")
@@ -1700,7 +1700,7 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
         <div style={{width:10,height:10,borderRadius:"50%",background:a.type==="edit"?"#2dd4bf":"#a78bfa",marginTop:4,flexShrink:0}}/>
         <div style={{flex:1}}>
           <div style={{fontSize:13,color:"#e5e5e5",lineHeight:1.5}}>{a.fields?a.fields.map(f=>f.field+" changed to \""+String(f.to)+"\"").join(", "):a.type}</div>
-          <div style={{fontSize:12,color:"#9a9a9a",marginTop:2}}>{a.jobName} -- {new Date(a.time).toLocaleDateString()} {new Date(a.time).toLocaleTimeString()}</div>
+          <div style={{fontSize:12,color:"#9a9a9a",marginTop:2}}>{a.jobName} -- {new Date(a.time).toLocaleDateString()} {new Date(a.time).toLocaleTimeString()}</div>{a.user&&<div style={{fontSize:11,color:"#2dd4bf",marginTop:2}}>{a.user}</div>}
         </div>
       </div>)}
     </Card>}
@@ -1773,7 +1773,7 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
         {activities.length>0&&<Card><div style={{fontSize:15,fontWeight:700,color:"#f0f0f0",marginBottom:14}}>Recent Activity</div>
           {activities.map((a,i)=><div key={i} style={{display:"flex",gap:12,padding:"10px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
             <div style={{width:8,height:8,borderRadius:"50%",background:"#2dd4bf",marginTop:4,flexShrink:0}}/>
-            <div><div style={{fontSize:12,color:"#c4c4c4"}}>{a.fields?a.fields.map(f=>f.field+" updated").join(", "):a.type}</div><div style={{fontSize:11,color:"#737373"}}>{a.jobName} -- {new Date(a.time).toLocaleDateString()}</div></div>
+            <div><div style={{fontSize:12,color:"#c4c4c4"}}>{a.fields?a.fields.map(f=>f.field+" updated").join(", "):a.type}</div><div style={{fontSize:11,color:"#737373"}}>{a.jobName} -- {new Date(a.time).toLocaleDateString()}{a.user?" - "+a.user:""}</div></div>
           </div>)}
         </Card>}
       </>
@@ -1909,7 +1909,7 @@ function Customer360Page({jobs,lineItems,vendors,customers,reps,getJobFinancials
         <div style={{width:10,height:10,borderRadius:"50%",background:a.type==="edit"?"#2dd4bf":"#a78bfa",marginTop:4,flexShrink:0}}/>
         <div style={{flex:1}}>
           <div style={{fontSize:13,color:"#e5e5e5",lineHeight:1.5}}>{a.fields?a.fields.map(f=>f.field+" changed from \""+String(f.from||"empty")+"\" to \""+String(f.to)+"\"").join(", "):a.type}</div>
-          <div style={{fontSize:12,color:"#9a9a9a",marginTop:2}}>{a.jobName} | {new Date(a.time).toLocaleDateString()} {new Date(a.time).toLocaleTimeString()}</div>
+          <div style={{fontSize:12,color:"#9a9a9a",marginTop:2}}>{a.jobName} | {new Date(a.time).toLocaleDateString()} {new Date(a.time).toLocaleTimeString()}</div>{a.user&&<div style={{fontSize:11,color:"#2dd4bf",marginTop:2}}>{a.user}</div>}
         </div>
       </div>)}
     </Card>
