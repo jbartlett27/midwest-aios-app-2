@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { db } from "./supabase.js";
 class ErrorBoundary extends React.Component {
   constructor(props){super(props);this.state={hasError:false,error:null}}
   static getDerivedStateFromError(error){return {hasError:true,error}}
