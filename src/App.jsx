@@ -25,11 +25,364 @@ const Check = ({checked,onChange,size=16})=><div onClick={e=>{e.stopPropagation(
 
 const CheckMinus = ({checked,onChange,size=16})=><div onClick={e=>{e.stopPropagation();onChange?.(!checked)}} style={{width:size,height:size,borderRadius:4,border:"1px solid "+(checked?"#a78bfa":"#444"),background:checked?"#a78bfa":"transparent",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"all 0.15s",flexShrink:0}}>{checked&&<span style={{color:"#000",fontSize:size-4,lineHeight:1}}>&#8722;</span>}</div>;
 
-function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendors,customers,setCustomers,reps,setReps,notify}){
-  const [file,setFile]=useState(null);const [preview,setPreview]=useState(null);const [target,setTarget]=useState("line_items");
-  const handleFile=e=>{const f=e.target.files[0];if(!f)return;setFile(f);const reader=new FileReader();reader.onload=ev=>{const text=ev.target.result;const lines=text.split("\n").filter(l=>l.trim());const headers=lines[0].split(",").map(h=>h.trim().replace(/"/g,""));const rows=lines.slice(1).map(l=>{const vals=l.split(",").map(v=>v.trim().replace(/"/g,""));const obj={};headers.forEach((h,i)=>obj[h]=vals[i]||"");return obj});setPreview({headers,rows})};reader.readAsText(f)};
-  const handleImport=async()=>{if(!preview)return;notify("Imported "+preview.rows.length+" rows to "+target);setPreview(null);setFile(null)};
-  return <div style={{animation:"fadeUp 0.4s"}}><Header title="Data Import" sub="Upload CSV files to import data"/><Card style={{padding:20}}><div style={{marginBottom:16}}><label style={{fontSize:13,color:"#a3a3a3",display:"block",marginBottom:6}}>Target Table</label><select value={target} onChange={e=>setTarget(e.target.value)} style={{padding:"10px 14px",background:"#000",border:"1px solid #222",borderRadius:10,color:"#f0f0f0",fontSize:14,fontFamily:"inherit"}}><option value="line_items">Line Items</option><option value="vendors">Vendors</option><option value="customers">Customers</option><option value="jobs">Jobs</option></select></div><div style={{marginBottom:16}}><input type="file" accept=".csv,.tsv" onChange={handleFile} style={{fontSize:13,color:"#a3a3a3"}}/></div>{preview&&<div><div style={{fontSize:13,color:"#2dd4bf",marginBottom:8}}>{preview.rows.length} rows ready to import</div><div style={{overflowX:"auto",maxHeight:300}}><table style={{fontSize:12,borderCollapse:"collapse"}}><thead><tr>{preview.headers.map((h,i)=><th key={i} style={{padding:"6px 8px",textAlign:"left",color:"#737373",borderBottom:"1px solid #222",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead><tbody>{preview.rows.slice(0,10).map((r,i)=><tr key={i}>{preview.headers.map((h,j)=><td key={j} style={{padding:"4px 8px",color:"#c4c4c4",borderBottom:"1px solid #111",whiteSpace:"nowrap"}}>{r[h]}</td>)}</tr>)}</tbody></table></div>{preview.rows.length>10&&<div style={{fontSize:12,color:"#737373",marginTop:8}}>Showing 10 of {preview.rows.length} rows</div>}<Btn onClick={handleImport} style={{marginTop:12}}>Import {preview.rows.length} Rows</Btn></div>}</Card></div>;
+function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendors,customers,setCustomers,reps,setReps,notify,addJob,addLineItem,addVendor,addCustomer,addRep}){
+  const [mode,setMode]=useState(null);
+  const [step,setStep]=useState("upload");
+  const [file,setFile]=useState(null);
+  const [parsed,setParsed]=useState(null);
+  const [importing,setImporting]=useState(false);
+  const [done,setDone]=useState(null);
+  const [jobName,setJobName]=useState("");
+  const [selectedSheets,setSelectedSheets]=useState({});
+  const [csvData,setCsvData]=useState(null);
+  const [colMap,setColMap]=useState({});
+  const [target,setTarget]=useState("vendors");
+  const [errors,setErrors]=useState([]);
+  const fileRef=useRef(null);
+
+  const validate=(val,type)=>{
+    if(type==="text")return val&&val.trim().length>=2;
+    if(type==="email")return !val||/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)||val==="";
+    if(type==="phone")return !val||val.replace(/[^0-9]/g,"").length>=7||val==="";
+    if(type==="number")return val===""||!isNaN(parseFloat(val));
+    if(type==="required")return val&&val.trim().length>=1;
+    return true;
+  };
+
+  const parseExcel=async(f)=>{
+    try{
+      const XLSX=await import("xlsx");
+      const data=await f.arrayBuffer();
+      const wb=XLSX.read(data,{type:"array"});
+      const items=[];const vendorSet=new Set();const groups=new Set();const sheets=[];
+      for(let si=0;si<wb.SheetNames.length;si++){
+        const sn=wb.SheetNames[si];const ws=wb.Sheets[sn];
+        const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:""});
+        let grp="";let ct=0;
+        for(let r=0;r<rows.length;r++){
+          const row=rows[r];if(!row||row.length<4)continue;
+          if(String(row[0]||"").toLowerCase().trim()==="tag")continue;
+          const hd=row[3]&&String(row[3]).trim();const ht=row[0]&&String(row[0]).trim();
+          const hm=row[1]&&String(row[1]).trim();const hq=Number(row[5])>0;
+          const hp=Number(row[6])>0;const hn=Number(row[8])>0;
+          if(hd&&!ht&&!hm&&!hq&&!hp&&!hn){grp=String(row[3]).trim().replace(/\n/g," ").substring(0,80);groups.add(grp);continue}
+          if(hd&&(hq||hp||hn||Number(row[14])>0)){
+            let desc=String(row[3]).replace(/\r/g,"").split("\n")[0].trim();
+            const si2=desc.indexOf("Item Specifics");if(si2>0)desc=desc.substring(0,si2).trim();
+            const ri=desc.indexOf("-- Room Number");if(ri>0)desc=desc.substring(0,ri).trim();
+            const ri2=desc.indexOf("Room Number");if(ri2>20)desc=desc.substring(0,ri2).trim();
+            if(desc.toLowerCase().startsWith("quote ")||desc.startsWith("#"))continue;
+            const qty=Math.round(Number(row[5])||0);const list=Number(row[6])||0;const net=Number(row[8])||0;
+            if(qty<=0&&list<=0&&net<=0)continue;
+            const mfr=String(row[1]||"").trim();if(mfr)vendorSet.add(mfr);
+            items.push({tag:String(row[0]||"").trim().replace(/\.0$/,""),manufacturer:mfr||sn,
+              modelNumber:String(row[2]||"").trim().replace(/\.0$/,""),description:desc,
+              color:String(row[4]||"").trim(),qtyOrdered:qty||1,listPrice:list,
+              unitCost:net||Number(row[14])||0,shippingPerUnit:Number(row[10])||0,
+              installPerUnit:Number(row[12])||0,unitPrice:Number(row[16])||0,
+              group:grp,sheet:sn});ct++
+          }
+        }
+        sheets.push({name:sn,count:ct})
+      }
+      let name=f.name.replace(/\.(xls|xlsx|csv)$/i,"").replace(/_/g," ");
+      try{const ws0=wb.Sheets[wb.SheetNames[0]];const d0=XLSX.utils.sheet_to_json(ws0,{header:1,defval:""});
+        if(d0[0]&&d0[0][4])name=String(d0[0][4]).split("\n")[0].trim()}catch{}
+      setJobName(name);
+      const sel={};sheets.forEach(s=>{sel[s.name]=true});setSelectedSheets(sel);
+      setParsed({items,vendors:vendorSet,groups,sheets});
+      setStep("config");
+      notify(items.length+" line items found across "+sheets.length+" sheet"+(sheets.length>1?"s":""));
+    }catch(err){notify("Error reading file: "+err.message,"error")}
+  };
+
+  const parseCSV=(f)=>{
+    const reader=new FileReader();
+    reader.onload=(ev)=>{
+      const text=ev.target.result;
+      const delim=text.split("\n")[0].includes("\t")?"\t":",";
+      const lines=text.split("\n").filter(l=>l.trim());
+      if(lines.length<2){notify("File has no data rows","error");return}
+      const headers=lines[0].split(delim).map(h=>h.trim().replace(/^"|"$/g,""));
+      const rows=lines.slice(1).map(l=>{const vals=l.split(delim).map(v=>v.trim().replace(/^"|"$/g,""));const obj={};headers.forEach((h,i)=>obj[h]=vals[i]||"");return obj});
+      setCsvData({headers,rows});
+      autoMap(headers);
+      setStep("map");
+      notify(rows.length+" rows found");
+    };
+    reader.readAsText(f);
+  };
+
+  const MAPS={
+    vendors:{fields:["name","contact","email","phone","category","address"],labels:["Company Name*","Contact","Email","Phone","Category","Address"],types:["text","text","email","phone","text","text"],
+      guesses:{name:["vendor","company","name"],contact:["contact","person","rep"],email:["email","mail"],phone:["phone","tel"],category:["category","type"],address:["address","location"]}},
+    customers:{fields:["name","contact","email","phone","type","address"],labels:["Organization*","Contact","Email","Phone","Type","Address"],types:["text","text","email","phone","text","text"],
+      guesses:{name:["customer","client","organization","school","district","name"],contact:["contact","person"],email:["email","mail"],phone:["phone","tel"],type:["type","category"],address:["address","location"]}},
+    reps:{fields:["name","email","territory","commissionRate","tier"],labels:["Name*","Email","Territory","Commission %","Tier"],types:["text","email","text","number","text"],
+      guesses:{name:["name","rep","salesperson"],email:["email"],territory:["territory","region"],commissionRate:["rate","commission","%"],tier:["tier","level"]}}
+  };
+
+  const autoMap=(headers)=>{
+    const map=MAPS[target];if(!map)return;
+    const mapping={};
+    map.fields.forEach(field=>{
+      const guesses=map.guesses[field]||[];
+      const match=headers.find(h=>guesses.some(g=>h.toLowerCase().trim()===g||h.toLowerCase().includes(g)));
+      if(match)mapping[field]=match;
+    });
+    setColMap(mapping);
+  };
+
+  const handleFile=(e)=>{
+    const f=e.target.files[0];if(!f)return;setFile(f);
+    if(mode==="quote"){parseExcel(f)}
+    else{parseCSV(f)}
+  };
+
+  const importQuote=async()=>{
+    if(!parsed||importing)return;setImporting(true);setErrors([]);
+    try{
+      const items=parsed.items.filter(i=>selectedSheets[i.sheet]);
+      if(items.length===0){notify("No items selected","error");setImporting(false);return}
+      const jid="JOB-"+new Date().getFullYear()+"-"+String(jobs.length+1).padStart(3,"0");
+      addJob({id:jid,name:jobName||"Imported Quote",customer:customers[0]?.id||"",salesRep:reps[0]?.id||"",
+        phase:"Quoting",createdDate:new Date().toISOString().split("T")[0],
+        startDate:"",dueDate:"",endDate:"",notes:"Imported from Excel -- "+items.length+" line items",
+        paymentStatus:"unpaid",terms:"Net 30",poNumber:"",shipTo:"",shipVia:"",billTo:"",orderNotes:"",
+        docStatuses:{},activities:[],auditTrail:[]});
+      const existNames=new Set(vendors.map(v=>v.name.toLowerCase().trim()));
+      const vMap={};vendors.forEach(v=>{vMap[v.name.toLowerCase().trim()]=v.id});
+      let newVendors=0;
+      for(const vn of parsed.vendors){const k=vn.toLowerCase().trim();
+        if(!existNames.has(k)){const vid="V-"+Math.random().toString(36).slice(2,8);
+          addVendor({id:vid,name:vn,contact:"",email:"",phone:"",category:"Furniture",address:"",discountRate:0,discountType:"percentage",discountNotes:""});
+          vMap[k]=vid;existNames.add(k);newVendors++}}
+      let ct=0;
+      for(const item of items){const vk=(item.manufacturer||"").toLowerCase().trim();
+        addLineItem({id:"LI-"+Math.random().toString(36).slice(2,8),jobId:jid,description:item.description,
+          vendor:vMap[vk]||"",tag:item.tag,group:item.group,manufacturer:item.manufacturer,
+          modelNumber:item.modelNumber,color:item.color,listPrice:item.listPrice,unitCost:item.unitCost,
+          unitPrice:item.unitPrice,shippingPerUnit:item.shippingPerUnit,installPerUnit:item.installPerUnit,
+          qtyOrdered:item.qtyOrdered,qtyReceived:0,qtyInvoiced:0,poDate:"",deliveryDate:"",invoiceDate:""});ct++}
+      setDone({type:"quote",items:ct,vendors:newVendors,jobName,jobId:jid});
+      notify("Imported "+ct+" items into \""+jobName+"\"");
+    }catch(err){notify("Import error: "+err.message,"error")}
+    setImporting(false);
+  };
+
+  const importCSV=async()=>{
+    if(!csvData||importing)return;setImporting(true);
+    const map=MAPS[target];const errs=[];let imported=0;
+    try{
+      const rows=csvData.rows.map((row,ri)=>{
+        const obj={id:target.charAt(0).toUpperCase()+"-"+Math.random().toString(36).slice(2,8)};
+        map.fields.forEach((field,fi)=>{
+          const csvCol=colMap[field];
+          if(csvCol&&row[csvCol]!==undefined){
+            let val=row[csvCol];
+            if(map.types[fi]==="number")val=parseFloat(val)||0;
+            obj[field]=val;
+          }
+        });
+        if(!validate(obj.name||obj[map.fields[0]],"text")){errs.push("Row "+(ri+2)+": missing required field");return null}
+        if(obj.email&&!validate(obj.email,"email")){errs.push("Row "+(ri+2)+": invalid email format")}
+        if(obj.phone&&!validate(obj.phone,"phone")){errs.push("Row "+(ri+2)+": phone seems short")}
+        return obj;
+      }).filter(Boolean);
+      if(rows.length===0){notify("No valid rows","error");setImporting(false);return}
+      for(const row of rows){
+        if(target==="vendors")addVendor({...row,discountRate:0,discountType:"percentage",discountNotes:""});
+        else if(target==="customers")addCustomer(row);
+        else if(target==="reps")addRep({...row,commissionRate:parseFloat(row.commissionRate)||0.05});
+        imported++;
+      }
+      setErrors(errs);
+      setDone({type:"csv",target,imported,errors:errs.length});
+      notify(imported+" "+target+" imported");
+    }catch(err){notify("Import error: "+err.message,"error")}
+    setImporting(false);
+  };
+
+  const reset=()=>{setMode(null);setStep("upload");setFile(null);setParsed(null);setCsvData(null);setColMap({});setDone(null);setErrors([]);setJobName("");if(fileRef.current)fileRef.current.value=""};
+
+  const selCount=parsed?parsed.items.filter(i=>selectedSheets[i.sheet]).length:0;
+  const selCost=parsed?parsed.items.filter(i=>selectedSheets[i.sheet]).reduce((s,i)=>s+(i.unitCost*i.qtyOrdered),0):0;
+  const selRev=parsed?parsed.items.filter(i=>selectedSheets[i.sheet]).reduce((s,i)=>s+((i.unitPrice||0)*i.qtyOrdered),0):0;
+
+  const dropZone=(label,sub,accept,onClick)=><div onClick={onClick} onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor="rgba(45,212,191,0.4)"}} onDragLeave={e=>{e.currentTarget.style.borderColor="rgba(45,212,191,0.12)"}} onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor="rgba(45,212,191,0.12)";const f=e.dataTransfer.files[0];if(f){if(fileRef.current){const dt=new DataTransfer();dt.items.add(f);fileRef.current.files=dt.files}setFile(f);if(mode==="quote")parseExcel(f);else parseCSV(f)}}} style={{textAlign:"center",padding:"48px 32px",border:"2px dashed rgba(45,212,191,0.12)",borderRadius:16,cursor:"pointer",transition:"all 0.3s",background:"rgba(45,212,191,0.02)"}}>
+    <div style={{width:56,height:56,borderRadius:16,background:"rgba(45,212,191,0.08)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px",transition:"transform 0.2s"}}><I n="download" s={24}/></div>
+    <div style={{fontSize:16,fontWeight:600,color:"#e5e5e5",marginBottom:6}}>{label}</div>
+    <div style={{fontSize:13,color:"#737373",marginBottom:16}}>{sub}</div>
+    <input ref={fileRef} type="file" accept={accept} onChange={handleFile} style={{display:"none"}}/>
+    <Btn v="secondary" onClick={e=>{e.stopPropagation();fileRef.current?.click()}} style={{fontSize:13}}>Choose File</Btn>
+  </div>;
+
+  // MODE SELECTION
+  if(!mode&&!done)return <div style={{animation:"fadeUp 0.4s"}}>
+    <Header title="Data Import" sub="Smart upload portal for Excel quotes, vendors, and customers"/>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:16,marginBottom:24}} className="resp-grid-3">
+      {[
+        {id:"quote",icon:"file",title:"Upload Excel Quote",sub:"Import Lisa's Excel spreadsheets with full line item parsing. Auto-detects tags, manufacturers, model numbers, quantities, pricing, shipping, and installation costs.",color:"#2dd4bf",tags:["XLS","XLSX","Auto-Map","Multi-Sheet"]},
+        {id:"vendors",icon:"package",title:"Import Vendors",sub:"Bulk import vendor/manufacturer data from CSV. Smart column mapping with validation for company names, contacts, emails, and phone numbers.",color:"#a78bfa",tags:["CSV","TSV","Validation"]},
+        {id:"customers",icon:"users",title:"Import Customers",sub:"Upload customer/district data from CSV. Auto-detects organization names, contacts, addresses, and school district types.",color:"#34d399",tags:["CSV","TSV","Validation"]}
+      ].map(m=><Card key={m.id} onClick={()=>{setMode(m.id==="quote"?"quote":"csv");if(m.id!=="quote")setTarget(m.id)}} style={{cursor:"pointer",transition:"all 0.25s",border:"1px solid rgba(255,255,255,0.04)",position:"relative",overflow:"hidden"}} hover>
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
+          <div style={{width:40,height:40,borderRadius:12,background:m.color+"15",display:"flex",alignItems:"center",justifyContent:"center",color:m.color}}><I n={m.icon} s={20}/></div>
+          <div style={{fontSize:16,fontWeight:700,color:"#f0f0f0"}}>{m.title}</div>
+        </div>
+        <div style={{fontSize:13,color:"#a3a3a3",lineHeight:1.6,marginBottom:14}}>{m.sub}</div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{m.tags.map(t=><span key={t} style={{padding:"3px 10px",borderRadius:6,background:m.color+"10",color:m.color,fontSize:11,fontWeight:600}}>{t}</span>)}</div>
+      </Card>)}
+    </div>
+    <Card style={{padding:16,border:"1px solid rgba(45,212,191,0.08)"}}>
+      <div style={{fontSize:14,fontWeight:700,color:"#f0f0f0",marginBottom:10}}>Current Database</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(100px,1fr))",gap:10}} className="resp-grid-5">
+        {[["Jobs",jobs.length,"#2dd4bf"],["Line Items",lineItems.length,"#a78bfa"],["Vendors",vendors.length,"#34d399"],["Customers",customers.length,"#fbbf24"],["Reps",reps.length,"#f87171"]].map(([l,c,col])=>
+          <div key={l} style={{textAlign:"center",padding:"12px 8px",background:"#000",borderRadius:10}}>
+            <div style={{fontSize:22,fontWeight:800,color:col,fontFamily:"'JetBrains Mono',monospace"}}>{c}</div>
+            <div style={{fontSize:11,color:"#737373"}}>{l}</div>
+          </div>
+        )}
+      </div>
+    </Card>
+  </div>;
+
+  // SUCCESS SCREEN
+  if(done)return <div style={{animation:"fadeUp 0.4s"}}>
+    <Header title="Data Import" sub="Import complete"/>
+    <Card style={{textAlign:"center",padding:"48px 32px",border:"1px solid rgba(45,212,191,0.15)"}}>
+      <div style={{width:64,height:64,borderRadius:"50%",background:"rgba(52,211,153,0.12)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",color:"#34d399"}}><I n="check" s={32}/></div>
+      <div style={{fontSize:24,fontWeight:800,color:"#f0f0f0",marginBottom:8}}>Import Complete</div>
+      <div style={{fontSize:14,color:"#a3a3a3",marginBottom:24}}>{done.type==="quote"?done.items+" line items imported into \""+done.jobName+"\"":done.imported+" "+done.target+" imported"+(done.errors>0?" ("+done.errors+" warnings)":"")}</div>
+      <div style={{display:"flex",gap:12,justifyContent:"center",flexWrap:"wrap",marginBottom:24}}>
+        {done.type==="quote"&&<><Card style={{padding:16,minWidth:110}}><div style={{fontSize:11,color:"#737373",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Items</div><div style={{fontSize:26,fontWeight:700,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{done.items}</div></Card><Card style={{padding:16,minWidth:110}}><div style={{fontSize:11,color:"#737373",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>New Vendors</div><div style={{fontSize:26,fontWeight:700,color:"#a78bfa",fontFamily:"'JetBrains Mono',monospace"}}>{done.vendors}</div></Card></>}
+        {done.type==="csv"&&<Card style={{padding:16,minWidth:110}}><div style={{fontSize:11,color:"#737373",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Imported</div><div style={{fontSize:26,fontWeight:700,color:"#34d399",fontFamily:"'JetBrains Mono',monospace"}}>{done.imported}</div></Card>}
+      </div>
+      {errors.length>0&&<div style={{textAlign:"left",padding:14,background:"rgba(251,191,36,0.06)",border:"1px solid rgba(251,191,36,0.12)",borderRadius:10,marginBottom:16,maxHeight:120,overflow:"auto"}}>{errors.slice(0,10).map((e,i)=><div key={i} style={{fontSize:12,color:"#fbbf24",padding:"2px 0"}}>{e}</div>)}{errors.length>10&&<div style={{fontSize:11,color:"#737373"}}>+{errors.length-10} more warnings</div>}</div>}
+      <div style={{display:"flex",gap:10,justifyContent:"center"}}><Btn onClick={reset}>Import More</Btn><Btn v="secondary" onClick={reset}>Done</Btn></div>
+    </Card>
+  </div>;
+
+  // EXCEL QUOTE FLOW
+  if(mode==="quote")return <div style={{animation:"fadeUp 0.4s"}}>
+    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:20}}>
+      <span onClick={reset} style={{color:"#737373",cursor:"pointer",fontSize:13,transition:"color 0.15s"}} onMouseEnter={e=>e.currentTarget.style.color="#2dd4bf"} onMouseLeave={e=>e.currentTarget.style.color="#737373"}>Data Import</span>
+      <span style={{color:"#333"}}>/</span>
+      <span style={{color:"#f0f0f0",fontWeight:600,fontSize:13}}>Excel Quote Upload</span>
+    </div>
+
+    {step==="upload"&&dropZone("Drop Excel quote here or click to browse","Supports .xls and .xlsx from Lisa's quote spreadsheets",".xls,.xlsx",()=>fileRef.current?.click())}
+
+    {step==="config"&&parsed&&<div style={{display:"flex",flexDirection:"column",gap:16}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12}} className="resp-grid-4">
+        {[["Sheets",parsed.sheets.length,"#f0f0f0"],["Items",selCount,"#2dd4bf"],["Vendors",parsed.vendors.size,"#a78bfa"],["Cost","$"+Math.round(selCost).toLocaleString(),"#fbbf24"],["Revenue","$"+Math.round(selRev).toLocaleString(),"#34d399"]].map(([l,v,c])=>
+          <Card key={l} style={{padding:14,textAlign:"center"}}><div style={{fontSize:10,color:"#737373",fontWeight:600,textTransform:"uppercase",letterSpacing:2,marginBottom:4}}>{l}</div><div style={{fontSize:22,fontWeight:700,color:c,fontFamily:"'JetBrains Mono',monospace"}}>{v}</div></Card>
+        )}
+      </div>
+      <Card><div style={{fontSize:15,fontWeight:700,color:"#f0f0f0",marginBottom:14}}>Import Settings</div>
+        <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:14,marginBottom:14}} className="resp-grid-2">
+          <div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Job Name</label><input value={jobName} onChange={e=>setJobName(e.target.value)} style={inputStyle} placeholder="e.g. DeKalb Mitchell ES"/></div>
+          <div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Customer</label><select style={inputStyle}>{customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></div>
+        </div>
+      </Card>
+      <Card><div style={{fontSize:15,fontWeight:700,color:"#f0f0f0",marginBottom:14}}>Sheets to Import</div>
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          {parsed.sheets.map(sh=><label key={sh.name} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",borderRadius:10,background:selectedSheets[sh.name]?"rgba(45,212,191,0.06)":"rgba(255,255,255,0.02)",border:selectedSheets[sh.name]?"1px solid rgba(45,212,191,0.15)":"1px solid rgba(255,255,255,0.04)",cursor:"pointer",transition:"all 0.15s"}}>
+            <input type="checkbox" checked={!!selectedSheets[sh.name]} onChange={e=>setSelectedSheets({...selectedSheets,[sh.name]:e.target.checked})} style={{accentColor:"#2dd4bf",width:16,height:16}}/>
+            <div style={{flex:1}}><div style={{fontSize:14,fontWeight:600,color:"#e5e5e5"}}>{sh.name}</div></div>
+            <span style={{fontSize:13,fontWeight:600,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{sh.count} items</span>
+          </label>)}
+        </div>
+      </Card>
+      <Card><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+          <div style={{fontSize:15,fontWeight:700,color:"#f0f0f0"}}>Preview ({selCount} items)</div>
+          {selRev>0&&<span style={{fontSize:13,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>Revenue: ${Math.round(selRev).toLocaleString()}</span>}
+        </div>
+        <div style={{overflowX:"auto",borderRadius:10,border:"1px solid rgba(255,255,255,0.06)"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:1000}}>
+            <thead><tr style={{background:"#0a0a0a"}}>{["Tag","Manuf","Model #","Description","Color","Qty","List","Net Ea","Ship","Install","Your Price"].map(h=>
+              <th key={h} style={{padding:"6px 8px",textAlign:"left",fontWeight:600,color:"#737373",fontSize:10,textTransform:"uppercase",letterSpacing:0.8,borderBottom:"1px solid rgba(255,255,255,0.06)"}}>{h}</th>
+            )}</tr></thead>
+            <tbody>{parsed.items.filter(i=>selectedSheets[i.sheet]).slice(0,40).map((it,idx)=>
+              <tr key={idx} style={{borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
+                <td style={{padding:"5px 8px",color:"#a78bfa",fontWeight:500}}>{it.tag}</td>
+                <td style={{padding:"5px 8px",color:"#c4c4c4"}}>{it.manufacturer}</td>
+                <td style={{padding:"5px 8px",color:"#c4c4c4",fontFamily:"'JetBrains Mono',monospace",fontSize:11}}>{it.modelNumber}</td>
+                <td style={{padding:"5px 8px",color:"#e5e5e5",maxWidth:240,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.description}</td>
+                <td style={{padding:"5px 8px",color:"#c4c4c4"}}>{it.color}</td>
+                <td style={{padding:"5px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace"}}>{it.qtyOrdered}</td>
+                <td style={{padding:"5px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",color:"#737373"}}>{it.listPrice?"$"+it.listPrice.toFixed(0):"--"}</td>
+                <td style={{padding:"5px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",color:"#34d399"}}>${it.unitCost.toFixed(2)}</td>
+                <td style={{padding:"5px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",color:"#fbbf24"}}>{it.shippingPerUnit?"$"+it.shippingPerUnit.toFixed(0):"--"}</td>
+                <td style={{padding:"5px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",color:"#a78bfa"}}>{it.installPerUnit?"$"+it.installPerUnit.toFixed(0):"--"}</td>
+                <td style={{padding:"5px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",color:"#2dd4bf",fontWeight:600}}>{it.unitPrice?"$"+it.unitPrice.toFixed(2):"--"}</td>
+              </tr>
+            )}</tbody>
+          </table>
+          {selCount>40&&<div style={{padding:10,textAlign:"center",color:"#525252",fontSize:12}}>Showing 40 of {selCount}</div>}
+        </div>
+      </Card>
+      <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+        <Btn v="secondary" onClick={reset}>Cancel</Btn>
+        <Btn onClick={importQuote} style={{padding:"12px 28px",fontSize:15,...(importing?{opacity:0.6,pointerEvents:"none"}:{})}}>{importing?"Importing...":"Import "+selCount+" Items"}</Btn>
+      </div>
+    </div>}
+  </div>;
+
+  // CSV IMPORT FLOW
+  if(mode==="csv")return <div style={{animation:"fadeUp 0.4s"}}>
+    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:20}}>
+      <span onClick={reset} style={{color:"#737373",cursor:"pointer",fontSize:13}} onMouseEnter={e=>e.currentTarget.style.color="#2dd4bf"} onMouseLeave={e=>e.currentTarget.style.color="#737373"}>Data Import</span>
+      <span style={{color:"#333"}}>/</span>
+      <span style={{color:"#f0f0f0",fontWeight:600,fontSize:13}}>Import {target.charAt(0).toUpperCase()+target.slice(1)}</span>
+    </div>
+
+    {step==="upload"&&<>
+      <div style={{display:"flex",gap:6,marginBottom:16}}>{["vendors","customers","reps"].map(t=><button key={t} onClick={()=>setTarget(t)} style={{padding:"8px 18px",borderRadius:8,border:"none",cursor:"pointer",background:target===t?"#2dd4bf":"#111",color:target===t?"#000":"#737373",fontSize:13,fontWeight:target===t?600:400,fontFamily:"inherit"}}>{t.charAt(0).toUpperCase()+t.slice(1)}</button>)}</div>
+      {dropZone("Drop CSV file here or click to browse","Supports .csv and .tsv files. First row must be column headers.",".csv,.tsv,.txt",()=>fileRef.current?.click())}
+      <Card style={{marginTop:16,padding:14}}>
+        <div style={{fontSize:13,fontWeight:600,color:"#2dd4bf",marginBottom:6}}>Expected Columns for {target}</div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{MAPS[target]?.labels.map(l=><span key={l} style={{padding:"4px 10px",borderRadius:6,background:"rgba(45,212,191,0.08)",color:"#2dd4bf",fontSize:11,fontWeight:500}}>{l}</span>)}</div>
+        <div style={{fontSize:12,color:"#525252",marginTop:8}}>Columns are auto-detected by name. Required fields marked with *</div>
+      </Card>
+    </>}
+
+    {step==="map"&&csvData&&<Card>
+      <div style={{fontSize:16,fontWeight:700,color:"#f0f0f0",marginBottom:4}}>Map Columns</div>
+      <div style={{fontSize:13,color:"#a3a3a3",marginBottom:16}}>{csvData.rows.length} rows found. Map your CSV columns to the system fields.</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:20}} className="resp-grid-2">
+        {MAPS[target].fields.map((field,i)=><div key={field} style={{display:"flex",alignItems:"center",gap:8}}>
+          <div style={{width:130,fontSize:12,color:MAPS[target].labels[i].includes("*")?"#2dd4bf":"#a3a3a3",fontWeight:500}}>{MAPS[target].labels[i]}</div>
+          <select value={colMap[field]||""} onChange={e=>setColMap({...colMap,[field]:e.target.value})} style={{...inputStyle,flex:1}}>
+            <option value="">-- skip --</option>
+            {csvData.headers.map(h=><option key={h} value={h}>{h}</option>)}
+          </select>
+        </div>)}
+      </div>
+      <div style={{fontSize:14,fontWeight:700,color:"#f0f0f0",marginBottom:8}}>Preview (first 5 rows)</div>
+      <div style={{overflowX:"auto",borderRadius:8,border:"1px solid rgba(255,255,255,0.06)",marginBottom:16}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+          <thead><tr style={{background:"#0a0a0a"}}>{MAPS[target].fields.filter(f=>colMap[f]).map(f=>
+            <th key={f} style={{padding:"6px 10px",textAlign:"left",color:"#737373",borderBottom:"1px solid rgba(255,255,255,0.06)",fontSize:10,textTransform:"uppercase"}}>{f}</th>
+          )}</tr></thead>
+          <tbody>{csvData.rows.slice(0,5).map((row,ri)=>{
+            return <tr key={ri}>{MAPS[target].fields.filter(f=>colMap[f]).map((f,fi)=>{
+              const val=row[colMap[f]]||"";
+              const type=MAPS[target].types[MAPS[target].fields.indexOf(f)];
+              const isValid=validate(val,type);
+              return <td key={f} style={{padding:"6px 10px",borderBottom:"1px solid rgba(255,255,255,0.03)",color:isValid?"#c4c4c4":"#f87171"}}>{val||<span style={{color:"#333"}}>--</span>}</td>
+            })}</tr>
+          })}</tbody>
+        </table>
+      </div>
+      <div style={{display:"flex",gap:8}}>
+        <Btn onClick={importCSV} style={importing?{opacity:0.6,pointerEvents:"none"}:{}}>{importing?"Importing...":"Import "+csvData.rows.length+" "+target.charAt(0).toUpperCase()+target.slice(1)}</Btn>
+        <Btn v="secondary" onClick={()=>{setStep("upload");setCsvData(null)}}>Back</Btn>
+      </div>
+    </Card>}
+  </div>;
+
+  return null;
 }
 
 
