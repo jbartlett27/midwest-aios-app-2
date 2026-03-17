@@ -96,21 +96,39 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
     }catch(err){notify("Error reading file: "+err.message,"error")}
   };
 
-  const parseCSV=(f)=>{
-    const reader=new FileReader();
-    reader.onload=(ev)=>{
-      const text=ev.target.result;
-      const delim=text.split("\n")[0].includes("\t")?"\t":",";
-      const lines=text.split("\n").filter(l=>l.trim());
-      if(lines.length<2){notify("File has no data rows","error");return}
-      const headers=lines[0].split(delim).map(h=>h.trim().replace(/^"|"$/g,""));
-      const rows=lines.slice(1).map(l=>{const vals=l.split(delim).map(v=>v.trim().replace(/^"|"$/g,""));const obj={};headers.forEach((h,i)=>obj[h]=vals[i]||"");return obj});
-      setCsvData({headers,rows});
-      autoMap(headers);
-      setStep("map");
-      notify(rows.length+" rows found");
-    };
-    reader.readAsText(f);
+  const parseCSV=async(f)=>{
+    const ext=f.name.split(".").pop().toLowerCase();
+    if(ext==="xls"||ext==="xlsx"){
+      try{
+        const XLSX=await import("xlsx");
+        const data=await f.arrayBuffer();
+        const wb=XLSX.read(data,{type:"array"});
+        const ws=wb.Sheets[wb.SheetNames[0]];
+        const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:""});
+        if(rows.length<2){notify("File has no data rows","error");return}
+        const headers=rows[0].map(h=>String(h||"").trim());
+        const dataRows=rows.slice(1).filter(r=>r.some(c=>String(c||"").trim())).map(r=>{const obj={};headers.forEach((h,i)=>obj[h]=String(r[i]||"").trim());return obj});
+        setCsvData({headers,rows:dataRows});
+        autoMap(headers);
+        setStep("map");
+        notify(dataRows.length+" rows found in "+wb.SheetNames[0]);
+      }catch(err){notify("Error reading Excel: "+err.message,"error")}
+    }else{
+      const reader=new FileReader();
+      reader.onload=(ev)=>{
+        const text=ev.target.result;
+        const delim=text.split("\n")[0].includes("\t")?"\t":",";
+        const lines=text.split("\n").filter(l=>l.trim());
+        if(lines.length<2){notify("File has no data rows","error");return}
+        const headers=lines[0].split(delim).map(h=>h.trim().replace(/^"|"$/g,""));
+        const rows=lines.slice(1).map(l=>{const vals=l.split(delim).map(v=>v.trim().replace(/^"|"$/g,""));const obj={};headers.forEach((h,i)=>obj[h]=vals[i]||"");return obj});
+        setCsvData({headers,rows});
+        autoMap(headers);
+        setStep("map");
+        notify(rows.length+" rows found");
+      };
+      reader.readAsText(f);
+    }
   };
 
   const MAPS={
@@ -223,8 +241,8 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:16,marginBottom:24}} className="resp-grid-3">
       {[
         {id:"quote",icon:"file",title:"Upload Excel Quote",sub:"Import Lisa's Excel spreadsheets with full line item parsing. Auto-detects tags, manufacturers, model numbers, quantities, pricing, shipping, and installation costs.",color:"#2dd4bf",tags:["XLS","XLSX","Auto-Map","Multi-Sheet"]},
-        {id:"vendors",icon:"package",title:"Import Vendors",sub:"Bulk import vendor/manufacturer data from CSV. Smart column mapping with validation for company names, contacts, emails, and phone numbers.",color:"#a78bfa",tags:["CSV","TSV","Validation"]},
-        {id:"customers",icon:"users",title:"Import Customers",sub:"Upload customer/district data from CSV. Auto-detects organization names, contacts, addresses, and school district types.",color:"#34d399",tags:["CSV","TSV","Validation"]}
+        {id:"vendors",icon:"package",title:"Import Vendors",sub:"Bulk import vendor data from Excel or CSV. Smart column mapping with validation for company names, contacts, emails, and phone numbers.",color:"#a78bfa",tags:["XLS","XLSX","CSV","TSV"]},
+        {id:"customers",icon:"users",title:"Import Customers",sub:"Upload customer data from Excel or CSV. Auto-detects organization names, contacts, addresses, and school district types.",color:"#34d399",tags:["XLS","XLSX","CSV","TSV"]}
       ].map(m=><Card key={m.id} onClick={()=>{setMode(m.id==="quote"?"quote":"csv");if(m.id!=="quote")setTarget(m.id)}} style={{cursor:"pointer",transition:"all 0.25s",border:"1px solid rgba(255,255,255,0.04)",position:"relative",overflow:"hidden"}} hover>
         <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
           <div style={{width:40,height:40,borderRadius:12,background:m.color+"15",display:"flex",alignItems:"center",justifyContent:"center",color:m.color}}><I n={m.icon} s={20}/></div>
@@ -339,7 +357,7 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
 
     {step==="upload"&&<>
       <div style={{display:"flex",gap:6,marginBottom:16}}>{["vendors","customers","reps"].map(t=><button key={t} onClick={()=>setTarget(t)} style={{padding:"8px 18px",borderRadius:8,border:"none",cursor:"pointer",background:target===t?"#2dd4bf":"#111",color:target===t?"#000":"#737373",fontSize:13,fontWeight:target===t?600:400,fontFamily:"inherit"}}>{t.charAt(0).toUpperCase()+t.slice(1)}</button>)}</div>
-      {dropZone("Drop CSV file here or click to browse","Supports .csv and .tsv files. First row must be column headers.",".csv,.tsv,.txt",()=>fileRef.current?.click())}
+      {dropZone("Drop Excel or CSV file here","Supports .xls, .xlsx, .csv, and .tsv files. First row must be column headers.",".csv,.tsv,.txt",()=>fileRef.current?.click())}
       <Card style={{marginTop:16,padding:14}}>
         <div style={{fontSize:13,fontWeight:600,color:"#2dd4bf",marginBottom:6}}>Expected Columns for {target}</div>
         <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{MAPS[target]?.labels.map(l=><span key={l} style={{padding:"4px 10px",borderRadius:6,background:"rgba(45,212,191,0.08)",color:"#2dd4bf",fontSize:11,fontWeight:500}}>{l}</span>)}</div>
