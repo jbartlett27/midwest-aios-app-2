@@ -161,6 +161,24 @@ const sopFromDb = (r) => ({
   content: r.content || '', custom: r.custom !== false,
 });
 
+// ---- USERS ----
+async function fetchUsers() {
+  try {
+    const r = await fetch(URL + '/users?select=*&order=id', { headers: hdrs });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch (e) { console.error('Fetch users:', e); return null; }
+}
+
+async function loginUser(username, password) {
+  try {
+    const r = await fetch(URL + '/users?username=eq.' + encodeURIComponent(username) + '&password=eq.' + encodeURIComponent(password) + '&select=*', { headers: hdrs });
+    if (!r.ok) return null;
+    const data = await r.json();
+    return data.length > 0 ? data[0] : null;
+  } catch (e) { console.error('Login:', e); return null; }
+}
+
 export const db = {
   async loadAll() {
     const [jobsRaw, liRaw, vRaw, cRaw, rRaw, sRaw] = await Promise.all([
@@ -199,6 +217,10 @@ export const db = {
     await upsertMany('jobs', initJobs.map(jobToDb));
     await upsertMany('line_items', initLI.map(liToDb));
   },
+  async fetchUsers() { return fetchUsers(); },
+  async loginUser(u, p) { return loginUser(u, p); },
+  async saveUser(user) { return upsertRow('users', user); },
+  async deleteUser(id) { return deleteRow('users', id); },
   async seedSafe(initJobs, initLI, initV, initC, initR) {
     await Promise.all([
       upsertMany('vendors', initV.map(vendorToDb)),
