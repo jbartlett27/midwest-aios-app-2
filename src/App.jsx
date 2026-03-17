@@ -419,6 +419,7 @@ export default function MidwestAIOS() {
     {id:"deliveries",label:"Delivery Tracker",icon:"truck",badge:pendingDeliveries||null,badgeColor:"#fbbf24"},
     {id:"documents",label:"Documents",icon:"file",badge:pendingInvoices||null,badgeColor:"#2dd4bf"},
     {id:"commissions",label:"Commissions",icon:"dollar"},
+    {id:"financials",label:"Financials",icon:"dollar"},
     {id:"salesportal",label:"Sales Portal",icon:"users"},
     {id:"playbook",label:"Playbook & SOPs",icon:"book"},
     {id:"tasks",label:"Tasks",icon:"check"},
@@ -428,7 +429,8 @@ export default function MidwestAIOS() {
     {id:"qbsetup",label:"QuickBooks",icon:"settings"},
   ];
 
-  const ctx = {jobs,setJobs,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,forceDeleteVendor,forceDeleteLineItem,forceDeleteCustomer,forceDeleteRep,setPage:p=>{setPage(p);setMobileMenuOpen(false)},viewCustomer:id=>{setPage("customer360");window._viewCustId=id},brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,qbConfig,setQbConfig,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter,pendingCommPreview,setPendingCommPreview};
+  const jobNum=(jobId)=>{const sorted=[...jobs].sort((a,b)=>(a.createdDate||'').localeCompare(b.createdDate||'')||a.id.localeCompare(b.id));const idx=sorted.findIndex(j=>j.id===jobId);return 'MW-'+String(idx+1).padStart(4,'0')};
+  const ctx = {jobs,setJobs,jobNum,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,forceDeleteVendor,forceDeleteLineItem,forceDeleteCustomer,forceDeleteRep,setPage:p=>{setPage(p);setMobileMenuOpen(false)},viewCustomer:id=>{setPage("customer360");window._viewCustId=id},brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,qbConfig,setQbConfig,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter,pendingCommPreview,setPendingCommPreview};
 
   if (!appReady) return (
     <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",width:"100vw",background:"#0a0a0a",fontFamily:"'Satoshi',sans-serif"}}>
@@ -503,6 +505,7 @@ export default function MidwestAIOS() {
           {page==="dataimport"&&<CsvUploadPage {...ctx} db={db}/>}
           {page==="deliveries"&&<DeliveryPage {...ctx}/>}
           {page==="documents"&&<DocumentsPage {...ctx}/>}
+          {page==="financials"&&<FinancialsPage {...ctx}/>}
           {page==="commissions"&&<CommissionsPage {...ctx} onGenerateStatement={doc=>{setPendingCommPreview(doc);}} />}
           {page==="salesportal"&&<SalesPortalPage {...ctx}/>}
           {page==="playbook"&&<PlaybookPage {...ctx}/>}
@@ -585,7 +588,7 @@ export default function MidwestAIOS() {
 // ===============================================================
 // DASHBOARD
 // ===============================================================
-function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJobItems,setPage,setSelectedJob,dateFilter,setDateFilter}){
+function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJobItems,setPage,setSelectedJob,dateFilter,setDateFilter,jobNum}){
   // Date filtering
   const now = new Date();
   const filterJob = (j) => {
@@ -669,7 +672,7 @@ function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJo
     {/* Row 3: Active Jobs + Team Leaderboard */}
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}} className="resp-grid-2">
       <Card style={{padding:16}} hover><div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:14,fontFamily:"'JetBrains Mono',monospace"}}>Active Jobs</div>
-        <div style={{display:"flex",flexDirection:"column",gap:8}}>{filtered.map(job=>{const f=getJobFinancials(job.id);return <div key={job.id} onClick={()=>{setSelectedJob(job.id);setPage("jobs")}} style={{padding:"10px 12px",background:"#000",borderRadius:10,cursor:"pointer",transition:"all 0.2s",border:"1px solid rgba(255,255,255,0.04)"}} onMouseEnter={e=>{e.currentTarget.style.background="#0a0a0a";e.currentTarget.style.borderColor="rgba(45,212,191,0.15)";e.currentTarget.style.transform="translateY(-1px)"}} onMouseLeave={e=>{e.currentTarget.style.background="#000";e.currentTarget.style.borderColor="rgba(255,255,255,0.04)";e.currentTarget.style.transform="translateY(0)"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}><span style={{fontSize:14,fontWeight:600,color:"#f0f0f0"}}>{job.name}</span><Badge label={job.phase} color={statusColor(job.phase)}/></div><Bar value={f.totalReceived} max={f.totalOrdered||1} color={statusColor(job.phase)} height={5}/><div style={{display:"flex",justifyContent:"space-between",marginTop:4}}><span style={{fontSize:12,color:"#a3a3a3"}}>{fmtN(f.totalReceived)}/{fmtN(f.totalOrdered)} units</span><span style={{fontSize:13,fontWeight:700,color:"#e5e5e5",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(f.totalRevenue)}</span></div></div>})}</div>
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>{filtered.map(job=>{const f=getJobFinancials(job.id);return <div key={job.id} onClick={()=>{setSelectedJob(job.id);setPage("jobs")}} style={{padding:"10px 12px",background:"#000",borderRadius:10,cursor:"pointer",transition:"all 0.2s",border:"1px solid rgba(255,255,255,0.04)"}} onMouseEnter={e=>{e.currentTarget.style.background="#0a0a0a";e.currentTarget.style.borderColor="rgba(45,212,191,0.15)";e.currentTarget.style.transform="translateY(-1px)"}} onMouseLeave={e=>{e.currentTarget.style.background="#000";e.currentTarget.style.borderColor="rgba(255,255,255,0.04)";e.currentTarget.style.transform="translateY(0)"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}><span style={{fontSize:14,fontWeight:600,color:"#f0f0f0"}}><span style={{fontFamily:"'JetBrains Mono',monospace",color:"#737373",fontSize:11,marginRight:6}}>{jobNum(job.id)}</span>{job.name}</span><Badge label={job.phase} color={statusColor(job.phase)}/></div><Bar value={f.totalReceived} max={f.totalOrdered||1} color={statusColor(job.phase)} height={5}/><div style={{display:"flex",justifyContent:"space-between",marginTop:4}}><span style={{fontSize:12,color:"#a3a3a3"}}>{fmtN(f.totalReceived)}/{fmtN(f.totalOrdered)} units</span><span style={{fontSize:13,fontWeight:700,color:"#e5e5e5",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(f.totalRevenue)}</span></div></div>})}</div>
       </Card>
       <Card style={{padding:16}} hover><div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:14,fontFamily:"'JetBrains Mono',monospace"}}>Team Leaderboard</div>
         {[...reps].filter(r=>!r.id.includes("SEED_FLAG")).sort((a,b)=>{const ar=jobs.filter(j=>j.salesRep===b.id).reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const br=jobs.filter(j=>j.salesRep===a.id).reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);return ar-br}).map((r,i)=>{const rv=jobs.filter(j=>j.salesRep===r.id).reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const jc=jobs.filter(j=>j.salesRep===r.id).length;const comm=rv*(r.commissionRate||0);return <div key={r.id} style={{padding:"10px 0",borderBottom:"1px solid #111",transition:"all 0.15s"}} onMouseEnter={e=>e.currentTarget.style.background="#0a0a0a"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><div style={{display:"flex",alignItems:"center",gap:10}}><div style={{width:30,height:30,borderRadius:"50%",background:["#2dd4bf","#a78bfa","#fbbf24","#34d399","#f87171","#8b5cf6"][i%6]+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,color:["#2dd4bf","#a78bfa","#fbbf24","#34d399","#f87171","#8b5cf6"][i%6],fontWeight:800,fontFamily:"'JetBrains Mono',monospace"}}>{i+1}</div><div style={{flex:1}}><div style={{fontSize:14,fontWeight:600,color:"#f0f0f0"}}>{r.name}</div><div style={{fontSize:12,color:"#a3a3a3"}}>{r.territory||""} - {jc} job{jc!==1?"s":""} - {((r.commissionRate||0)*100).toFixed(1)}%</div></div><div style={{textAlign:"right"}}><div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(rv)}</div><div style={{fontSize:11,color:"#737373"}}>comm: {fmt(comm)}</div></div></div></div>})}
@@ -966,7 +969,7 @@ function JobDetail({job,ctx}){
     <div className="job-sticky" style={{position:"sticky",top:0,zIndex:100,background:"rgba(0,0,0,0.92)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",margin:"-32px -40px 0",padding:"16px 40px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
       <button onClick={()=>setSelectedJob(null)} style={{background:"none",border:"none",color:"#2dd4bf",cursor:"pointer",fontSize:13,fontFamily:"inherit",marginBottom:12,display:"flex",alignItems:"center",gap:6}}>&larr; All Jobs</button>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}>
-        <div><div style={{display:"flex",alignItems:"center",gap:10,marginBottom:2}}><h2 style={{fontSize:22,fontWeight:800,color:"#e5e5e5",margin:0}}>{job.name}</h2><Badge label={job.phase} color={statusColor(job.phase)}/><Badge label={job.paymentStatus} color={statusColor(job.paymentStatus)}/></div><div style={{fontSize:12,color:"#a3a3a3"}}>{job.id} - {customer?.name} - {rep?.name} - {fmt(f.totalRevenue)} rev - {pct(f.margin)} margin</div></div>
+        <div><div style={{display:"flex",alignItems:"center",gap:10,marginBottom:2}}><h2 style={{fontSize:22,fontWeight:800,color:"#e5e5e5",margin:0}}><span style={{fontFamily:"'JetBrains Mono',monospace",color:"#525252",fontSize:13,marginRight:8}}>{ctx.jobNum?.(job.id)||""}</span>{job.name}</h2><Badge label={job.phase} color={statusColor(job.phase)}/><Badge label={job.paymentStatus} color={statusColor(job.paymentStatus)}/></div><div style={{fontSize:12,color:"#a3a3a3"}}>{job.id} - {customer?.name} - {rep?.name} - {fmt(f.totalRevenue)} rev - {pct(f.margin)} margin</div></div>
         <div style={{display:"flex",gap:6,flexWrap:"wrap"}}><Btn v="danger" onClick={()=>deleteJob(job.id)} style={{fontSize:12,padding:"6px 10px"}}><I n="close" s={12}/> Delete</Btn><Btn v="secondary" onClick={()=>setEditing(!editing)} style={{fontSize:12,padding:"6px 10px"}}><I n="edit" s={12}/> Edit</Btn><Btn v="secondary" onClick={duplicateJob} style={{fontSize:12,padding:"6px 10px"}}><I n="package" s={12}/> Duplicate</Btn><Btn onClick={()=>setAddingItem(true)} style={{fontSize:12,padding:"6px 10px"}}><I n="plus" s={12}/> Add Item</Btn><Btn v="ghost" onClick={()=>{
   const allItems=items;const customer2=customer;const jobPOs=[];const groups={};allItems.forEach(i=>{if(!groups[i.vendor])groups[i.vendor]=[];groups[i.vendor].push(i)});Object.entries(groups).forEach(([vid,vitems])=>{jobPOs.push({vendor:vendors.find(v=>v.id===vid),items:vitems})});
   const invTotal=allItems.reduce((s,i)=>s+((i.unitPrice||0)+(i.shippingPerUnit||0)+(i.installPerUnit||0))*i.qtyOrdered,0);const costTotal=allItems.reduce((s,i)=>s+i.unitCost*i.qtyOrdered,0);
@@ -2367,6 +2370,150 @@ Answer questions using ONLY the data above. Be specific with real numbers and na
     </Card>
     {/* Suggested queries */}
     {history.length<=1&&<div style={{display:"flex",flexWrap:"wrap",gap:8}}>{suggestedQueries.map(q=><button key={q} onClick={()=>{setBrainQuery(q);setTimeout(()=>{handleQuery()},50)}} style={{padding:"8px 14px",borderRadius:8,border:"1px solid rgba(45,212,191,0.15)",background:"transparent",color:"#2dd4bf",fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"all 0.2s"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(45,212,191,0.06)"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>{q}</button>)}</div>}
+  </div>;
+}
+
+function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,getJobItems,notify,triggerPrint,dateFilter}){
+  const [tab,setTab]=useState("overview");
+  const [period,setPeriod]=useState("ytd");
+
+  // Core calculations
+  const totalRev=jobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
+  const totalCost=jobs.reduce((s,j)=>s+getJobFinancials(j.id).totalCost,0);
+  const grossProfit=totalRev-totalCost;
+  const grossMargin=totalRev>0?(grossProfit/totalRev*100):0;
+  const paidRev=jobs.filter(j=>j.paymentStatus==="paid").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
+  const partialRev=jobs.filter(j=>j.paymentStatus==="partial").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
+  const unpaidRev=jobs.filter(j=>j.paymentStatus==="unpaid"||!j.paymentStatus).reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
+  const totalComm=reps.filter(r=>!r.id.includes("SEED_FLAG")).reduce((s,r)=>{const rv=jobs.filter(j=>j.salesRep===r.id).reduce((s2,j)=>s2+getJobFinancials(j.id).totalRevenue,0);return s+rv*(r.commissionRate||0)},0);
+  const netIncome=grossProfit-totalComm;
+  const arAging={current:0,t30:0,t60:0,t90:0,over90:0};
+  const now=new Date();
+  jobs.filter(j=>j.paymentStatus!=="paid").forEach(j=>{const f=getJobFinancials(j.id);const inv=j.dueDate?new Date(j.dueDate):new Date(j.createdDate||now);const days=Math.floor((now-inv)/86400000);if(days<=0)arAging.current+=f.totalRevenue;else if(days<=30)arAging.t30+=f.totalRevenue;else if(days<=60)arAging.t60+=f.totalRevenue;else if(days<=90)arAging.t90+=f.totalRevenue;else arAging.over90+=f.totalRevenue});
+  const totalAR=arAging.current+arAging.t30+arAging.t60+arAging.t90+arAging.over90;
+
+  // Monthly revenue data
+  const months=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const monthlyData=months.map((m,i)=>{const mJobs=jobs.filter(j=>{const d=new Date(j.createdDate);return d.getMonth()===i&&d.getFullYear()===new Date().getFullYear()});const rev=mJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const cost=mJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalCost,0);return{name:m,revenue:rev,cost,profit:rev-cost,margin:rev>0?((rev-cost)/rev*100):0}});
+
+  // Vendor spend breakdown
+  const vendorSpend=vendors.map(v=>{const spend=lineItems.filter(i=>i.vendor===v.id).reduce((s,i)=>s+i.unitCost*i.qtyOrdered,0);return{name:v.name,spend,pct:totalCost>0?(spend/totalCost*100):0}}).filter(v=>v.spend>0).sort((a,b)=>b.spend-a.spend);
+
+  // Customer revenue
+  const custRev=customers.map(c=>{const rev=jobs.filter(j=>j.customer===c.id).reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const jc=jobs.filter(j=>j.customer===c.id).length;return{name:c.name,revenue:rev,jobs:jc,pct:totalRev>0?(rev/totalRev*100):0}}).filter(c=>c.revenue>0).sort((a,b)=>b.revenue-a.revenue);
+
+  const generatePDF=(type)=>{
+    const today=new Date().toLocaleDateString();
+    const hd='<div style="font-family:Helvetica,Arial,sans-serif;max-width:900px;margin:0 auto;padding:40px;color:#111;font-size:12px">';
+    const logo='<div style="display:flex;align-items:center;gap:12px;margin-bottom:24px"><div style="font-size:18px;font-weight:700">Midwest Educational Furnishings, Inc.</div></div><div style="font-size:11px;color:#888;margin-bottom:24px">21191 N Valley Rd, Kildeer, IL 60047 US | (847) 847-1865</div>';
+    let html=hd+logo;
+    if(type==="pnl"){
+      html+='<div style="font-size:22px;font-weight:300;color:#888;margin-bottom:20px">Profit & Loss Statement</div><div style="font-size:12px;color:#888;margin-bottom:20px">Generated: '+today+'</div>';
+      html+='<table style="width:100%;border-collapse:collapse;font-size:13px"><tbody>';
+      html+='<tr style="border-bottom:2px solid #222"><td style="padding:10px 0;font-weight:700;font-size:14px">REVENUE</td><td style="text-align:right;padding:10px 0;font-weight:700;font-size:14px">$'+totalRev.toFixed(2)+'</td></tr>';
+      jobs.forEach(j=>{const f=getJobFinancials(j.id);html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 12px;color:#555">'+j.name+'</td><td style="text-align:right;padding:6px 0;color:#555">$'+f.totalRevenue.toFixed(2)+'</td></tr>'});
+      html+='<tr style="border-bottom:2px solid #222;margin-top:8px"><td style="padding:10px 0;font-weight:700;font-size:14px">COST OF GOODS SOLD</td><td style="text-align:right;padding:10px 0;font-weight:700;font-size:14px">$'+totalCost.toFixed(2)+'</td></tr>';
+      vendorSpend.forEach(v=>{html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 12px;color:#555">'+v.name+'</td><td style="text-align:right;padding:6px 0;color:#555">$'+v.spend.toFixed(2)+'</td></tr>'});
+      html+='<tr style="border-top:2px solid #222;background:#f9f9f9"><td style="padding:10px 0;font-weight:700;font-size:14px">GROSS PROFIT</td><td style="text-align:right;padding:10px 0;font-weight:700;font-size:14px;color:'+(grossProfit>=0?"#059669":"#dc2626")+'">$'+grossProfit.toFixed(2)+' ('+grossMargin.toFixed(1)+'%)</td></tr>';
+      html+='<tr style="border-bottom:2px solid #222"><td style="padding:10px 0;font-weight:700;font-size:14px">OPERATING EXPENSES</td><td></td></tr>';
+      html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 12px;color:#555">Sales Commissions</td><td style="text-align:right;padding:6px 0;color:#555">$'+totalComm.toFixed(2)+'</td></tr>';
+      html+='<tr style="border-top:3px double #222;background:#f0fdf4"><td style="padding:12px 0;font-weight:700;font-size:16px">NET INCOME</td><td style="text-align:right;padding:12px 0;font-weight:700;font-size:16px;color:'+(netIncome>=0?"#059669":"#dc2626")+'">$'+netIncome.toFixed(2)+'</td></tr>';
+      html+='</tbody></table>';
+    } else if(type==="ar"){
+      html+='<div style="font-size:22px;font-weight:300;color:#888;margin-bottom:20px">Accounts Receivable Aging</div><div style="font-size:12px;color:#888;margin-bottom:20px">As of: '+today+'</div>';
+      html+='<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="border-bottom:2px solid #222"><th style="text-align:left;padding:8px 0">Customer / Job</th><th style="text-align:right;padding:8px">Current</th><th style="text-align:right;padding:8px">1-30</th><th style="text-align:right;padding:8px">31-60</th><th style="text-align:right;padding:8px">61-90</th><th style="text-align:right;padding:8px">90+</th><th style="text-align:right;padding:8px">Total</th></tr></thead><tbody>';
+      jobs.filter(j=>j.paymentStatus!=="paid").forEach(j=>{const f=getJobFinancials(j.id);const c=customers.find(c2=>c2.id===j.customer);const inv=j.dueDate?new Date(j.dueDate):new Date(j.createdDate||now);const days=Math.floor((now-inv)/86400000);html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 0">'+j.name+'<br><span style="color:#888;font-size:11px">'+(c?.name||"")+'</span></td><td style="text-align:right;padding:6px">'+(days<=0?"$"+f.totalRevenue.toFixed(2):"")+'</td><td style="text-align:right;padding:6px">'+(days>0&&days<=30?"$"+f.totalRevenue.toFixed(2):"")+'</td><td style="text-align:right;padding:6px">'+(days>30&&days<=60?"$"+f.totalRevenue.toFixed(2):"")+'</td><td style="text-align:right;padding:6px">'+(days>60&&days<=90?"$"+f.totalRevenue.toFixed(2):"")+'</td><td style="text-align:right;padding:6px">'+(days>90?"$"+f.totalRevenue.toFixed(2):"")+'</td><td style="text-align:right;padding:6px;font-weight:600">$'+f.totalRevenue.toFixed(2)+'</td></tr>'});
+      html+='<tr style="border-top:2px solid #222;font-weight:700"><td style="padding:8px 0">TOTAL</td><td style="text-align:right;padding:8px">$'+arAging.current.toFixed(2)+'</td><td style="text-align:right;padding:8px">$'+arAging.t30.toFixed(2)+'</td><td style="text-align:right;padding:8px">$'+arAging.t60.toFixed(2)+'</td><td style="text-align:right;padding:8px">$'+arAging.t90.toFixed(2)+'</td><td style="text-align:right;padding:8px">$'+arAging.over90.toFixed(2)+'</td><td style="text-align:right;padding:8px">$'+totalAR.toFixed(2)+'</td></tr></tbody></table>';
+    } else if(type==="margin"){
+      html+='<div style="font-size:22px;font-weight:300;color:#888;margin-bottom:20px">Job Margin Analysis</div><div style="font-size:12px;color:#888;margin-bottom:20px">Generated: '+today+'</div>';
+      html+='<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="border-bottom:2px solid #222"><th style="text-align:left;padding:8px 0">Job</th><th style="text-align:right;padding:8px">Revenue</th><th style="text-align:right;padding:8px">Cost</th><th style="text-align:right;padding:8px">Profit</th><th style="text-align:right;padding:8px">Margin</th></tr></thead><tbody>';
+      jobs.forEach(j=>{const f=getJobFinancials(j.id);const profit=f.totalRevenue-f.totalCost;html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 0">'+j.name+'</td><td style="text-align:right;padding:6px">$'+f.totalRevenue.toFixed(2)+'</td><td style="text-align:right;padding:6px">$'+f.totalCost.toFixed(2)+'</td><td style="text-align:right;padding:6px;color:'+(profit>=0?"#059669":"#dc2626")+'">$'+profit.toFixed(2)+'</td><td style="text-align:right;padding:6px;font-weight:600;color:'+(f.margin>=30?"#059669":f.margin>=20?"#d97706":"#dc2626")+'">'+f.margin.toFixed(1)+'%</td></tr>'});
+      html+='<tr style="border-top:2px solid #222;font-weight:700"><td style="padding:8px 0">TOTAL</td><td style="text-align:right;padding:8px">$'+totalRev.toFixed(2)+'</td><td style="text-align:right;padding:8px">$'+totalCost.toFixed(2)+'</td><td style="text-align:right;padding:8px;color:'+(grossProfit>=0?"#059669":"#dc2626")+'">$'+grossProfit.toFixed(2)+'</td><td style="text-align:right;padding:8px">'+grossMargin.toFixed(1)+'%</td></tr></tbody></table>';
+    }
+    html+='</div>';
+    const w=window.open("","_blank");w.document.write(html);w.document.close();w.print();
+  };
+
+  const kpi=(label,value,sub,color)=><Card style={{padding:16,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:6}}>{label}</div><div style={{fontSize:"clamp(18px,4vw,28px)",fontWeight:800,color:color||"#f0f0f0",fontFamily:"'JetBrains Mono',monospace",lineHeight:1}}>{value}</div>{sub&&<div style={{fontSize:12,color:"#a3a3a3",marginTop:6}}>{sub}</div>}</Card>;
+
+  return <div style={{animation:"fadeUp 0.4s"}}>
+    <Header title="Financials" sub="Financial Intelligence"/>
+    <div style={{display:"flex",gap:3,background:"#111",padding:3,borderRadius:8,marginBottom:16,flexWrap:"wrap"}}>{[["overview","Overview"],["pnl","P&L"],["ar","Receivables"],["margin","Margins"],["reports","Reports"]].map(([v,l])=><button key={v} onClick={()=>setTab(v)} style={{padding:"6px 14px",borderRadius:6,border:"none",cursor:"pointer",background:tab===v?"#2dd4bf":"transparent",color:tab===v?"#000":"#737373",fontSize:12,fontWeight:tab===v?600:400,fontFamily:"inherit",transition:"all 0.15s"}}>{l}</button>)}</div>
+
+    {tab==="overview"&&<div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:14}} className="resp-grid-4">
+        {kpi("REVENUE",fmt(totalRev),jobs.length+" jobs","#2dd4bf")}
+        {kpi("GROSS PROFIT",fmt(grossProfit),grossMargin.toFixed(1)+"% margin","#34d399")}
+        {kpi("COMMISSIONS",fmt(totalComm),reps.filter(r=>!r.id.includes("SEED_FLAG")).length+" reps","#fbbf24")}
+        {kpi("NET INCOME",fmt(netIncome),totalRev>0?(netIncome/totalRev*100).toFixed(1)+"% net margin":"",netIncome>=0?"#34d399":"#f87171")}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}} className="resp-grid-2">
+        <Card style={{padding:16}} hover><div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:14,fontFamily:"'JetBrains Mono',monospace"}}>Revenue vs Cost</div>
+          <ResponsiveContainer width="100%" height={200}><BarChart data={monthlyData}><defs><linearGradient id="fRevG" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#2dd4bf" stopOpacity={0.9}/><stop offset="100%" stopColor="#2dd4bf" stopOpacity={0.4}/></linearGradient><linearGradient id="fCostG" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#f87171" stopOpacity={0.7}/><stop offset="100%" stopColor="#f87171" stopOpacity={0.3}/></linearGradient></defs><XAxis dataKey="name" tick={{fill:"#a3a3a3",fontSize:11}} axisLine={false} tickLine={false}/><YAxis tick={{fill:"#737373",fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>"$"+Math.round(v/1000)+"k"}/><Tooltip contentStyle={{background:"#000",border:"1px solid #222",borderRadius:8,fontSize:11,color:"#e5e5e5"}}/><RBar dataKey="revenue" fill="url(#fRevG)" radius={[4,4,0,0]} name="Revenue"/><RBar dataKey="cost" fill="url(#fCostG)" radius={[4,4,0,0]} name="Cost"/></BarChart></ResponsiveContainer>
+        </Card>
+        <Card style={{padding:16}} hover><div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:14,fontFamily:"'JetBrains Mono',monospace"}}>Cash Position</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:12}}>
+            <div style={{padding:12,background:"#000",borderRadius:10,textAlign:"center"}}><div style={{fontSize:11,color:"#34d399"}}>Collected</div><div style={{fontSize:18,fontWeight:800,color:"#34d399",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(paidRev)}</div></div>
+            <div style={{padding:12,background:"#000",borderRadius:10,textAlign:"center"}}><div style={{fontSize:11,color:"#fbbf24"}}>Partial</div><div style={{fontSize:18,fontWeight:800,color:"#fbbf24",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(partialRev)}</div></div>
+            <div style={{padding:12,background:"#000",borderRadius:10,textAlign:"center"}}><div style={{fontSize:11,color:"#f87171"}}>Outstanding</div><div style={{fontSize:18,fontWeight:800,color:"#f87171",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(unpaidRev)}</div></div>
+          </div>
+          <Bar value={paidRev} max={totalRev||1} color="#34d399" height={10}/>
+          <div style={{display:"flex",justifyContent:"space-between",marginTop:6,fontSize:11,color:"#737373"}}><span>Collection Rate</span><span style={{color:"#34d399",fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}>{totalRev>0?(paidRev/totalRev*100).toFixed(1):0}%</span></div>
+        </Card>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}} className="resp-grid-2">
+        <Card style={{padding:16}} hover><div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:14,fontFamily:"'JetBrains Mono',monospace"}}>AR Aging</div>
+          {[{label:"Current",value:arAging.current,color:"#34d399"},{label:"1-30 Days",value:arAging.t30,color:"#2dd4bf"},{label:"31-60 Days",value:arAging.t60,color:"#fbbf24"},{label:"61-90 Days",value:arAging.t90,color:"#f97316"},{label:"90+ Days",value:arAging.over90,color:"#f87171"}].map(a=><div key={a.label} style={{marginBottom:8}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}><span style={{fontSize:13,color:"#e5e5e5"}}>{a.label}</span><span style={{fontSize:13,fontWeight:700,color:a.color,fontFamily:"'JetBrains Mono',monospace"}}>{fmt(a.value)}</span></div><Bar value={a.value} max={totalAR||1} color={a.color} height={5}/></div>)}
+          <div style={{display:"flex",justifyContent:"space-between",paddingTop:8,borderTop:"1px solid #222"}}><span style={{fontSize:13,fontWeight:600,color:"#e5e5e5"}}>Total AR</span><span style={{fontSize:15,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalAR)}</span></div>
+        </Card>
+        <Card style={{padding:16}} hover><div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:14,fontFamily:"'JetBrains Mono',monospace"}}>Top Customers</div>
+          {custRev.slice(0,6).map((c,i)=><div key={c.name} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderBottom:"1px solid #111"}}><div style={{width:24,height:24,borderRadius:6,background:"#2dd4bf12",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"#2dd4bf",fontWeight:800,fontFamily:"'JetBrains Mono',monospace"}}>{i+1}</div><span style={{flex:1,fontSize:13,color:"#e5e5e5"}}>{c.name}</span><span style={{fontSize:13,fontWeight:700,color:"#e5e5e5",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(c.revenue)}</span><span style={{fontSize:11,color:"#737373"}}>{c.pct.toFixed(0)}%</span></div>)}
+        </Card>
+      </div>
+    </div>}
+
+    {tab==="pnl"&&<Card style={{padding:20}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}><div style={{fontSize:18,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>Profit & Loss</div><Btn onClick={()=>generatePDF("pnl")}><I n="download" s={14}/> Export PDF</Btn></div>
+      <div style={{borderBottom:"2px solid #222",padding:"10px 0",display:"flex",justifyContent:"space-between"}}><span style={{fontSize:15,fontWeight:700,color:"#f0f0f0"}}>REVENUE</span><span style={{fontSize:15,fontWeight:700,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalRev)}</span></div>
+      {jobs.map(j=>{const f=getJobFinancials(j.id);return <div key={j.id} style={{padding:"6px 16px",display:"flex",justifyContent:"space-between",borderBottom:"1px solid #111"}}><span style={{fontSize:13,color:"#a3a3a3"}}>{j.name}</span><span style={{fontSize:13,color:"#a3a3a3",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(f.totalRevenue)}</span></div>})}
+      <div style={{borderBottom:"2px solid #222",padding:"10px 0",display:"flex",justifyContent:"space-between",marginTop:12}}><span style={{fontSize:15,fontWeight:700,color:"#f0f0f0"}}>COST OF GOODS SOLD</span><span style={{fontSize:15,fontWeight:700,color:"#f87171",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalCost)}</span></div>
+      {vendorSpend.map(v=><div key={v.name} style={{padding:"6px 16px",display:"flex",justifyContent:"space-between",borderBottom:"1px solid #111"}}><span style={{fontSize:13,color:"#a3a3a3"}}>{v.name}</span><span style={{fontSize:13,color:"#a3a3a3",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(v.spend)}</span></div>)}
+      <div style={{background:"#0a0a0a",borderRadius:8,padding:"12px 0",marginTop:12,display:"flex",justifyContent:"space-between"}}><span style={{fontSize:15,fontWeight:700,color:"#f0f0f0",paddingLeft:4}}>GROSS PROFIT</span><span style={{fontSize:15,fontWeight:700,color:grossProfit>=0?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(grossProfit)} ({grossMargin.toFixed(1)}%)</span></div>
+      <div style={{borderBottom:"2px solid #222",padding:"10px 0",display:"flex",justifyContent:"space-between",marginTop:12}}><span style={{fontSize:15,fontWeight:700,color:"#f0f0f0"}}>OPERATING EXPENSES</span><span style={{fontSize:15,fontWeight:700,color:"#fbbf24",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalComm)}</span></div>
+      <div style={{padding:"6px 16px",display:"flex",justifyContent:"space-between",borderBottom:"1px solid #111"}}><span style={{fontSize:13,color:"#a3a3a3"}}>Sales Commissions</span><span style={{fontSize:13,color:"#a3a3a3",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalComm)}</span></div>
+      <div style={{background:"#34d39908",borderRadius:8,padding:"14px 4px",marginTop:16,display:"flex",justifyContent:"space-between",border:"1px solid #34d39920"}}><span style={{fontSize:17,fontWeight:800,color:"#f0f0f0"}}>NET INCOME</span><span style={{fontSize:17,fontWeight:800,color:netIncome>=0?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(netIncome)}</span></div>
+    </Card>}
+
+    {tab==="ar"&&<Card style={{padding:20}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}><div style={{fontSize:18,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>Accounts Receivable Aging</div><Btn onClick={()=>generatePDF("ar")}><I n="download" s={14}/> Export PDF</Btn></div>
+      <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:500}}><thead><tr style={{borderBottom:"2px solid #222"}}>{["Customer / Job","Current","1-30","31-60","61-90","90+","Total"].map(h=><th key={h} style={{padding:"8px 6px",textAlign:h==="Customer / Job"?"left":"right",color:"#737373",fontSize:11,fontWeight:600}}>{h}</th>)}</tr></thead><tbody>
+        {jobs.filter(j=>j.paymentStatus!=="paid").map(j=>{const f=getJobFinancials(j.id);const c=customers.find(c2=>c2.id===j.customer);const inv=j.dueDate?new Date(j.dueDate):new Date(j.createdDate||now);const days=Math.floor((now-inv)/86400000);return <tr key={j.id} style={{borderBottom:"1px solid #111"}}><td style={{padding:"8px 6px"}}><div style={{color:"#e5e5e5",fontWeight:500}}>{j.name}</div><div style={{fontSize:11,color:"#737373"}}>{c?.name}</div></td>{[days<=0,days>0&&days<=30,days>30&&days<=60,days>60&&days<=90,days>90].map((show,i)=><td key={i} style={{padding:"8px 6px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",color:show?["#34d399","#2dd4bf","#fbbf24","#f97316","#f87171"][i]:"#333"}}>{show?fmt(f.totalRevenue):""}</td>)}<td style={{padding:"8px 6px",textAlign:"right",fontWeight:600,fontFamily:"'JetBrains Mono',monospace"}}>{fmt(f.totalRevenue)}</td></tr>})}
+        <tr style={{borderTop:"2px solid #222"}}><td style={{padding:"8px 6px",fontWeight:700}}>TOTAL</td>{[arAging.current,arAging.t30,arAging.t60,arAging.t90,arAging.over90].map((v,i)=><td key={i} style={{padding:"8px 6px",textAlign:"right",fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:["#34d399","#2dd4bf","#fbbf24","#f97316","#f87171"][i]}}>{fmt(v)}</td>)}<td style={{padding:"8px 6px",textAlign:"right",fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalAR)}</td></tr>
+      </tbody></table></div>
+    </Card>}
+
+    {tab==="margin"&&<Card style={{padding:20}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}><div style={{fontSize:18,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>Job Margin Analysis</div><Btn onClick={()=>generatePDF("margin")}><I n="download" s={14}/> Export PDF</Btn></div>
+      <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:450}}><thead><tr style={{borderBottom:"2px solid #222"}}>{["Job","Phase","Revenue","Cost","Profit","Margin"].map(h=><th key={h} style={{padding:"8px 6px",textAlign:h==="Job"||h==="Phase"?"left":"right",color:"#737373",fontSize:11,fontWeight:600}}>{h}</th>)}</tr></thead><tbody>
+        {jobs.map(j=>{const f=getJobFinancials(j.id);const profit=f.totalRevenue-f.totalCost;return <tr key={j.id} style={{borderBottom:"1px solid #111"}}><td style={{padding:"8px 6px",color:"#e5e5e5",fontWeight:500}}>{j.name}</td><td style={{padding:"8px 6px"}}><Badge label={j.phase} color={statusColor(j.phase)}/></td><td style={{padding:"8px 6px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(f.totalRevenue)}</td><td style={{padding:"8px 6px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",color:"#a3a3a3"}}>{fmt(f.totalCost)}</td><td style={{padding:"8px 6px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",color:profit>=0?"#34d399":"#f87171"}}>{fmt(profit)}</td><td style={{padding:"8px 6px",textAlign:"right",fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:f.margin>=30?"#34d399":f.margin>=20?"#fbbf24":"#f87171"}}>{f.margin.toFixed(1)}%</td></tr>})}
+        <tr style={{borderTop:"2px solid #222"}}><td style={{padding:"8px 6px",fontWeight:700}} colSpan={2}>TOTAL</td><td style={{padding:"8px 6px",textAlign:"right",fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalRev)}</td><td style={{padding:"8px 6px",textAlign:"right",fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalCost)}</td><td style={{padding:"8px 6px",textAlign:"right",fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:grossProfit>=0?"#34d399":"#f87171"}}>{fmt(grossProfit)}</td><td style={{padding:"8px 6px",textAlign:"right",fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}>{grossMargin.toFixed(1)}%</td></tr>
+      </tbody></table></div>
+    </Card>}
+
+    {tab==="reports"&&<div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(250px,1fr))",gap:12}} className="resp-grid-2">
+        {[{title:"Profit & Loss Statement",desc:"Complete income statement with revenue by job, COGS by vendor, operating expenses, and net income",icon:"dollar",fn:()=>generatePDF("pnl")},
+          {title:"AR Aging Report",desc:"Accounts receivable broken down by aging bucket (current, 30, 60, 90, 90+) with customer detail",icon:"file",fn:()=>generatePDF("ar")},
+          {title:"Job Margin Analysis",desc:"Revenue, cost, profit, and margin percentage for every job with color-coded health indicators",icon:"briefcase",fn:()=>generatePDF("margin")},
+          {title:"Vendor Spend Report",desc:"Total spend by vendor with percentage of COGS, item counts, and discount rates",icon:"truck",fn:()=>{const csv="Vendor,Spend,% of COGS,Items,Discount\n"+vendorSpend.map(v=>v.name+","+v.spend.toFixed(2)+","+v.pct.toFixed(1)+"%,"+lineItems.filter(i=>i.vendor===vendors.find(v2=>v2.name===v.name)?.id).length+","+(vendors.find(v2=>v2.name===v.name)?.discountRate*100||0).toFixed(0)+"%").join("\n");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download="vendor-spend.csv";a.click();notify("Vendor spend exported")}},
+          {title:"Customer Revenue Report",desc:"Revenue by customer with job counts and percentage of total revenue",icon:"users",fn:()=>{const csv="Customer,Revenue,Jobs,% of Total\n"+custRev.map(c=>c.name+","+c.revenue.toFixed(2)+","+c.jobs+","+c.pct.toFixed(1)+"%").join("\n");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download="customer-revenue.csv";a.click();notify("Customer revenue exported")}},
+          {title:"Commission Summary",desc:"Commission obligations by rep with earned vs pending breakdown",icon:"dollar",fn:()=>{const csv="Rep,Territory,Rate,Revenue,Commission,Earned,Pending\n"+reps.filter(r=>!r.id.includes("SEED_FLAG")&&r.commissionRate>0).map(r=>{const rv=jobs.filter(j=>j.salesRep===r.id).reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const earned=jobs.filter(j=>j.salesRep===r.id&&j.paymentStatus==="paid").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue*(r.commissionRate||0),0);return r.name+","+r.territory+","+(r.commissionRate*100).toFixed(1)+"%,"+rv.toFixed(2)+","+(rv*r.commissionRate).toFixed(2)+","+earned.toFixed(2)+","+(rv*r.commissionRate-earned).toFixed(2)}).join("\n");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download="commission-summary.csv";a.click();notify("Commission summary exported")}}
+        ].map(r=><Card key={r.title} style={{padding:16,cursor:"pointer",transition:"all 0.2s"}} hover onClick={r.fn}>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}><div style={{width:36,height:36,borderRadius:10,background:"#2dd4bf12",display:"flex",alignItems:"center",justifyContent:"center"}}><I n={r.icon} s={16} color="#2dd4bf"/></div><div style={{fontSize:14,fontWeight:700,color:"#f0f0f0"}}>{r.title}</div></div>
+          <div style={{fontSize:12,color:"#a3a3a3",lineHeight:1.5}}>{r.desc}</div>
+        </Card>)}
+      </div>
+    </div>}
   </div>;
 }
 
