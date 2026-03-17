@@ -450,8 +450,8 @@ function MidwestAIOSInner() {
   const visibleJobs = userRole === "sales" && userRepId ? jobs.filter(j => j.salesRep === userRepId) : jobs;
   const ctx = {jobs:visibleJobs,allJobs:jobs,setJobs,jobNum,currentUser,userRole,userRepId,logout,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,forceDeleteVendor,forceDeleteLineItem,forceDeleteCustomer,forceDeleteRep,setPage:p=>{setPage(p);setMobileMenuOpen(false)},viewCustomer:id=>{setPage("customer360");window._viewCustId=id},brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,qbConfig,setQbConfig,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter,pendingCommPreview,setPendingCommPreview};
 
-  if (!appReady) return (
-    <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",width:"100vw",background:"#0a0a0a",fontFamily:"'Satoshi',sans-serif"}}>
+  const loadingScreen = (
+<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",width:"100vw",background:"#0a0a0a",fontFamily:"'Satoshi',sans-serif"}}>
       <div style={{textAlign:"center"}}>
         <img src={MW_LOGO} alt="MW" style={{height:44,width:44,borderRadius:8,objectFit:"contain",flexShrink:0}}/>
         <div style={{fontSize:16,fontWeight:600,color:"#2dd4bf",marginBottom:8}}>Midwest Educational Furnishings</div>
@@ -463,10 +463,12 @@ function MidwestAIOSInner() {
     </div>
   );
 
+
   // Login screen
   const [loginMode, setLoginMode] = useState("login"); // login or register
   const [regRole, setRegRole] = useState("sales");
-  if(!currentUser)return <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",width:"100vw",background:"#000",fontFamily:"'Satoshi',sans-serif",position:"relative"}}>
+  // Login screen rendered conditionally in main return
+  const loginScreen = <div style={{display:"flex",alignItems:"center",justifyContent:"center",minHeight:"100vh",width:"100vw",background:"#000",fontFamily:"'Satoshi',sans-serif",position:"relative"}}>
     <div style={{position:"absolute",inset:0,overflow:"hidden"}}><div style={{position:"absolute",top:"-20%",left:"-10%",width:"50vw",height:"50vw",borderRadius:"50%",background:"radial-gradient(circle,rgba(45,212,191,0.06) 0%,transparent 70%)",animation:"floatA 12s ease-in-out infinite"}}/><div style={{position:"absolute",bottom:"-15%",right:"-10%",width:"40vw",height:"40vw",borderRadius:"50%",background:"radial-gradient(circle,rgba(167,139,250,0.05) 0%,transparent 70%)",animation:"floatA 15s ease-in-out infinite reverse"}}/></div>
     <style>{"@keyframes floatA{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-20px,30px) scale(0.95)}} @keyframes slideIn{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}} @keyframes gPulse{0%,100%{box-shadow:0 0 20px rgba(45,212,191,0.1)}50%{box-shadow:0 0 40px rgba(45,212,191,0.2)}}"}</style>
     <div style={{width:"100%",maxWidth:420,padding:32,position:"relative",zIndex:1,animation:"slideIn 0.6s ease-out"}}>
@@ -481,7 +483,12 @@ function MidwestAIOSInner() {
   </div>;
 
 
-return (
+
+if (sharedScreen) return sharedScreen;
+  if (!appReady) return loadingScreen;
+  if (!currentUser) return loginScreen;
+
+  return (
     <div style={{display:"flex",height:"100vh",width:"100vw",fontFamily:"'Satoshi','Satoshi',sans-serif",background:"#000000",color:"#d4d4d4",overflow:"hidden"}}>
       <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700&display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"/>
       {searchOpen&&<div style={{position:"fixed",inset:0,zIndex:99998,display:"flex",alignItems:"flex-start",justifyContent:"center",paddingTop:"15vh"}}><div onClick={()=>setSearchOpen(false)} style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.5)",backdropFilter:"blur(40px) saturate(180%)",WebkitBackdropFilter:"blur(40px) saturate(180%)"}}/><div style={{position:"relative",width:"100%",maxWidth:560,background:"#111111",borderRadius:16,border:"1px solid rgba(255,255,255,0.08)",boxShadow:"0 24px 80px rgba(0,0,0,0.5)",overflow:"hidden",animation:"fadeUp 0.2s cubic-bezier(0.25,0.1,0.25,1)"}}><div style={{padding:"16px 20px",borderBottom:"1px solid rgba(255,255,255,0.06)",display:"flex",alignItems:"center",gap:12}}><I n="search" s={18}/><input autoFocus value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} placeholder="Search jobs, vendors, customers, items..." style={{flex:1,background:"transparent",border:"none",outline:"none",color:"#e5e5e5",fontSize:16,fontFamily:"inherit"}}/><span style={{fontSize:12,color:"#333333",background:"#1a1a1a",padding:"2px 8px",borderRadius:4}}>ESC</span></div>{searchResults.length>0&&<div style={{maxHeight:400,overflow:"auto",padding:"8px"}}>{searchResults.map((r,i)=><div key={r.id+i} onClick={r.action} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",borderRadius:10,cursor:"pointer",transition:"background 0.15s"}} onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.06)"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><div style={{width:32,height:32,borderRadius:8,background:r.type==="Job"?"#2dd4bf18":r.type==="Vendor"?"#2563eb18":r.type==="Customer"?"#05966918":"#d9770618",display:"flex",alignItems:"center",justifyContent:"center"}}><I n={r.type==="Job"?"briefcase":r.type==="Vendor"?"package":r.type==="Customer"?"users":"file"} s={14}/></div><div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600,color:"#e5e5e5",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name}</div><div style={{fontSize:12,color:"#a3a3a3"}}>{r.sub}</div></div><Badge label={r.type} color={r.type==="Job"?"#2dd4bf":r.type==="Vendor"?"#a78bfa":"#34d399"}/></div>)}</div>}{searchQuery.length>=2&&searchResults.length===0&&<div style={{padding:40,textAlign:"center",color:"#333333",fontSize:13}}>No results for "{searchQuery}"</div>}{searchQuery.length<2&&<div style={{padding:30,textAlign:"center",color:"#333333",fontSize:12}}>Type at least 2 characters to search</div>}</div></div>}
