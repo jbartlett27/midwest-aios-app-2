@@ -644,7 +644,7 @@ const sharedScreen = sharedQuote ? <ShareQuotePortal quoteData={sharedQuote} onA
 // ===============================================================
 // DASHBOARD
 // ===============================================================
-function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJobItems,setPage,setSelectedJob,dateFilter,setDateFilter,jobNum}){
+function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJobItems,setPage,setSelectedJob,dateFilter,setDateFilter,jobNum,notify}){
   // Date filtering
   const now = new Date();
   const filterJob = (j) => {
@@ -975,7 +975,7 @@ function JobsPage(ctx){
         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,paddingBottom:8,borderBottom:"2px solid "+statusColor(phase)}}><div style={{width:8,height:8,borderRadius:"50%",background:statusColor(phase)}}/><span style={{fontSize:13,fontWeight:700,color:"#e5e5e5"}}>{phase}</span><span style={{fontSize:12,color:"#a3a3a3",marginLeft:"auto"}}>{sortedJobs.filter(j=>j.phase===phase).length}</span></div>
         <div style={{display:"flex",flexDirection:"column",gap:8}}>
           {sortedJobs.filter(j=>j.phase===phase).map(job=>{const f=getJobFinancials(job.id);return <div key={job.id} draggable onDragStart={e=>handleDragStart(e,job.id)} onClick={()=>setSelectedJob(job.id)} style={{background:"#1a1a1a",borderRadius:8,padding:12,cursor:"grab",border:"1px solid rgba(255,255,255,0.06)",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="#2dd4bf44";e.currentTarget.style.transform="translateY(-1px)"}} onMouseLeave={e=>{e.currentTarget.style.borderColor="#333333";e.currentTarget.style.transform="translateY(0)"}}>
-            <div style={{fontSize:13,fontWeight:600,color:"#e5e5e5",marginBottom:4}}><span style={{fontFamily:"'JetBrains Mono',monospace",color:"#525252",fontSize:11,marginRight:6}}>{jobNum?.(job.id)}</span>{job.name}</div>
+            <div style={{fontSize:13,fontWeight:600,color:"#e5e5e5",marginBottom:4}}><span style={{fontFamily:"'JetBrains Mono',monospace",color:"#525252",fontSize:11,marginRight:6}}>{ctx.jobNum?.(job.id)}</span>{job.name}</div>
             <div style={{fontSize:12,color:"#a3a3a3",marginBottom:6}}>{customers.find(c=>c.id===job.customer)?.name}</div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <span style={{fontSize:12,fontWeight:600,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(f.totalRevenue)}</span>
@@ -1275,12 +1275,12 @@ function DeliveryPage({jobs,lineItems,vendors,customers,getItemStatus,getJobItem
 function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItems,getJobFinancials,updateJob,updateLineItem,notify,qbConfig,setPage,triggerPrint,pendingCommPreview,setPendingCommPreview,customSops,addSop,deleteSop,...ctx}){
   const [tab,setTab]=useState("quotes");
   const [hiddenCols,setHiddenCols]=useState(()=>{try{return JSON.parse(localStorage.getItem("mw_hidden_cols")||'{"manuf":true,"model":true,"shippingEach":true,"installEach":true}')}catch{return {manuf:true,model:true,shippingEach:true,installEach:true}}});
+  const [previewDoc,setPreviewDoc]=useState(null);
   const toggleCol=(col)=>{const next={...hiddenCols,[col]:!hiddenCols[col]};setHiddenCols(next);try{localStorage.setItem("mw_hidden_cols",JSON.stringify(next))}catch{};if(previewDoc?.job?.id){updateJob(previewDoc.job.id,{quoteVisibleCols:next})}};
   const allQuoteCols=[{key:"tag",label:"Tag"},{key:"manuf",label:"Manuf."},{key:"model",label:"Model #"},{key:"description",label:"Description"},{key:"color",label:"Color"},{key:"qty",label:"Qty"},{key:"shippingEach",label:"Shipping Each"},{key:"shippingTotal",label:"Shipping Total"},{key:"installEach",label:"Install Each"},{key:"installTotal",label:"Install Total"},{key:"unitPrice",label:"Your Price"},{key:"lineTotal",label:"Line Total"}];
   const projectNum=(jobId)=>{const sorted=[...jobs].sort((a,b)=>(a.createdDate||'').localeCompare(b.createdDate||'')||a.id.localeCompare(b.id));const idx=sorted.findIndex(j=>j.id===jobId);return 'MW-'+String(idx+1).padStart(4,'0')};
   useEffect(()=>{if(pendingCommPreview){setPreviewDoc(pendingCommPreview);setTab("preview");setPendingCommPreview(null)}},[pendingCommPreview]);
-  const [previewDoc,setPreviewDoc]=useState(null);
-    const activeHidden=previewDoc?.data?.hiddenCols||hiddenCols;const visibleCols=allQuoteCols.filter(c=>!activeHidden[c.key]);
+      const activeHidden=previewDoc?.data?.hiddenCols||hiddenCols;const visibleCols=allQuoteCols.filter(c=>!activeHidden[c.key]);
   const [pushing,setPushing]=useState(false);
   // Doc statuses stored IN each job record in Supabase -- persists across browsers, deploys, cache clears
   const allDocStatuses = jobs.reduce((acc, j) => ({...acc, ...(j.docStatuses || {})}), {});
