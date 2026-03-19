@@ -2728,12 +2728,12 @@ function NotesPage({customSops,addSop,deleteSop,jobs,reps,notify,triggerPrint}){
 }
 
 function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJobItems,brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading}){
-  const [history,setHistory]=useState([{role:"system",content:"Welcome to the Midwest Brain. I'm connected to Claude and have access to all your live data -- jobs, vendors, customers, deliveries, financials, SOPs, notes, and tasks. Ask me anything."}]);
+  const [history,setHistory]=useState([{role:"system",content:"Welcome to the Midwest Brain. I'm connected to Claude Sonnet 4.6 and have access to all your live data -- jobs, vendors, customers, deliveries, financials, SOPs, notes, and tasks. Ask me anything."}]);
   const suggestedQueries=["What is our total pipeline revenue?","Which vendor do we spend the most with?","Show me all jobs that are In Progress","What is our average margin?","Which reps have the highest revenue?","List all overdue deliveries","Summarize our commission obligations","What SOPs do we have documented?"];
   const chatRef=useRef(null);
   useEffect(()=>{if(chatRef.current)chatRef.current.scrollTop=chatRef.current.scrollHeight},[history]);
 
-  const CLAUDE_KEY = "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";
+  // API key stored server-side in /api/brain.js
 
   const buildContext = () => {
     const totalRev = jobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
@@ -2815,37 +2815,16 @@ Answer questions using ONLY the data above. Be specific with real numbers and na
     try {
       const ctx = buildContext();
       const msgs = [...history.filter(h=>h.role==="user"||h.role==="assistant").slice(-6).map(h=>({role:h.role,content:h.content})),{role:"user",content:q}];
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
+      const response = await fetch("/api/brain", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": CLAUDE_KEY,
-          "anthropic-version": "2023-06-01",
-          "anthropic-dangerous-direct-browser-access": "true"
-        },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 2048,
-          system: ctx,
-          messages: msgs
-        })
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({system: ctx, messages: msgs})
       });
       const data = await response.json();
       if (data.content && data.content[0]) {
         setHistory(p => [...p, { role: "assistant", content: data.content[0].text }]);
       } else if (data.error) {
-        // If model not found, try alternate model
-        if (data.error.message?.includes("model") || data.error.type === "not_found_error") {
-          const r2 = await fetch("https://api.anthropic.com/v1/messages", {
-            method: "POST",
-            headers: {"Content-Type": "application/json","x-api-key": CLAUDE_KEY,"anthropic-version": "2023-06-01","anthropic-dangerous-direct-browser-access": "true"},
-            body: JSON.stringify({model: "claude-3-5-sonnet-20241022", max_tokens: 2048, system: ctx, messages: msgs})
-          });
-          const d2 = await r2.json();
-          setHistory(p => [...p, { role: "assistant", content: d2.content?.[0]?.text || "Error: " + JSON.stringify(d2.error || d2) }]);
-        } else {
-          setHistory(p => [...p, { role: "assistant", content: "API Error: " + data.error.message + " (type: " + data.error.type + ")" }]);
-        }
+        setHistory(p => [...p, { role: "assistant", content: "API Error: " + (data.error.message || JSON.stringify(data.error)) }]);
       } else {
         setHistory(p => [...p, { role: "assistant", content: "Unexpected response: " + JSON.stringify(data).slice(0, 200) }]);
       }
@@ -2865,7 +2844,7 @@ Answer questions using ONLY the data above. Be specific with real numbers and na
   };
 
   return <div style={{animation:"fadeUp 0.4s"}}>
-    <Header title="Brain" sub="Connected to Claude Sonnet 4"/>
+    <Header title="Brain" sub="Connected to Claude Sonnet 4.6"/>
     <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16}}>
       <div style={{width:10,height:10,borderRadius:"50%",background:"#34d399",boxShadow:"0 0 8px #34d39980"}}/>
       <span style={{fontSize:13,color:"#34d399",fontWeight:600}}>Live</span>
