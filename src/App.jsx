@@ -2733,77 +2733,64 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
   // API key stored server-side in /api/brain.js
 
   const buildContext = () => {
-    const totalRev = jobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
-    const totalCost = jobs.reduce((s,j)=>s+getJobFinancials(j.id).totalCost,0);
-    const avgMargin = jobs.length?jobs.reduce((s,j)=>s+getJobFinancials(j.id).margin,0)/jobs.length:0;
-    const totalOrdered = lineItems.reduce((s,i)=>s+i.qtyOrdered,0);
-    const totalReceived = lineItems.reduce((s,i)=>s+i.qtyReceived,0);
-    const totalInvoiced = lineItems.reduce((s,i)=>s+i.qtyInvoiced,0);
-    const pendingDel = lineItems.filter(i=>i.qtyReceived<i.qtyOrdered).length;
-    const readyToInvoice = lineItems.filter(i=>i.qtyReceived>i.qtyInvoiced).length;
+    const compact = (obj, keys) => {
+      const o = {};
+      keys.forEach(k => { if (obj[k] !== undefined && obj[k] !== "" && obj[k] !== null) o[k] = obj[k]; });
+      return o;
+    };
 
-    const jobDetails = jobs.map(j=>{
-      const f=getJobFinancials(j.id);const items=lineItems.filter(li=>li.jobId===j.id);const cust=customers.find(c=>c.id===j.customer);const rep=reps.find(r=>r.id===j.salesRep);
-      const ds=j.docStatuses||{};const statuses=Object.entries(ds).map(([k,v])=>`${k}=${v}`).join(",");
-      const itemSummary=items.slice(0,20).map(i=>{const v=vendors.find(vn=>vn.id===i.vendor);return `${v?.name||"?"}|${i.modelNumber||""}|${i.description?.substring(0,40)||""}|qty=${i.qtyOrdered}|rcvd=${i.qtyReceived}|cost=$${(i.unitCost||0).toFixed(0)}|price=$${(i.unitPrice||0).toFixed(0)}${i.deliveryDate?"|del="+i.deliveryDate:""}`}).join("; ");
-      return `[${j.id}] ${j.name}: phase=${j.phase}, cust=${cust?.name||"?"}, rep=${rep?.name||"?"}, rev=$${f.totalRevenue.toFixed(0)}, cost=$${f.totalCost.toFixed(0)}, margin=${f.margin.toFixed(1)}%, del=${f.totalReceived}/${f.totalOrdered}, pay=${j.paymentStatus}, terms=${j.terms||"Net 30"}, created=${j.createdDate}, start=${j.startDate||"-"}, due=${j.dueDate||"-"}, po#=${j.poNumber||"-"}, shipTo=${j.shipTo||"-"}, notes=${(j.notes||"").substring(0,60)}${statuses?", docs:"+statuses:""}${items.length>0?"\n  Items("+items.length+"): "+itemSummary:""}`;
-    }).join("\n");
+    const jobData = jobs.map(j => {
+      const f = getJobFinancials(j.id);
+      const items = lineItems.filter(li => li.jobId === j.id).map(i => {
+        const v = vendors.find(vn => vn.id === i.vendor);
+        return { vendor: v?.name, model: i.modelNumber, desc: (i.description || "").substring(0, 50), tag: i.tag, group: i.group, color: i.color, qty: i.qtyOrdered, rcvd: i.qtyReceived, invd: i.qtyInvoiced, list: i.listPrice, cost: i.unitCost, price: i.unitPrice, ship: i.shippingPerUnit, install: i.installPerUnit, delDate: i.deliveryDate, poDate: i.poDate };
+      });
+      const c = customers.find(c => c.id === j.customer);
+      const r = reps.find(r => r.id === j.salesRep);
+      return { id: j.id, name: j.name, phase: j.phase, customer: c?.name, rep: r?.name, rev: Math.round(f.totalRevenue), cost: Math.round(f.totalCost), margin: +f.margin.toFixed(1), delivered: f.totalReceived + "/" + f.totalOrdered, payment: j.paymentStatus, terms: j.terms, po: j.poNumber, shipTo: j.shipTo, shipVia: j.shipVia, billTo: j.billTo, created: j.createdDate, start: j.startDate, due: j.dueDate, notes: (j.notes || "").substring(0, 80), orderNotes: (j.orderNotes || "").substring(0, 80), docStatuses: j.docStatuses, items };
+    });
 
-    const vendorDetails = vendors.map(v=>{
-      const vItems=lineItems.filter(i=>i.vendor===v.id);const spend=vItems.reduce((s,i)=>s+i.unitCost*i.qtyOrdered,0);
-      return `${v.name}: cat=${v.category||"-"}, disc=${((v.discountRate||0)*100).toFixed(0)}%, spend=$${spend.toFixed(0)}, ${vItems.length} items, contact=${v.contact||"-"}, email=${v.email||"-"}, phone=${v.phone||"-"}, addr=${(v.address||"").substring(0,40)}`;
-    }).join("\n");
+    const vendorData = vendors.map(v => {
+      const spend = lineItems.filter(i => i.vendor === v.id).reduce((s, i) => s + (i.unitCost || 0) * i.qtyOrdered, 0);
+      return { name: v.name, cat: v.category, discount: v.discountRate, spend: Math.round(spend), items: lineItems.filter(i => i.vendor === v.id).length, contact: v.contact, email: v.email, phone: v.phone, addr: v.address };
+    });
 
-    const customerDetails = customers.map(c=>{
-      const cJobs=jobs.filter(j=>j.customer===c.id);const rev=cJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
-      return `${c.name}: type=${c.type||"-"}, ${cJobs.length} jobs, rev=$${rev.toFixed(0)}, contact=${c.contact||"-"}, email=${c.email||"-"}, phone=${c.phone||"-"}, addr=${(c.address||"").substring(0,40)}`;
-    }).join("\n");
+    const custData = customers.map(c => {
+      const cJobs = jobs.filter(j => j.customer === c.id);
+      const rev = cJobs.reduce((s, j) => s + getJobFinancials(j.id).totalRevenue, 0);
+      return { name: c.name, type: c.type, jobs: cJobs.length, rev: Math.round(rev), contact: c.contact, email: c.email, phone: c.phone, addr: c.address };
+    });
 
-    const repDetails = reps.filter(r=>!r.id.includes("SEED_FLAG")).map(r=>{
-      const rJobs=jobs.filter(j=>j.salesRep===r.id);const rev=rJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const comm=rev*(r.commissionRate||0);
-      return `${r.name}: territory=${r.territory||"-"}, rate=${((r.commissionRate||0)*100).toFixed(1)}%, tier=${r.tier||"-"}, ${rJobs.length} jobs, rev=$${rev.toFixed(0)}, comm=$${comm.toFixed(0)}, email=${r.email||"-"}`;
-    }).join("\n");
+    const repData = reps.filter(r => !r.id.includes("SEED_FLAG")).map(r => {
+      const rJobs = jobs.filter(j => j.salesRep === r.id);
+      const rev = rJobs.reduce((s, j) => s + getJobFinancials(j.id).totalRevenue, 0);
+      return { name: r.name, territory: r.territory, rate: r.commissionRate, tier: r.tier, jobs: rJobs.length, rev: Math.round(rev), comm: Math.round(rev * (r.commissionRate || 0)), email: r.email };
+    });
 
-    const sopsList = (customSops||[]).filter(s=>s.cat!=="Task"&&s.cat!=="Notes"&&s.cat!=="DocStatuses").map(s=>{
-      let preview="";try{const p=s.content?.replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim();preview=p?.substring(0,120)||""}catch{}
-      return `SOP [${s.cat}] ${s.title}${preview?": "+preview+"...":""}`;
-    }).join("\n");
+    const sops = (customSops || []).filter(s => s.cat !== "Task" && s.cat !== "Notes" && s.cat !== "DocStatuses").map(s => {
+      const text = (s.content || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+      return { title: s.title, cat: s.cat, content: text.substring(0, 200) };
+    });
 
-    const tasksList = (customSops||[]).filter(s=>s.cat==="Task").map(s=>{try{const d=JSON.parse(s.content);return `Task: ${d.text||s.title}, status=${d.status||"To Do"}, due=${d.due||"-"}, assigned=${(d.assignees||[]).join(",")}, priority=${d.priority||"normal"}`}catch{return `Task: ${s.title}`}}).join("\n");
+    const tasks = (customSops || []).filter(s => s.cat === "Task").map(s => {
+      try { const d = JSON.parse(s.content); return { text: d.text || s.title, status: d.status, due: d.due, assignees: d.assignees, priority: d.priority }; } catch { return { text: s.title }; }
+    });
 
-    const notesList = (customSops||[]).filter(s=>s.cat==="Notes").map(s=>{
-      let preview="";try{const p=s.content?.replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim();preview=p?.substring(0,150)||""}catch{}
-      return `Note: ${s.title}${preview?"\n  "+preview+"...":""}`;
-    }).join("\n");
+    const notes = (customSops || []).filter(s => s.cat === "Notes").map(s => {
+      const text = (s.content || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+      return { title: s.title, content: text.substring(0, 300) };
+    });
 
-    return `You are the Midwest Brain, the AI assistant for Midwest Educational Furnishings, Inc. -- a 14-year educational furniture company based in Kildeer, IL (21191 N Valley Rd, Kildeer, IL 60047). Owner: Maureen Welter. Admin: Lisa Monchunski, Dave Welter. Territory: IL and WI. Focus: K-12 education furniture.
+    const db = JSON.stringify({ jobs: jobData, vendors: vendorData, customers: custData, reps: repData, sops, tasks, notes });
 
-FINANCIALS:
-Revenue: $${totalRev.toFixed(0)} | Cost: $${totalCost.toFixed(0)} | Margin: ${avgMargin.toFixed(1)}% | Profit: $${(totalRev-totalCost).toFixed(0)}
-Items: ${totalOrdered} ordered, ${totalReceived} received, ${totalInvoiced} invoiced | Pending deliveries: ${pendingDel} | Ready to invoice: ${readyToInvoice}
+    return `You are the Midwest Brain -- the AI operating intelligence for Midwest Educational Furnishings, Inc., a 14-year K-12 educational furniture company in Kildeer, IL. Owner: Maureen Welter. Office: Lisa Monchunski, Dave Welter.
 
-JOBS (${jobs.length}):
-${jobDetails}
+Below is the COMPLETE live database as JSON. Use it to answer any question about jobs, line items, vendors, customers, reps, financials, deliveries, documents, SOPs, tasks, or notes. You can calculate, compare, filter, and analyze freely.
 
-VENDORS (${vendors.length}):
-${vendorDetails}
+DATABASE:
+${db}
 
-CUSTOMERS (${customers.length}):
-${customerDetails}
-
-REPS (${reps.filter(r=>!r.id.includes("SEED_FLAG")).length}):
-${repDetails}
-
-PLAYBOOK & SOPs (${(customSops||[]).filter(s=>s.cat!=="Task"&&s.cat!=="Notes"&&s.cat!=="DocStatuses").length}):
-${sopsList||"None yet"}
-
-TASKS (${(customSops||[]).filter(s=>s.cat==="Task").length}):
-${tasksList||"None"}
-
-NOTES (${(customSops||[]).filter(s=>s.cat==="Notes").length}):
-${notesList||"None"}
-
-Answer using ONLY data above. Be specific with real numbers and names. If data is not present, say so.`;
+Be specific. Use real names and numbers. Format responses clearly.`;
   };
 
   const handleQuery = async () => {
