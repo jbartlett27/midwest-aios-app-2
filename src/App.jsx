@@ -2732,44 +2732,33 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
 
   // API key stored server-side in /api/brain.js
 
-  const buildContext = () => {
-    const compact = (obj, keys) => {
-      const o = {};
-      keys.forEach(k => { if (obj[k] !== undefined && obj[k] !== "" && obj[k] !== null) o[k] = obj[k]; });
-      return o;
-    };
+  const buildContext = (query) => {
+    const q = (query || "").toLowerCase();
+    const wantsSops = /sop|playbook|process|procedure|how.?to|training|workflow|step|guide|protocol|policy|onboard/i.test(q);
+    const wantsNotes = /note|meeting|call|memo|record|log|wrote|written/i.test(q);
 
     const jobData = jobs.map(j => {
-      const f = getJobFinancials(j.id);
       const items = lineItems.filter(li => li.jobId === j.id).map(i => {
         const v = vendors.find(vn => vn.id === i.vendor);
-        return { vendor: v?.name, model: i.modelNumber, desc: (i.description || "").substring(0, 50), tag: i.tag, group: i.group, color: i.color, qty: i.qtyOrdered, rcvd: i.qtyReceived, invd: i.qtyInvoiced, list: i.listPrice, cost: i.unitCost, price: i.unitPrice, ship: i.shippingPerUnit, install: i.installPerUnit, delDate: i.deliveryDate, poDate: i.poDate };
+        return { vendor: v?.name, model: i.modelNumber, desc: (i.description||"").substring(0,50), tag: i.tag, group: i.group, color: i.color, qty: i.qtyOrdered, rcvd: i.qtyReceived, invd: i.qtyInvoiced, list: i.listPrice, cost: i.unitCost, price: i.unitPrice, ship: i.shippingPerUnit, install: i.installPerUnit, delDate: i.deliveryDate, poDate: i.poDate };
       });
       const c = customers.find(c => c.id === j.customer);
       const r = reps.find(r => r.id === j.salesRep);
-      return { id: j.id, name: j.name, phase: j.phase, customer: c?.name, rep: r?.name, rev: Math.round(f.totalRevenue), cost: Math.round(f.totalCost), margin: +f.margin.toFixed(1), delivered: f.totalReceived + "/" + f.totalOrdered, payment: j.paymentStatus, terms: j.terms, po: j.poNumber, shipTo: j.shipTo, shipVia: j.shipVia, billTo: j.billTo, created: j.createdDate, start: j.startDate, due: j.dueDate, notes: (j.notes || "").substring(0, 80), orderNotes: (j.orderNotes || "").substring(0, 80), docStatuses: j.docStatuses, items };
+      return { id: j.id, name: j.name, phase: j.phase, customer: c?.name, rep: r?.name, payment: j.paymentStatus, terms: j.terms, po: j.poNumber, shipTo: j.shipTo, shipVia: j.shipVia, billTo: j.billTo, created: j.createdDate, start: j.startDate, due: j.dueDate, notes: (j.notes||"").substring(0,100), orderNotes: (j.orderNotes||"").substring(0,100), docStatuses: j.docStatuses, items };
     });
 
     const vendorData = vendors.map(v => {
-      const spend = lineItems.filter(i => i.vendor === v.id).reduce((s, i) => s + (i.unitCost || 0) * i.qtyOrdered, 0);
-      return { name: v.name, cat: v.category, discount: v.discountRate, spend: Math.round(spend), items: lineItems.filter(i => i.vendor === v.id).length, contact: v.contact, email: v.email, phone: v.phone, addr: v.address };
+      const vItems = lineItems.filter(i => i.vendor === v.id);
+      return { name: v.name, cat: v.category, discount: v.discountRate, discType: v.discountType, items: vItems.length, contact: v.contact, email: v.email, phone: v.phone, addr: v.address };
     });
 
-    const custData = customers.map(c => {
-      const cJobs = jobs.filter(j => j.customer === c.id);
-      const rev = cJobs.reduce((s, j) => s + getJobFinancials(j.id).totalRevenue, 0);
-      return { name: c.name, type: c.type, jobs: cJobs.length, rev: Math.round(rev), contact: c.contact, email: c.email, phone: c.phone, addr: c.address };
-    });
+    const custData = customers.map(c => ({ name: c.name, type: c.type, contact: c.contact, email: c.email, phone: c.phone, addr: c.address }));
 
-    const repData = reps.filter(r => !r.id.includes("SEED_FLAG")).map(r => {
-      const rJobs = jobs.filter(j => j.salesRep === r.id);
-      const rev = rJobs.reduce((s, j) => s + getJobFinancials(j.id).totalRevenue, 0);
-      return { name: r.name, territory: r.territory, rate: r.commissionRate, tier: r.tier, jobs: rJobs.length, rev: Math.round(rev), comm: Math.round(rev * (r.commissionRate || 0)), email: r.email };
-    });
+    const repData = reps.filter(r => !r.id.includes("SEED_FLAG")).map(r => ({ name: r.name, territory: r.territory, rate: r.commissionRate, tier: r.tier, email: r.email }));
 
     const sops = (customSops || []).filter(s => s.cat !== "Task" && s.cat !== "Notes" && s.cat !== "DocStatuses").map(s => {
       const text = (s.content || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-      return { title: s.title, cat: s.cat, content: text.substring(0, 200) };
+      return { title: s.title, cat: s.cat, content: wantsSops ? text : text.substring(0, 80) };
     });
 
     const tasks = (customSops || []).filter(s => s.cat === "Task").map(s => {
@@ -2778,19 +2767,32 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
 
     const notes = (customSops || []).filter(s => s.cat === "Notes").map(s => {
       const text = (s.content || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-      return { title: s.title, content: text.substring(0, 300) };
+      return { title: s.title, content: wantsNotes ? text : text.substring(0, 80) };
     });
 
     const db = JSON.stringify({ jobs: jobData, vendors: vendorData, customers: custData, reps: repData, sops, tasks, notes });
+    const today = new Date().toISOString().split("T")[0];
 
     return `You are the Midwest Brain -- the AI operating intelligence for Midwest Educational Furnishings, Inc., a 14-year K-12 educational furniture company in Kildeer, IL. Owner: Maureen Welter. Office: Lisa Monchunski, Dave Welter.
 
-Below is the COMPLETE live database as JSON. Use it to answer any question about jobs, line items, vendors, customers, reps, financials, deliveries, documents, SOPs, tasks, or notes. You can calculate, compare, filter, and analyze freely.
+TODAY: ${today}
 
-DATABASE:
+Use today's date to flag overdue deliveries, past-due jobs, stale pipeline items, and upcoming deadlines. Proactively mention time-sensitive issues when relevant.
+
+COMPLETE DATABASE (JSON -- compute revenue, margin, commissions, and all financials directly from the raw line item data: revenue = sum of price * qty, cost = sum of cost * qty, margin = (revenue - cost) / revenue * 100, commission = revenue * rep rate):
 ${db}
 
-Be specific. Use real names and numbers. Format responses clearly.`;
+${wantsSops ? "FULL SOP CONTENT LOADED -- use it to answer process and procedure questions in detail." : "SOP content abbreviated. If you need full SOP text, tell the user to ask again mentioning 'playbook' or 'SOP'."}
+${wantsNotes ? "FULL NOTE CONTENT LOADED." : "Note content abbreviated. If you need full notes, tell the user to ask again mentioning 'notes'."}
+
+INSTRUCTIONS:
+- Be specific with real names, numbers, and dates
+- Calculate financials from raw data (do not rely on pre-computed values)
+- Flag anything overdue or time-sensitive relative to today
+- At the end of every response, suggest 2-3 follow-up questions the user might find valuable, formatted as:
+  >> [question 1]
+  >> [question 2]
+  >> [question 3]`;
   };
 
   const handleQuery = async () => {
@@ -2801,8 +2803,8 @@ Be specific. Use real names and numbers. Format responses clearly.`;
     setBrainLoading(true);
 
     try {
-      const ctx = buildContext();
-      const msgs = [...history.filter(h=>h.role==="user"||h.role==="assistant").slice(-6).map(h=>({role:h.role,content:h.content})),{role:"user",content:q}];
+      const ctx = buildContext(q);
+      const msgs = [...history.filter(h=>h.role==="user"||h.role==="assistant").slice(-15).map(h=>({role:h.role,content:h.content})),{role:"user",content:q}];
       let data;
       try {
         const response = await fetch("/api/brain", {
