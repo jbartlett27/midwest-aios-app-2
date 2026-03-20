@@ -5,7 +5,8 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const API_KEY = process.env.ANTHROPIC_API_KEY || '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';
+  const API_KEY = process.env.ANTHROPIC_API_KEY;
+  if (!API_KEY) return res.status(500).json({ error: { message: 'ANTHROPIC_API_KEY not set in Vercel environment variables' } });
 
   try {
     const { system, messages } = req.body;
