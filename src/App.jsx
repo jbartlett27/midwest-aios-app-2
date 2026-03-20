@@ -2818,7 +2818,7 @@ Answer questions using ONLY the data above. Be specific with real numbers and na
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "x-api-key": "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",
+            "x-api-key": "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",
             "anthropic-version": "2023-06-01",
             "anthropic-dangerous-direct-browser-access": "true"
           },
