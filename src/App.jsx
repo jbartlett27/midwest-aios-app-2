@@ -2743,40 +2743,44 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     const readyToInvoice = lineItems.filter(i=>i.qtyReceived>i.qtyInvoiced).length;
 
     const jobDetails = jobs.map(j=>{
-      const f=getJobFinancials(j.id);const items=getJobItems?getJobItems(j.id):[];const cust=customers.find(c=>c.id===j.customer);const rep=reps.find(r=>r.id===j.salesRep);
-      return `${j.name}: phase=${j.phase}, customer=${cust?.name||"?"}, rep=${rep?.name||"?"}, revenue=$${f.totalRevenue.toFixed(0)}, cost=$${f.totalCost.toFixed(0)}, margin=${f.margin.toFixed(1)}%, delivered=${f.totalReceived}/${f.totalOrdered}, payment=${j.paymentStatus}, terms=${j.terms||"Net 30"}, created=${j.createdDate}, due=${j.dueDate||"none"}, ${items.length} line items`;
+      const f=getJobFinancials(j.id);const items=lineItems.filter(li=>li.jobId===j.id);const cust=customers.find(c=>c.id===j.customer);const rep=reps.find(r=>r.id===j.salesRep);
+      const ds=j.docStatuses||{};const statuses=Object.entries(ds).map(([k,v])=>`${k}=${v}`).join(",");
+      const itemSummary=items.slice(0,20).map(i=>{const v=vendors.find(vn=>vn.id===i.vendor);return `${v?.name||"?"}|${i.modelNumber||""}|${i.description?.substring(0,40)||""}|qty=${i.qtyOrdered}|rcvd=${i.qtyReceived}|cost=$${(i.unitCost||0).toFixed(0)}|price=$${(i.unitPrice||0).toFixed(0)}${i.deliveryDate?"|del="+i.deliveryDate:""}`}).join("; ");
+      return `[${j.id}] ${j.name}: phase=${j.phase}, cust=${cust?.name||"?"}, rep=${rep?.name||"?"}, rev=$${f.totalRevenue.toFixed(0)}, cost=$${f.totalCost.toFixed(0)}, margin=${f.margin.toFixed(1)}%, del=${f.totalReceived}/${f.totalOrdered}, pay=${j.paymentStatus}, terms=${j.terms||"Net 30"}, created=${j.createdDate}, start=${j.startDate||"-"}, due=${j.dueDate||"-"}, po#=${j.poNumber||"-"}, shipTo=${j.shipTo||"-"}, notes=${(j.notes||"").substring(0,60)}${statuses?", docs:"+statuses:""}${items.length>0?"\n  Items("+items.length+"): "+itemSummary:""}`;
     }).join("\n");
 
     const vendorDetails = vendors.map(v=>{
-      const spend=lineItems.filter(i=>i.vendor===v.id).reduce((s,i)=>s+i.unitCost*i.qtyOrdered,0);
-      const itemCount=lineItems.filter(i=>i.vendor===v.id).length;
-      return `${v.name}: category=${v.category}, discount=${(v.discountRate*100).toFixed(0)}%, spend=$${spend.toFixed(0)}, ${itemCount} items, contact=${v.contact||""}, email=${v.email||""}, phone=${v.phone|""}`;
+      const vItems=lineItems.filter(i=>i.vendor===v.id);const spend=vItems.reduce((s,i)=>s+i.unitCost*i.qtyOrdered,0);
+      return `${v.name}: cat=${v.category||"-"}, disc=${((v.discountRate||0)*100).toFixed(0)}%, spend=$${spend.toFixed(0)}, ${vItems.length} items, contact=${v.contact||"-"}, email=${v.email||"-"}, phone=${v.phone||"-"}, addr=${(v.address||"").substring(0,40)}`;
     }).join("\n");
 
     const customerDetails = customers.map(c=>{
       const cJobs=jobs.filter(j=>j.customer===c.id);const rev=cJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
-      return `${c.name}: type=${c.type||""}, ${cJobs.length} jobs, revenue=$${rev.toFixed(0)}, contact=${c.contact||""}, email=${c.email||""}, phone=${c.phone||""}`;
+      return `${c.name}: type=${c.type||"-"}, ${cJobs.length} jobs, rev=$${rev.toFixed(0)}, contact=${c.contact||"-"}, email=${c.email||"-"}, phone=${c.phone||"-"}, addr=${(c.address||"").substring(0,40)}`;
     }).join("\n");
 
     const repDetails = reps.filter(r=>!r.id.includes("SEED_FLAG")).map(r=>{
       const rJobs=jobs.filter(j=>j.salesRep===r.id);const rev=rJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const comm=rev*(r.commissionRate||0);
-      return `${r.name}: territory=${r.territory}, rate=${((r.commissionRate||0)*100).toFixed(1)}%, tier=${r.tier}, ${rJobs.length} jobs, revenue=$${rev.toFixed(0)}, commission=$${comm.toFixed(0)}`;
+      return `${r.name}: territory=${r.territory||"-"}, rate=${((r.commissionRate||0)*100).toFixed(1)}%, tier=${r.tier||"-"}, ${rJobs.length} jobs, rev=$${rev.toFixed(0)}, comm=$${comm.toFixed(0)}, email=${r.email||"-"}`;
     }).join("\n");
 
-    const sopsList = (customSops||[]).filter(s=>s.cat!=="Task"&&s.cat!=="Notes"&&s.cat!=="DocStatuses").map(s=>`SOP: ${s.title} (${s.cat})`).join("\n");
-    const tasksList = (customSops||[]).filter(s=>s.cat==="Task").map(s=>{try{const d=JSON.parse(s.content);return `Task: ${d.text||s.title}, status=${d.status||"To Do"}, due=${d.due||"none"}, assignees=${(d.assignees||[]).join(",")}, priority=${d.priority||"normal"}`}catch{return `Task: ${s.title}`}}).join("\n");
-    const notesList = (customSops||[]).filter(s=>s.cat==="Notes").map(s=>`Note: ${s.title}`).join("\n");
+    const sopsList = (customSops||[]).filter(s=>s.cat!=="Task"&&s.cat!=="Notes"&&s.cat!=="DocStatuses").map(s=>{
+      let preview="";try{const p=s.content?.replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim();preview=p?.substring(0,120)||""}catch{}
+      return `SOP [${s.cat}] ${s.title}${preview?": "+preview+"...":""}`;
+    }).join("\n");
 
-    return `You are the Midwest Brain, the AI assistant for Midwest Educational Furnishings, Inc. -- a 14-year educational furniture company based in Kildeer, IL (21191 N Valley Rd, Kildeer, IL 60047, phone 847-847-1865). Owners: Dave and Maureen Welter. Admin: Lisa Monchunski. Territory: IL and WI. Focus: K-12 education furniture.
+    const tasksList = (customSops||[]).filter(s=>s.cat==="Task").map(s=>{try{const d=JSON.parse(s.content);return `Task: ${d.text||s.title}, status=${d.status||"To Do"}, due=${d.due||"-"}, assigned=${(d.assignees||[]).join(",")}, priority=${d.priority||"normal"}`}catch{return `Task: ${s.title}`}}).join("\n");
 
-FINANCIAL SUMMARY:
-Total Pipeline Revenue: $${totalRev.toFixed(0)}
-Total Cost: $${totalCost.toFixed(0)}
-Average Margin: ${avgMargin.toFixed(1)}%
-Total Profit: $${(totalRev-totalCost).toFixed(0)}
-Items Ordered: ${totalOrdered}, Received: ${totalReceived}, Invoiced: ${totalInvoiced}
-Pending Deliveries: ${pendingDel} items
-Ready to Invoice: ${readyToInvoice} items
+    const notesList = (customSops||[]).filter(s=>s.cat==="Notes").map(s=>{
+      let preview="";try{const p=s.content?.replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim();preview=p?.substring(0,150)||""}catch{}
+      return `Note: ${s.title}${preview?"\n  "+preview+"...":""}`;
+    }).join("\n");
+
+    return `You are the Midwest Brain, the AI assistant for Midwest Educational Furnishings, Inc. -- a 14-year educational furniture company based in Kildeer, IL (21191 N Valley Rd, Kildeer, IL 60047). Owner: Maureen Welter. Admin: Lisa Monchunski, Dave Welter. Territory: IL and WI. Focus: K-12 education furniture.
+
+FINANCIALS:
+Revenue: $${totalRev.toFixed(0)} | Cost: $${totalCost.toFixed(0)} | Margin: ${avgMargin.toFixed(1)}% | Profit: $${(totalRev-totalCost).toFixed(0)}
+Items: ${totalOrdered} ordered, ${totalReceived} received, ${totalInvoiced} invoiced | Pending deliveries: ${pendingDel} | Ready to invoice: ${readyToInvoice}
 
 JOBS (${jobs.length}):
 ${jobDetails}
@@ -2787,19 +2791,19 @@ ${vendorDetails}
 CUSTOMERS (${customers.length}):
 ${customerDetails}
 
-SALES REPS (${reps.filter(r=>!r.id.includes("SEED_FLAG")).length}):
+REPS (${reps.filter(r=>!r.id.includes("SEED_FLAG")).length}):
 ${repDetails}
 
-SOPS & DOCUMENTATION:
-${sopsList||"No SOPs documented yet"}
+PLAYBOOK & SOPs (${(customSops||[]).filter(s=>s.cat!=="Task"&&s.cat!=="Notes"&&s.cat!=="DocStatuses").length}):
+${sopsList||"None yet"}
 
-TASKS:
-${tasksList||"No tasks"}
+TASKS (${(customSops||[]).filter(s=>s.cat==="Task").length}):
+${tasksList||"None"}
 
-NOTES:
-${notesList||"No notes"}
+NOTES (${(customSops||[]).filter(s=>s.cat==="Notes").length}):
+${notesList||"None"}
 
-Answer questions using ONLY the data above. Be specific with real numbers and names. Use bullet points and bold headers for readability. If asked about something not in the data, say so clearly.`;
+Answer using ONLY data above. Be specific with real numbers and names. If data is not present, say so.`;
   };
 
   const handleQuery = async () => {
