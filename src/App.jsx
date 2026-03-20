@@ -2814,20 +2814,10 @@ Answer questions using ONLY the data above. Be specific with real numbers and na
       const msgs = [...history.filter(h=>h.role==="user"||h.role==="assistant").slice(-6).map(h=>({role:h.role,content:h.content})),{role:"user",content:q}];
       let data;
       try {
-        const response = await fetch("https://api.anthropic.com/v1/messages", {
+        const response = await fetch("/api/brain", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-api-key": "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",
-            "anthropic-version": "2023-06-01",
-            "anthropic-dangerous-direct-browser-access": "true"
-          },
-          body: JSON.stringify({
-            model: "claude-sonnet-4-20250514",
-            max_tokens: 2048,
-            system: ctx,
-            messages: msgs
-          })
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({system: ctx, messages: msgs})
         });
         data = await response.json();
       } catch(err) {
