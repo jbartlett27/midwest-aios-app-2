@@ -2537,7 +2537,7 @@ function PlaybookPage({jobs,reps,vendors,customers,lineItems,getJobFinancials,se
       <div style={{marginBottom:14}}><label style={{fontSize:12,color:"#9a9a9a",display:"block",marginBottom:4}}>Content</label>
         <textarea value={editingSop.content} onChange={e=>setEditingSop({...editingSop,content:e.target.value})} rows={10} style={{...inputStyle,resize:"vertical",minHeight:180,lineHeight:1.6}}/>
       </div>
-      <div style={{display:"flex",gap:8}}><Btn onClick={()=>{if(!editingSop.title){notify("Title required","error");return}addSop({...editingSop,custom:true});setEditingSop(null);notify("SOP updated")}}>Save Changes</Btn><Btn v="secondary" onClick={()=>setEditingSop(null)}>Cancel</Btn></div>
+      <div style={{display:"flex",gap:8}}><Btn onClick={()=>{if(!editingSop.title){notify("Title required","error");return}addSop({...editingSop,custom:true});setEditingSop(null);notify("SOP updated")}}>Save Changes</Btn><Btn v="secondary" onClick={()=>setEditingSop(null)}>Cancel</Btn><Btn v="danger" onClick={()=>{deleteSop(editingSop.id);setEditingSop(null);notify("SOP deleted")}}>Delete SOP</Btn></div>
     </Card>}
     {cats.map(cat=>{const cd=filtered.filter(s=>s.cat===cat);if(!cd.length)return null;return <div key={cat} style={{marginBottom:32}}>
       <div style={{fontSize:11,fontWeight:600,textTransform:"uppercase",letterSpacing:1.5,color:"#444",marginBottom:12}}>{cat}</div>
