@@ -1381,7 +1381,7 @@ function JobsPage(ctx){
   if(selectedJob){
     const job=jobs.find(j=>j.id===selectedJob);
     if(!job){setTimeout(()=>setSelectedJob(null),0);return <div style={{padding:40,textAlign:"center",color:"#737373"}}>Loading...</div>}
-    return <>{newJobModal}<JobDetail job={job} ctx={ctx}/></>;
+    return <JobDetail job={job} ctx={ctx}/>;
   }
 
   const filteredJobs = jobs.filter(j => { const s = (ctx.globalSearch||"").toLowerCase(); if (!s) return true; const c = customers.find(c=>c.id===j.customer)?.name||""; const r = reps.find(r=>r.id===j.salesRep)?.name||""; return j.name.toLowerCase().includes(s)||j.id.toLowerCase().includes(s)||c.toLowerCase().includes(s)||r.toLowerCase().includes(s)||j.phase.toLowerCase().includes(s); });
@@ -1518,7 +1518,7 @@ function JobDetail({job,ctx}){
   const saveNewItem=()=>{if(!newItem.description)return;addLineItem({...newItem,jobId:job.id,group:newItem.group||"",tag:newItem.tag||"",manufacturer:newItem.manufacturer||"",modelNumber:newItem.modelNumber||"",color:newItem.color||"",listPrice:parseFloat(newItem.listPrice)||0,unitCost:parseFloat(newItem.unitCost)||0,unitPrice:parseFloat(newItem.unitPrice)||0,shippingPerUnit:parseFloat(newItem.shippingPerUnit)||0,installPerUnit:parseFloat(newItem.installPerUnit)||0,qtyOrdered:parseInt(newItem.qtyOrdered)||0,qtyReceived:parseInt(newItem.qtyReceived)||0,qtyInvoiced:parseInt(newItem.qtyInvoiced)||0});setAddingItem(false);setNewItem({description:"",vendor:"",tag:"",manufacturer:"",modelNumber:"",color:"",group:"",listPrice:"",unitCost:"",unitPrice:"",shippingPerUnit:"",installPerUnit:"",qtyOrdered:"",qtyReceived:0,qtyInvoiced:0});notify("Line item added -- financials updated")};
 
   return <div style={{animation:"fadeUp 0.3s"}} onClick={e=>{const tag=e.target.tagName;if((tag==="DIV"||tag==="SECTION")&&!e.target.closest("input,select,textarea,button,td,th")&&editingItem&&editingItem!=="ALL")setEditingItem(null)}}>
-    <div className="job-sticky" style={{position:"sticky",top:0,zIndex:100,background:"rgba(0,0,0,0.92)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",margin:"-32px -40px 0",padding:"16px 40px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+    <div className="job-sticky" style={{position:"sticky",top:0,zIndex:100,background:"rgba(0,0,0,0.92)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",margin:"-32px -40px 0",padding:"16px 40px 0",borderBottom:"none"}}>
       <button onClick={()=>setSelectedJob(null)} style={{background:"none",border:"none",color:"#2dd4bf",cursor:"pointer",fontSize:13,fontFamily:"inherit",marginBottom:12,display:"flex",alignItems:"center",gap:6}}>&larr; All Jobs</button>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}>
         <div><div style={{display:"flex",alignItems:"center",gap:10,marginBottom:2}}><h2 style={{fontSize:22,fontWeight:800,color:"#e5e5e5",margin:0}}><span style={{fontFamily:"'JetBrains Mono',monospace",color:"#525252",fontSize:13,marginRight:8}}>{ctx.jobNum?.(job.id)||""}</span>{job.name}</h2><Badge label={job.phase} color={statusColor(job.phase)}/><Badge label={job.paymentStatus} color={statusColor(job.paymentStatus)}/></div><div style={{fontSize:12,color:"#a3a3a3"}}>{job.id} - {customer?.name} - {rep?.name} - {fmt(f.totalRevenue)} rev - {pct(f.margin)} margin</div></div>
