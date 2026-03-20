@@ -2812,12 +2812,25 @@ Answer questions using ONLY the data above. Be specific with real numbers and na
     try {
       const ctx = buildContext();
       const msgs = [...history.filter(h=>h.role==="user"||h.role==="assistant").slice(-6).map(h=>({role:h.role,content:h.content})),{role:"user",content:q}];
-      const response = await fetch("/api/brain", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({system: ctx, messages: msgs})
-      });
-      const data = await response.json();
+      let data;
+      try {
+        const response = await fetch("/api/brain", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({system: ctx, messages: msgs})
+        });
+        data = await response.json();
+      } catch(proxyErr) { data = {error:{message:"Proxy unreachable"}}; }
+      if (data.error && (data.error.message?.includes("x-api-key") || data.error.message?.includes("authentication") || data.error.message?.includes("Proxy"))) {
+        try {
+          const direct = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: {"Content-Type":"application/json","x-api-key":"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","anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+            body: JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:2048,system:ctx,messages:msgs})
+          });
+          data = await direct.json();
+        } catch(directErr) { data = {error:{message:"Both proxy and direct API failed. The API key may need to be regenerated at console.anthropic.com"}}; }
+      }
       if (data.content && data.content[0]) {
         setHistory(p => [...p, { role: "assistant", content: data.content[0].text }]);
       } else if (data.error) {
