@@ -93,33 +93,63 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
       const data=await f.arrayBuffer();
       const wb=XLSX.read(data,{type:"array"});
       const items=[];const vendorSet=new Set();const groups=new Set();const sheets=[];
+      const findHeader=(row)=>{
+        const h={};
+        for(let c=0;c<row.length;c++){
+          const v=String(row[c]||"").toLowerCase().trim();
+          if(v==="tag")h.tag=c;
+          else if(v==="manuf"||v==="manuf."||v==="manufacturer")h.manuf=c;
+          else if(v==="model #"||v==="model"||v==="model#"||v==="model number")h.model=c;
+          else if(v==="description"||v==="desc")h.desc=c;
+          else if(v==="color"||v==="finish")h.color=c;
+          else if(v==="qty"||v==="quantity")h.qty=c;
+          else if(v==="list"||v==="list price"||v==="list each")h.list=c;
+          else if(v==="ext"&&!h.listExt){if(h.list!==undefined)h.listExt=c;else h.list=c}
+          else if(v==="net each"||v==="net"||v==="net ea"||v==="net price"||v==="dealer"||v==="dealer net")h.net=c;
+          else if(v==="net ext"||v==="net extended")h.netExt=c;
+          else if(v==="your price"||v==="sell"||v==="sell price"||v==="unit price"||v==="price each"||v==="sell each")h.price=c;
+          else if(v==="your price extended"||v==="sell ext"||v==="sell extended"||v==="price ext"||v==="extended"||v==="total"||v==="ext price"||v==="line total")h.priceExt=c;
+          else if(v==="shipping"||v==="ship"||v==="shipping each"||v==="freight")h.ship=c;
+          else if(v==="shipping total"||v==="ship total"||v==="freight total")h.shipTotal=c;
+          else if(v==="install"||v==="install each"||v==="installation")h.install=c;
+          else if(v==="install total"||v==="installation total")h.installTotal=c;
+        }
+        return Object.keys(h).length>=3?h:null;
+      };
+      const defaultMap={tag:0,manuf:1,model:2,desc:3,color:4,qty:5,list:6,listExt:7,net:8,netExt:9,price:10,priceExt:11};
       for(let si=0;si<wb.SheetNames.length;si++){
         const sn=wb.SheetNames[si];const ws=wb.Sheets[sn];
         const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:""});
-        let grp="";let ct=0;
+        let grp="";let ct=0;let colMap=null;
         for(let r=0;r<rows.length;r++){
-          const row=rows[r];if(!row||row.length<4)continue;
-          if(String(row[0]||"").toLowerCase().trim()==="tag")continue;
-          const hd=row[3]&&String(row[3]).trim();const ht=row[0]&&String(row[0]).trim();
-          const hm=row[1]&&String(row[1]).trim();const hq=Number(row[5])>0;
-          const hp=Number(row[6])>0;const hn=Number(row[8])>0;
-          if(hd&&!ht&&!hm&&!hq&&!hp&&!hn){grp=String(row[3]).trim().replace(/\n/g," ").substring(0,80);groups.add(grp);continue}
-          if(hd&&(hq||hp||hn||Number(row[14])>0)){
-            let desc=String(row[3]).replace(/\r/g,"").split("\n")[0].trim();
-            const si2=desc.indexOf("Item Specifics");if(si2>0)desc=desc.substring(0,si2).trim();
-            const ri=desc.indexOf("-- Room Number");if(ri>0)desc=desc.substring(0,ri).trim();
-            const ri2=desc.indexOf("Room Number");if(ri2>20)desc=desc.substring(0,ri2).trim();
-            if(desc.toLowerCase().startsWith("quote ")||desc.startsWith("#"))continue;
-            const qty=Math.round(Number(row[5])||0);const list=Number(row[6])||0;const net=Number(row[8])||0;
-            if(qty<=0&&list<=0&&net<=0)continue;
-            const mfr=String(row[1]||"").trim();if(mfr)vendorSet.add(mfr);
-            items.push({tag:String(row[0]||"").trim().replace(/\.0$/,""),manufacturer:mfr||sn,
-              modelNumber:String(row[2]||"").trim().replace(/\.0$/,""),description:desc,
-              color:String(row[4]||"").trim(),qtyOrdered:qty||1,listPrice:list,
-              unitCost:net||Number(row[14])||0,shippingPerUnit:Number(row[10])||0,
-              installPerUnit:Number(row[12])||0,unitPrice:Number(row[16])||0,
-              group:grp,sheet:sn});ct++
+          const row=rows[r];if(!row||row.length<3)continue;
+          if(!colMap){
+            const detected=findHeader(row);
+            if(detected){colMap=detected;continue}
+            if(String(row[0]||"").toLowerCase().trim()==="tag"){colMap=defaultMap;continue}
           }
+          const cm=colMap||defaultMap;
+          const g=v=>cm[v]!==undefined?row[cm[v]]:"";
+          const n=v=>{const raw=g(v);return typeof raw==="number"?raw:parseFloat(String(raw).replace(/[$,]/g,""))||0};
+          const s=v=>String(g(v)||"").trim();
+          const desc=s("desc");const tag=s("tag");const manuf=s("manuf");
+          if(desc&&!tag&&!manuf&&!n("qty")&&!n("list")&&!n("net")&&!n("price")){grp=desc.replace(/\n/g," ").substring(0,80);groups.add(grp);continue}
+          if(!desc)continue;
+          let cleanDesc=desc.replace(/\r/g,"").split("\n")[0].trim();
+          const si2=cleanDesc.indexOf("Item Specifics");if(si2>0)cleanDesc=cleanDesc.substring(0,si2).trim();
+          const ri=cleanDesc.indexOf("-- Room Number");if(ri>0)cleanDesc=cleanDesc.substring(0,ri).trim();
+          const ri2=cleanDesc.indexOf("Room Number");if(ri2>20)cleanDesc=cleanDesc.substring(0,ri2).trim();
+          if(cleanDesc.toLowerCase().startsWith("quote ")||cleanDesc.startsWith("#"))continue;
+          if(/^(subtotal|grand total)$/i.test(cleanDesc.trim())||/^total$/i.test(cleanDesc.trim()))continue;
+          const qty=Math.round(n("qty"));const list=n("list");const net=n("net");const price=n("price");const priceExt=n("priceExt");
+          if(qty<=0&&list<=0&&net<=0&&price<=0&&priceExt<=0)continue;
+          const mfr=manuf;if(mfr)vendorSet.add(mfr);
+          items.push({tag:tag.replace(/\.0$/,""),manufacturer:mfr||sn,
+            modelNumber:s("model").replace(/\.0$/,""),description:cleanDesc,
+            color:s("color"),qtyOrdered:qty||1,listPrice:list,
+            unitCost:net||0,shippingPerUnit:n("ship"),
+            installPerUnit:n("install"),unitPrice:price||(priceExt&&qty>0?priceExt/qty:0)||0,
+            group:grp,sheet:sn});ct++
         }
         sheets.push({name:sn,count:ct})
       }
@@ -1303,29 +1333,66 @@ function JobsPage(ctx){
         const sn=wb.SheetNames[si];const ws=wb.Sheets[sn];
         const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
         let grp='';let ct=0;
-        for(let r=0;r<rows.length;r++){
-          const row=rows[r];if(!row||row.length<4)continue;
-          if(String(row[0]||'').toLowerCase().trim()==='tag')continue;
-          const hd=row[3]&&String(row[3]).trim();const ht=row[0]&&String(row[0]).trim();
-          const hm=row[1]&&String(row[1]).trim();const hq=Number(row[5])>0;
-          const hp=Number(row[6])>0;const hn=Number(row[8])>0;
-          if(hd&&!ht&&!hm&&!hq&&!hp&&!hn){grp=String(row[3]).trim().replace(/\n/g,' ').substring(0,80);groups.add(grp);continue}
-          if(hd&&(hq||hp||hn||Number(row[14])>0)){
-            let desc=String(row[3]).replace(/\r/g,'').split('\n')[0].trim();
-            const si2=desc.indexOf('Item Specifics');if(si2>0)desc=desc.substring(0,si2).trim();
-            const ri=desc.indexOf('-- Room Number');if(ri>0)desc=desc.substring(0,ri).trim();
-            const ri2=desc.indexOf('Room Number');if(ri2>20)desc=desc.substring(0,ri2).trim();
-            if(desc.toLowerCase().startsWith('quote ')||desc.startsWith('#'))continue;
-            const qty=Math.round(Number(row[5])||0);const list=Number(row[6])||0;const net=Number(row[8])||0;
-            if(qty<=0&&list<=0&&net<=0)continue;
-            const mfr=String(row[1]||'').trim();if(mfr)vendorSet.add(mfr);
-            items.push({tag:String(row[0]||'').trim().replace(/\.0$/,''),manufacturer:mfr||sn,
-              modelNumber:String(row[2]||'').trim().replace(/\.0$/,''),description:desc,
-              color:String(row[4]||'').trim(),qtyOrdered:qty||1,listPrice:list,
-              unitCost:net||Number(row[14])||0,shippingPerUnit:Number(row[10])||0,
-              installPerUnit:Number(row[12])||0,unitPrice:Number(row[16])||0,
-              group:grp,sheet:sn});ct++
+        // Dynamic column detection
+        let colMap=null;
+        const findHeader=(row)=>{
+          const h={};
+          for(let c=0;c<row.length;c++){
+            const v=String(row[c]||'').toLowerCase().trim();
+            if(v==='tag')h.tag=c;
+            else if(v==='manuf'||v==='manuf.'||v==='manufacturer')h.manuf=c;
+            else if(v==='model #'||v==='model'||v==='model#'||v==='model number')h.model=c;
+            else if(v==='description'||v==='desc')h.desc=c;
+            else if(v==='color'||v==='finish')h.color=c;
+            else if(v==='qty'||v==='quantity')h.qty=c;
+            else if(v==='list'||v==='list price'||v==='list each')h.list=c;
+            else if(v==='ext'&&!h.listExt){if(h.list!==undefined)h.listExt=c;else h.list=c}
+            else if(v==='net each'||v==='net'||v==='net ea'||v==='net price'||v==='dealer'||v==='dealer net')h.net=c;
+            else if(v==='net ext'||v==='net extended')h.netExt=c;
+            else if(v==='your price'||v==='sell'||v==='sell price'||v==='unit price'||v==='price each'||v==='sell each')h.price=c;
+            else if(v==='your price extended'||v==='sell ext'||v==='sell extended'||v==='price ext'||v==='extended'||v==='total'||v==='ext price'||v==='line total')h.priceExt=c;
+            else if(v==='shipping'||v==='ship'||v==='shipping each'||v==='freight')h.ship=c;
+            else if(v==='shipping total'||v==='ship total'||v==='freight total')h.shipTotal=c;
+            else if(v==='install'||v==='install each'||v==='installation')h.install=c;
+            else if(v==='install total'||v==='installation total')h.installTotal=c;
           }
+          return Object.keys(h).length>=3?h:null;
+        };
+        // Fallback hardcoded map for Lisa's standard format
+        const defaultMap={tag:0,manuf:1,model:2,desc:3,color:4,qty:5,list:6,listExt:7,net:8,netExt:9,price:10,priceExt:11};
+        for(let r=0;r<rows.length;r++){
+          const row=rows[r];if(!row||row.length<3)continue;
+          // Try to detect header row
+          if(!colMap){
+            const detected=findHeader(row);
+            if(detected){colMap=detected;continue}
+            if(String(row[0]||'').toLowerCase().trim()==='tag'){colMap=defaultMap;continue}
+          }
+          const cm=colMap||defaultMap;
+          const g=v=>cm[v]!==undefined?row[cm[v]]:'';
+          const n=v=>{const raw=g(v);return typeof raw==='number'?raw:parseFloat(String(raw).replace(/[$,]/g,''))||0};
+          const s=v=>String(g(v)||'').trim();
+          const desc=s('desc');const tag=s('tag');const manuf=s('manuf');const model=s('model');
+          // Group header: has description but no tag, no manuf, no qty, no prices
+          if(desc&&!tag&&!manuf&&!n('qty')&&!n('list')&&!n('net')&&!n('price')){grp=desc.replace(/\n/g,' ').substring(0,80);groups.add(grp);continue}
+          // Skip non-data rows
+          if(!desc)continue;
+          let cleanDesc=desc.replace(/\r/g,'').split('\n')[0].trim();
+          const si2=cleanDesc.indexOf('Item Specifics');if(si2>0)cleanDesc=cleanDesc.substring(0,si2).trim();
+          const ri=cleanDesc.indexOf('-- Room Number');if(ri>0)cleanDesc=cleanDesc.substring(0,ri).trim();
+          const ri2=cleanDesc.indexOf('Room Number');if(ri2>20)cleanDesc=cleanDesc.substring(0,ri2).trim();
+          if(cleanDesc.toLowerCase().startsWith('quote ')||cleanDesc.startsWith('#'))continue;
+          if(/^(subtotal|grand total)$/i.test(cleanDesc.trim())||/^total$/i.test(cleanDesc.trim()))continue;
+          const qty=Math.round(n('qty'));const list=n('list');const net=n('net');const price=n('price');const priceExt=n('priceExt');
+          // Accept row if it has ANY numeric data
+          if(qty<=0&&list<=0&&net<=0&&price<=0&&priceExt<=0)continue;
+          const mfr=manuf;if(mfr)vendorSet.add(mfr);
+          items.push({tag:tag.replace(/\.0$/,''),manufacturer:mfr||sn,
+            modelNumber:model.replace(/\.0$/,''),description:cleanDesc,
+            color:s('color'),qtyOrdered:qty||1,listPrice:list,
+            unitCost:net||0,shippingPerUnit:n('ship'),
+            installPerUnit:n('install'),unitPrice:price||(priceExt&&qty>0?priceExt/qty:0)||0,
+            group:grp,sheet:sn});ct++
         }
         sheets.push({name:sn,count:ct})
       }
