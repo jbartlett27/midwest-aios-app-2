@@ -2829,65 +2829,75 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     const q = (query || "").toLowerCase();
     const wantsSops = /sop|playbook|process|procedure|how.?to|training|workflow|step|guide|protocol|policy|onboard/i.test(q);
     const wantsNotes = /note|meeting|call|memo|record|log|wrote|written/i.test(q);
+    const wantsItems = /item|line item|product|model|furniture|chair|desk|table|smith|virco|vendor spend|what did we order/i.test(q);
 
-    const jobData = jobs.map(j => {
-      const items = lineItems.filter(li => li.jobId === j.id).map(i => {
-        const v = vendors.find(vn => vn.id === i.vendor);
-        return { vendor: v?.name, model: i.modelNumber, desc: (i.description||"").substring(0,50), tag: i.tag, group: i.group, color: i.color, qty: i.qtyOrdered, rcvd: i.qtyReceived, invd: i.qtyInvoiced, list: i.listPrice, cost: i.unitCost, price: i.unitPrice, ship: i.shippingPerUnit, install: i.installPerUnit, delDate: i.deliveryDate, poDate: i.poDate };
-      });
+    const jobSummaries = jobs.map(j => {
       const c = customers.find(c => c.id === j.customer);
       const r = reps.find(r => r.id === j.salesRep);
-      return { id: j.id, name: j.name, phase: j.phase, customer: c?.name, rep: r?.name, payment: j.paymentStatus, terms: j.terms, po: j.poNumber, shipTo: j.shipTo, shipVia: j.shipVia, billTo: j.billTo, created: j.createdDate, start: j.startDate, due: j.dueDate, notes: (j.notes||"").substring(0,100), orderNotes: (j.orderNotes||"").substring(0,100), docStatuses: j.docStatuses, items };
-    });
+      const items = lineItems.filter(li => li.jobId === j.id);
+      const rev = items.reduce((s,i) => s + (i.unitPrice||0) * i.qtyOrdered, 0);
+      const cost = items.reduce((s,i) => s + (i.unitCost||0) * i.qtyOrdered, 0);
+      const rcvd = items.reduce((s,i) => s + i.qtyReceived, 0);
+      const ord = items.reduce((s,i) => s + i.qtyOrdered, 0);
+      let out = j.name + "|" + j.phase + "|" + (c?.name||"?") + "|" + (r?.name||"?") + "|rev$" + Math.round(rev) + "|cost$" + Math.round(cost) + "|margin" + (rev>0?Math.round((rev-cost)/rev*100):0) + "%|" + rcvd + "/" + ord + "del|pay=" + j.paymentStatus + "|" + (j.dueDate||"-");
+      if (wantsItems) {
+        out += "\n  " + items.slice(0,15).map(i => {
+          const v = vendors.find(vn => vn.id === i.vendor);
+          return (v?.name||"?") + "|" + (i.modelNumber||"") + "|" + (i.description||"").substring(0,30) + "|q" + i.qtyOrdered + "|$" + (i.unitPrice||0);
+        }).join("\n  ");
+      }
+      return out;
+    }).join("\n");
 
-    const vendorData = vendors.map(v => {
-      const vItems = lineItems.filter(i => i.vendor === v.id);
-      return { name: v.name, cat: v.category, discount: v.discountRate, discType: v.discountType, items: vItems.length, contact: v.contact, email: v.email, phone: v.phone, addr: v.address };
-    });
+    const vendorSummaries = vendors.map(v => {
+      const ct = lineItems.filter(i => i.vendor === v.id).length;
+      const spend = lineItems.filter(i => i.vendor === v.id).reduce((s,i) => s + (i.unitCost||0) * i.qtyOrdered, 0);
+      return v.name + "|" + (v.category||"-") + "|" + ct + "items|$" + Math.round(spend) + "|disc" + Math.round((v.discountRate||0)*100) + "%";
+    }).join("\n");
 
-    const custData = customers.map(c => ({ name: c.name, type: c.type, contact: c.contact, email: c.email, phone: c.phone, addr: c.address }));
+    const custSummaries = customers.map(c => {
+      const cj = jobs.filter(j => j.customer === c.id);
+      const rev = cj.reduce((s,j) => {const items=lineItems.filter(li=>li.jobId===j.id);return s+items.reduce((ss,i)=>ss+(i.unitPrice||0)*i.qtyOrdered,0)},0);
+      return c.name + "|" + (c.type||"-") + "|" + cj.length + "jobs|$" + Math.round(rev);
+    }).join("\n");
 
-    const repData = reps.filter(r => !r.id.includes("SEED_FLAG")).map(r => ({ name: r.name, territory: r.territory, rate: r.commissionRate, tier: r.tier, email: r.email }));
+    const repSummaries = reps.filter(r => !r.id.includes("SEED_FLAG")).map(r => {
+      const rj = jobs.filter(j => j.salesRep === r.id);
+      const rev = rj.reduce((s,j) => {const items=lineItems.filter(li=>li.jobId===j.id);return s+items.reduce((ss,i)=>ss+(i.unitPrice||0)*i.qtyOrdered,0)},0);
+      return r.name + "|" + (r.territory||"-") + "|rate" + Math.round((r.commissionRate||0)*100) + "%|" + rj.length + "jobs|$" + Math.round(rev);
+    }).join("\n");
 
-    const allSopData = [...DEFAULT_SOPS, ...(customSops || []).filter(s => s.cat !== "Task" && s.cat !== "Notes" && s.cat !== "DocStatuses")];
-    const sops = allSopData.map(s => {
-      const text = (s.content || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-      return { title: s.title, cat: s.cat, content: wantsSops ? text : text.substring(0, 80) };
-    });
+    let sopText = "";
+    if (wantsSops) {
+      const allS = [...DEFAULT_SOPS, ...(customSops||[]).filter(s => s.cat !== "Task" && s.cat !== "Notes" && s.cat !== "DocStatuses")];
+      sopText = allS.map(s => {
+        const t = (s.content||"").replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim();
+        return "## " + s.title + "\n" + t;
+      }).join("\n\n");
+    } else {
+      const allS = [...DEFAULT_SOPS, ...(customSops||[]).filter(s => s.cat !== "Task" && s.cat !== "Notes" && s.cat !== "DocStatuses")];
+      sopText = allS.map(s => s.title + " (" + s.cat + ")").join(", ");
+    }
 
-    const tasks = (customSops || []).filter(s => s.cat === "Task").map(s => {
-      try { const d = JSON.parse(s.content); return { text: d.text || s.title, status: d.status, due: d.due, assignees: d.assignees, priority: d.priority }; } catch { return { text: s.title }; }
-    });
+    let noteText = "";
+    if (wantsNotes) {
+      noteText = (customSops||[]).filter(s => s.cat === "Notes").map(s => {
+        let t="";try{const d=JSON.parse(s.content);t=(d.text||"").replace(/<[^>]+>/g," ").trim()}catch{t=(s.content||"").replace(/<[^>]+>/g," ").trim()}
+        return s.title + ": " + t;
+      }).join("\n");
+    } else {
+      noteText = (customSops||[]).filter(s => s.cat === "Notes").map(s => s.title).join(", ");
+    }
 
-    const notes = (customSops || []).filter(s => s.cat === "Notes").map(s => {
-      let text = "";
-      try { const d = JSON.parse(s.content); text = (d.text || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(); } catch { text = (s.content || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim(); }
-      return { title: s.title, content: wantsNotes ? text : text.substring(0, 80) };
-    });
+    const taskText = (customSops||[]).filter(s => s.cat === "Task").map(s => {
+      try{const d=JSON.parse(s.content);return (d.text||s.title)+"|"+(d.status||"To Do")+"|due:"+(d.due||"-")}catch{return s.title}
+    }).join("\n");
 
-    const db = JSON.stringify({ jobs: jobData, vendors: vendorData, customers: custData, reps: repData, sops, tasks, notes });
     const today = new Date().toISOString().split("T")[0];
+    const totalRev = jobs.reduce((s,j)=>{const items=lineItems.filter(li=>li.jobId===j.id);return s+items.reduce((ss,i)=>ss+(i.unitPrice||0)*i.qtyOrdered,0)},0);
+    const totalCost = jobs.reduce((s,j)=>{const items=lineItems.filter(li=>li.jobId===j.id);return s+items.reduce((ss,i)=>ss+(i.unitCost||0)*i.qtyOrdered,0)},0);
 
-    return `You are the Midwest Brain -- the AI operating intelligence for Midwest Educational Furnishings, Inc., a 14-year K-12 educational furniture company in Kildeer, IL. Owner: Maureen Welter. Office: Lisa Monchunski, Dave Welter.
-
-TODAY: ${today}
-
-Use today's date to flag overdue deliveries, past-due jobs, stale pipeline items, and upcoming deadlines. Proactively mention time-sensitive issues when relevant.
-
-COMPLETE DATABASE (JSON -- compute revenue, margin, commissions, and all financials directly from the raw line item data: revenue = sum of price * qty, cost = sum of cost * qty, margin = (revenue - cost) / revenue * 100, commission = revenue * rep rate):
-${db}
-
-${wantsSops ? "FULL SOP CONTENT LOADED -- use it to answer process and procedure questions in detail." : "SOP content abbreviated. If you need full SOP text, tell the user to ask again mentioning 'playbook' or 'SOP'."}
-${wantsNotes ? "FULL NOTE CONTENT LOADED." : "Note content abbreviated. If you need full notes, tell the user to ask again mentioning 'notes'."}
-
-INSTRUCTIONS:
-- Be specific with real names, numbers, and dates
-- Calculate financials from raw data (do not rely on pre-computed values)
-- Flag anything overdue or time-sensitive relative to today
-- At the end of every response, suggest 2-3 follow-up questions the user might find valuable, formatted as:
-  >> [question 1]
-  >> [question 2]
-  >> [question 3]`;
+    return "You are the Midwest Brain for Midwest Educational Furnishings (Kildeer, IL). Owner: Maureen Welter. Today: " + today + "\n\nSTATS: " + jobs.length + " jobs|Rev $" + Math.round(totalRev) + "|Cost $" + Math.round(totalCost) + "|Margin " + (totalRev>0?Math.round((totalRev-totalCost)/totalRev*100):0) + "%|" + lineItems.length + " line items|" + vendors.length + " vendors|" + customers.length + " customers\n\nJOBS:\n" + jobSummaries + "\n\nVENDORS:\n" + vendorSummaries + "\n\nCUSTOMERS:\n" + custSummaries + "\n\nREPS:\n" + repSummaries + "\n\nSOPS: " + sopText + "\n\nTASKS:\n" + (taskText||"None") + "\n\nNOTES: " + (noteText||"None") + "\n\nBe specific with real names and numbers. Flag overdue items vs today. At end suggest 2-3 follow-up questions with >> prefix.";
   };
 
   const handleQuery = async () => {
@@ -2899,7 +2909,7 @@ INSTRUCTIONS:
 
     try {
       const ctx = buildContext(q);
-      const msgs = [...history.filter(h=>h.role==="user"||h.role==="assistant").slice(-15).map(h=>({role:h.role,content:h.content})),{role:"user",content:q}];
+      const msgs = [...history.filter(h=>h.role==="user"||h.role==="assistant").slice(-8).map(h=>({role:h.role,content:h.content})),{role:"user",content:q}];
       let data;
       try {
         const response = await fetch("/api/brain", {
@@ -2914,7 +2924,9 @@ INSTRUCTIONS:
       if (data.content && data.content[0]) {
         setHistory(p => [...p, { role: "assistant", content: data.content[0].text }]);
       } else if (data.error) {
-        setHistory(p => [...p, { role: "assistant", content: "API Error: " + (data.error.message || JSON.stringify(data.error)) }]);
+        const msg = data.error.message || JSON.stringify(data.error);
+        const isRateLimit = msg.includes("rate limit") || msg.includes("rate_limit");
+        setHistory(p => [...p, { role: "assistant", content: isRateLimit ? "I need a moment to cool down -- the API has a limit of requests per minute. Please wait about 30 seconds and try again." : "API Error: " + msg }]);
       } else {
         setHistory(p => [...p, { role: "assistant", content: "Unexpected response: " + JSON.stringify(data).slice(0, 200) }]);
       }
