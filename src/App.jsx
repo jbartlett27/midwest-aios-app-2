@@ -94,28 +94,33 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
       const wb=XLSX.read(data,{type:"array"});
       const items=[];const vendorSet=new Set();const groups=new Set();const sheets=[];
       const findHeader=(row)=>{
-        const h={};
-        for(let c=0;c<row.length;c++){
-          const v=String(row[c]||"").toLowerCase().trim();
-          if(v==="tag")h.tag=c;
-          else if(v==="manuf"||v==="manuf."||v==="manufacturer")h.manuf=c;
-          else if(v==="model #"||v==="model"||v==="model#"||v==="model number")h.model=c;
-          else if(v==="description"||v==="desc")h.desc=c;
-          else if(v==="color"||v==="finish")h.color=c;
-          else if(v==="qty"||v==="quantity")h.qty=c;
-          else if(v==="list"||v==="list price"||v==="list each")h.list=c;
-          else if(v==="ext"&&!h.listExt){if(h.list!==undefined)h.listExt=c;else h.list=c}
-          else if(v==="net each"||v==="net"||v==="net ea"||v==="net price"||v==="dealer"||v==="dealer net")h.net=c;
-          else if(v==="net ext"||v==="net extended")h.netExt=c;
-          else if(v==="your price"||v==="sell"||v==="sell price"||v==="unit price"||v==="price each"||v==="sell each")h.price=c;
-          else if(v==="your price extended"||v==="sell ext"||v==="sell extended"||v==="price ext"||v==="extended"||v==="total"||v==="ext price"||v==="line total")h.priceExt=c;
-          else if(v==="shipping"||v==="ship"||v==="shipping each"||v==="freight")h.ship=c;
-          else if(v==="shipping total"||v==="ship total"||v==="freight total")h.shipTotal=c;
-          else if(v==="install"||v==="install each"||v==="installation")h.install=c;
-          else if(v==="install total"||v==="installation total")h.installTotal=c;
+          const h={};
+          for(let c=0;c<row.length;c++){
+            const raw=String(row[c]||"");
+            const v=raw.toLowerCase().replace(/[^a-z0-9#%]/g," ").replace(/\s+/g," ").trim();
+            if(!v)continue;
+            if(v==="tag"||v==="tags")h.tag=c;
+            else if(v.includes("manuf")||v==="mfr"||v==="mfg")h.manuf=c;
+            else if(v.includes("model")||v==="item"||v==="item #"||v==="sku")h.model=c;
+            else if(v.includes("desc")||v==="product"||v==="item description")h.desc=c;
+            else if(v.includes("color")||v.includes("finish"))h.color=c;
+            else if(v==="qty"||v.includes("quant")||v==="ea"||v==="pcs"||v==="units")h.qty=c;
+            else if(v==="list"||v==="list price"||v==="list each"||v==="list ea"||v==="msrp")h.list=c;
+            else if((v==="ext"||v==="list ext"||v==="list extended")&&h.list!==undefined&&!h.listExt)h.listExt=c;
+            else if(v.includes("net each")||v.includes("net ea")||v==="net"||v==="net price"||v.includes("dealer")||v==="cost"||v==="unit cost")h.net=c;
+            else if(v.includes("net ext")||v==="net extended")h.netExt=c;
+            else if(v.includes("your price")&&!v.includes("ext"))h.price=c;
+            else if(v.includes("your price")&&v.includes("ext"))h.priceExt=c;
+            else if(v==="sell"||v==="sell price"||v==="sell each"||v==="unit price"||v==="price each"||v==="price"||v==="sell ea")h.price=c;
+            else if(v==="sell ext"||v==="sell extended"||v==="price ext"||v==="extended price"||v==="ext price"||v==="total"||v==="line total"||v==="extended")h.priceExt=c;
+            else if(v.includes("shipping")||v.includes("freight")||v==="ship"||v==="ship each")h.ship=c;
+            else if(v.includes("ship total")||v.includes("freight total")||v.includes("shipping total"))h.shipTotal=c;
+            else if(v.includes("install")&&!v.includes("total"))h.install=c;
+            else if(v.includes("install")&&v.includes("total"))h.installTotal=c;
+          }
+          if(!h.desc&&!h.model)return null;
+          return Object.keys(h).length>=2?h:null;
         }
-        return Object.keys(h).length>=3?h:null;
-      };
       const defaultMap={tag:0,manuf:1,model:2,desc:3,color:4,qty:5,list:6,listExt:7,net:8,netExt:9,price:10,priceExt:11};
       for(let si=0;si<wb.SheetNames.length;si++){
         const sn=wb.SheetNames[si];const ws=wb.Sheets[sn];
@@ -230,7 +235,7 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
     try{
       const items=parsed.items.filter(i=>selectedSheets[i.sheet]);
       if(items.length===0){notify("No items selected","error");setImporting(false);return}
-      const jid="JOB-"+new Date().getFullYear()+"-"+String(jobs.length+1).padStart(3,"0");
+      const jid="JOB-"+new Date().getFullYear()+"-"+String(Date.now()).slice(-6);
       addJob({id:jid,name:jobName||"Imported Quote",customer:customers[0]?.id||"",salesRep:reps[0]?.id||"",
         phase:"Quoting",createdDate:new Date().toISOString().split("T")[0],
         startDate:"",dueDate:"",endDate:"",notes:"Imported from Excel -- "+items.length+" line items",
@@ -1338,26 +1343,31 @@ function JobsPage(ctx){
         const findHeader=(row)=>{
           const h={};
           for(let c=0;c<row.length;c++){
-            const v=String(row[c]||'').toLowerCase().trim();
-            if(v==='tag')h.tag=c;
-            else if(v==='manuf'||v==='manuf.'||v==='manufacturer')h.manuf=c;
-            else if(v==='model #'||v==='model'||v==='model#'||v==='model number')h.model=c;
-            else if(v==='description'||v==='desc')h.desc=c;
-            else if(v==='color'||v==='finish')h.color=c;
-            else if(v==='qty'||v==='quantity')h.qty=c;
-            else if(v==='list'||v==='list price'||v==='list each')h.list=c;
-            else if(v==='ext'&&!h.listExt){if(h.list!==undefined)h.listExt=c;else h.list=c}
-            else if(v==='net each'||v==='net'||v==='net ea'||v==='net price'||v==='dealer'||v==='dealer net')h.net=c;
-            else if(v==='net ext'||v==='net extended')h.netExt=c;
-            else if(v==='your price'||v==='sell'||v==='sell price'||v==='unit price'||v==='price each'||v==='sell each')h.price=c;
-            else if(v==='your price extended'||v==='sell ext'||v==='sell extended'||v==='price ext'||v==='extended'||v==='total'||v==='ext price'||v==='line total')h.priceExt=c;
-            else if(v==='shipping'||v==='ship'||v==='shipping each'||v==='freight')h.ship=c;
-            else if(v==='shipping total'||v==='ship total'||v==='freight total')h.shipTotal=c;
-            else if(v==='install'||v==='install each'||v==='installation')h.install=c;
-            else if(v==='install total'||v==='installation total')h.installTotal=c;
+            const raw=String(row[c]||"");
+            const v=raw.toLowerCase().replace(/[^a-z0-9#%]/g," ").replace(/\s+/g," ").trim();
+            if(!v)continue;
+            if(v==="tag"||v==="tags")h.tag=c;
+            else if(v.includes("manuf")||v==="mfr"||v==="mfg")h.manuf=c;
+            else if(v.includes("model")||v==="item"||v==="item #"||v==="sku")h.model=c;
+            else if(v.includes("desc")||v==="product"||v==="item description")h.desc=c;
+            else if(v.includes("color")||v.includes("finish"))h.color=c;
+            else if(v==="qty"||v.includes("quant")||v==="ea"||v==="pcs"||v==="units")h.qty=c;
+            else if(v==="list"||v==="list price"||v==="list each"||v==="list ea"||v==="msrp")h.list=c;
+            else if((v==="ext"||v==="list ext"||v==="list extended")&&h.list!==undefined&&!h.listExt)h.listExt=c;
+            else if(v.includes("net each")||v.includes("net ea")||v==="net"||v==="net price"||v.includes("dealer")||v==="cost"||v==="unit cost")h.net=c;
+            else if(v.includes("net ext")||v==="net extended")h.netExt=c;
+            else if(v.includes("your price")&&!v.includes("ext"))h.price=c;
+            else if(v.includes("your price")&&v.includes("ext"))h.priceExt=c;
+            else if(v==="sell"||v==="sell price"||v==="sell each"||v==="unit price"||v==="price each"||v==="price"||v==="sell ea")h.price=c;
+            else if(v==="sell ext"||v==="sell extended"||v==="price ext"||v==="extended price"||v==="ext price"||v==="total"||v==="line total"||v==="extended")h.priceExt=c;
+            else if(v.includes("shipping")||v.includes("freight")||v==="ship"||v==="ship each")h.ship=c;
+            else if(v.includes("ship total")||v.includes("freight total")||v.includes("shipping total"))h.shipTotal=c;
+            else if(v.includes("install")&&!v.includes("total"))h.install=c;
+            else if(v.includes("install")&&v.includes("total"))h.installTotal=c;
           }
-          return Object.keys(h).length>=3?h:null;
-        };
+          if(!h.desc&&!h.model)return null;
+          return Object.keys(h).length>=2?h:null;
+        }
         // Fallback hardcoded map for Lisa's standard format
         const defaultMap={tag:0,manuf:1,model:2,desc:3,color:4,qty:5,list:6,listExt:7,net:8,netExt:9,price:10,priceExt:11};
         for(let r=0;r<rows.length;r++){
@@ -1409,7 +1419,7 @@ function JobsPage(ctx){
     try{
       const items=uploadData.items.filter(i=>uploadSheets[i.sheet]);
       if(items.length===0){notify('No items selected','error');setUploading(false);return}
-      const jid='JOB-2026-'+String(jobs.length+1).padStart(3,'0');
+      const jid='JOB-'+new Date().getFullYear()+'-'+String(Date.now()).slice(-6);
       addJob({id:jid,name:uploadJobName||'Imported Quote',customer:customers[0]?.id||'',salesRep:reps[0]?.id||'',
         phase:'Quoting',createdDate:new Date().toISOString().split('T')[0],
         startDate:'',dueDate:'',endDate:'',notes:'Imported from Excel quote - '+items.length+' line items',
@@ -1429,7 +1439,7 @@ function JobsPage(ctx){
           unitPrice:item.unitPrice,shippingPerUnit:item.shippingPerUnit,installPerUnit:item.installPerUnit,
           qtyOrdered:item.qtyOrdered,qtyReceived:0,qtyInvoiced:0,poDate:'',deliveryDate:'',invoiceDate:''});ct++}
       notify('Imported '+ct+' items into "'+uploadJobName+'" -- click the job to view');
-      setUploadData(null);setUploadJobName('');setSelectedJob(jid);
+      setUploadData(null);setUploadJobName('');setUploading(false);if(uploadRef.current)uploadRef.current.value='';setSelectedJob(jid);
     }catch(err){notify('Import error: '+err.message,'error')}
     setUploading(false);
   };
