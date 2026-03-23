@@ -122,8 +122,10 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
       for(let si=0;si<wb.SheetNames.length;si++){
         const sn=wb.SheetNames[si];const ws=wb.Sheets[sn];
         const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:""});
+        const hiddenRows=ws["!rows"]||[];
         let grp="";let ct=0;let colMap=null;let lastManuf="";
         for(let r=0;r<rows.length;r++){
+          if(hiddenRows[r]&&hiddenRows[r].hidden)continue;
           const row=rows[r];if(!row||row.length<3)continue;
           if(!colMap){
             const detected=findHeader(row);
@@ -1339,6 +1341,7 @@ function JobsPage(ctx){
       for(let si=0;si<wb.SheetNames.length;si++){
         const sn=wb.SheetNames[si];const ws=wb.Sheets[sn];
         const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+        const hiddenRows=ws['!rows']||[];
         let grp='';let ct=0;let lastManuf='';
         // Dynamic column detection
         let colMap=null;
@@ -1368,6 +1371,7 @@ function JobsPage(ctx){
         // Fallback hardcoded map for Lisa's standard format
         const defaultMap={tag:0,manuf:1,model:2,desc:3,color:4,qty:5,list:6,listExt:7,net:8,netExt:9,price:10,priceExt:11};
         for(let r=0;r<rows.length;r++){
+          if(hiddenRows[r]&&hiddenRows[r].hidden)continue;
           const row=rows[r];if(!row||row.length<3)continue;
           // Try to detect header row
           if(!colMap){
