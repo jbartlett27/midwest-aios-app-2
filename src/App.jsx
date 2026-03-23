@@ -94,38 +94,35 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
       const wb=XLSX.read(data,{type:"array"});
       const items=[];const vendorSet=new Set();const groups=new Set();const sheets=[];
       const findHeader=(row)=>{
-          const h={};
-          for(let c=0;c<row.length;c++){
-            const raw=String(row[c]||"");
-            const v=raw.toLowerCase().replace(/[^a-z0-9#%]/g," ").replace(/\s+/g," ").trim();
-            if(!v)continue;
-            if(v==="tag"||v==="tags")h.tag=c;
-            else if(v.includes("manuf")||v==="mfr"||v==="mfg")h.manuf=c;
-            else if(v.includes("model")||v==="item"||v==="item #"||v==="sku")h.model=c;
-            else if(v.includes("desc")||v==="product"||v==="item description")h.desc=c;
-            else if(v.includes("color")||v.includes("finish"))h.color=c;
-            else if(v==="qty"||v.includes("quant")||v==="ea"||v==="pcs"||v==="units")h.qty=c;
-            else if(v==="list"||v==="list price"||v==="list each"||v==="list ea"||v==="msrp")h.list=c;
-            else if((v==="ext"||v==="list ext"||v==="list extended")&&h.list!==undefined&&!h.listExt)h.listExt=c;
-            else if(v.includes("net each")||v.includes("net ea")||v==="net"||v==="net price"||v.includes("dealer")||v==="cost"||v==="unit cost")h.net=c;
-            else if(v.includes("net ext")||v==="net extended")h.netExt=c;
-            else if(v.includes("your price")&&!v.includes("ext"))h.price=c;
-            else if(v.includes("your price")&&v.includes("ext"))h.priceExt=c;
-            else if(v==="sell"||v==="sell price"||v==="sell each"||v==="unit price"||v==="price each"||v==="price"||v==="sell ea")h.price=c;
-            else if(v==="sell ext"||v==="sell extended"||v==="price ext"||v==="extended price"||v==="ext price"||v==="total"||v==="line total"||v==="extended")h.priceExt=c;
-            else if(v.includes("shipping")||v.includes("freight")||v==="ship"||v==="ship each")h.ship=c;
-            else if(v.includes("ship total")||v.includes("freight total")||v.includes("shipping total"))h.shipTotal=c;
-            else if(v.includes("install")&&!v.includes("total"))h.install=c;
-            else if(v.includes("install")&&v.includes("total"))h.installTotal=c;
-          }
-          if(!h.desc&&!h.model)return null;
-          return Object.keys(h).length>=2?h:null;
+        const h={};
+        for(let c=0;c<row.length;c++){
+          const v=String(row[c]||"").toLowerCase().trim();
+          if(v==="tag")h.tag=c;
+          else if(v==="manuf"||v==="manuf."||v==="manufacturer")h.manuf=c;
+          else if(v==="model #"||v==="model"||v==="model#"||v==="model number")h.model=c;
+          else if(v==="description"||v==="desc")h.desc=c;
+          else if(v==="color"||v==="finish")h.color=c;
+          else if(v==="qty"||v==="quantity")h.qty=c;
+          else if(v==="list"||v==="list price"||v==="list each")h.list=c;
+          else if(v==="ext"&&!h.listExt){if(h.list!==undefined)h.listExt=c;else h.list=c}
+          else if(v==="net each"||v==="net"||v==="net ea"||v==="net price"||v==="dealer"||v==="dealer net")h.net=c;
+          else if(v==="net ext"||v==="net extended")h.netExt=c;
+          else if(v==="your price"||v==="sell"||v==="sell price"||v==="unit price"||v==="price each"||v==="sell each"||v==="each")h.price=c;
+          else if(v==="your price extended"||v==="sell ext"||v==="sell extended"||v==="price ext"||v==="extended"||v==="ext price"||v==="line total"||v==="ext.")h.priceExt=c;
+          else if(v==="shipping"||v==="ship"||v==="shipping each"||v==="freight")h.ship=c;
+          else if(v==="shipping total"||v==="ship total"||v==="freight total")h.shipTotal=c;
+          else if(v==="install"||v==="install each"||v==="installation")h.install=c;
+          else if(v==="install total"||v==="installation total")h.installTotal=c;
         }
+        // Don't match "total" as a header keyword for priceExt -- it's a summary label in Maureen's spreadsheets
+        return Object.keys(h).length>=3?h:null;
+      };
       const defaultMap={tag:0,manuf:1,model:2,desc:3,color:4,qty:5,list:6,listExt:7,net:8,netExt:9,price:10,priceExt:11};
+      const safeNum=(raw)=>{if(typeof raw==="number"&&isFinite(raw))return raw;const s=String(raw||"").replace(/[$,]/g,"").trim();if(!s||/[a-zA-Z]/.test(s))return 0;const v=parseFloat(s);return isFinite(v)?v:0};
       for(let si=0;si<wb.SheetNames.length;si++){
         const sn=wb.SheetNames[si];const ws=wb.Sheets[sn];
         const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:""});
-        let grp="";let ct=0;let colMap=null;
+        let grp="";let ct=0;let colMap=null;let lastManuf="";
         for(let r=0;r<rows.length;r++){
           const row=rows[r];if(!row||row.length<3)continue;
           if(!colMap){
@@ -135,8 +132,11 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
           }
           const cm=colMap||defaultMap;
           const g=v=>cm[v]!==undefined?row[cm[v]]:"";
-          const n=v=>{const raw=g(v);return typeof raw==="number"?raw:parseFloat(String(raw).replace(/[$,]/g,""))||0};
+          const n=v=>safeNum(g(v));
           const s=v=>String(g(v)||"").trim();
+          // Check if any cell in the row contains "Total"/"Subtotal"/"Grand Total" (catches totals in ANY column)
+          const rowHasTotal=row.some(cell=>/^(total|subtotal|grand total)$/i.test(String(cell||"").trim()));
+          if(rowHasTotal)continue;
           const desc=s("desc");const tag=s("tag");const manuf=s("manuf");
           if(desc&&!tag&&!manuf&&!n("qty")&&!n("list")&&!n("net")&&!n("price")){grp=desc.replace(/\n/g," ").substring(0,80);groups.add(grp);continue}
           if(!desc)continue;
@@ -146,21 +146,24 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
           const ri2=cleanDesc.indexOf("Room Number");if(ri2>20)cleanDesc=cleanDesc.substring(0,ri2).trim();
           if(cleanDesc.toLowerCase().startsWith("quote ")||cleanDesc.startsWith("#"))continue;
           if(/^(subtotal|grand total)$/i.test(cleanDesc.trim())||/^total$/i.test(cleanDesc.trim()))continue;
+          // Skip disclaimer/notes rows (long text with no pricing data at all)
+          if(cleanDesc.startsWith("*")&&!n("qty")&&!n("list")&&!n("net")&&!n("price")&&!n("priceExt"))continue;
           const qty=Math.round(n("qty"));const list=n("list");const net=n("net");const price=n("price");const priceExt=n("priceExt");
           if(qty<=0&&list<=0&&net<=0&&price<=0&&priceExt<=0)continue;
-          const mfr=manuf;if(mfr)vendorSet.add(mfr);
+          const mfr=manuf||lastManuf;if(manuf)lastManuf=manuf;if(mfr)vendorSet.add(mfr);
           items.push({tag:tag.replace(/\.0$/,""),manufacturer:mfr||sn,
             modelNumber:s("model").replace(/\.0$/,""),description:cleanDesc,
             color:s("color"),qtyOrdered:qty||1,listPrice:list,
             unitCost:net||0,shippingPerUnit:n("ship"),
             installPerUnit:n("install"),unitPrice:price||(priceExt&&qty>0?priceExt/qty:0)||0,
-            group:grp,sheet:sn});ct++
+            group:grp||tag||"",sheet:sn});ct++
         }
         sheets.push({name:sn,count:ct})
       }
       let name=f.name.replace(/\.(xls|xlsx|csv)$/i,"").replace(/_/g," ");
       try{const ws0=wb.Sheets[wb.SheetNames[0]];const d0=XLSX.utils.sheet_to_json(ws0,{header:1,defval:""});
         if(d0[0]&&d0[0][4])name=String(d0[0][4]).split("\n")[0].trim()}catch{}
+      if(fileRef.current)fileRef.current.value="";
       setJobName(name);
       const sel={};sheets.forEach(s=>{sel[s.name]=true});setSelectedSheets(sel);
       setParsed({items,vendors:vendorSet,groups,sheets});
@@ -235,7 +238,7 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
     try{
       const items=parsed.items.filter(i=>selectedSheets[i.sheet]);
       if(items.length===0){notify("No items selected","error");setImporting(false);return}
-      const jid="JOB-"+new Date().getFullYear()+"-"+String(Date.now()).slice(-6);
+      const jid="JOB-"+new Date().getFullYear()+"-"+String(jobs.length+1).padStart(3,"0");
       addJob({id:jid,name:jobName||"Imported Quote",customer:customers[0]?.id||"",salesRep:reps[0]?.id||"",
         phase:"Quoting",createdDate:new Date().toISOString().split("T")[0],
         startDate:"",dueDate:"",endDate:"",notes:"Imported from Excel -- "+items.length+" line items",
@@ -394,8 +397,7 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
             <thead><tr style={{background:"#0a0a0a"}}>{["Tag","Manuf","Model #","Description","Color","Qty","List","Net Ea","Ship","Install","Your Price"].map(h=>
               <th key={h} style={{padding:"6px 8px",textAlign:"left",fontWeight:600,color:"#737373",fontSize:10,textTransform:"uppercase",letterSpacing:0.8,borderBottom:"1px solid rgba(255,255,255,0.06)"}}>{h}</th>
             )}</tr></thead>
-            <tbody>{parsed.items.filter(i=>selectedSheets[i.sheet]).slice(0,40).map((it,idx)=>
-              <tr key={idx} style={{borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
+            <tbody>{(()=>{let lastV='';return parsed.items.filter(i=>selectedSheets[i.sheet]).slice(0,40).map((it,idx)=>{const showSep=it.manufacturer&&it.manufacturer!==lastV;if(it.manufacturer)lastV=it.manufacturer;return <React.Fragment key={idx}>{showSep&&idx>0&&<tr><td colSpan={11} style={{padding:"6px 8px 2px",borderTop:"1px solid rgba(45,212,191,0.12)"}}><span style={{fontSize:10,fontWeight:700,color:"#a78bfa",textTransform:"uppercase",letterSpacing:1}}>{it.manufacturer}</span></td></tr>}<tr style={{borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
                 <td style={{padding:"5px 8px",color:"#a78bfa",fontWeight:500}}>{it.tag}</td>
                 <td style={{padding:"5px 8px",color:"#c4c4c4"}}>{it.manufacturer}</td>
                 <td style={{padding:"5px 8px",color:"#c4c4c4",fontFamily:"'JetBrains Mono',monospace",fontSize:11}}>{it.modelNumber}</td>
@@ -407,8 +409,7 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
                 <td style={{padding:"5px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",color:"#fbbf24"}}>{it.shippingPerUnit?"$"+it.shippingPerUnit.toFixed(0):"--"}</td>
                 <td style={{padding:"5px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",color:"#a78bfa"}}>{it.installPerUnit?"$"+it.installPerUnit.toFixed(0):"--"}</td>
                 <td style={{padding:"5px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",color:"#2dd4bf",fontWeight:600}}>{it.unitPrice?"$"+it.unitPrice.toFixed(2):"--"}</td>
-              </tr>
-            )}</tbody>
+              </tr></React.Fragment>})})()}</tbody>
           </table>
           {selCount>40&&<div style={{padding:10,textAlign:"center",color:"#525252",fontSize:12}}>Showing 40 of {selCount}</div>}
         </div>
@@ -1334,40 +1335,36 @@ function JobsPage(ctx){
       const data=await file.arrayBuffer();
       const wb=XLSX.read(data,{type:'array'});
       const items=[];const vendorSet=new Set();const groups=new Set();const sheets=[];
+      const safeNum=(raw)=>{if(typeof raw==='number'&&isFinite(raw))return raw;const s=String(raw||'').replace(/[$,]/g,'').trim();if(!s||/[a-zA-Z]/.test(s))return 0;const v=parseFloat(s);return isFinite(v)?v:0};
       for(let si=0;si<wb.SheetNames.length;si++){
         const sn=wb.SheetNames[si];const ws=wb.Sheets[sn];
         const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
-        let grp='';let ct=0;
+        let grp='';let ct=0;let lastManuf='';
         // Dynamic column detection
         let colMap=null;
         const findHeader=(row)=>{
           const h={};
           for(let c=0;c<row.length;c++){
-            const raw=String(row[c]||"");
-            const v=raw.toLowerCase().replace(/[^a-z0-9#%]/g," ").replace(/\s+/g," ").trim();
-            if(!v)continue;
-            if(v==="tag"||v==="tags")h.tag=c;
-            else if(v.includes("manuf")||v==="mfr"||v==="mfg")h.manuf=c;
-            else if(v.includes("model")||v==="item"||v==="item #"||v==="sku")h.model=c;
-            else if(v.includes("desc")||v==="product"||v==="item description")h.desc=c;
-            else if(v.includes("color")||v.includes("finish"))h.color=c;
-            else if(v==="qty"||v.includes("quant")||v==="ea"||v==="pcs"||v==="units")h.qty=c;
-            else if(v==="list"||v==="list price"||v==="list each"||v==="list ea"||v==="msrp")h.list=c;
-            else if((v==="ext"||v==="list ext"||v==="list extended")&&h.list!==undefined&&!h.listExt)h.listExt=c;
-            else if(v.includes("net each")||v.includes("net ea")||v==="net"||v==="net price"||v.includes("dealer")||v==="cost"||v==="unit cost")h.net=c;
-            else if(v.includes("net ext")||v==="net extended")h.netExt=c;
-            else if(v.includes("your price")&&!v.includes("ext"))h.price=c;
-            else if(v.includes("your price")&&v.includes("ext"))h.priceExt=c;
-            else if(v==="sell"||v==="sell price"||v==="sell each"||v==="unit price"||v==="price each"||v==="price"||v==="sell ea")h.price=c;
-            else if(v==="sell ext"||v==="sell extended"||v==="price ext"||v==="extended price"||v==="ext price"||v==="total"||v==="line total"||v==="extended")h.priceExt=c;
-            else if(v.includes("shipping")||v.includes("freight")||v==="ship"||v==="ship each")h.ship=c;
-            else if(v.includes("ship total")||v.includes("freight total")||v.includes("shipping total"))h.shipTotal=c;
-            else if(v.includes("install")&&!v.includes("total"))h.install=c;
-            else if(v.includes("install")&&v.includes("total"))h.installTotal=c;
+            const v=String(row[c]||'').toLowerCase().trim();
+            if(v==='tag')h.tag=c;
+            else if(v==='manuf'||v==='manuf.'||v==='manufacturer')h.manuf=c;
+            else if(v==='model #'||v==='model'||v==='model#'||v==='model number')h.model=c;
+            else if(v==='description'||v==='desc')h.desc=c;
+            else if(v==='color'||v==='finish')h.color=c;
+            else if(v==='qty'||v==='quantity')h.qty=c;
+            else if(v==='list'||v==='list price'||v==='list each')h.list=c;
+            else if(v==='ext'&&!h.listExt){if(h.list!==undefined)h.listExt=c;else h.list=c}
+            else if(v==='net each'||v==='net'||v==='net ea'||v==='net price'||v==='dealer'||v==='dealer net')h.net=c;
+            else if(v==='net ext'||v==='net extended')h.netExt=c;
+            else if(v==='your price'||v==='sell'||v==='sell price'||v==='unit price'||v==='price each'||v==='sell each'||v==='each')h.price=c;
+            else if(v==='your price extended'||v==='sell ext'||v==='sell extended'||v==='price ext'||v==='extended'||v==='ext price'||v==='line total'||v==='ext.')h.priceExt=c;
+            else if(v==='shipping'||v==='ship'||v==='shipping each'||v==='freight')h.ship=c;
+            else if(v==='shipping total'||v==='ship total'||v==='freight total')h.shipTotal=c;
+            else if(v==='install'||v==='install each'||v==='installation')h.install=c;
+            else if(v==='install total'||v==='installation total')h.installTotal=c;
           }
-          if(!h.desc&&!h.model)return null;
-          return Object.keys(h).length>=2?h:null;
-        }
+          return Object.keys(h).length>=3?h:null;
+        };
         // Fallback hardcoded map for Lisa's standard format
         const defaultMap={tag:0,manuf:1,model:2,desc:3,color:4,qty:5,list:6,listExt:7,net:8,netExt:9,price:10,priceExt:11};
         for(let r=0;r<rows.length;r++){
@@ -1380,8 +1377,11 @@ function JobsPage(ctx){
           }
           const cm=colMap||defaultMap;
           const g=v=>cm[v]!==undefined?row[cm[v]]:'';
-          const n=v=>{const raw=g(v);return typeof raw==='number'?raw:parseFloat(String(raw).replace(/[$,]/g,''))||0};
+          const n=v=>safeNum(g(v));
           const s=v=>String(g(v)||'').trim();
+          // Check if any cell in the row contains "Total"/"Subtotal"/"Grand Total" (catches totals in ANY column)
+          const rowHasTotal=row.some(cell=>/^(total|subtotal|grand total)$/i.test(String(cell||'').trim()));
+          if(rowHasTotal)continue;
           const desc=s('desc');const tag=s('tag');const manuf=s('manuf');const model=s('model');
           // Group header: has description but no tag, no manuf, no qty, no prices
           if(desc&&!tag&&!manuf&&!n('qty')&&!n('list')&&!n('net')&&!n('price')){grp=desc.replace(/\n/g,' ').substring(0,80);groups.add(grp);continue}
@@ -1393,22 +1393,25 @@ function JobsPage(ctx){
           const ri2=cleanDesc.indexOf('Room Number');if(ri2>20)cleanDesc=cleanDesc.substring(0,ri2).trim();
           if(cleanDesc.toLowerCase().startsWith('quote ')||cleanDesc.startsWith('#'))continue;
           if(/^(subtotal|grand total)$/i.test(cleanDesc.trim())||/^total$/i.test(cleanDesc.trim()))continue;
+          // Skip disclaimer/notes rows
+          if(cleanDesc.startsWith('*')&&!n('qty')&&!n('list')&&!n('net')&&!n('price')&&!n('priceExt'))continue;
           const qty=Math.round(n('qty'));const list=n('list');const net=n('net');const price=n('price');const priceExt=n('priceExt');
           // Accept row if it has ANY numeric data
           if(qty<=0&&list<=0&&net<=0&&price<=0&&priceExt<=0)continue;
-          const mfr=manuf;if(mfr)vendorSet.add(mfr);
+          const mfr=manuf||lastManuf;if(manuf)lastManuf=manuf;if(mfr)vendorSet.add(mfr);
           items.push({tag:tag.replace(/\.0$/,''),manufacturer:mfr||sn,
             modelNumber:model.replace(/\.0$/,''),description:cleanDesc,
             color:s('color'),qtyOrdered:qty||1,listPrice:list,
             unitCost:net||0,shippingPerUnit:n('ship'),
             installPerUnit:n('install'),unitPrice:price||(priceExt&&qty>0?priceExt/qty:0)||0,
-            group:grp,sheet:sn});ct++
+            group:grp||tag||'',sheet:sn});ct++
         }
         sheets.push({name:sn,count:ct})
       }
       let name=file.name.replace(/\.(xls|xlsx|csv)$/i,'').replace(/_/g,' ');
       try{const ws0=wb.Sheets[wb.SheetNames[0]];const d0=XLSX.utils.sheet_to_json(ws0,{header:1,defval:''});
         if(d0[0]&&d0[0][4])name=String(d0[0][4]).split('\n')[0].trim()}catch{}
+      if(uploadRef.current)uploadRef.current.value='';
       setUploadJobName(name);
       const sel={};sheets.forEach(s=>{sel[s.name]=true});setUploadSheets(sel);
       setUploadData({items,vendors:vendorSet,groups,sheets});
@@ -1419,7 +1422,7 @@ function JobsPage(ctx){
     try{
       const items=uploadData.items.filter(i=>uploadSheets[i.sheet]);
       if(items.length===0){notify('No items selected','error');setUploading(false);return}
-      const jid='JOB-'+new Date().getFullYear()+'-'+String(Date.now()).slice(-6);
+      const jid='JOB-2026-'+String(jobs.length+1).padStart(3,'0');
       addJob({id:jid,name:uploadJobName||'Imported Quote',customer:customers[0]?.id||'',salesRep:reps[0]?.id||'',
         phase:'Quoting',createdDate:new Date().toISOString().split('T')[0],
         startDate:'',dueDate:'',endDate:'',notes:'Imported from Excel quote - '+items.length+' line items',
@@ -1439,7 +1442,7 @@ function JobsPage(ctx){
           unitPrice:item.unitPrice,shippingPerUnit:item.shippingPerUnit,installPerUnit:item.installPerUnit,
           qtyOrdered:item.qtyOrdered,qtyReceived:0,qtyInvoiced:0,poDate:'',deliveryDate:'',invoiceDate:''});ct++}
       notify('Imported '+ct+' items into "'+uploadJobName+'" -- click the job to view');
-      setUploadData(null);setUploadJobName('');setUploading(false);if(uploadRef.current)uploadRef.current.value='';setSelectedJob(jid);
+      setUploadData(null);setUploadJobName('');setSelectedJob(jid);
     }catch(err){notify('Import error: '+err.message,'error')}
     setUploading(false);
   };
@@ -1497,7 +1500,7 @@ function JobsPage(ctx){
       <div style={{overflowX:"auto",maxHeight:240,borderRadius:8,border:"1px solid rgba(255,255,255,0.04)",marginBottom:16}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,minWidth:800}}>
           <thead><tr style={{background:"#0a0a0a",position:"sticky",top:0}}>{["Tag","Manuf","Model","Description","Qty","List","Net","Ship","Your Price"].map(h=><th key={h} style={{padding:"5px 6px",textAlign:"left",fontWeight:600,color:"#525252",fontSize:10,textTransform:"uppercase",letterSpacing:0.5}}>{h}</th>)}</tr></thead>
-          <tbody>{uploadData.items.filter(i=>uploadSheets[i.sheet]).slice(0,30).map((it,idx)=><tr key={idx} style={{borderBottom:"1px solid rgba(255,255,255,0.02)"}}>
+          <tbody>{(()=>{let lastV='';return uploadData.items.filter(i=>uploadSheets[i.sheet]).slice(0,30).map((it,idx)=>{const showSep=it.manufacturer&&it.manufacturer!==lastV;if(it.manufacturer)lastV=it.manufacturer;return <React.Fragment key={idx}>{showSep&&idx>0&&<tr><td colSpan={9} style={{padding:"6px 6px 2px",borderTop:"1px solid rgba(45,212,191,0.12)"}}><span style={{fontSize:10,fontWeight:700,color:"#a78bfa",textTransform:"uppercase",letterSpacing:1}}>{it.manufacturer}</span></td></tr>}<tr style={{borderBottom:"1px solid rgba(255,255,255,0.02)"}}>
             <td style={{padding:"4px 6px",color:"#a78bfa"}}>{it.tag}</td>
             <td style={{padding:"4px 6px",color:"#9a9a9a"}}>{it.manufacturer}</td>
             <td style={{padding:"4px 6px",color:"#9a9a9a",fontFamily:"'JetBrains Mono',monospace",fontSize:10}}>{it.modelNumber}</td>
@@ -1507,7 +1510,7 @@ function JobsPage(ctx){
             <td style={{padding:"4px 6px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",color:"#34d399"}}>${it.unitCost.toFixed(2)}</td>
             <td style={{padding:"4px 6px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",color:"#fbbf24"}}>{it.shippingPerUnit?'$'+it.shippingPerUnit.toFixed(0):'--'}</td>
             <td style={{padding:"4px 6px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",color:"#2dd4bf",fontWeight:600}}>{it.unitPrice?'$'+it.unitPrice.toFixed(2):'--'}</td>
-          </tr>)}</tbody>
+          </tr></React.Fragment>})})()}</tbody>
         </table>
         {uploadSelCount>30&&<div style={{padding:8,textAlign:"center",color:"#333",fontSize:11}}>Showing 30 of {uploadSelCount}</div>}
       </div>
