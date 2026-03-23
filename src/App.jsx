@@ -146,7 +146,7 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
           const si2=cleanDesc.indexOf("Item Specifics");if(si2>0)cleanDesc=cleanDesc.substring(0,si2).trim();
           const ri=cleanDesc.indexOf("-- Room Number");if(ri>0)cleanDesc=cleanDesc.substring(0,ri).trim();
           const ri2=cleanDesc.indexOf("Room Number");if(ri2>20)cleanDesc=cleanDesc.substring(0,ri2).trim();
-          if(cleanDesc.toLowerCase().startsWith("quote ")||cleanDesc.startsWith("#"))continue;
+          if(/^quote\s*[#]?\d/i.test(cleanDesc)||cleanDesc.startsWith("#"))continue;
           if(/^(subtotal|grand total)$/i.test(cleanDesc.trim())||/^total$/i.test(cleanDesc.trim()))continue;
           // Skip disclaimer/notes rows (long text with no pricing data at all)
           if(cleanDesc.startsWith("*")&&!n("qty")&&!n("list")&&!n("net")&&!n("price")&&!n("priceExt"))continue;
@@ -1395,7 +1395,7 @@ function JobsPage(ctx){
           const si2=cleanDesc.indexOf('Item Specifics');if(si2>0)cleanDesc=cleanDesc.substring(0,si2).trim();
           const ri=cleanDesc.indexOf('-- Room Number');if(ri>0)cleanDesc=cleanDesc.substring(0,ri).trim();
           const ri2=cleanDesc.indexOf('Room Number');if(ri2>20)cleanDesc=cleanDesc.substring(0,ri2).trim();
-          if(cleanDesc.toLowerCase().startsWith('quote ')||cleanDesc.startsWith('#'))continue;
+          if(/^quote\s*[#]?\d/i.test(cleanDesc)||cleanDesc.startsWith('#'))continue;
           if(/^(subtotal|grand total)$/i.test(cleanDesc.trim())||/^total$/i.test(cleanDesc.trim()))continue;
           // Skip disclaimer/notes rows
           if(cleanDesc.startsWith('*')&&!n('qty')&&!n('list')&&!n('net')&&!n('price')&&!n('priceExt'))continue;
