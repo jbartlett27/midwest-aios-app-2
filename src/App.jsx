@@ -3018,6 +3018,23 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   filteredJobs.filter(j=>j.paymentStatus!=="paid").forEach(j=>{const f=getJobFinancials(j.id);const inv=j.dueDate?new Date(j.dueDate):new Date(j.createdDate||now);const days=Math.floor((now-inv)/86400000);if(days<=0)arAging.current+=f.totalRevenue;else if(days<=30)arAging.t30+=f.totalRevenue;else if(days<=60)arAging.t60+=f.totalRevenue;else if(days<=90)arAging.t90+=f.totalRevenue;else arAging.over90+=f.totalRevenue});
   const totalAR=arAging.current+arAging.t30+arAging.t60+arAging.t90+arAging.over90;
 
+  // AR by customer breakdown
+  const arByCustomer={};
+  filteredJobs.filter(j=>j.paymentStatus!=="paid").forEach(j=>{
+    const f=getJobFinancials(j.id);const c=customers.find(c2=>c2.id===j.customer);
+    const cName=c?.name||"Unknown";const inv=j.dueDate?new Date(j.dueDate):new Date(j.createdDate||now);
+    const days=Math.floor((now-inv)/86400000);
+    if(!arByCustomer[cName])arByCustomer[cName]={current:0,t30:0,t60:0,t90:0,over90:0,total:0,jobs:0};
+    arByCustomer[cName].total+=f.totalRevenue;arByCustomer[cName].jobs++;
+    if(days<=0)arByCustomer[cName].current+=f.totalRevenue;
+    else if(days<=30)arByCustomer[cName].t30+=f.totalRevenue;
+    else if(days<=60)arByCustomer[cName].t60+=f.totalRevenue;
+    else if(days<=90)arByCustomer[cName].t90+=f.totalRevenue;
+    else arByCustomer[cName].over90+=f.totalRevenue;
+  });
+  const arCustomerList=Object.entries(arByCustomer).map(([name,d])=>({name,...d})).sort((a,b)=>b.total-a.total);
+  const unpaidJobCount=filteredJobs.filter(j=>j.paymentStatus!=="paid").length;
+
   // AP Aging -- what Midwest owes vendors (cost side of unpaid/undelivered jobs)
   const apAging={current:0,t30:0,t60:0,t90:0,over90:0};
   const apByVendor={};
@@ -3149,13 +3166,28 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       <div style={{background:"#34d39908",borderRadius:8,padding:"14px 4px",marginTop:16,display:"flex",justifyContent:"space-between",border:"1px solid #34d39920"}}><span style={{fontSize:17,fontWeight:800,color:"#f0f0f0"}}>NET INCOME</span><span style={{fontSize:17,fontWeight:800,color:netIncome>=0?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace"}}><AnimatedNumber value={netIncome} prefix="$"/></span></div>
     </Card>}
 
-    {tab==="ar"&&<Card style={{padding:20}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}><div style={{fontSize:18,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>Accounts Receivable Aging</div><Btn onClick={()=>generatePDF("ar")}><I n="download" s={14}/> Export PDF</Btn></div>
-      <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:500}}><thead><tr style={{borderBottom:"2px solid #222"}}>{["Customer / Job","Current","1-30","31-60","61-90","90+","Total"].map(h=><th key={h} style={{padding:"8px 6px",textAlign:h==="Customer / Job"?"left":"right",color:"#737373",fontSize:11,fontWeight:600}}>{h}</th>)}</tr></thead><tbody>
-        {filteredJobs.filter(j=>j.paymentStatus!=="paid").map(j=>{const f=getJobFinancials(j.id);const c=customers.find(c2=>c2.id===j.customer);const inv=j.dueDate?new Date(j.dueDate):new Date(j.createdDate||now);const days=Math.floor((now-inv)/86400000);return <tr key={j.id} style={{borderBottom:"1px solid #111"}}><td style={{padding:"8px 6px"}}><div style={{color:"#e5e5e5",fontWeight:500}}>{j.name}</div><div style={{fontSize:11,color:"#737373"}}>{c?.name}</div></td>{[days<=0,days>0&&days<=30,days>30&&days<=60,days>60&&days<=90,days>90].map((show,i)=><td key={i} style={{padding:"8px 6px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",color:show?["#34d399","#2dd4bf","#fbbf24","#f97316","#f87171"][i]:"#333"}}>{show?fmt(f.totalRevenue):""}</td>)}<td style={{padding:"8px 6px",textAlign:"right",fontWeight:600,fontFamily:"'JetBrains Mono',monospace"}}>{fmt(f.totalRevenue)}</td></tr>})}
-        <tr style={{borderTop:"2px solid #222"}}><td style={{padding:"8px 6px",fontWeight:700}}>TOTAL</td>{[arAging.current,arAging.t30,arAging.t60,arAging.t90,arAging.over90].map((v,i)=><td key={i} style={{padding:"8px 6px",textAlign:"right",fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:["#34d399","#2dd4bf","#fbbf24","#f97316","#f87171"][i]}}>{fmt(v)}</td>)}<td style={{padding:"8px 6px",textAlign:"right",fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalAR)}</td></tr>
-      </tbody></table></div>
-    </Card>}
+    {tab==="ar"&&<div style={{display:"flex",flexDirection:"column",gap:16}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12}} className="resp-grid-4">
+        <Card style={{padding:16,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:6}}>TOTAL AR</div><div style={{fontSize:"clamp(18px,4vw,28px)",fontWeight:800,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace",lineHeight:1}}><AnimNum value={fmt(totalAR)}/></div><div style={{fontSize:12,color:"#a3a3a3",marginTop:6}}>{unpaidJobCount} unpaid job{unpaidJobCount!==1?"s":""}</div></Card>
+        <Card style={{padding:16,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:6}}>CURRENT</div><div style={{fontSize:"clamp(18px,4vw,28px)",fontWeight:800,color:"#34d399",fontFamily:"'JetBrains Mono',monospace",lineHeight:1}}><AnimNum value={fmt(arAging.current)}/></div><div style={{fontSize:12,color:"#a3a3a3",marginTop:6}}>{totalAR>0?(arAging.current/totalAR*100).toFixed(0):0}%</div></Card>
+        <Card style={{padding:16,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:6}}>30+ DAYS</div><div style={{fontSize:"clamp(18px,4vw,28px)",fontWeight:800,color:"#fbbf24",fontFamily:"'JetBrains Mono',monospace",lineHeight:1}}><AnimNum value={fmt(arAging.t30+arAging.t60+arAging.t90+arAging.over90)}/></div><div style={{fontSize:12,color:"#a3a3a3",marginTop:6}}>{totalAR>0?((arAging.t30+arAging.t60+arAging.t90+arAging.over90)/totalAR*100).toFixed(0):0}%</div></Card>
+        <Card style={{padding:16,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:6}}>90+ OVERDUE</div><div style={{fontSize:"clamp(18px,4vw,28px)",fontWeight:800,color:arAging.over90>0?"#f87171":"#34d399",fontFamily:"'JetBrains Mono',monospace",lineHeight:1}}><AnimNum value={fmt(arAging.over90)}/></div><div style={{fontSize:12,color:"#a3a3a3",marginTop:6}}>{arAging.over90>0?"Action needed":"On track"}</div></Card>
+      </div>
+
+      <Card style={{padding:20}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}><div style={{fontSize:18,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>Accounts Receivable Aging</div><Btn onClick={()=>generatePDF("ar")}><I n="download" s={14}/> Export PDF</Btn></div>
+        <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:500}}><thead><tr style={{borderBottom:"2px solid #222"}}>{["Customer / Job","Current","1-30","31-60","61-90","90+","Total"].map(h=><th key={h} style={{padding:"8px 6px",textAlign:h==="Customer / Job"?"left":"right",color:"#737373",fontSize:11,fontWeight:600}}>{h}</th>)}</tr></thead><tbody>
+          {filteredJobs.filter(j=>j.paymentStatus!=="paid").map(j=>{const f=getJobFinancials(j.id);const c=customers.find(c2=>c2.id===j.customer);const inv=j.dueDate?new Date(j.dueDate):new Date(j.createdDate||now);const days=Math.floor((now-inv)/86400000);return <tr key={j.id} style={{borderBottom:"1px solid #111"}}><td style={{padding:"8px 6px"}}><div style={{color:"#e5e5e5",fontWeight:500}}>{j.name}</div><div style={{fontSize:11,color:"#737373"}}>{c?.name}</div></td>{[days<=0,days>0&&days<=30,days>30&&days<=60,days>60&&days<=90,days>90].map((show,i)=><td key={i} style={{padding:"8px 6px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",color:show?["#34d399","#2dd4bf","#fbbf24","#f97316","#f87171"][i]:"#333"}}>{show?fmt(f.totalRevenue):""}</td>)}<td style={{padding:"8px 6px",textAlign:"right",fontWeight:600,fontFamily:"'JetBrains Mono',monospace"}}>{fmt(f.totalRevenue)}</td></tr>})}
+          <tr style={{borderTop:"2px solid #222"}}><td style={{padding:"8px 6px",fontWeight:700}}>TOTAL</td>{[arAging.current,arAging.t30,arAging.t60,arAging.t90,arAging.over90].map((v,i)=><td key={i} style={{padding:"8px 6px",textAlign:"right",fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:["#34d399","#2dd4bf","#fbbf24","#f97316","#f87171"][i]}}>{fmt(v)}</td>)}<td style={{padding:"8px 6px",textAlign:"right",fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalAR)}</td></tr>
+        </tbody></table></div>
+      </Card>
+
+      <Card style={{padding:16}}>
+        <div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:14,fontFamily:"'JetBrains Mono',monospace"}}>AR by Customer</div>
+        {arCustomerList.slice(0,10).map((c,i)=><div key={c.name} style={{marginBottom:10}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:24,height:24,borderRadius:6,background:"#2dd4bf12",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"#2dd4bf",fontWeight:800,fontFamily:"'JetBrains Mono',monospace"}}>{i+1}</div><div><span style={{fontSize:13,color:"#e5e5e5",fontWeight:500}}>{c.name}</span><span style={{fontSize:11,color:"#737373",marginLeft:8}}>{c.jobs} job{c.jobs!==1?"s":""}</span></div></div><div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:13,fontWeight:700,color:"#e5e5e5",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(c.total)}</span><span style={{fontSize:11,color:"#737373"}}>{totalAR>0?(c.total/totalAR*100).toFixed(0):0}%</span></div></div><Bar value={c.total} max={arCustomerList[0]?.total||1} color={c.over90>0?"#f87171":c.t90>0?"#f97316":c.t60>0?"#fbbf24":"#2dd4bf"} height={5}/></div>)}
+        {arCustomerList.length===0&&<div style={{textAlign:"center",padding:20,color:"#525252",fontSize:13}}>All invoices are paid</div>}
+      </Card>
+    </div>}
 
     {tab==="ap"&&<div style={{display:"flex",flexDirection:"column",gap:16}}>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12}} className="resp-grid-4">
