@@ -3529,12 +3529,18 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
   </div>;
 }
 
-function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,getJobItems,notify,triggerPrint,dateFilter,jobNum}){
+function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,getJobItems,notify,triggerPrint,dateFilter,jobNum,customSops,addSop,deleteSop,...fCtx}){
   const [tab,setTab]=useState("overview");
   const now=new Date();
   const [period,setPeriod]=useState("ytd");
   const [dateFrom,setDateFrom]=useState(()=>{const d=new Date(now.getFullYear(),0,1);return d.toISOString().split("T")[0]});
   const [dateTo,setDateTo]=useState(()=>now.toISOString().split("T")[0]);
+  // Banking / manual transaction state
+  const [manualForm,setManualForm]=useState({date:'',description:'',category:'',amount:'',type:'expense',account:'Operating'});
+  const [manualEditing,setManualEditing]=useState(null);
+  const [plaidStatus,setPlaidStatus]=useState('disconnected');
+  const [bankSearch,setBankSearch]=useState('');
+  const [bankCatFilter,setBankCatFilter]=useState('all');
 
   // Period presets
   const setPeriodPreset=(p)=>{setPeriod(p);const n=new Date();const y=n.getFullYear();const m=n.getMonth();if(p==="month"){const s=new Date(y,m,1);setDateFrom(s.toISOString().split("T")[0]);setDateTo(n.toISOString().split("T")[0])}else if(p==="quarter"){const qm=Math.floor(m/3)*3;setDateFrom(new Date(y,qm,1).toISOString().split("T")[0]);setDateTo(n.toISOString().split("T")[0])}else if(p==="ytd"){setDateFrom(new Date(y,0,1).toISOString().split("T")[0]);setDateTo(n.toISOString().split("T")[0])}else if(p==="year"){setDateFrom(new Date(y-1,m,n.getDate()).toISOString().split("T")[0]);setDateTo(n.toISOString().split("T")[0])}else if(p==="all"){setDateFrom("2020-01-01");setDateTo(n.toISOString().split("T")[0])}};
@@ -3545,8 +3551,15 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   const filteredItems=lineItems.filter(i=>{const j=jobs.find(jj=>jj.id===i.jobId);if(!j)return false;const d=new Date(j.createdDate);return d>=fromD&&d<=toD});
 
   // Core calculations (use filteredJobs)
-  const totalRev=filteredJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
-  const totalCost=filteredJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalCost,0);
+  // Load manual transactions from SOPs
+  const manualTxns=(customSops||[]).filter(s=>s.cat==="ManualTxn").map(s=>{try{return{id:s.id,...JSON.parse(s.content)}}catch{return null}}).filter(Boolean);
+  const filteredManualTxns=manualTxns.filter(t=>{if(!t.date)return true;const d=new Date(t.date);return d>=fromD&&d<=toD});
+  const manualRevenue=filteredManualTxns.filter(t=>t.type==='revenue').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+  const manualExpenses=filteredManualTxns.filter(t=>t.type==='expense').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+  const manualAssets=filteredManualTxns.filter(t=>t.category==='asset').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+  const manualLiabilities=filteredManualTxns.filter(t=>t.category==='liability').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+  const totalRev=filteredJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0)+manualRevenue;
+  const totalCost=filteredJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalCost,0)+manualExpenses;
   const grossProfit=totalRev-totalCost;
   const grossMargin=totalRev>0?(grossProfit/totalRev*100):0;
   const paidRev=filteredJobs.filter(j=>j.paymentStatus==="paid").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
@@ -3678,7 +3691,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       <div style={{display:"flex",gap:6,alignItems:"center"}}><input type="date" value={dateFrom} onChange={e=>{setDateFrom(e.target.value);setPeriod("custom")}} style={{padding:"8px 12px",background:"rgba(17,17,17,0.45)",backdropFilter:"blur(8px) saturate(200%) brightness(1.1)",WebkitBackdropFilter:"blur(8px) saturate(200%) brightness(1.1)",border:"1px solid #333",borderRadius:8,color:"#f0f0f0",fontSize:12,fontFamily:"inherit",outline:"none"}}/><span style={{color:"#525252",fontSize:12}}>to</span><input type="date" value={dateTo} onChange={e=>{setDateTo(e.target.value);setPeriod("custom")}} style={{padding:"8px 12px",background:"rgba(17,17,17,0.45)",backdropFilter:"blur(8px) saturate(200%) brightness(1.1)",WebkitBackdropFilter:"blur(8px) saturate(200%) brightness(1.1)",border:"1px solid #333",borderRadius:8,color:"#f0f0f0",fontSize:12,fontFamily:"inherit",outline:"none"}}/></div>
       <div style={{fontSize:12,color:"#525252",fontFamily:"'JetBrains Mono',monospace"}}>{filteredJobs.length} job{filteredJobs.length!==1?"s":""}</div>
     </div>
-        <div style={{display:"flex",gap:3,background:"#111",padding:3,borderRadius:8,marginBottom:16,flexWrap:"wrap"}}>{[["overview","Overview"],["pnl","P&L"],["balance","Balance Sheet"],["ar","Receivables"],["ap","Payables"],["margin","Margins"],["reports","Reports"]].map(([v,l])=><button key={v} onClick={()=>setTab(v)} style={{padding:"6px 14px",borderRadius:6,border:"none",cursor:"pointer",background:tab===v?"#2dd4bf":"transparent",color:tab===v?"#000":"#737373",fontSize:12,fontWeight:tab===v?600:400,fontFamily:"inherit",transition:"all 0.15s"}}>{l}</button>)}</div>
+        <div style={{display:"flex",gap:3,background:"#111",padding:3,borderRadius:8,marginBottom:16,flexWrap:"wrap"}}>{[["overview","Overview"],["pnl","P&L"],["balance","Balance Sheet"],["banking","Banking"],["ar","Receivables"],["ap","Payables"],["margin","Margins"],["reports","Reports"]].map(([v,l])=><button key={v} onClick={()=>setTab(v)} style={{padding:"6px 14px",borderRadius:6,border:"none",cursor:"pointer",background:tab===v?"#2dd4bf":"transparent",color:tab===v?"#000":"#737373",fontSize:12,fontWeight:tab===v?600:400,fontFamily:"inherit",transition:"all 0.15s"}}>{l}</button>)}</div>
 
     {tab==="overview"&&<div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:14}} className="resp-grid-4">
@@ -3719,11 +3732,13 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
     </div>}
 
     {tab==="pnl"&&<Card style={{padding:20}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}><div style={{fontSize:18,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>Profit & Loss</div><Btn onClick={()=>generatePDF("pnl")}><I n="download" s={14}/> Export PDF</Btn></div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}><div style={{fontSize:18,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>Profit & Loss</div><div style={{display:"flex",gap:8}}><Btn v="secondary" onClick={()=>setTab("banking")} style={{fontSize:11}}><I n="plus" s={12}/> Add Entry</Btn><Btn onClick={()=>generatePDF("pnl")}><I n="download" s={14}/> Export PDF</Btn></div></div>
       <div style={{borderBottom:"2px solid #222",padding:"10px 0",display:"flex",justifyContent:"space-between"}}><span style={{fontSize:15,fontWeight:700,color:"#f0f0f0"}}>REVENUE</span><span style={{fontSize:15,fontWeight:700,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalRev)}</span></div>
       {filteredJobs.map(j=>{const f=getJobFinancials(j.id);return <div key={j.id} style={{padding:"6px 16px",display:"flex",justifyContent:"space-between",borderBottom:"1px solid #111"}}><span style={{fontSize:13,color:"#a3a3a3"}}>{j.name}</span><span style={{fontSize:13,color:"#a3a3a3",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(f.totalRevenue)}</span></div>})}
+      {filteredManualTxns.filter(t=>t.type==='revenue').map(t=><div key={t.id} style={{padding:"6px 16px",display:"flex",justifyContent:"space-between",borderBottom:"1px solid #111",background:"#2dd4bf05"}}><span style={{fontSize:13,color:"#2dd4bf"}}>{t.description||'Manual entry'} <span style={{fontSize:10,color:"#525252"}}>(manual)</span></span><span style={{fontSize:13,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(parseFloat(t.amount)||0)}</span></div>)}
       <div style={{borderBottom:"2px solid #222",padding:"10px 0",display:"flex",justifyContent:"space-between",marginTop:12}}><span style={{fontSize:15,fontWeight:700,color:"#f0f0f0"}}>COST OF GOODS SOLD</span><span style={{fontSize:15,fontWeight:700,color:"#f87171",fontFamily:"'JetBrains Mono',monospace"}}><AnimatedNumber value={totalCost} prefix="$"/></span></div>
       {vendorSpend.map(v=><div key={v.name} style={{padding:"6px 16px",display:"flex",justifyContent:"space-between",borderBottom:"1px solid #111"}}><span style={{fontSize:13,color:"#a3a3a3"}}>{v.name}</span><span style={{fontSize:13,color:"#a3a3a3",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(v.spend)}</span></div>)}
+      {filteredManualTxns.filter(t=>t.type==='expense').map(t=><div key={t.id} style={{padding:"6px 16px",display:"flex",justifyContent:"space-between",borderBottom:"1px solid #111",background:"#f8717105"}}><span style={{fontSize:13,color:"#f87171"}}>{t.description||'Manual expense'} <span style={{fontSize:10,color:"#525252"}}>({t.category||'manual'})</span></span><span style={{fontSize:13,color:"#f87171",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(parseFloat(t.amount)||0)}</span></div>)}
       <div style={{background:"#0a0a0a",borderRadius:8,padding:"12px 0",marginTop:12,display:"flex",justifyContent:"space-between"}}><span style={{fontSize:15,fontWeight:700,color:"#f0f0f0",paddingLeft:4}}>GROSS PROFIT</span><span style={{fontSize:15,fontWeight:700,color:grossProfit>=0?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace"}}><AnimatedNumber value={grossProfit} prefix="$"/> ({grossMargin.toFixed(1)}%)</span></div>
       <div style={{borderBottom:"2px solid #222",padding:"10px 0",display:"flex",justifyContent:"space-between",marginTop:12}}><span style={{fontSize:15,fontWeight:700,color:"#f0f0f0"}}>OPERATING EXPENSES</span><span style={{fontSize:15,fontWeight:700,color:"#fbbf24",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalComm)}</span></div>
       <div style={{padding:"6px 16px",display:"flex",justifyContent:"space-between",borderBottom:"1px solid #111"}}><span style={{fontSize:13,color:"#a3a3a3"}}>Sales Commissions</span><span style={{fontSize:13,color:"#a3a3a3",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalComm)}</span></div>
@@ -3734,9 +3749,9 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       // Balance Sheet calculations
       const inventory=filteredItems.reduce((s,i)=>s+(i.unitCost||0)*Math.max(0,i.qtyOrdered-i.qtyReceived),0);
       const bsCash=Math.max(0,paidRev-totalAP);
-      const bsTotalCurrentAssets=bsCash+totalAR+inventory;
+      const bsTotalCurrentAssets=bsCash+totalAR+inventory+manualAssets;
       const bsTotalAssets=bsTotalCurrentAssets;
-      const bsTotalCurrentLiab=totalAP+totalComm;
+      const bsTotalCurrentLiab=totalAP+totalComm+manualLiabilities;
       const bsTotalLiab=bsTotalCurrentLiab;
       const bsRetained=totalRev-totalCost-totalComm;
       const bsEquity=bsRetained;
@@ -3756,7 +3771,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
         <Card style={{padding:20}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:8}}>
             <div><div style={{fontSize:18,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>Balance Sheet</div><div style={{fontSize:12,color:"#737373",marginTop:2}}>As of {new Date(dateTo).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</div></div>
-            <Btn onClick={()=>generatePDF("balance")}><I n="download" s={14}/> Export PDF</Btn>
+            <div style={{display:"flex",gap:8}}><Btn v="secondary" onClick={()=>setTab("banking")} style={{fontSize:11}}><I n="plus" s={12}/> Add Entry</Btn><Btn onClick={()=>generatePDF("balance")}><I n="download" s={14}/> Export PDF</Btn></div>
           </div>
 
           <div style={{background:"#2dd4bf08",borderRadius:10,padding:2,marginBottom:20,border:"1px solid #2dd4bf15"}}>
@@ -3765,6 +3780,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
             {bsLine("Cash & Cash Equivalents",bsCash,true,false,"#34d399")}
             {bsLine("Accounts Receivable",totalAR,true,false,"#2dd4bf")}
             {bsLine("Inventory (In Transit)",inventory,true,false,"#a78bfa")}
+            {manualAssets>0&&bsLine("Other Assets (Manual)",manualAssets,true,false,"#8b5cf6")}
             <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0",borderTop:"2px solid #2dd4bf30",margin:"0 14px"}}><span style={{fontSize:14,fontWeight:800,color:"#f0f0f0"}}>Total Current Assets</span><span style={{fontSize:15,fontWeight:800,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsTotalCurrentAssets)}</span></div>
             <div style={{display:"flex",justifyContent:"space-between",padding:"12px 14px",background:"#2dd4bf10",borderRadius:"0 0 8px 8px"}}><span style={{fontSize:15,fontWeight:800,color:"#f0f0f0"}}>TOTAL ASSETS</span><span style={{fontSize:16,fontWeight:800,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsTotalAssets)}</span></div>
           </div>
@@ -3774,6 +3790,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
             <div style={{padding:"8px 14px",borderBottom:"1px solid #222"}}><span style={{fontSize:12,fontWeight:700,color:"#e5e5e5",letterSpacing:0.5}}>Current Liabilities</span></div>
             {bsLine("Accounts Payable",totalAP,true,false,"#f97316")}
             {bsLine("Commissions Payable",totalComm,true,false,"#fbbf24")}
+            {manualLiabilities>0&&bsLine("Other Liabilities (Manual)",manualLiabilities,true,false,"#f97316")}
             <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0",borderTop:"2px solid #f9731630",margin:"0 14px"}}><span style={{fontSize:14,fontWeight:800,color:"#f0f0f0"}}>Total Current Liabilities</span><span style={{fontSize:15,fontWeight:800,color:"#f97316",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsTotalCurrentLiab)}</span></div>
             <div style={{display:"flex",justifyContent:"space-between",padding:"12px 14px",background:"#f9731610",borderRadius:"0 0 8px 8px"}}><span style={{fontSize:15,fontWeight:800,color:"#f0f0f0"}}>TOTAL LIABILITIES</span><span style={{fontSize:16,fontWeight:800,color:"#f97316",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsTotalLiab)}</span></div>
           </div>
@@ -3798,6 +3815,78 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
             {[{label:"Accounts Payable",value:totalAP,color:"#f97316"},{label:"Commissions",value:totalComm,color:"#fbbf24"},{label:"Retained Earnings",value:Math.max(0,bsRetained),color:"#34d399"}].map(a=><div key={a.label} style={{marginBottom:10}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}><span style={{fontSize:13,color:"#e5e5e5"}}>{a.label}</span><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:13,fontWeight:700,color:a.color,fontFamily:"'JetBrains Mono',monospace"}}>{fmt(a.value)}</span><span style={{fontSize:11,color:"#737373"}}>{bsTotalLiabEquity>0?(a.value/bsTotalLiabEquity*100).toFixed(0):0}%</span></div></div><Bar value={a.value} max={bsTotalLiabEquity||1} color={a.color} height={5}/></div>)}
           </Card>
         </div>
+      </div>})()}
+
+    {tab==="banking"&&(()=>{
+      const categories=['Uncategorized','Revenue - Product Sales','Revenue - Shipping','Revenue - Installation','COGS - Vendor Payments','COGS - Freight','Operating - Rent','Operating - Utilities','Operating - Insurance','Operating - Office Supplies','Operating - Commissions','Operating - Payroll','Operating - Marketing','Operating - Professional Services','Tax Payment','Transfer','Owner Draw','Owner Investment','Refund','Other'];
+      const allTxns=manualTxns.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+      const filteredBankTxns=allTxns.filter(t=>{
+        if(bankCatFilter!=='all'&&t.category!==bankCatFilter)return false;
+        if(!bankSearch)return true;
+        const q=bankSearch.toLowerCase();
+        return (t.description||'').toLowerCase().includes(q)||(t.category||'').toLowerCase().includes(q)||(t.account||'').toLowerCase().includes(q)||(t.amount||'').toString().includes(q);
+      });
+      const saveTxn=()=>{
+        const id=manualEditing||'TXN-'+Date.now()+'-'+Math.random().toString(36).slice(2,6);
+        addSop({id,title:manualForm.description||'Transaction',cat:'ManualTxn',icon:'dollar',content:JSON.stringify(manualForm),custom:true});
+        notify(manualEditing?'Transaction updated':'Transaction added');
+        setManualForm({date:'',description:'',category:'',amount:'',type:'expense',account:'Operating'});
+        setManualEditing(null);
+      };
+      const deleteTxn=(id)=>{deleteSop(id);notify('Transaction deleted')};
+      const editTxn=(t)=>{setManualForm({date:t.date||'',description:t.description||'',category:t.category||'',amount:t.amount||'',type:t.type||'expense',account:t.account||'Operating'});setManualEditing(t.id)};
+      const updateCategory=(txnId,cat)=>{const t=allTxns.find(x=>x.id===txnId);if(!t)return;const newType=cat.startsWith('Revenue')?'revenue':cat==='asset'?'asset':cat==='liability'?'liability':'expense';addSop({id:txnId,title:t.description||'Transaction',cat:'ManualTxn',icon:'dollar',content:JSON.stringify({...t,category:cat,type:newType}),custom:true});notify('Categorized: '+cat)};
+      const totalBankIn=filteredBankTxns.filter(t=>t.type==='revenue').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+      const totalBankOut=filteredBankTxns.filter(t=>t.type==='expense').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+      const uncategorized=filteredBankTxns.filter(t=>!t.category||t.category==='Uncategorized').length;
+
+      return <div style={{display:"flex",flexDirection:"column",gap:16}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12}} className="resp-grid-4">
+          {kpi("TOTAL IN",fmt(totalBankIn),filteredBankTxns.filter(t=>t.type==='revenue').length+" deposits","#34d399")}
+          {kpi("TOTAL OUT",fmt(totalBankOut),filteredBankTxns.filter(t=>t.type==='expense').length+" payments","#f87171")}
+          {kpi("NET",fmt(totalBankIn-totalBankOut),"","#2dd4bf")}
+          {kpi("UNCATEGORIZED",String(uncategorized),uncategorized>0?"needs review":"all done",uncategorized>0?"#fbbf24":"#34d399")}
+        </div>
+
+        <Card style={{padding:16}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
+            <div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>{manualEditing?'Edit Transaction':'Add Transaction'}</div>
+            {plaidStatus==='disconnected'&&<div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:8,height:8,borderRadius:"50%",background:"#525252"}}/><span style={{fontSize:11,color:"#525252"}}>Bank not connected</span><Btn v="secondary" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>{notify('Plaid integration requires setup. See the SOP guide for instructions.');setPlaidStatus('pending')}}>Connect Bank (Plaid)</Btn></div>}
+            {plaidStatus==='pending'&&<div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:8,height:8,borderRadius:"50%",background:"#fbbf24"}}/><span style={{fontSize:11,color:"#fbbf24"}}>Setup in progress -- see SOP</span></div>}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10,marginBottom:12}}>
+            <div><label style={{fontSize:11,color:"#a3a3a3",display:"block",marginBottom:3}}>Date</label><input type="date" value={manualForm.date} onChange={e=>setManualForm({...manualForm,date:e.target.value})} style={inputStyle}/></div>
+            <div><label style={{fontSize:11,color:"#a3a3a3",display:"block",marginBottom:3}}>Description</label><input value={manualForm.description} onChange={e=>setManualForm({...manualForm,description:e.target.value})} placeholder="e.g. Smith System payment" style={inputStyle}/></div>
+            <div><label style={{fontSize:11,color:"#a3a3a3",display:"block",marginBottom:3}}>Category</label><select value={manualForm.category} onChange={e=>{const cat=e.target.value;const newType=cat.startsWith('Revenue')?'revenue':cat==='asset'?'asset':cat==='liability'?'liability':'expense';setManualForm({...manualForm,category:cat,type:newType})}} style={inputStyle}><option value="">Select...</option>{categories.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+            <div><label style={{fontSize:11,color:"#a3a3a3",display:"block",marginBottom:3}}>Amount</label><input type="number" value={manualForm.amount} onChange={e=>setManualForm({...manualForm,amount:e.target.value})} placeholder="0.00" style={inputStyle}/></div>
+            <div><label style={{fontSize:11,color:"#a3a3a3",display:"block",marginBottom:3}}>Type</label><select value={manualForm.type} onChange={e=>setManualForm({...manualForm,type:e.target.value})} style={inputStyle}><option value="expense">Expense (out)</option><option value="revenue">Revenue (in)</option><option value="asset">Asset</option><option value="liability">Liability</option></select></div>
+            <div><label style={{fontSize:11,color:"#a3a3a3",display:"block",marginBottom:3}}>Account</label><select value={manualForm.account} onChange={e=>setManualForm({...manualForm,account:e.target.value})} style={inputStyle}><option>Operating</option><option>Savings</option><option>Credit Card</option><option>Petty Cash</option></select></div>
+          </div>
+          <div style={{display:"flex",gap:8}}><Btn onClick={saveTxn}>{manualEditing?'Update':'Add Transaction'}</Btn>{manualEditing&&<Btn v="secondary" onClick={()=>{setManualForm({date:'',description:'',category:'',amount:'',type:'expense',account:'Operating'});setManualEditing(null)}}>Cancel</Btn>}</div>
+        </Card>
+
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+          <input value={bankSearch} onChange={e=>setBankSearch(e.target.value)} placeholder="Search transactions..." style={{...inputStyle,flex:1,minWidth:200,maxWidth:300}}/>
+          <select value={bankCatFilter} onChange={e=>setBankCatFilter(e.target.value)} style={{...inputStyle,width:"auto"}}><option value="all">All Categories</option>{categories.map(c=><option key={c} value={c}>{c}</option>)}</select>
+          <span style={{fontSize:11,color:"#737373"}}>{filteredBankTxns.length} transaction{filteredBankTxns.length!==1?'s':''}</span>
+        </div>
+
+        {filteredBankTxns.length===0?<Card style={{padding:40,textAlign:"center"}}><div style={{fontSize:14,color:"#525252"}}>No transactions yet. Add entries manually or connect your bank via Plaid.</div></Card>:
+        <Card style={{padding:0,overflow:"hidden"}}>
+          <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:700}}>
+            <thead><tr style={{background:"#111",borderBottom:"2px solid #222"}}>{["Date","Description","Category","Account","Amount",""].map((h,i)=><th key={i} style={{padding:"10px 8px",textAlign:i===4?"right":"left",fontWeight:600,color:"#a3a3a3",fontSize:11,textTransform:"uppercase",letterSpacing:0.8}}>{h}</th>)}</tr></thead>
+            <tbody>{filteredBankTxns.map(t=><tr key={t.id} style={{borderBottom:"1px solid #111",transition:"background 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.background="#111"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>
+              <td style={{padding:"8px",color:"#a3a3a3",whiteSpace:"nowrap"}}>{t.date||'--'}</td>
+              <td style={{padding:"8px",color:"#e5e5e5",fontWeight:500}}>{t.description||'--'}</td>
+              <td style={{padding:"8px"}}><select value={t.category||''} onChange={e=>updateCategory(t.id,e.target.value)} style={{background:"#111",border:"1px solid #222",color:(!t.category||t.category==='Uncategorized')?"#fbbf24":"#a3a3a3",borderRadius:6,padding:"3px 6px",fontSize:11,fontFamily:"inherit",cursor:"pointer"}}><option value="">Uncategorized</option>{categories.map(c=><option key={c} value={c}>{c}</option>)}</select></td>
+              <td style={{padding:"8px",color:"#737373",fontSize:11}}>{t.account||'--'}</td>
+              <td style={{padding:"8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,color:t.type==='revenue'?"#34d399":"#f87171"}}>{t.type==='revenue'?'+':'-'}{fmt(parseFloat(t.amount)||0)}</td>
+              <td style={{padding:"8px",textAlign:"right"}}><div style={{display:"flex",gap:4,justifyContent:"flex-end"}}><button onClick={()=>editTxn(t)} style={{padding:"3px 8px",borderRadius:5,border:"1px solid #333",background:"transparent",color:"#a3a3a3",fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>Edit</button><button onClick={()=>deleteTxn(t.id)} style={{padding:"3px 8px",borderRadius:5,border:"1px solid #f8717130",background:"transparent",color:"#f87171",fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>Del</button></div></td>
+            </tr>)}
+            <tr style={{borderTop:"2px solid #222",background:"#0a0a0a"}}><td colSpan={4} style={{padding:"8px",fontWeight:700}}>TOTALS</td><td style={{padding:"8px",textAlign:"right",fontWeight:800,fontFamily:"'JetBrains Mono',monospace",color:"#2dd4bf"}}>{fmt(totalBankIn-totalBankOut)}</td><td/></tr>
+            </tbody>
+          </table></div>
+        </Card>}
       </div>})()}
 
     {tab==="ar"&&<div style={{display:"flex",flexDirection:"column",gap:16}}>
