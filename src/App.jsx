@@ -1857,6 +1857,21 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
   const projectNum=(jobId)=>{const sorted=[...jobs].sort((a,b)=>(a.createdDate||'').localeCompare(b.createdDate||'')||a.id.localeCompare(b.id));const idx=sorted.findIndex(j=>j.id===jobId);return 'MW-'+String(idx+1).padStart(4,'0')};
   useEffect(()=>{if(pendingCommPreview){setPreviewDoc(pendingCommPreview);setTab("preview");setPendingCommPreview(null)}},[pendingCommPreview]);
   const [pushing,setPushing]=useState(false);
+  const [billDetail,setBillDetail]=useState(null);
+  const [billInvNum,setBillInvNum]=useState('');
+  const [billCheckNum,setBillCheckNum]=useState('');
+  const [billPayDate,setBillPayDate]=useState('');
+  const [billMemo,setBillMemo]=useState('');
+  const [billSelected,setBillSelected]=useState(new Set());
+  // Payment tab state
+  const [payJob,setPayJob]=useState('');
+  const [payDate,setPayDate]=useState(()=>new Date().toISOString().split('T')[0]);
+  const [payRef,setPayRef]=useState('');
+  const [payMethod,setPayMethod]=useState('check');
+  const [payAmt,setPayAmt]=useState('');
+  const [payDeposit,setPayDeposit]=useState('Operating Account');
+  const [payMemo,setPayMemo]=useState('');
+  const [paySelected,setPaySelected]=useState({});
   const activeHidden=(previewDoc?.job?.docStatuses||{}).__qcv||previewDoc?.data?.hiddenCols||hiddenCols;const visibleCols=allQuoteCols.filter(c=>!activeHidden[c.key]);
   // Doc statuses stored IN each job record in Supabase -- persists across browsers, deploys, cache clears
   const allDocStatuses = jobs.reduce((acc, j) => ({...acc, ...(j.docStatuses || {})}), {});
@@ -2042,7 +2057,7 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
     {tab==="pos"&&<div>{jobs.map(job=>{const pos=genPOs(job);if(pos.length===0)return null;const quoteDocNum=stableNum('QT-',job.id,job.customer);const quoteStatus=docStatuses[quoteDocNum];const quoteApproved=quoteStatus==="approved"||quoteStatus==="sent";return <Card key={job.id} style={{marginBottom:12,opacity:quoteApproved?1:0.6}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div><span style={{fontSize:14,fontWeight:700,color:"#e5e5e5"}}><span style={{fontFamily:"'JetBrains Mono',monospace",color:"#525252",fontSize:11,marginRight:6}}>{projectNum(job.id)}</span>{job.name}</span><span style={{fontSize:12,color:"#a3a3a3",marginLeft:8}}>{pos.length} vendor POs - {fmt(pos.reduce((s,p)=>s+p.total,0))}</span>{!quoteApproved&&<span style={{fontSize:12,color:"#fbbf24",marginLeft:8}}>Quote must be approved or sent first</span>}</div></div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:10}}>{pos.map((po,i)=><div key={i} onClick={()=>{if(!quoteApproved){notify("Approve or send the quote for this job before creating POs","error");return}setPreviewDoc({type:"po",data:po,job});setTab("preview")}} style={{padding:14,background:"#1a1a1a",borderRadius:8,border:"1px solid #222222",cursor:"pointer",transition:"border 0.15s"}} onMouseEnter={e=>e.currentTarget.style.borderColor="#2dd4bf44"} onMouseLeave={e=>e.currentTarget.style.borderColor="rgba(255,255,255,0.04)"}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}><span style={{fontSize:13,fontWeight:600,color:"#d4d4d4"}}>{po.vendor?.name}</span><StatusBadge docNum={po.docNum}/></div><div style={{fontSize:12,color:"#a3a3a3"}}>{po.items.length} items</div><div style={{fontSize:16,fontWeight:700,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace",marginTop:4}}>{fmt(po.total)}</div></div>)}</div></Card>})}</div>}
 
     {tab==="bills"&&(()=>{
-      // Build vendor bills from PO data -- each vendor per job is a bill
+      // Build vendor bills from PO data
       const allBills=[];
       jobs.forEach(job=>{
         const items=getJobItems(job.id);
@@ -2052,17 +2067,18 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           const v=vendors.find(v2=>v2.id===vid);
           const poDocNum=stableNum('PO-',job.id,vid);
           const poStatus=docStatuses[poDocNum];
-          if(!poStatus||poStatus==="new")return; // Only show bills for POs that have been drafted/sent/approved
+          if(!poStatus||poStatus==="new")return;
           const cost=vItems.reduce((s,i)=>s+(i.unitCost||0)*i.qtyOrdered,0);
           if(cost<=0)return;
           const poDate=vItems[0]?.poDate||job.createdDate||'';
           const dueDate2=poDate?new Date(new Date(poDate).getTime()+30*86400000):new Date(Date.now()+30*86400000);
           const now2=new Date();const daysUntil=Math.floor((dueDate2-now2)/86400000);
           const billDocNum='BILL-'+poDocNum.replace('PO-','');
-          const billStatus=docStatuses[billDocNum]||'';
-          allBills.push({job,vendor:v,vendorName:v?.name||'Unknown',items:vItems,cost,poDocNum,billDocNum,poDate,
-            dueDate:dueDate2.toISOString().split('T')[0],daysUntil,billStatus,itemCount:vItems.length,
-            refNo:poDocNum,paid:billStatus==='paid'});
+          const billData=typeof docStatuses[billDocNum]==='object'?docStatuses[billDocNum]:{};
+          const paid=billData.paid||docStatuses[billDocNum]==='paid';
+          allBills.push({job,vendor:v,vendorId:vid,vendorName:v?.name||'Unknown',items:vItems,cost,poDocNum,billDocNum,poDate,
+            dueDate:dueDate2.toISOString().split('T')[0],daysUntil,paid,itemCount:vItems.length,
+            vendorInvNum:billData.vendorInvNum||'',checkNum:billData.checkNum||'',payDate:billData.payDate||'',memo:billData.memo||''});
         });
       });
       allBills.sort((a,b)=>a.daysUntil-b.daysUntil);
@@ -2071,6 +2087,64 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
       const unpaidBills=allBills.filter(b=>!b.paid);
       const totalOwed=unpaidBills.reduce((s,b)=>s+b.cost,0);
       const overdueAmt=overdueBills.reduce((s,b)=>s+b.cost,0);
+      const toggleSelect=(idx)=>{const next=new Set(billSelected);if(next.has(idx))next.delete(idx);else next.add(idx);setBillSelected(next)};
+      const selectAll=()=>{if(billSelected.size===unpaidBills.length)setBillSelected(new Set());else setBillSelected(new Set(unpaidBills.map((_,i)=>i)))};
+      const markSelectedPaid=()=>{const today=new Date().toISOString().split('T')[0];unpaidBills.forEach((bill,i)=>{if(billSelected.has(i)){setDocStatus(bill.billDocNum,{paid:true,payDate:today,vendorInvNum:bill.vendorInvNum,checkNum:'',memo:'Batch payment'})}});notify(billSelected.size+' bill'+(billSelected.size!==1?'s':'')+' marked as paid');setBillSelected(new Set())};
+      const saveBillDetail=(bill)=>{setDocStatus(bill.billDocNum,{paid:!!billPayDate,vendorInvNum:billInvNum,checkNum:billCheckNum,payDate:billPayDate,memo:billMemo});notify('Bill updated: '+bill.vendorName+(billPayDate?' -- marked paid':''));setBillDetail(null)};
+
+      // Detail view for a single bill
+      if(billDetail){const bill=billDetail;const pos=genPOs?genPOs(bill.job):[];const thisPO=pos.find(p=>p.docNum===bill.poDocNum);
+        return <div>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16}}><button onClick={()=>setBillDetail(null)} style={{background:"none",border:"none",color:"#737373",cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>&larr; Back to Bills</button></div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}} className="resp-grid-2">
+            <Card style={{padding:16}}>
+              <div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:8}}>VENDOR</div>
+              <div style={{fontSize:18,fontWeight:800,color:"#e5e5e5",marginBottom:4}}>{bill.vendorName}</div>
+              <div style={{fontSize:12,color:"#a3a3a3"}}>{bill.vendor?.contact||''}{bill.vendor?.email?' -- '+bill.vendor.email:''}{bill.vendor?.phone?' -- '+bill.vendor.phone:''}</div>
+              {bill.vendor?.category&&<div style={{marginTop:4}}><Badge label={bill.vendor.category} color="#a78bfa"/></div>}
+              {bill.vendor?.discountRate>0&&<div style={{fontSize:12,color:"#34d399",marginTop:4}}>Discount: {Math.round(bill.vendor.discountRate*100)}%</div>}
+            </Card>
+            <Card style={{padding:16}}>
+              <div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:8}}>BILL SUMMARY</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                <div><div style={{fontSize:11,color:"#737373"}}>PO Number</div><div style={{fontSize:13,fontWeight:600,color:"#a78bfa",fontFamily:"'JetBrains Mono',monospace",cursor:"pointer"}} onClick={()=>{if(thisPO){setPreviewDoc({type:"po",data:thisPO,job:bill.job});setTab("preview")}}}>{bill.poDocNum}</div></div>
+                <div><div style={{fontSize:11,color:"#737373"}}>Job</div><div style={{fontSize:13,color:"#e5e5e5"}}>{bill.job.name}</div></div>
+                <div><div style={{fontSize:11,color:"#737373"}}>Amount</div><div style={{fontSize:16,fontWeight:800,color:"#f97316",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bill.cost)}</div></div>
+                <div><div style={{fontSize:11,color:"#737373"}}>Due Date</div><div style={{fontSize:13,color:bill.daysUntil<0?"#f87171":bill.daysUntil<=14?"#fbbf24":"#a3a3a3"}}>{bill.dueDate}</div></div>
+                <div><div style={{fontSize:11,color:"#737373"}}>Items</div><div style={{fontSize:13,color:"#e5e5e5"}}>{bill.itemCount} line item{bill.itemCount!==1?'s':''}</div></div>
+                <div><div style={{fontSize:11,color:"#737373"}}>Status</div><div>{bill.paid?<Badge label="paid" color="#34d399"/>:<Badge label={bill.daysUntil<0?"overdue":"open"} color={bill.daysUntil<0?"#f87171":"#fbbf24"}/>}</div></div>
+              </div>
+            </Card>
+          </div>
+          <Card style={{padding:16,marginBottom:16}}>
+            <div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:12,fontFamily:"'JetBrains Mono',monospace"}}>Payment Details</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:12,marginBottom:12}} className="resp-grid-2">
+              <div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Vendor Invoice #</label><input value={billInvNum} onChange={e=>setBillInvNum(e.target.value)} placeholder="e.g. INV-6216112" style={inputStyle}/></div>
+              <div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Check # / Payment Ref</label><input value={billCheckNum} onChange={e=>setBillCheckNum(e.target.value)} placeholder="e.g. Check #8842" style={inputStyle}/></div>
+              <div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Payment Date</label><input type="date" value={billPayDate} onChange={e=>setBillPayDate(e.target.value)} style={inputStyle}/></div>
+              <div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Memo</label><input value={billMemo} onChange={e=>setBillMemo(e.target.value)} placeholder="Notes..." style={inputStyle}/></div>
+            </div>
+            <div style={{display:"flex",gap:8}}><Btn onClick={()=>saveBillDetail(bill)}>Save Details</Btn>{!bill.paid&&billPayDate&&<Btn onClick={()=>{setBillPayDate(billPayDate||new Date().toISOString().split('T')[0]);saveBillDetail(bill)}} style={{background:"#34d399",color:"#000"}}>Record Payment</Btn>}<Btn v="secondary" onClick={()=>setBillDetail(null)}>Cancel</Btn></div>
+          </Card>
+          <Card style={{padding:16,marginBottom:16}}>
+            <div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:12,fontFamily:"'JetBrains Mono',monospace"}}>Line Items on This PO</div>
+            <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><thead><tr style={{borderBottom:"2px solid #222"}}>{["Description","Model #","Qty","Net Each","Total"].map((h,i)=><th key={i} style={{padding:"6px 8px",textAlign:i>=2?"right":"left",color:"#737373",fontSize:11,fontWeight:600}}>{h}</th>)}</tr></thead><tbody>
+              {bill.items.map((item,idx)=><tr key={idx} style={{borderBottom:"1px solid #111"}}><td style={{padding:"6px 8px",color:"#e5e5e5"}}>{item.description}</td><td style={{padding:"6px 8px",color:"#a3a3a3",fontFamily:"'JetBrains Mono',monospace",fontSize:11}}>{item.modelNumber||'--'}</td><td style={{padding:"6px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace"}}>{item.qtyOrdered}</td><td style={{padding:"6px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(item.unitCost)}</td><td style={{padding:"6px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",fontWeight:600}}>{fmt((item.unitCost||0)*item.qtyOrdered)}</td></tr>)}
+              <tr style={{borderTop:"2px solid #222"}}><td colSpan={4} style={{padding:"6px 8px",fontWeight:700}}>TOTAL</td><td style={{padding:"6px 8px",textAlign:"right",fontWeight:800,fontFamily:"'JetBrains Mono',monospace",color:"#f97316"}}>{fmt(bill.cost)}</td></tr>
+            </tbody></table></div>
+          </Card>
+          {(bill.vendorInvNum||bill.checkNum||bill.payDate)&&<Card style={{padding:16}}>
+            <div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:12,fontFamily:"'JetBrains Mono',monospace"}}>Payment Trail</div>
+            <div style={{display:"flex",gap:24,flexWrap:"wrap"}}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}><div style={{width:32,height:32,borderRadius:8,background:"#a78bfa12",display:"flex",alignItems:"center",justifyContent:"center"}}><I n="file" s={14} color="#a78bfa"/></div><div><div style={{fontSize:10,color:"#737373"}}>Purchase Order</div><div style={{fontSize:13,fontWeight:600,color:"#a78bfa",fontFamily:"'JetBrains Mono',monospace"}}>{bill.poDocNum}</div></div></div>
+              <div style={{color:"#333",display:"flex",alignItems:"center"}}>&rarr;</div>
+              <div style={{display:"flex",alignItems:"center",gap:10}}><div style={{width:32,height:32,borderRadius:8,background:"#f9731612",display:"flex",alignItems:"center",justifyContent:"center"}}><I n="receipt" s={14} color="#f97316"/></div><div><div style={{fontSize:10,color:"#737373"}}>Vendor Invoice</div><div style={{fontSize:13,fontWeight:600,color:"#f97316",fontFamily:"'JetBrains Mono',monospace"}}>{bill.vendorInvNum||'Not entered'}</div></div></div>
+              <div style={{color:"#333",display:"flex",alignItems:"center"}}>&rarr;</div>
+              <div style={{display:"flex",alignItems:"center",gap:10}}><div style={{width:32,height:32,borderRadius:8,background:bill.paid?"#34d39912":"#fbbf2412",display:"flex",alignItems:"center",justifyContent:"center"}}><I n="dollar" s={14} color={bill.paid?"#34d399":"#fbbf24"}/></div><div><div style={{fontSize:10,color:"#737373"}}>Payment Sent</div><div style={{fontSize:13,fontWeight:600,color:bill.paid?"#34d399":"#fbbf24",fontFamily:"'JetBrains Mono',monospace"}}>{bill.checkNum||'Not entered'}{bill.payDate?' -- '+bill.payDate:''}</div></div></div>
+            </div>
+          </Card>}
+        </div>}
+
       return <div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12,marginBottom:16}} className="resp-grid-4">
           <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>TOTAL OWED</div><div style={{fontSize:22,fontWeight:800,color:"#f97316",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalOwed)}</div><div style={{fontSize:11,color:"#a3a3a3",marginTop:4}}>{unpaidBills.length} open bill{unpaidBills.length!==1?'s':''}</div></Card>
@@ -2078,24 +2152,27 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>DUE IN 14 DAYS</div><div style={{fontSize:22,fontWeight:800,color:dueSoonBills.length>0?"#fbbf24":"#34d399",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(dueSoonBills.reduce((s,b)=>s+b.cost,0))}</div><div style={{fontSize:11,color:"#a3a3a3",marginTop:4}}>{dueSoonBills.length} bill{dueSoonBills.length!==1?'s':''}</div></Card>
           <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>PAID</div><div style={{fontSize:22,fontWeight:800,color:"#34d399",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(allBills.filter(b=>b.paid).reduce((s,b)=>s+b.cost,0))}</div><div style={{fontSize:11,color:"#a3a3a3",marginTop:4}}>{allBills.filter(b=>b.paid).length} bill{allBills.filter(b=>b.paid).length!==1?'s':''}</div></Card>
         </div>
+        {billSelected.size>0&&<div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12,padding:"10px 14px",background:"#f9731610",border:"1px solid #f9731625",borderRadius:8}}><span style={{fontSize:13,color:"#f97316",fontWeight:600}}>{billSelected.size} bill{billSelected.size!==1?'s':''} selected</span><span style={{fontSize:13,color:"#a3a3a3"}}>({fmt(Array.from(billSelected).reduce((s,i)=>s+(unpaidBills[i]?.cost||0),0))})</span><Btn onClick={markSelectedPaid} style={{fontSize:12,padding:"4px 12px",background:"#34d399",color:"#000"}}>Pay Selected</Btn><button onClick={()=>setBillSelected(new Set())} style={{background:"none",border:"none",color:"#737373",cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>Clear</button></div>}
         {allBills.length===0?<Card style={{padding:40,textAlign:"center"}}><div style={{fontSize:14,color:"#525252"}}>No vendor bills yet. Bills appear after POs are drafted or sent.</div></Card>:
         <Card style={{padding:0,overflow:"hidden"}}>
-          <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:700}}>
-            <thead><tr style={{background:"#111111",borderBottom:"2px solid #222"}}>{["","Payee","Ref / PO #","Job","Due Date","Status","Open Balance",""].map((h,i)=><th key={i} style={{padding:"10px 8px",textAlign:i>=6?"right":i===0?"center":"left",fontWeight:600,color:"#a3a3a3",fontSize:11,textTransform:"uppercase",letterSpacing:0.8,whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+          <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:900}}>
+            <thead><tr style={{background:"#111111",borderBottom:"2px solid #222"}}>{["","Payee","Ref / PO #","Vendor Inv #","Job","Due Date","Status","Open Balance",""].map((h,i)=><th key={i} style={{padding:"10px 8px",textAlign:i>=7?"right":i===0?"center":"left",fontWeight:600,color:"#a3a3a3",fontSize:11,textTransform:"uppercase",letterSpacing:0.8,whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
             <tbody>{allBills.map((bill,idx)=>{
               const isOverdue=bill.daysUntil<0&&!bill.paid;
               const isDueSoon=bill.daysUntil>=0&&bill.daysUntil<=14&&!bill.paid;
-              return <tr key={idx} style={{borderBottom:"1px solid #111",background:bill.paid?"#34d39905":isOverdue?"#f8717108":"transparent",transition:"background 0.15s"}} onMouseEnter={e=>{if(!bill.paid)e.currentTarget.style.background=isOverdue?"#f8717112":"#111"}} onMouseLeave={e=>{e.currentTarget.style.background=bill.paid?"#34d39905":isOverdue?"#f8717108":"transparent"}}>
-                <td style={{padding:"10px 8px",textAlign:"center",width:36}}><input type="checkbox" checked={!!bill.paid} onChange={()=>{setDocStatus(bill.billDocNum,bill.paid?'':'paid');notify(bill.paid?'Marked unpaid: '+bill.vendorName:'Marked paid: '+bill.vendorName)}} style={{accentColor:"#2dd4bf",width:16,height:16,cursor:"pointer"}}/></td>
+              const unpaidIdx=unpaidBills.indexOf(bill);
+              return <tr key={idx} style={{borderBottom:"1px solid #111",background:bill.paid?"#34d39905":isOverdue?"#f8717108":billSelected.has(unpaidIdx)?"#f9731610":"transparent",transition:"background 0.15s",cursor:"pointer"}} onClick={()=>{setBillInvNum(bill.vendorInvNum);setBillCheckNum(bill.checkNum);setBillPayDate(bill.payDate);setBillMemo(bill.memo);setBillDetail(bill)}} onMouseEnter={e=>{if(!bill.paid&&!billSelected.has(unpaidIdx))e.currentTarget.style.background=isOverdue?"#f8717112":"#111"}} onMouseLeave={e=>{e.currentTarget.style.background=bill.paid?"#34d39905":isOverdue?"#f8717108":billSelected.has(unpaidIdx)?"#f9731610":"transparent"}}>
+                <td style={{padding:"10px 8px",textAlign:"center",width:36}} onClick={e=>e.stopPropagation()}>{!bill.paid&&<input type="checkbox" checked={billSelected.has(unpaidIdx)} onChange={()=>toggleSelect(unpaidIdx)} style={{accentColor:"#2dd4bf",width:16,height:16,cursor:"pointer"}}/>}{bill.paid&&<I n="check" s={14} color="#34d399"/>}</td>
                 <td style={{padding:"10px 8px"}}><div style={{fontWeight:600,color:"#e5e5e5"}}>{bill.vendorName}</div><div style={{fontSize:11,color:"#737373"}}>{bill.itemCount} item{bill.itemCount!==1?'s':''}</div></td>
-                <td style={{padding:"10px 8px",fontFamily:"'JetBrains Mono',monospace",fontSize:11,color:"#a78bfa"}}>{bill.refNo}</td>
+                <td style={{padding:"10px 8px"}}><span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:11,color:"#a78bfa",cursor:"pointer",textDecoration:"underline",textUnderlineOffset:2}} onClick={e=>{e.stopPropagation();const pos2=genPOs?genPOs(bill.job):[];const thisPO2=pos2.find(p=>p.docNum===bill.poDocNum);if(thisPO2){setPreviewDoc({type:"po",data:thisPO2,job:bill.job});setTab("preview")}}}>{bill.poDocNum}</span></td>
+                <td style={{padding:"10px 8px",fontFamily:"'JetBrains Mono',monospace",fontSize:11,color:bill.vendorInvNum?"#f97316":"#333"}}>{bill.vendorInvNum||'--'}</td>
                 <td style={{padding:"10px 8px"}}><div style={{color:"#c4c4c4",fontSize:12}}>{bill.job.name}</div></td>
-                <td style={{padding:"10px 8px",whiteSpace:"nowrap"}}>{bill.paid?<span style={{color:"#34d399",fontWeight:600}}>Paid</span>:isOverdue?<div><div style={{color:"#f87171",fontWeight:600}}>Overdue</div><div style={{fontSize:10,color:"#f87171"}}>{Math.abs(bill.daysUntil)} day{Math.abs(bill.daysUntil)!==1?'s':''} ago</div></div>:isDueSoon?<div><div style={{color:"#fbbf24",fontWeight:500}}>Due soon</div><div style={{fontSize:10,color:"#fbbf24"}}>Due in {bill.daysUntil} day{bill.daysUntil!==1?'s':''}</div></div>:<div><div style={{color:"#a3a3a3"}}>Due later</div><div style={{fontSize:10,color:"#737373"}}>Due in {bill.daysUntil} day{bill.daysUntil!==1?'s':''}</div></div>}</td>
-                <td style={{padding:"10px 8px"}}>{bill.paid?<Badge label="paid" color="#34d399"/>:<StatusBadge docNum={bill.poDocNum}/>}</td>
+                <td style={{padding:"10px 8px",whiteSpace:"nowrap"}}>{bill.paid?<span style={{color:"#34d399",fontWeight:600}}>Paid{bill.payDate?' '+bill.payDate:''}</span>:isOverdue?<div><div style={{color:"#f87171",fontWeight:600}}>Overdue</div><div style={{fontSize:10,color:"#f87171"}}>{Math.abs(bill.daysUntil)} day{Math.abs(bill.daysUntil)!==1?'s':''} ago</div></div>:isDueSoon?<div><div style={{color:"#fbbf24",fontWeight:500}}>Due soon</div><div style={{fontSize:10,color:"#fbbf24"}}>Due in {bill.daysUntil} day{bill.daysUntil!==1?'s':''}</div></div>:<div><div style={{color:"#a3a3a3"}}>Due later</div><div style={{fontSize:10,color:"#737373"}}>Due in {bill.daysUntil} day{bill.daysUntil!==1?'s':''}</div></div>}</td>
+                <td style={{padding:"10px 8px"}}>{bill.paid?<Badge label="paid" color="#34d399"/>:bill.checkNum?<Badge label="check sent" color="#fbbf24"/>:<StatusBadge docNum={bill.poDocNum}/>}</td>
                 <td style={{padding:"10px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",fontWeight:700,color:bill.paid?"#34d399":isOverdue?"#f87171":"#f0f0f0"}}>{bill.paid?<span style={{textDecoration:"line-through",opacity:0.5}}>{fmt(bill.cost)}</span>:fmt(bill.cost)}</td>
-                <td style={{padding:"10px 8px",textAlign:"right"}}>{!bill.paid&&<button onClick={()=>{setDocStatus(bill.billDocNum,'paid');notify('Marked paid: '+bill.vendorName+' - '+fmt(bill.cost))}} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #34d39930",background:"transparent",color:"#34d399",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s",whiteSpace:"nowrap"}} onMouseEnter={e=>{e.currentTarget.style.background="#34d39915"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>Pay</button>}</td>
+                <td style={{padding:"10px 8px",textAlign:"right"}} onClick={e=>e.stopPropagation()}>{!bill.paid&&<button onClick={()=>{setBillInvNum(bill.vendorInvNum);setBillCheckNum(bill.checkNum);setBillPayDate(new Date().toISOString().split('T')[0]);setBillMemo(bill.memo);setBillDetail(bill)}} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #34d39930",background:"transparent",color:"#34d399",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s",whiteSpace:"nowrap"}} onMouseEnter={e=>{e.currentTarget.style.background="#34d39915"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>Pay</button>}</td>
               </tr>})}
-              <tr style={{borderTop:"2px solid #222",background:"#0a0a0a"}}><td colSpan={6} style={{padding:"10px 8px",fontWeight:700,color:"#f0f0f0"}}>TOTAL OUTSTANDING</td><td style={{padding:"10px 8px",textAlign:"right",fontWeight:800,fontFamily:"'JetBrains Mono',monospace",color:"#f97316",fontSize:14}}>{fmt(totalOwed)}</td><td/></tr>
+              <tr style={{borderTop:"2px solid #222",background:"#0a0a0a"}}><td colSpan={7} style={{padding:"10px 8px",fontWeight:700,color:"#f0f0f0"}}>TOTAL OUTSTANDING</td><td style={{padding:"10px 8px",textAlign:"right",fontWeight:800,fontFamily:"'JetBrains Mono',monospace",color:"#f97316",fontSize:14}}>{fmt(totalOwed)}</td><td/></tr>
             </tbody>
           </table></div>
         </Card>}
@@ -2105,15 +2182,6 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
         {(()=>{const overdueJobs2=jobs.filter(j=>{if(j.paymentStatus==="paid")return false;const items2=getJobItems(j.id);const hasInvoiced=items2.some(i=>i.qtyInvoiced>0);if(!hasInvoiced)return false;const terms2=j.terms||"Net 30";const days=terms2.includes("15")?15:terms2.includes("Receipt")?0:30;const created=new Date(j.createdDate);const due=new Date(created);due.setDate(due.getDate()+days);return new Date()>due});return overdueJobs2.length>0?<Card style={{marginBottom:12,border:"1px solid #f8717130"}}><div style={{fontSize:14,fontWeight:700,color:"#f87171",marginBottom:12,display:"flex",alignItems:"center",gap:8}}><I n="alert" s={16}/> Payment Reminders ({overdueJobs2.length} overdue)</div>{overdueJobs2.map(job=>{const cust=customers.find(c=>c.id===job.customer);const f2=getJobFinancials(job.id);const invoicedAmt=getJobItems(job.id).reduce((s,i)=>s+i.unitPrice*i.qtyInvoiced,0);return <div key={job.id} style={{padding:"10px 12px",background:"#f8717108",borderRadius:8,marginBottom:8,border:"1px solid #f8717115"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}><div><span style={{fontSize:13,fontWeight:600,color:"#e5e5e5"}}><span style={{fontFamily:"'JetBrains Mono',monospace",color:"#525252",fontSize:10,marginRight:5}}>{projectNum(job.id)}</span>{job.name}</span><span style={{fontSize:12,color:"#a3a3a3",marginLeft:8}}>{cust?.name}</span></div><span style={{fontSize:14,fontWeight:700,color:"#f87171",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(invoicedAmt)}</span></div><div style={{display:"flex",gap:6,flexWrap:"wrap"}}><Btn v="danger" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>{const email=cust?.email||"";const subject="Payment Reminder - "+job.name+" - Midwest Educational Furnishings";const body="Dear "+(cust?.contact||cust?.name||"Customer")+",\n\nThis is a friendly reminder that payment of "+fmt(invoicedAmt)+" for "+job.name+" is now past due.\n\nTerms: "+(job.terms||"Net 30")+"\n\nPlease remit payment at your earliest convenience.\n\nBlessings,\nMidwest Educational Furnishings\n(847) 847-1865";setEmailTo(email);setEmailSubject(subject);setEmailBody(body);setEmailModal({type:"reminder",job})}}>Send External Reminder</Btn><Btn v="ghost" style={{fontSize:11,padding:"4px 10px",color:"#fbbf24"}} onClick={()=>{const rep=reps.find(r=>r.id===job.salesRep);notify("REMINDER: Payment overdue for "+fmt(invoicedAmt)+" - "+(cust?.name||"")+" - notified internally");notify("Internal reminder logged for "+job.name)}}>Log Internal Reminder</Btn><span style={{fontSize:11,color:"#a3a3a3",padding:"4px 0"}}>Terms: {job.terms||"Net 30"}</span></div></div>})}</Card>:null})()}<div>{[...jobs].sort((a,b)=>{const aHas=getJobItems(a.id).some(i=>i.qtyReceived>i.qtyInvoiced)?0:1;const bHas=getJobItems(b.id).some(i=>i.qtyReceived>i.qtyInvoiced)?0:1;return aHas-bHas}).map(job=>{const inv=genInvoice(job);const items=getJobItems(job.id);const invoicedTotal=items.reduce((s,i)=>s+i.unitPrice*i.qtyInvoiced,0);const fullTotal=items.reduce((s,i)=>s+i.unitPrice*i.qtyOrdered,0);const isComplete=items.length>0&&items.every(i=>i.qtyInvoiced>=i.qtyOrdered);const hasPending=inv.items.length>0;const customer=customers.find(c=>c.id===job.customer);return <Card key={job.id} style={{marginBottom:12,opacity:isComplete?0.65:1,border:hasPending?"1px solid #d9770630":"1px solid #222222"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}><div style={{flex:1}}><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}><span style={{fontSize:14,fontWeight:700,color:"#e5e5e5"}}><span style={{fontFamily:"'JetBrains Mono',monospace",color:"#525252",fontSize:11,marginRight:6}}>{projectNum(job.id)}</span>{job.name}</span>{isComplete?<Badge label="fully invoiced" color="#34d399"/>:hasPending?<Badge label="partial ready" color="#fbbf24"/>:<Badge label="awaiting delivery" color="#525252"/>}<StatusBadge docNum={inv.docNum}/></div><div style={{fontSize:12,color:"#a3a3a3"}}>{customer?.name} - {fmt(invoicedTotal)} of {fmt(fullTotal)} invoiced</div></div><div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>{(()=>{const jobPOs=genPOs(job);const anyPODrafted=jobPOs.some(po=>docStatuses[po.docNum]&&docStatuses[po.docNum]!=="new");const fullInv=genInvoice(job,true);const allReceived=items.length>0&&items.every(i=>i.qtyReceived>=i.qtyOrdered);return <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{hasPending&&anyPODrafted&&<Btn onClick={()=>{setPreviewDoc({type:"invoice",data:inv,job});setTab("preview")}}><I n="receipt" s={14}/> {inv.isPartial?"Partial":"Full"} Invoice ({fmt(inv.total)})</Btn>}{hasPending&&!anyPODrafted&&<span style={{fontSize:12,color:"#fbbf24",padding:"6px 10px"}}>Draft POs first</span>}{!hasPending&&!isComplete&&allReceived&&<Btn v="ghost" style={{fontSize:12}} onClick={()=>{setPreviewDoc({type:"invoice",data:fullInv,job});setTab("preview")}}>Full Invoice ({fmt(fullInv.total)})</Btn>}{isComplete&&<Badge label="fully invoiced" color="#34d399"/>}</div>})()}{job.paymentStatus!=="paid"&&<Btn v="ghost" style={{fontSize:11}} onClick={()=>{updateJob(job.id,{paymentStatus:isComplete?"paid":"partial"});notify(isComplete?"Marked as paid":"Marked partial payment")}}>Mark {isComplete?"Paid":"Partial"}</Btn>}{job.paymentStatus==="paid"&&<Badge label="paid" color="#34d399"/>}</div></div><Bar value={invoicedTotal} max={fullTotal||1} color={isComplete?"#34d399":"#fbbf24"} height={4}/>{hasPending&&<div style={{marginTop:10,borderTop:"1px solid #222222",paddingTop:10}}><div style={{fontSize:12,fontWeight:600,color:"#fbbf24",marginBottom:6}}>Ready to invoice ({inv.items.length} items - {fmt(inv.total)}):</div>{inv.items.map((item,idx)=><div key={idx} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",fontSize:12,color:"#c4c4c4"}}><span style={{flex:1}}>{item.description}</span><span style={{display:"flex",gap:12,fontFamily:"'JetBrains Mono',monospace",fontSize:10}}><span>ordered: {fmtN(item.qtyOrdered)}</span><span>received: {fmtN(item.qtyReceived)}</span><span>invoiced: {fmtN(item.qtyInvoiced)}</span><span style={{color:"#fbbf24",fontWeight:600}}>this invoice: {fmtN(item.displayQty)} x {fmt(item.displayPrice)} = {fmt(item.displayQty*item.displayPrice)}</span></span></div>)}</div>}</Card>})}</div></>}
 
     {tab==="payments"&&(()=>{
-      const [payJob,setPayJob]=React.useState('');
-      const [payDate,setPayDate]=React.useState(new Date().toISOString().split('T')[0]);
-      const [payRef,setPayRef]=React.useState('');
-      const [payMethod,setPayMethod]=React.useState('check');
-      const [payAmt,setPayAmt]=React.useState('');
-      const [payDeposit,setPayDeposit]=React.useState('Operating Account');
-      const [payMemo,setPayMemo]=React.useState('');
-      const [paySelected,setPaySelected]=React.useState({});
-
       // Get all payment records from docStatuses
       const paymentRecords=Object.entries(docStatuses).filter(([k,v])=>k.startsWith('PAY-')&&typeof v==='object').map(([k,v])=>({id:k,...v})).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
       const totalReceived=paymentRecords.reduce((s,p)=>s+(p.amount||0),0);
