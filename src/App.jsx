@@ -1882,6 +1882,7 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
   const [histBulkCount,setHistBulkCount]=useState(0);
   const histFileRef=useRef(null);
   const histBulkRef=useRef(null);
+  const histExcelRef=useRef(null);
   const activeHidden=(previewDoc?.job?.docStatuses||{}).__qcv||previewDoc?.data?.hiddenCols||hiddenCols;const visibleCols=allQuoteCols.filter(c=>!activeHidden[c.key]);
   // Doc statuses stored IN each job record in Supabase -- persists across browsers, deploys, cache clears
   const allDocStatuses = jobs.reduce((acc, j) => ({...acc, ...(j.docStatuses || {})}), {});
@@ -2335,6 +2336,75 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
         });if(histBulkRef.current)histBulkRef.current.value='';
       };
 
+      // Import Excel transaction history (QB export format: Date, Type, No., From/To, Memo, Amount, Status)
+      const handleExcelImport=async(e)=>{
+        const file=e.target?.files?.[0];if(!file)return;
+        try{
+          const XLSX=await import('xlsx');
+          const data=await file.arrayBuffer();
+          const wb=XLSX.read(data,{type:'array'});
+          const ws=wb.Sheets[wb.SheetNames[0]];
+          const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+          // Find header row by looking for "Date" and "Type" or "No." or "Amount"
+          let headerIdx=-1;let colMap={};
+          for(let r=0;r<Math.min(rows.length,10);r++){
+            const row=rows[r];
+            const h={};
+            for(let c=0;c<row.length;c++){
+              const v=String(row[c]||'').toLowerCase().trim();
+              if(v==='date')h.date=c;
+              else if(v==='type')h.type=c;
+              else if(v==='no.'||v==='no'||v==='number'||v==='num'||v==='ref'||v==='ref.')h.docNumber=c;
+              else if(v==='from / to'||v==='from/to'||v==='from'||v==='vendor'||v==='name'||v==='payee')h.vendor=c;
+              else if(v==='memo'||v==='description'||v==='desc'||v==='notes')h.memo=c;
+              else if(v==='amount'||v==='total'||v==='balance')h.amount=c;
+              else if(v==='status')h.status=c;
+            }
+            if(Object.keys(h).length>=3){headerIdx=r;colMap=h;break}
+          }
+          if(headerIdx<0){notify('Could not find header row (Date, Type, No., Amount)','error');return}
+          let imported=0;
+          for(let r=headerIdx+1;r<rows.length;r++){
+            const row=rows[r];if(!row||row.length<2)continue;
+            const g=(k)=>colMap[k]!==undefined?String(row[colMap[k]]||'').trim():'';
+            const rawDate=row[colMap.date];
+            let dateStr='';
+            if(typeof rawDate==='number'){
+              // Excel serial date
+              const d=new Date((rawDate-25569)*86400000);
+              if(!isNaN(d.getTime()))dateStr=d.toISOString().split('T')[0];
+            } else {
+              const ds=String(rawDate||'').trim();
+              if(ds){const d2=new Date(ds);if(!isNaN(d2.getTime()))dateStr=d2.toISOString().split('T')[0]}
+            }
+            const typeStr=g('type').toLowerCase();
+            const docNum=g('docNumber');
+            const vendor=g('vendor');
+            const memo=g('memo');
+            const rawAmt=row[colMap.amount!==undefined?colMap.amount:-1];
+            const amount=typeof rawAmt==='number'?rawAmt:parseFloat(String(rawAmt||'').replace(/[$,]/g,''))||0;
+            const status=g('status');
+            if(!vendor&&!docNum&&!amount&&!memo)continue;
+            // Determine type from the Type column
+            let recType='vendor_po';
+            if(/bill|invoice|inv/i.test(typeStr))recType='vendor_po';
+            else if(/credit|refund/i.test(typeStr))recType='vendor_po';
+            else if(/purchase\s*order|po/i.test(typeStr))recType='vendor_po';
+            else if(/payment|check|expense|charge/i.test(typeStr))recType='vendor_po';
+            else if(/sale|customer|receivable/i.test(typeStr))recType='customer_invoice';
+            const id='HIST-'+Date.now()+'-'+Math.random().toString(36).slice(2,6)+'-'+r;
+            addSop({id,title:(recType==='vendor_po'?'PO':'INV')+' '+(docNum||id)+' - '+(vendor||''),cat:'HistoricalDoc',icon:'file',
+              content:JSON.stringify({type:recType,vendor:recType==='vendor_po'?vendor:'',customer:recType==='customer_invoice'?vendor:'',
+                docNumber:docNum,date:dateStr,amount:String(Math.abs(amount)),job:'',
+                description:(typeStr?typeStr.charAt(0).toUpperCase()+typeStr.slice(1)+' -- ':'')+memo,
+                notes:'Status: '+status+(amount<0?' (credit)':''),files:[]}),custom:true});
+            imported++;
+          }
+          notify(imported+' transaction'+(imported!==1?'s':'')+' imported from '+file.name);
+        }catch(err){notify('Error reading Excel: '+err.message,'error')}
+        if(histExcelRef.current)histExcelRef.current.value='';
+      };
+
       const saveHistRecord=()=>{
         const editId=histAdding?.startsWith('edit-')?histAdding.replace('edit-',''):null;
         const id=editId||'HIST-'+Date.now()+'-'+Math.random().toString(36).slice(2,6);
@@ -2376,6 +2446,7 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
 
       return <div>
         <input ref={histBulkRef} type="file" accept=".pdf,.png,.jpg,.jpeg,.gif,.doc,.docx,.xls,.xlsx" multiple onChange={e=>handleBulkUpload(e,histType==='customer_invoice'?'customer_invoice':'vendor_po')} style={{display:"none"}}/>
+        <input ref={histExcelRef} type="file" accept=".xls,.xlsx,.csv" onChange={handleExcelImport} style={{display:"none"}}/>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12,marginBottom:16}} className="resp-grid-4">
           <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>TOTAL RECORDS</div><div style={{fontSize:22,fontWeight:800,color:"#8b5cf6",fontFamily:"'JetBrains Mono',monospace"}}>{allHist.length}</div><div style={{fontSize:11,color:"#a3a3a3",marginTop:4}}>{docsWithFiles} with files</div></Card>
           <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>VENDOR POs</div><div style={{fontSize:22,fontWeight:800,color:"#a78bfa",fontFamily:"'JetBrains Mono',monospace"}}>{vendorPOs.length}</div><div style={{fontSize:11,color:"#a3a3a3",marginTop:4}}>{fmt(totalPOAmt)}</div></Card>
@@ -2395,6 +2466,7 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           <div style={{flex:1}}/>
           <Btn onClick={()=>{setHistForm({type:'vendor_po',vendor:'',customer:'',docNumber:'',date:'',amount:'',job:'',description:'',notes:'',files:[]});setHistAdding('new')}} style={{fontSize:12}}><I n="plus" s={12}/> Single Upload</Btn>
           <Btn v="secondary" onClick={()=>{histBulkRef.current?.click()}} style={{fontSize:12}}><I n="upload" s={12}/> Bulk Upload ({histType==='customer_invoice'?'Invoices':'POs'})</Btn>
+          <Btn v="secondary" onClick={()=>{histExcelRef.current?.click()}} style={{fontSize:12,border:"1px solid #34d39930",color:"#34d399"}}><I n="file" s={12}/> Import Excel</Btn>
         </div>
 
         {histAdding&&<Card style={{marginBottom:16,padding:20,border:"1px solid #8b5cf625"}}>
