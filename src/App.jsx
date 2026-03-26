@@ -3538,7 +3538,10 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   // Banking / manual transaction state
   const [manualForm,setManualForm]=useState({date:'',description:'',category:'',amount:'',type:'expense',account:'Operating'});
   const [manualEditing,setManualEditing]=useState(null);
-  const [plaidStatus,setPlaidStatus]=useState('disconnected');
+  const [plaidStatus,setPlaidStatus]=useState(()=>{try{return localStorage.getItem('mw_plaid_status')||'disconnected'}catch{return 'disconnected'}});
+  const [plaidAccessToken,setPlaidAccessToken]=useState(()=>{try{return localStorage.getItem('mw_plaid_access_token')||''}catch{return ''}});
+  const [plaidBankName,setPlaidBankName]=useState(()=>{try{return localStorage.getItem('mw_plaid_bank_name')||''}catch{return ''}});
+  const [plaidLoading,setPlaidLoading]=useState(false);
   const [bankSearch,setBankSearch]=useState('');
   const [bankCatFilter,setBankCatFilter]=useState('all');
 
@@ -3851,7 +3854,63 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
         <Card style={{padding:16}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
             <div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>{manualEditing?'Edit Transaction':'Add Transaction'}</div>
-            {plaidStatus==='disconnected'&&<div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:8,height:8,borderRadius:"50%",background:"#525252"}}/><span style={{fontSize:11,color:"#525252"}}>Bank not connected</span><Btn v="secondary" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>{notify('Plaid integration requires setup. See the SOP guide for instructions.');setPlaidStatus('pending')}}>Connect Bank (Plaid)</Btn></div>}
+            {plaidStatus==='connected'&&<div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:8,height:8,borderRadius:"50%",background:"#34d399",boxShadow:"0 0 6px #34d39960"}}/><span style={{fontSize:11,color:"#34d399",fontWeight:600}}>{plaidBankName||'Bank'} connected</span><Btn v="secondary" style={{fontSize:11,padding:"4px 10px"}} onClick={async()=>{
+              if(!plaidAccessToken){notify('No access token saved. Reconnect bank.','error');return}
+              setPlaidLoading(true);
+              try{
+                const r=await fetch('/api/plaid-transactions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({access_token:plaidAccessToken})});
+                const data=await r.json();
+                if(data.error){notify('Plaid error: '+(data.error.message||data.error),'error');setPlaidLoading(false);return}
+                const txns=data.added||data.transactions||[];
+                let imported=0;
+                txns.forEach(t=>{
+                  const existing=manualTxns.find(mt=>mt.plaidId===t.transaction_id);
+                  if(existing)return;
+                  const id='TXN-'+Date.now()+'-'+Math.random().toString(36).slice(2,6)+'-'+imported;
+                  const isDebit=t.amount>0;
+                  addSop({id,title:t.name||t.merchant_name||'Bank transaction',cat:'ManualTxn',icon:'dollar',content:JSON.stringify({
+                    date:t.date||'',description:t.name||t.merchant_name||'',category:t.personal_finance_category?.primary||'Uncategorized',
+                    amount:String(Math.abs(t.amount).toFixed(2)),type:isDebit?'expense':'revenue',account:t.account_id||'Operating',
+                    plaidId:t.transaction_id,plaidCategory:t.category?.join(' > ')||''
+                  }),custom:true});imported++;
+                });
+                notify(imported+' new transaction'+(imported!==1?'s':'')+' imported from bank');
+              }catch(err){notify('Sync error: '+err.message,'error')}
+              setPlaidLoading(false);
+            }}>{plaidLoading?'Syncing...':'Sync Transactions'}</Btn><Btn v="secondary" style={{fontSize:11,padding:"4px 10px",color:"#f87171",border:"1px solid #f8717130"}} onClick={()=>{
+              localStorage.removeItem('mw_plaid_access_token');localStorage.removeItem('mw_plaid_status');localStorage.removeItem('mw_plaid_bank_name');
+              setPlaidAccessToken('');setPlaidStatus('disconnected');setPlaidBankName('');notify('Bank disconnected');
+            }}>Disconnect</Btn></div>}
+            {plaidStatus==='disconnected'&&<div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:8,height:8,borderRadius:"50%",background:"#525252"}}/><span style={{fontSize:11,color:"#525252"}}>Bank not connected</span><Btn v="secondary" style={{fontSize:11,padding:"4px 10px"}} onClick={async()=>{
+              setPlaidLoading(true);
+              try{
+                const r=await fetch('/api/plaid-link',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'create_link_token'})});
+                const data=await r.json();
+                if(data.error||!data.link_token){notify('Plaid error: '+(data.error||'No link token returned. Check Vercel env vars.'),'error');setPlaidLoading(false);return}
+                if(!window.Plaid){notify('Plaid SDK not loaded. Refresh the page and try again.','error');setPlaidLoading(false);return}
+                const handler=window.Plaid.create({
+                  token:data.link_token,
+                  onSuccess:async(publicToken,metadata)=>{
+                    try{
+                      const ex=await fetch('/api/plaid-link',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'exchange_token',public_token:publicToken})});
+                      const exData=await ex.json();
+                      if(exData.access_token){
+                        localStorage.setItem('mw_plaid_access_token',exData.access_token);
+                        localStorage.setItem('mw_plaid_status','connected');
+                        const bankName=metadata?.institution?.name||'Bank';
+                        localStorage.setItem('mw_plaid_bank_name',bankName);
+                        setPlaidAccessToken(exData.access_token);setPlaidStatus('connected');setPlaidBankName(bankName);
+                        notify('Bank connected: '+bankName+'. Click Sync Transactions to import.');
+                      }else{notify('Token exchange failed: '+(exData.error||'Unknown error'),'error')}
+                    }catch(err2){notify('Exchange error: '+err2.message,'error')}
+                    setPlaidLoading(false);
+                  },
+                  onExit:(err)=>{if(err)notify('Plaid closed: '+(err.display_message||err.error_message||'User exited'),'error');setPlaidLoading(false)},
+                  onEvent:(eventName)=>{},
+                });
+                handler.open();
+              }catch(err){notify('Connection error: '+err.message,'error');setPlaidLoading(false)}
+            }}>{plaidLoading?'Loading...':'Connect Bank (Plaid)'}</Btn></div>}
             {plaidStatus==='pending'&&<div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:8,height:8,borderRadius:"50%",background:"#fbbf24"}}/><span style={{fontSize:11,color:"#fbbf24"}}>Setup in progress -- see SOP</span></div>}
           </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10,marginBottom:12}}>
