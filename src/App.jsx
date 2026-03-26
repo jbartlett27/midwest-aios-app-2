@@ -2086,25 +2086,72 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           const now2=new Date();const daysUntil=Math.floor((dueDate2-now2)/86400000);
           const billDocNum='BILL-'+poDocNum.replace('PO-','');
           const billData=typeof docStatuses[billDocNum]==='object'?docStatuses[billDocNum]:{};
-          const paid=billData.paid||docStatuses[billDocNum]==='paid';
+          const paid=billData.status==='paid'||billData.paid||docStatuses[billDocNum]==='paid';
+          const isVoidBill=billData.status==='void';
           allBills.push({job,vendor:v,vendorId:vid,vendorName:v?.name||'Unknown',items:vItems,cost,poDocNum,billDocNum,poDate,
-            dueDate:dueDate2.toISOString().split('T')[0],daysUntil,paid,itemCount:vItems.length,
-            vendorInvNum:billData.vendorInvNum||'',checkNum:billData.checkNum||'',payDate:billData.payDate||'',memo:billData.memo||''});
+            dueDate:dueDate2.toISOString().split('T')[0],daysUntil,paid,voided:isVoidBill,itemCount:vItems.length,
+            vendorInvNum:billData.vendorInvNum||'',checkNum:billData.checkNum||'',payDate:billData.payDate||'',memo:billData.memo||'',checkPrinted:billData.checkPrinted||''});
         });
       });
       allBills.sort((a,b)=>a.daysUntil-b.daysUntil);
-      const overdueBills=allBills.filter(b=>b.daysUntil<0&&!b.paid);
-      const dueSoonBills=allBills.filter(b=>b.daysUntil>=0&&b.daysUntil<=14&&!b.paid);
-      const unpaidBills=allBills.filter(b=>!b.paid);
+      const overdueBills=allBills.filter(b=>b.daysUntil<0&&!b.paid&&!b.voided);
+      const dueSoonBills=allBills.filter(b=>b.daysUntil>=0&&b.daysUntil<=14&&!b.paid&&!b.voided);
+      const unpaidBills=allBills.filter(b=>!b.paid&&!b.voided);
       const totalOwed=unpaidBills.reduce((s,b)=>s+b.cost,0);
       const overdueAmt=overdueBills.reduce((s,b)=>s+b.cost,0);
       const toggleSelect=(idx)=>{const next=new Set(billSelected);if(next.has(idx))next.delete(idx);else next.add(idx);setBillSelected(next)};
       const selectAll=()=>{if(billSelected.size===unpaidBills.length)setBillSelected(new Set());else setBillSelected(new Set(unpaidBills.map((_,i)=>i)))};
       const markSelectedPaid=()=>{const today=new Date().toISOString().split('T')[0];unpaidBills.forEach((bill,i)=>{if(billSelected.has(i)){setDocStatus(bill.billDocNum,{paid:true,payDate:today,vendorInvNum:bill.vendorInvNum,checkNum:'',memo:'Batch payment'})}});notify(billSelected.size+' bill'+(billSelected.size!==1?'s':'')+' marked as paid');setBillSelected(new Set())};
-      const saveBillDetail=(bill)=>{setDocStatus(bill.billDocNum,{paid:!!billPayDate,vendorInvNum:billInvNum,checkNum:billCheckNum,payDate:billPayDate,memo:billMemo});notify('Bill updated: '+bill.vendorName+(billPayDate?' -- marked paid':''));setBillDetail(null)};
+      const saveBillDetail=(bill)=>{const existing=typeof docStatuses[bill.billDocNum]==='object'?docStatuses[bill.billDocNum]:{};setDocStatus(bill.billDocNum,{...existing,vendorInvNum:billInvNum,checkNum:billCheckNum,payDate:billPayDate,memo:billMemo,paid:existing.status==='paid'||!!billPayDate});notify('Bill updated: '+bill.vendorName);setBillDetail(null)};
 
       // Detail view for a single bill
       if(billDetail){const bill=billDetail;const pos=genPOs?genPOs(bill.job):[];const thisPO=pos.find(p=>p.docNum===bill.poDocNum);
+        const billData=typeof docStatuses[bill.billDocNum]==='object'?docStatuses[bill.billDocNum]:{};
+        const currentStatus=billData.status||( bill.paid?'paid':'unpaid');
+        const isVoid=currentStatus==='void';
+        const setBillStatus=(newStatus)=>{
+          const existing=typeof docStatuses[bill.billDocNum]==='object'?docStatuses[bill.billDocNum]:{};
+          setDocStatus(bill.billDocNum,{...existing,status:newStatus,paid:newStatus==='paid',vendorInvNum:billInvNum||existing.vendorInvNum||'',checkNum:billCheckNum||existing.checkNum||'',payDate:newStatus==='paid'?(billPayDate||new Date().toISOString().split('T')[0]):(existing.payDate||''),memo:billMemo||existing.memo||''});
+          notify('Status changed to '+newStatus+': '+bill.vendorName);
+          setBillDetail({...bill,paid:newStatus==='paid'});
+        };
+        const printCheck=(bill2)=>{
+          const today=new Date();const dateStr=(today.getMonth()+1)+'/'+today.getDate()+'/'+today.getFullYear();
+          const checkNo=billCheckNum||'____';const amtDollars=Math.floor(bill2.cost);const amtCents=Math.round((bill2.cost-amtDollars)*100);
+          const amtWords=(()=>{const ones=['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];const tens=['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
+            const convert=(n)=>{if(n<20)return ones[n];if(n<100)return tens[Math.floor(n/10)]+(n%10?' '+ones[n%10]:'');if(n<1000)return ones[Math.floor(n/100)]+' Hundred'+(n%100?' '+convert(n%100):'');if(n<1000000)return convert(Math.floor(n/1000))+' Thousand'+(n%1000?' '+convert(n%1000):'');return String(n)};
+            return convert(amtDollars)+' and '+String(amtCents).padStart(2,'0')+'/100';
+          })();
+          const html='<html><head><title>Check '+checkNo+'</title><style>@page{size:8.5in 3.5in;margin:0.25in}body{font-family:Arial,sans-serif;margin:0;padding:20px;color:#111}'+
+            '.check{border:2px solid #333;border-radius:8px;padding:24px;max-width:750px;margin:0 auto;position:relative}'+
+            '.check-no{position:absolute;top:20px;right:24px;font-size:14px;font-weight:700;color:#555;font-family:monospace}'+
+            '.company{margin-bottom:16px}.company-name{font-size:16px;font-weight:700}.company-addr{font-size:11px;color:#555}'+
+            '.date-line{text-align:right;margin-bottom:12px;font-size:13px}.date-line b{border-bottom:1px solid #333;padding:0 16px}'+
+            '.payto{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:13px}.payto-label{font-weight:600;white-space:nowrap}.payto-value{flex:1;border-bottom:1px solid #333;padding:2px 8px;font-size:15px;font-weight:600}'+
+            '.amount-box{border:2px solid #333;padding:4px 12px;font-size:16px;font-weight:700;font-family:monospace;min-width:100px;text-align:center}'+
+            '.words{border-bottom:1px solid #333;padding:4px 0;margin-bottom:12px;font-size:12px;font-style:italic}'+
+            '.memo-line{display:flex;align-items:center;gap:8px;margin-top:16px;font-size:12px}.memo-label{font-weight:600}.memo-value{flex:1;border-bottom:1px solid #333;padding:2px 8px}'+
+            '.sig-line{margin-top:20px;text-align:right}.sig-line span{display:inline-block;border-bottom:1px solid #333;width:250px;padding-bottom:4px;font-size:12px;color:#888}'+
+            '.stub{margin-top:24px;border-top:2px dashed #999;padding-top:16px}'+
+            '.stub-table{width:100%;border-collapse:collapse;font-size:12px}.stub-table th{text-align:left;padding:4px 8px;border-bottom:1px solid #ccc;color:#555;font-weight:600}.stub-table td{padding:4px 8px;border-bottom:1px solid #eee}'+
+            '</style></head><body>'+
+            '<div class="check"><div class="check-no">Check #'+checkNo+'</div>'+
+            '<div class="company"><div class="company-name">Midwest Educational Furnishings, Inc.</div><div class="company-addr">21191 N Valley Rd, Kildeer, IL 60047<br>(847) 847-1865</div></div>'+
+            '<div class="date-line">Date: <b>'+dateStr+'</b></div>'+
+            '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><div class="payto"><div class="payto-label">PAY TO THE ORDER OF:</div><div class="payto-value">'+bill2.vendorName+'</div></div><div class="amount-box">$'+bill2.cost.toLocaleString('en-US',{minimumFractionDigits:2})+'</div></div>'+
+            '<div class="words">'+amtWords+' DOLLARS</div>'+
+            '<div class="memo-line"><span class="memo-label">Memo:</span><span class="memo-value">'+(billMemo||bill2.poDocNum+' - '+bill2.job.name)+'</span></div>'+
+            '<div class="sig-line"><span>Authorized Signature</span></div></div>'+
+            '<div class="stub"><table class="stub-table"><thead><tr><th>Date</th><th>Description</th><th>PO #</th><th>Invoice #</th><th>Amount</th></tr></thead><tbody>'+
+            '<tr><td>'+dateStr+'</td><td>'+bill2.job.name+'</td><td>'+bill2.poDocNum+'</td><td>'+(billInvNum||bill2.vendorInvNum||'--')+'</td><td style="font-weight:700;font-family:monospace">$'+bill2.cost.toLocaleString('en-US',{minimumFractionDigits:2})+'</td></tr>'+
+            bill2.items.map(item=>'<tr><td></td><td style="color:#555;font-size:11px">'+item.description+'</td><td></td><td></td><td style="font-size:11px;font-family:monospace">$'+((item.unitCost||0)*item.qtyOrdered).toFixed(2)+'</td></tr>').join('')+
+            '</tbody></table></div></body></html>';
+          const w=window.open('','_blank');w.document.write(html);w.document.close();w.print();
+          // Save check record
+          const existing2=typeof docStatuses[bill2.billDocNum]==='object'?docStatuses[bill2.billDocNum]:{};
+          setDocStatus(bill2.billDocNum,{...existing2,checkNum:billCheckNum||existing2.checkNum||checkNo,checkPrinted:new Date().toISOString(),vendorInvNum:billInvNum||existing2.vendorInvNum||'',payDate:billPayDate||existing2.payDate||'',memo:billMemo||existing2.memo||''});
+          notify('Check printed for '+bill2.vendorName+' -- '+fmt(bill2.cost));
+        };
         return <div>
           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16}}><button onClick={()=>setBillDetail(null)} style={{background:"none",border:"none",color:"#737373",cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>&larr; Back to Bills</button></div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}} className="resp-grid-2">
@@ -2120,13 +2167,22 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                 <div><div style={{fontSize:11,color:"#737373"}}>PO Number</div><div style={{fontSize:13,fontWeight:600,color:"#a78bfa",fontFamily:"'JetBrains Mono',monospace",cursor:"pointer"}} onClick={()=>{if(thisPO){setPreviewDoc({type:"po",data:thisPO,job:bill.job});setTab("preview")}}}>{bill.poDocNum}</div></div>
                 <div><div style={{fontSize:11,color:"#737373"}}>Job</div><div style={{fontSize:13,color:"#e5e5e5"}}>{bill.job.name}</div></div>
-                <div><div style={{fontSize:11,color:"#737373"}}>Amount</div><div style={{fontSize:16,fontWeight:800,color:"#f97316",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bill.cost)}</div></div>
+                <div><div style={{fontSize:11,color:"#737373"}}>Amount</div><div style={{fontSize:16,fontWeight:800,color:isVoid?"#525252":"#f97316",fontFamily:"'JetBrains Mono',monospace",textDecoration:isVoid?"line-through":"none"}}>{fmt(bill.cost)}</div></div>
                 <div><div style={{fontSize:11,color:"#737373"}}>Due Date</div><div style={{fontSize:13,color:bill.daysUntil<0?"#f87171":bill.daysUntil<=14?"#fbbf24":"#a3a3a3"}}>{bill.dueDate}</div></div>
                 <div><div style={{fontSize:11,color:"#737373"}}>Items</div><div style={{fontSize:13,color:"#e5e5e5"}}>{bill.itemCount} line item{bill.itemCount!==1?'s':''}</div></div>
-                <div><div style={{fontSize:11,color:"#737373"}}>Status</div><div>{bill.paid?<Badge label="paid" color="#34d399"/>:<Badge label={bill.daysUntil<0?"overdue":"open"} color={bill.daysUntil<0?"#f87171":"#fbbf24"}/>}</div></div>
+                <div><div style={{fontSize:11,color:"#737373"}}>Status</div><div>{currentStatus==='paid'?<Badge label="paid" color="#34d399"/>:currentStatus==='void'?<Badge label="void" color="#525252"/>:<Badge label={bill.daysUntil<0?"overdue":"open"} color={bill.daysUntil<0?"#f87171":"#fbbf24"}/>}</div></div>
               </div>
             </Card>
           </div>
+
+          <Card style={{padding:16,marginBottom:16}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}>
+              <div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>Bill Status</div>
+              <div style={{display:"flex",gap:4}}>{[["unpaid","Unpaid","#fbbf24"],["paid","Paid","#34d399"],["void","Void","#525252"]].map(([val,label,color])=><button key={val} onClick={()=>setBillStatus(val)} style={{padding:"6px 14px",borderRadius:6,border:"1px solid "+(currentStatus===val?color:"#333"),background:currentStatus===val?color+"18":"transparent",color:currentStatus===val?color:"#525252",fontSize:12,fontWeight:currentStatus===val?600:400,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>{label}</button>)}</div>
+            </div>
+            {isVoid&&<div style={{padding:"8px 12px",background:"#52525210",border:"1px solid #52525225",borderRadius:6,marginBottom:8,fontSize:12,color:"#737373"}}>This bill has been voided and will not count toward outstanding payables.</div>}
+          </Card>
+
           <Card style={{padding:16,marginBottom:16}}>
             <div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:12,fontFamily:"'JetBrains Mono',monospace"}}>Payment Details</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:12,marginBottom:12}} className="resp-grid-2">
@@ -2135,7 +2191,12 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
               <div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Payment Date</label><input type="date" value={billPayDate} onChange={e=>setBillPayDate(e.target.value)} style={inputStyle}/></div>
               <div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Memo</label><input value={billMemo} onChange={e=>setBillMemo(e.target.value)} placeholder="Notes..." style={inputStyle}/></div>
             </div>
-            <div style={{display:"flex",gap:8}}><Btn onClick={()=>saveBillDetail(bill)}>Save Details</Btn>{!bill.paid&&billPayDate&&<Btn onClick={()=>{setBillPayDate(billPayDate||new Date().toISOString().split('T')[0]);saveBillDetail(bill)}} style={{background:"#34d399",color:"#000"}}>Record Payment</Btn>}<Btn v="secondary" onClick={()=>setBillDetail(null)}>Cancel</Btn></div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              <Btn onClick={()=>saveBillDetail(bill)}>Save Details</Btn>
+              {!bill.paid&&!isVoid&&billPayDate&&<Btn onClick={()=>{setBillPayDate(billPayDate||new Date().toISOString().split('T')[0]);saveBillDetail(bill);setBillStatus('paid')}} style={{background:"#34d399",color:"#000"}}>Record Payment</Btn>}
+              <Btn v="secondary" onClick={()=>printCheck(bill)}><I n="file" s={12}/> Print Check</Btn>
+              <Btn v="secondary" onClick={()=>setBillDetail(null)}>Cancel</Btn>
+            </div>
           </Card>
           <Card style={{padding:16,marginBottom:16}}>
             <div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:12,fontFamily:"'JetBrains Mono',monospace"}}>Line Items on This PO</div>
@@ -2144,16 +2205,17 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
               <tr style={{borderTop:"2px solid #222"}}><td colSpan={4} style={{padding:"6px 8px",fontWeight:700}}>TOTAL</td><td style={{padding:"6px 8px",textAlign:"right",fontWeight:800,fontFamily:"'JetBrains Mono',monospace",color:"#f97316"}}>{fmt(bill.cost)}</td></tr>
             </tbody></table></div>
           </Card>
-          {(bill.vendorInvNum||bill.checkNum||bill.payDate)&&<Card style={{padding:16}}>
+          <Card style={{padding:16}}>
             <div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:12,fontFamily:"'JetBrains Mono',monospace"}}>Payment Trail</div>
             <div style={{display:"flex",gap:24,flexWrap:"wrap"}}>
               <div style={{display:"flex",alignItems:"center",gap:10}}><div style={{width:32,height:32,borderRadius:8,background:"#a78bfa12",display:"flex",alignItems:"center",justifyContent:"center"}}><I n="file" s={14} color="#a78bfa"/></div><div><div style={{fontSize:10,color:"#737373"}}>Purchase Order</div><div style={{fontSize:13,fontWeight:600,color:"#a78bfa",fontFamily:"'JetBrains Mono',monospace"}}>{bill.poDocNum}</div></div></div>
               <div style={{color:"#333",display:"flex",alignItems:"center"}}>&rarr;</div>
-              <div style={{display:"flex",alignItems:"center",gap:10}}><div style={{width:32,height:32,borderRadius:8,background:"#f9731612",display:"flex",alignItems:"center",justifyContent:"center"}}><I n="receipt" s={14} color="#f97316"/></div><div><div style={{fontSize:10,color:"#737373"}}>Vendor Invoice</div><div style={{fontSize:13,fontWeight:600,color:"#f97316",fontFamily:"'JetBrains Mono',monospace"}}>{bill.vendorInvNum||'Not entered'}</div></div></div>
+              <div style={{display:"flex",alignItems:"center",gap:10}}><div style={{width:32,height:32,borderRadius:8,background:"#f9731612",display:"flex",alignItems:"center",justifyContent:"center"}}><I n="receipt" s={14} color="#f97316"/></div><div><div style={{fontSize:10,color:"#737373"}}>Vendor Invoice</div><div style={{fontSize:13,fontWeight:600,color:"#f97316",fontFamily:"'JetBrains Mono',monospace"}}>{billInvNum||bill.vendorInvNum||'Not entered'}</div></div></div>
               <div style={{color:"#333",display:"flex",alignItems:"center"}}>&rarr;</div>
-              <div style={{display:"flex",alignItems:"center",gap:10}}><div style={{width:32,height:32,borderRadius:8,background:bill.paid?"#34d39912":"#fbbf2412",display:"flex",alignItems:"center",justifyContent:"center"}}><I n="dollar" s={14} color={bill.paid?"#34d399":"#fbbf24"}/></div><div><div style={{fontSize:10,color:"#737373"}}>Payment Sent</div><div style={{fontSize:13,fontWeight:600,color:bill.paid?"#34d399":"#fbbf24",fontFamily:"'JetBrains Mono',monospace"}}>{bill.checkNum||'Not entered'}{bill.payDate?' -- '+bill.payDate:''}</div></div></div>
+              <div style={{display:"flex",alignItems:"center",gap:10}}><div style={{width:32,height:32,borderRadius:8,background:currentStatus==='paid'?"#34d39912":currentStatus==='void'?"#52525212":"#fbbf2412",display:"flex",alignItems:"center",justifyContent:"center"}}><I n={currentStatus==='void'?"x":"dollar"} s={14} color={currentStatus==='paid'?"#34d399":currentStatus==='void'?"#525252":"#fbbf24"}/></div><div><div style={{fontSize:10,color:"#737373"}}>{currentStatus==='void'?'Voided':'Payment Sent'}</div><div style={{fontSize:13,fontWeight:600,color:currentStatus==='paid'?"#34d399":currentStatus==='void'?"#525252":"#fbbf24",fontFamily:"'JetBrains Mono',monospace"}}>{currentStatus==='void'?'VOID':(billCheckNum||bill.checkNum||'Not entered')+(billPayDate||bill.payDate?' -- '+(billPayDate||bill.payDate):'')}</div></div></div>
             </div>
-          </Card>}
+            {billData.checkPrinted&&<div style={{marginTop:10,fontSize:11,color:"#737373"}}>Check printed: {new Date(billData.checkPrinted).toLocaleString()}</div>}
+          </Card>
         </div>}
 
       return <div>
@@ -2172,14 +2234,14 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
               const isOverdue=bill.daysUntil<0&&!bill.paid;
               const isDueSoon=bill.daysUntil>=0&&bill.daysUntil<=14&&!bill.paid;
               const unpaidIdx=unpaidBills.indexOf(bill);
-              return <tr key={idx} style={{borderBottom:"1px solid #111",background:bill.paid?"#34d39905":isOverdue?"#f8717108":billSelected.has(unpaidIdx)?"#f9731610":"transparent",transition:"background 0.15s",cursor:"pointer"}} onClick={()=>{setBillInvNum(bill.vendorInvNum);setBillCheckNum(bill.checkNum);setBillPayDate(bill.payDate);setBillMemo(bill.memo);setBillDetail(bill)}} onMouseEnter={e=>{if(!bill.paid&&!billSelected.has(unpaidIdx))e.currentTarget.style.background=isOverdue?"#f8717112":"#111"}} onMouseLeave={e=>{e.currentTarget.style.background=bill.paid?"#34d39905":isOverdue?"#f8717108":billSelected.has(unpaidIdx)?"#f9731610":"transparent"}}>
+              return <tr key={idx} style={{borderBottom:"1px solid #111",background:bill.voided?"#52525208":bill.paid?"#34d39905":isOverdue?"#f8717108":billSelected.has(unpaidIdx)?"#f9731610":"transparent",transition:"background 0.15s",cursor:"pointer",opacity:bill.voided?0.5:1}} onClick={()=>{setBillInvNum(bill.vendorInvNum);setBillCheckNum(bill.checkNum);setBillPayDate(bill.payDate);setBillMemo(bill.memo);setBillDetail(bill)}} onMouseEnter={e=>{if(!bill.paid&&!bill.voided&&!billSelected.has(unpaidIdx))e.currentTarget.style.background=isOverdue?"#f8717112":"#111"}} onMouseLeave={e=>{e.currentTarget.style.background=bill.voided?"#52525208":bill.paid?"#34d39905":isOverdue?"#f8717108":billSelected.has(unpaidIdx)?"#f9731610":"transparent"}}>
                 <td style={{padding:"10px 8px",textAlign:"center",width:36}} onClick={e=>e.stopPropagation()}>{!bill.paid&&<input type="checkbox" checked={billSelected.has(unpaidIdx)} onChange={()=>toggleSelect(unpaidIdx)} style={{accentColor:"#2dd4bf",width:16,height:16,cursor:"pointer"}}/>}{bill.paid&&<I n="check" s={14} color="#34d399"/>}</td>
                 <td style={{padding:"10px 8px"}}><div style={{fontWeight:600,color:"#e5e5e5"}}>{bill.vendorName}</div><div style={{fontSize:11,color:"#737373"}}>{bill.itemCount} item{bill.itemCount!==1?'s':''}</div></td>
                 <td style={{padding:"10px 8px"}}><span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:11,color:"#a78bfa",cursor:"pointer",textDecoration:"underline",textUnderlineOffset:2}} onClick={e=>{e.stopPropagation();const pos2=genPOs?genPOs(bill.job):[];const thisPO2=pos2.find(p=>p.docNum===bill.poDocNum);if(thisPO2){setPreviewDoc({type:"po",data:thisPO2,job:bill.job});setTab("preview")}}}>{bill.poDocNum}</span></td>
                 <td style={{padding:"10px 8px",fontFamily:"'JetBrains Mono',monospace",fontSize:11,color:bill.vendorInvNum?"#f97316":"#333"}}>{bill.vendorInvNum||'--'}</td>
                 <td style={{padding:"10px 8px"}}><div style={{color:"#c4c4c4",fontSize:12}}>{bill.job.name}</div></td>
                 <td style={{padding:"10px 8px",whiteSpace:"nowrap"}}>{bill.paid?<span style={{color:"#34d399",fontWeight:600}}>Paid{bill.payDate?' '+bill.payDate:''}</span>:isOverdue?<div><div style={{color:"#f87171",fontWeight:600}}>Overdue</div><div style={{fontSize:10,color:"#f87171"}}>{Math.abs(bill.daysUntil)} day{Math.abs(bill.daysUntil)!==1?'s':''} ago</div></div>:isDueSoon?<div><div style={{color:"#fbbf24",fontWeight:500}}>Due soon</div><div style={{fontSize:10,color:"#fbbf24"}}>Due in {bill.daysUntil} day{bill.daysUntil!==1?'s':''}</div></div>:<div><div style={{color:"#a3a3a3"}}>Due later</div><div style={{fontSize:10,color:"#737373"}}>Due in {bill.daysUntil} day{bill.daysUntil!==1?'s':''}</div></div>}</td>
-                <td style={{padding:"10px 8px"}}>{bill.paid?<Badge label="paid" color="#34d399"/>:bill.checkNum?<Badge label="check sent" color="#fbbf24"/>:<StatusBadge docNum={bill.poDocNum}/>}</td>
+                <td style={{padding:"10px 8px"}}>{bill.voided?<Badge label="void" color="#525252"/>:bill.paid?<Badge label="paid" color="#34d399"/>:bill.checkNum?<Badge label="check sent" color="#fbbf24"/>:<StatusBadge docNum={bill.poDocNum}/>}</td>
                 <td style={{padding:"10px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",fontWeight:700,color:bill.paid?"#34d399":isOverdue?"#f87171":"#f0f0f0"}}>{bill.paid?<span style={{textDecoration:"line-through",opacity:0.5}}>{fmt(bill.cost)}</span>:fmt(bill.cost)}</td>
                 <td style={{padding:"10px 8px",textAlign:"right"}} onClick={e=>e.stopPropagation()}>{!bill.paid&&<button onClick={()=>{setBillInvNum(bill.vendorInvNum);setBillCheckNum(bill.checkNum);setBillPayDate(new Date().toISOString().split('T')[0]);setBillMemo(bill.memo);setBillDetail(bill)}} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #34d39930",background:"transparent",color:"#34d399",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s",whiteSpace:"nowrap"}} onMouseEnter={e=>{e.currentTarget.style.background="#34d39915"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>Pay</button>}</td>
               </tr>})}
@@ -3578,6 +3640,30 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       html+='<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="border-bottom:2px solid #222"><th style="text-align:left;padding:8px 0">Job</th><th style="text-align:right;padding:8px">Revenue</th><th style="text-align:right;padding:8px">Cost</th><th style="text-align:right;padding:8px">Profit</th><th style="text-align:right;padding:8px">Margin</th></tr></thead><tbody>';
       filteredJobs.forEach(j=>{const f=getJobFinancials(j.id);const profit=f.totalRevenue-f.totalCost;html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 0">'+j.name+'</td><td style="text-align:right;padding:6px">$'+f.totalRevenue.toFixed(2)+'</td><td style="text-align:right;padding:6px">$'+f.totalCost.toFixed(2)+'</td><td style="text-align:right;padding:6px;color:'+(profit>=0?"#059669":"#dc2626")+'">$'+profit.toFixed(2)+'</td><td style="text-align:right;padding:6px;font-weight:600;color:'+(f.margin>=30?"#059669":f.margin>=20?"#d97706":"#dc2626")+'">'+f.margin.toFixed(1)+'%</td></tr>'});
       html+='<tr style="border-top:2px solid #222;font-weight:700"><td style="padding:8px 0">TOTAL</td><td style="text-align:right;padding:8px">$'+totalRev.toFixed(2)+'</td><td style="text-align:right;padding:8px">$'+totalCost.toFixed(2)+'</td><td style="text-align:right;padding:8px;color:'+(grossProfit>=0?"#059669":"#dc2626")+'">$'+grossProfit.toFixed(2)+'</td><td style="text-align:right;padding:8px">'+grossMargin.toFixed(1)+'%</td></tr></tbody></table>';
+    } else if(type==="balance"){
+      const inventory=filteredItems.reduce((s,i)=>s+(i.unitCost||0)*Math.max(0,i.qtyOrdered-i.qtyReceived),0);
+      const bsTotalAR2=totalAR;const bsTotalAP2=totalAP;const bsRetained=totalRev-totalCost-totalComm;
+      const bsCash=paidRev-totalAP;const bsTotalAssets=Math.max(0,bsCash)+bsTotalAR2+inventory;
+      const bsEquity=bsTotalAssets-bsTotalAP2;
+      html+='<div style="font-size:22px;font-weight:300;color:#888;margin-bottom:20px">Balance Sheet</div><div style="font-size:12px;color:#888;margin-bottom:20px">As of: '+today+'</div>';
+      html+='<table style="width:100%;border-collapse:collapse;font-size:13px"><tbody>';
+      html+='<tr style="border-bottom:2px solid #222;background:#f9f9f9"><td colspan="2" style="padding:10px 0;font-weight:700;font-size:15px">ASSETS</td></tr>';
+      html+='<tr style="border-bottom:2px solid #ddd"><td colspan="2" style="padding:8px 0;font-weight:600;font-size:13px;color:#555">Current Assets</td></tr>';
+      html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 12px;color:#555">Cash & Cash Equivalents</td><td style="text-align:right;padding:6px 0">$'+Math.max(0,bsCash).toFixed(2)+'</td></tr>';
+      html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 12px;color:#555">Accounts Receivable</td><td style="text-align:right;padding:6px 0">$'+bsTotalAR2.toFixed(2)+'</td></tr>';
+      html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 12px;color:#555">Inventory (In Transit)</td><td style="text-align:right;padding:6px 0">$'+inventory.toFixed(2)+'</td></tr>';
+      html+='<tr style="border-top:2px solid #222;font-weight:700"><td style="padding:8px 0">TOTAL ASSETS</td><td style="text-align:right;padding:8px 0">$'+bsTotalAssets.toFixed(2)+'</td></tr>';
+      html+='<tr><td colspan="2" style="padding:8px 0"></td></tr>';
+      html+='<tr style="border-bottom:2px solid #222;background:#f9f9f9"><td colspan="2" style="padding:10px 0;font-weight:700;font-size:15px">LIABILITIES</td></tr>';
+      html+='<tr style="border-bottom:2px solid #ddd"><td colspan="2" style="padding:8px 0;font-weight:600;font-size:13px;color:#555">Current Liabilities</td></tr>';
+      html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 12px;color:#555">Accounts Payable</td><td style="text-align:right;padding:6px 0">$'+bsTotalAP2.toFixed(2)+'</td></tr>';
+      html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 12px;color:#555">Commissions Payable</td><td style="text-align:right;padding:6px 0">$'+totalComm.toFixed(2)+'</td></tr>';
+      html+='<tr style="border-top:2px solid #222;font-weight:700"><td style="padding:8px 0">TOTAL LIABILITIES</td><td style="text-align:right;padding:8px 0">$'+(bsTotalAP2+totalComm).toFixed(2)+'</td></tr>';
+      html+='<tr><td colspan="2" style="padding:8px 0"></td></tr>';
+      html+='<tr style="border-bottom:2px solid #222;background:#f0fdf4"><td colspan="2" style="padding:10px 0;font-weight:700;font-size:15px">EQUITY</td></tr>';
+      html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 12px;color:#555">Retained Earnings</td><td style="text-align:right;padding:6px 0;color:'+(bsRetained>=0?"#059669":"#dc2626")+'">$'+bsRetained.toFixed(2)+'</td></tr>';
+      html+='<tr style="border-top:3px double #222;font-weight:700;font-size:15px"><td style="padding:12px 0">TOTAL LIABILITIES & EQUITY</td><td style="text-align:right;padding:12px 0">$'+(bsTotalAP2+totalComm+bsRetained).toFixed(2)+'</td></tr>';
+      html+='</tbody></table>';
     }
     html+='</div>';
     const w=window.open("","_blank");w.document.write(html);w.document.close();w.print();
@@ -3592,7 +3678,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       <div style={{display:"flex",gap:6,alignItems:"center"}}><input type="date" value={dateFrom} onChange={e=>{setDateFrom(e.target.value);setPeriod("custom")}} style={{padding:"8px 12px",background:"rgba(17,17,17,0.45)",backdropFilter:"blur(8px) saturate(200%) brightness(1.1)",WebkitBackdropFilter:"blur(8px) saturate(200%) brightness(1.1)",border:"1px solid #333",borderRadius:8,color:"#f0f0f0",fontSize:12,fontFamily:"inherit",outline:"none"}}/><span style={{color:"#525252",fontSize:12}}>to</span><input type="date" value={dateTo} onChange={e=>{setDateTo(e.target.value);setPeriod("custom")}} style={{padding:"8px 12px",background:"rgba(17,17,17,0.45)",backdropFilter:"blur(8px) saturate(200%) brightness(1.1)",WebkitBackdropFilter:"blur(8px) saturate(200%) brightness(1.1)",border:"1px solid #333",borderRadius:8,color:"#f0f0f0",fontSize:12,fontFamily:"inherit",outline:"none"}}/></div>
       <div style={{fontSize:12,color:"#525252",fontFamily:"'JetBrains Mono',monospace"}}>{filteredJobs.length} job{filteredJobs.length!==1?"s":""}</div>
     </div>
-        <div style={{display:"flex",gap:3,background:"#111",padding:3,borderRadius:8,marginBottom:16,flexWrap:"wrap"}}>{[["overview","Overview"],["pnl","P&L"],["ar","Receivables"],["ap","Payables"],["margin","Margins"],["reports","Reports"]].map(([v,l])=><button key={v} onClick={()=>setTab(v)} style={{padding:"6px 14px",borderRadius:6,border:"none",cursor:"pointer",background:tab===v?"#2dd4bf":"transparent",color:tab===v?"#000":"#737373",fontSize:12,fontWeight:tab===v?600:400,fontFamily:"inherit",transition:"all 0.15s"}}>{l}</button>)}</div>
+        <div style={{display:"flex",gap:3,background:"#111",padding:3,borderRadius:8,marginBottom:16,flexWrap:"wrap"}}>{[["overview","Overview"],["pnl","P&L"],["balance","Balance Sheet"],["ar","Receivables"],["ap","Payables"],["margin","Margins"],["reports","Reports"]].map(([v,l])=><button key={v} onClick={()=>setTab(v)} style={{padding:"6px 14px",borderRadius:6,border:"none",cursor:"pointer",background:tab===v?"#2dd4bf":"transparent",color:tab===v?"#000":"#737373",fontSize:12,fontWeight:tab===v?600:400,fontFamily:"inherit",transition:"all 0.15s"}}>{l}</button>)}</div>
 
     {tab==="overview"&&<div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:14}} className="resp-grid-4">
@@ -3643,6 +3729,76 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       <div style={{padding:"6px 16px",display:"flex",justifyContent:"space-between",borderBottom:"1px solid #111"}}><span style={{fontSize:13,color:"#a3a3a3"}}>Sales Commissions</span><span style={{fontSize:13,color:"#a3a3a3",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalComm)}</span></div>
       <div style={{background:"#34d39908",borderRadius:8,padding:"14px 4px",marginTop:16,display:"flex",justifyContent:"space-between",border:"1px solid #34d39920"}}><span style={{fontSize:17,fontWeight:800,color:"#f0f0f0"}}>NET INCOME</span><span style={{fontSize:17,fontWeight:800,color:netIncome>=0?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace"}}><AnimatedNumber value={netIncome} prefix="$"/></span></div>
     </Card>}
+
+    {tab==="balance"&&(()=>{
+      // Balance Sheet calculations
+      const inventory=filteredItems.reduce((s,i)=>s+(i.unitCost||0)*Math.max(0,i.qtyOrdered-i.qtyReceived),0);
+      const bsCash=Math.max(0,paidRev-totalAP);
+      const bsTotalCurrentAssets=bsCash+totalAR+inventory;
+      const bsTotalAssets=bsTotalCurrentAssets;
+      const bsTotalCurrentLiab=totalAP+totalComm;
+      const bsTotalLiab=bsTotalCurrentLiab;
+      const bsRetained=totalRev-totalCost-totalComm;
+      const bsEquity=bsRetained;
+      const bsTotalLiabEquity=bsTotalLiab+bsEquity;
+      const isBalanced=Math.abs(bsTotalAssets-bsTotalLiabEquity)<0.01;
+
+      const bsLine=(label,value,indent,bold,color,border)=><div style={{display:"flex",justifyContent:"space-between",padding:(bold?"10px":"6px")+" "+(indent?"16px":"0"),borderBottom:border?"2px solid #222":"1px solid #111",background:bold&&border?"#0a0a0a":"transparent"}}><span style={{fontSize:bold?14:13,fontWeight:bold?700:400,color:bold?"#f0f0f0":"#a3a3a3"}}>{label}</span><span style={{fontSize:bold?15:13,fontWeight:bold?800:500,color:color||"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>{typeof value==='number'?fmt(value):value}</span></div>;
+
+      return <div style={{display:"flex",flexDirection:"column",gap:16}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12}} className="resp-grid-4">
+          <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>TOTAL ASSETS</div><div style={{fontSize:22,fontWeight:800,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsTotalAssets)}</div></Card>
+          <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>TOTAL LIABILITIES</div><div style={{fontSize:22,fontWeight:800,color:"#f97316",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsTotalLiab)}</div></Card>
+          <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>EQUITY</div><div style={{fontSize:22,fontWeight:800,color:bsEquity>=0?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsEquity)}</div></Card>
+          <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>BALANCED</div><div style={{fontSize:22,fontWeight:800,color:isBalanced?"#34d399":"#f87171"}}>{isBalanced?"Yes":"No"}</div><div style={{fontSize:11,color:"#737373",marginTop:4}}>A = L + E</div></Card>
+        </div>
+
+        <Card style={{padding:20}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:8}}>
+            <div><div style={{fontSize:18,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>Balance Sheet</div><div style={{fontSize:12,color:"#737373",marginTop:2}}>As of {new Date(dateTo).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</div></div>
+            <Btn onClick={()=>generatePDF("balance")}><I n="download" s={14}/> Export PDF</Btn>
+          </div>
+
+          <div style={{background:"#2dd4bf08",borderRadius:10,padding:2,marginBottom:20,border:"1px solid #2dd4bf15"}}>
+            <div style={{padding:"12px 14px",borderBottom:"2px solid #2dd4bf20"}}><span style={{fontSize:15,fontWeight:800,color:"#2dd4bf",letterSpacing:1}}>ASSETS</span></div>
+            <div style={{padding:"8px 14px",borderBottom:"1px solid #222"}}><span style={{fontSize:12,fontWeight:700,color:"#e5e5e5",letterSpacing:0.5}}>Current Assets</span></div>
+            {bsLine("Cash & Cash Equivalents",bsCash,true,false,"#34d399")}
+            {bsLine("Accounts Receivable",totalAR,true,false,"#2dd4bf")}
+            {bsLine("Inventory (In Transit)",inventory,true,false,"#a78bfa")}
+            <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0",borderTop:"2px solid #2dd4bf30",margin:"0 14px"}}><span style={{fontSize:14,fontWeight:800,color:"#f0f0f0"}}>Total Current Assets</span><span style={{fontSize:15,fontWeight:800,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsTotalCurrentAssets)}</span></div>
+            <div style={{display:"flex",justifyContent:"space-between",padding:"12px 14px",background:"#2dd4bf10",borderRadius:"0 0 8px 8px"}}><span style={{fontSize:15,fontWeight:800,color:"#f0f0f0"}}>TOTAL ASSETS</span><span style={{fontSize:16,fontWeight:800,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsTotalAssets)}</span></div>
+          </div>
+
+          <div style={{background:"#f9731608",borderRadius:10,padding:2,marginBottom:20,border:"1px solid #f9731615"}}>
+            <div style={{padding:"12px 14px",borderBottom:"2px solid #f9731620"}}><span style={{fontSize:15,fontWeight:800,color:"#f97316",letterSpacing:1}}>LIABILITIES</span></div>
+            <div style={{padding:"8px 14px",borderBottom:"1px solid #222"}}><span style={{fontSize:12,fontWeight:700,color:"#e5e5e5",letterSpacing:0.5}}>Current Liabilities</span></div>
+            {bsLine("Accounts Payable",totalAP,true,false,"#f97316")}
+            {bsLine("Commissions Payable",totalComm,true,false,"#fbbf24")}
+            <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0",borderTop:"2px solid #f9731630",margin:"0 14px"}}><span style={{fontSize:14,fontWeight:800,color:"#f0f0f0"}}>Total Current Liabilities</span><span style={{fontSize:15,fontWeight:800,color:"#f97316",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsTotalCurrentLiab)}</span></div>
+            <div style={{display:"flex",justifyContent:"space-between",padding:"12px 14px",background:"#f9731610",borderRadius:"0 0 8px 8px"}}><span style={{fontSize:15,fontWeight:800,color:"#f0f0f0"}}>TOTAL LIABILITIES</span><span style={{fontSize:16,fontWeight:800,color:"#f97316",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsTotalLiab)}</span></div>
+          </div>
+
+          <div style={{background:bsEquity>=0?"#34d39908":"#f8717108",borderRadius:10,padding:2,marginBottom:20,border:"1px solid "+(bsEquity>=0?"#34d39915":"#f8717115")}}>
+            <div style={{padding:"12px 14px",borderBottom:"2px solid "+(bsEquity>=0?"#34d39920":"#f8717120")}}><span style={{fontSize:15,fontWeight:800,color:bsEquity>=0?"#34d399":"#f87171",letterSpacing:1}}>EQUITY</span></div>
+            {bsLine("Retained Earnings",bsRetained,true,false,bsRetained>=0?"#34d399":"#f87171")}
+            <div style={{display:"flex",justifyContent:"space-between",padding:"12px 14px",background:bsEquity>=0?"#34d39910":"#f8717110",borderRadius:"0 0 8px 8px"}}><span style={{fontSize:15,fontWeight:800,color:"#f0f0f0"}}>TOTAL EQUITY</span><span style={{fontSize:16,fontWeight:800,color:bsEquity>=0?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsEquity)}</span></div>
+          </div>
+
+          <div style={{background:isBalanced?"#34d39908":"#f8717108",borderRadius:10,padding:"14px 16px",border:"1px solid "+(isBalanced?"#34d39920":"#f8717120"),display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontSize:17,fontWeight:800,color:"#f0f0f0"}}>TOTAL LIABILITIES & EQUITY</span>
+            <span style={{fontSize:18,fontWeight:800,color:isBalanced?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsTotalLiabEquity)}</span>
+          </div>
+        </Card>
+
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}} className="resp-grid-2">
+          <Card style={{padding:16}}><div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:14,fontFamily:"'JetBrains Mono',monospace"}}>Asset Breakdown</div>
+            {[{label:"Cash",value:bsCash,color:"#34d399"},{label:"Receivables",value:totalAR,color:"#2dd4bf"},{label:"Inventory",value:inventory,color:"#a78bfa"}].map(a=><div key={a.label} style={{marginBottom:10}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}><span style={{fontSize:13,color:"#e5e5e5"}}>{a.label}</span><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:13,fontWeight:700,color:a.color,fontFamily:"'JetBrains Mono',monospace"}}>{fmt(a.value)}</span><span style={{fontSize:11,color:"#737373"}}>{bsTotalAssets>0?(a.value/bsTotalAssets*100).toFixed(0):0}%</span></div></div><Bar value={a.value} max={bsTotalAssets||1} color={a.color} height={5}/></div>)}
+          </Card>
+          <Card style={{padding:16}}><div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:14,fontFamily:"'JetBrains Mono',monospace"}}>Liabilities & Equity</div>
+            {[{label:"Accounts Payable",value:totalAP,color:"#f97316"},{label:"Commissions",value:totalComm,color:"#fbbf24"},{label:"Retained Earnings",value:Math.max(0,bsRetained),color:"#34d399"}].map(a=><div key={a.label} style={{marginBottom:10}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}><span style={{fontSize:13,color:"#e5e5e5"}}>{a.label}</span><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:13,fontWeight:700,color:a.color,fontFamily:"'JetBrains Mono',monospace"}}>{fmt(a.value)}</span><span style={{fontSize:11,color:"#737373"}}>{bsTotalLiabEquity>0?(a.value/bsTotalLiabEquity*100).toFixed(0):0}%</span></div></div><Bar value={a.value} max={bsTotalLiabEquity||1} color={a.color} height={5}/></div>)}
+          </Card>
+        </div>
+      </div>})()}
 
     {tab==="ar"&&<div style={{display:"flex",flexDirection:"column",gap:16}}>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12}} className="resp-grid-4">
@@ -3700,6 +3856,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
     {tab==="reports"&&<div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(250px,1fr))",gap:12}} className="resp-grid-2">
         {[{title:"Profit & Loss Statement",desc:"Complete income statement with revenue by job, COGS by vendor, operating expenses, and net income",icon:"dollar",fn:()=>generatePDF("pnl")},
+          {title:"Balance Sheet",desc:"Assets, liabilities, and equity snapshot with cash, receivables, inventory, payables, and retained earnings",icon:"briefcase",fn:()=>generatePDF("balance")},
           {title:"AR Aging Report",desc:"Accounts receivable broken down by aging bucket (current, 30, 60, 90, 90+) with customer detail",icon:"file",fn:()=>generatePDF("ar")},
           {title:"AP Aging Report",desc:"Accounts payable broken down by aging bucket (current, 30, 60, 90, 90+) with vendor detail and item counts",icon:"truck",fn:()=>generatePDF("ap")},
           {title:"Job Margin Analysis",desc:"Revenue, cost, profit, and margin percentage for every job with color-coded health indicators",icon:"briefcase",fn:()=>generatePDF("margin")},
