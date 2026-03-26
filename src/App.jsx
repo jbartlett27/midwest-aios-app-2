@@ -1875,10 +1875,13 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
   // Historical records state
   const [histSearch,setHistSearch]=useState('');
   const [histType,setHistType]=useState('all');
+  const [histSort,setHistSort]=useState('date');
   const [histAdding,setHistAdding]=useState(null);
   const [histForm,setHistForm]=useState({type:'vendor_po',vendor:'',customer:'',docNumber:'',date:'',amount:'',job:'',description:'',notes:'',files:[]});
   const [histViewing,setHistViewing]=useState(null);
+  const [histBulkCount,setHistBulkCount]=useState(0);
   const histFileRef=useRef(null);
+  const histBulkRef=useRef(null);
   const activeHidden=(previewDoc?.job?.docStatuses||{}).__qcv||previewDoc?.data?.hiddenCols||hiddenCols;const visibleCols=allQuoteCols.filter(c=>!activeHidden[c.key]);
   // Doc statuses stored IN each job record in Supabase -- persists across browsers, deploys, cache clears
   const allDocStatuses = jobs.reduce((acc, j) => ({...acc, ...(j.docStatuses || {})}), {});
@@ -2284,6 +2287,15 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
         const q=histSearch.toLowerCase();
         return (h.vendor||'').toLowerCase().includes(q)||(h.customer||'').toLowerCase().includes(q)||(h.docNumber||'').toLowerCase().includes(q)||(h.description||'').toLowerCase().includes(q)||(h.job||'').toLowerCase().includes(q)||(h.notes||'').toLowerCase().includes(q)||(h.files||[]).some(f=>(f.name||'').toLowerCase().includes(q));
       });
+      // Sort
+      const sorted=[...filtered].sort((a,b)=>{
+        if(histSort==='vendor')return (a.vendor||'').localeCompare(b.vendor||'');
+        if(histSort==='customer')return (a.customer||'').localeCompare(b.customer||'');
+        if(histSort==='amount')return (parseFloat(b.amount)||0)-(parseFloat(a.amount)||0);
+        if(histSort==='name')return (a.vendor||a.customer||'').localeCompare(b.vendor||b.customer||'');
+        if(histSort==='doc')return (a.docNumber||'').localeCompare(b.docNumber||'');
+        return (b.date||'').localeCompare(a.date||'');
+      });
       const vendorPOs=allHist.filter(h=>h.type==='vendor_po');
       const custInvs=allHist.filter(h=>h.type==='customer_invoice');
       const totalPOAmt=vendorPOs.reduce((s,h)=>s+(parseFloat(h.amount)||0),0);
@@ -2300,6 +2312,29 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
       };
       const removeHistFile=(idx)=>{setHistForm(prev=>({...prev,files:(prev.files||[]).filter((_,i)=>i!==idx)}))};
 
+      // Bulk upload: each file becomes its own record
+      const handleBulkUpload=(e,bulkType)=>{
+        const fileList=e.target?.files||e.dataTransfer?.files;if(!fileList||!fileList.length)return;
+        const today=new Date().toISOString().split('T')[0];
+        let processed=0;const total=fileList.length;
+        setHistBulkCount(total);
+        Array.from(fileList).forEach(file=>{
+          if(file.size>4*1024*1024){notify('Skipped (too large): '+file.name,'error');processed++;if(processed>=total)setHistBulkCount(0);return}
+          const reader=new FileReader();
+          reader.onload=(ev)=>{
+            const docName=file.name.replace(/\.[^.]+$/,'').replace(/[_-]/g,' ');
+            const id='HIST-'+Date.now()+'-'+Math.random().toString(36).slice(2,6);
+            addSop({id,title:(bulkType==='vendor_po'?'PO':'INV')+' '+docName,cat:'HistoricalDoc',icon:'file',content:JSON.stringify({
+              type:bulkType,vendor:bulkType==='vendor_po'?docName.split(' ')[0]:'',customer:bulkType==='customer_invoice'?docName.split(' ')[0]:'',
+              docNumber:'',date:today,amount:'',job:'',description:docName,notes:'Bulk uploaded',
+              files:[{name:file.name,size:file.size,type:file.type,data:ev.target.result,uploadedAt:new Date().toISOString()}]
+            }),custom:true});
+            processed++;
+            if(processed>=total){setHistBulkCount(0);notify(total+' file'+(total!==1?'s':'')+' uploaded as '+( bulkType==='vendor_po'?'Vendor POs':'Customer Invoices'))}
+          };reader.readAsDataURL(file);
+        });if(histBulkRef.current)histBulkRef.current.value='';
+      };
+
       const saveHistRecord=()=>{
         const editId=histAdding?.startsWith('edit-')?histAdding.replace('edit-',''):null;
         const id=editId||'HIST-'+Date.now()+'-'+Math.random().toString(36).slice(2,6);
@@ -2310,7 +2345,7 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
       };
       const deleteHist=(id)=>{deleteSop(id);notify('Record deleted');if(histViewing?.id===id)setHistViewing(null)};
 
-      // Detail view for a record
+      // Detail view
       if(histViewing){const h=histViewing;return <div>
         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16}}><button onClick={()=>setHistViewing(null)} style={{background:"none",border:"none",color:"#737373",cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>&larr; Back to History</button></div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}} className="resp-grid-2">
@@ -2340,6 +2375,7 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
       </div>}
 
       return <div>
+        <input ref={histBulkRef} type="file" accept=".pdf,.png,.jpg,.jpeg,.gif,.doc,.docx,.xls,.xlsx" multiple onChange={e=>handleBulkUpload(e,histType==='customer_invoice'?'customer_invoice':'vendor_po')} style={{display:"none"}}/>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12,marginBottom:16}} className="resp-grid-4">
           <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>TOTAL RECORDS</div><div style={{fontSize:22,fontWeight:800,color:"#8b5cf6",fontFamily:"'JetBrains Mono',monospace"}}>{allHist.length}</div><div style={{fontSize:11,color:"#a3a3a3",marginTop:4}}>{docsWithFiles} with files</div></Card>
           <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>VENDOR POs</div><div style={{fontSize:22,fontWeight:800,color:"#a78bfa",fontFamily:"'JetBrains Mono',monospace"}}>{vendorPOs.length}</div><div style={{fontSize:11,color:"#a3a3a3",marginTop:4}}>{fmt(totalPOAmt)}</div></Card>
@@ -2347,10 +2383,18 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           <Card style={{padding:14,textAlign:"center",cursor:"pointer",border:"1px solid #8b5cf620"}} hover onClick={()=>{setHistForm({type:'vendor_po',vendor:'',customer:'',docNumber:'',date:'',amount:'',job:'',description:'',notes:'',files:[]});setHistAdding('new')}}><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>UPLOAD DOC</div><div style={{fontSize:22,fontWeight:800,color:"#8b5cf6"}}>+</div></Card>
         </div>
 
-        <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
+        {histBulkCount>0&&<div style={{padding:"12px 16px",background:"#8b5cf610",border:"1px solid #8b5cf625",borderRadius:8,marginBottom:12,display:"flex",alignItems:"center",gap:8}}><div style={{width:16,height:16,border:"2px solid #8b5cf6",borderTop:"2px solid transparent",borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/><span style={{fontSize:13,color:"#8b5cf6"}}>Processing {histBulkCount} files...</span></div>}
+
+        <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>
           <input value={histSearch} onChange={e=>setHistSearch(e.target.value)} placeholder="Search vendor, customer, PO #, invoice #, file name..." style={{...inputStyle,flex:1,minWidth:200,maxWidth:400}}/>
           <div style={{display:"flex",gap:3,background:"#111",padding:3,borderRadius:8}}>{[["all","All"],["vendor_po","Vendor POs"],["customer_invoice","Customer Invoices"]].map(([v,l])=><button key={v} onClick={()=>setHistType(v)} style={{padding:"5px 12px",borderRadius:6,border:"none",cursor:"pointer",background:histType===v?"#8b5cf6":"transparent",color:histType===v?"#000":"#737373",fontSize:11,fontWeight:histType===v?600:400,fontFamily:"inherit",transition:"all 0.15s"}}>{l}</button>)}</div>
-          <Btn onClick={()=>{setHistForm({type:'vendor_po',vendor:'',customer:'',docNumber:'',date:'',amount:'',job:'',description:'',notes:'',files:[]});setHistAdding('new')}} style={{fontSize:12}}><I n="plus" s={12}/> Upload Document</Btn>
+        </div>
+        <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
+          <span style={{fontSize:11,color:"#737373"}}>Sort:</span>
+          {[["date","Date"],["vendor","Vendor"],["customer","Customer"],["amount","Amount"],["doc","Doc #"]].map(([v,l])=><button key={v} onClick={()=>setHistSort(v)} style={{padding:"4px 10px",borderRadius:6,border:"none",cursor:"pointer",background:histSort===v?"#8b5cf620":"transparent",color:histSort===v?"#8b5cf6":"#525252",fontSize:11,fontFamily:"inherit",transition:"all 0.15s"}}>{l}</button>)}
+          <div style={{flex:1}}/>
+          <Btn onClick={()=>{setHistForm({type:'vendor_po',vendor:'',customer:'',docNumber:'',date:'',amount:'',job:'',description:'',notes:'',files:[]});setHistAdding('new')}} style={{fontSize:12}}><I n="plus" s={12}/> Single Upload</Btn>
+          <Btn v="secondary" onClick={()=>{histBulkRef.current?.click()}} style={{fontSize:12}}><I n="upload" s={12}/> Bulk Upload ({histType==='customer_invoice'?'Invoices':'POs'})</Btn>
         </div>
 
         {histAdding&&<Card style={{marginBottom:16,padding:20,border:"1px solid #8b5cf625"}}>
@@ -2361,7 +2405,7 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           <div onClick={()=>histFileRef.current?.click()} onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor="rgba(139,92,246,0.4)";e.currentTarget.style.background="rgba(139,92,246,0.06)"}} onDragLeave={e=>{e.currentTarget.style.borderColor="rgba(139,92,246,0.15)";e.currentTarget.style.background="rgba(139,92,246,0.02)"}} onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor="rgba(139,92,246,0.15)";e.currentTarget.style.background="rgba(139,92,246,0.02)";handleHistFile(e)}} style={{textAlign:"center",padding:"24px 16px",border:"2px dashed rgba(139,92,246,0.15)",borderRadius:12,cursor:"pointer",transition:"all 0.3s",background:"rgba(139,92,246,0.02)",marginBottom:14}}>
             <div style={{fontSize:24,marginBottom:4,color:"#8b5cf6"}}><I n="upload" s={24}/></div>
             <div style={{fontSize:13,fontWeight:600,color:"#8b5cf6",marginBottom:4}}>Drop files here or click to browse</div>
-            <div style={{fontSize:11,color:"#737373"}}>PDF, images, Excel, Word -- max 4MB per file</div>
+            <div style={{fontSize:11,color:"#737373"}}>PDF, images, Excel, Word -- max 4MB per file -- select multiple files at once</div>
           </div>
 
           {(histForm.files||[]).length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>{(histForm.files||[]).map((f,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:6,padding:"4px 10px",background:"#8b5cf610",border:"1px solid #8b5cf620",borderRadius:6}}>
@@ -2386,11 +2430,11 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           <div style={{display:"flex",gap:8}}><Btn onClick={saveHistRecord}>Save Record</Btn><Btn v="secondary" onClick={()=>{setHistAdding(null);setHistForm({type:'vendor_po',vendor:'',customer:'',docNumber:'',date:'',amount:'',job:'',description:'',notes:'',files:[]})}}>Cancel</Btn></div>
         </Card>}
 
-        {filtered.length===0&&!histAdding?<Card style={{padding:40,textAlign:"center"}}><div style={{fontSize:40,marginBottom:8,color:"#333"}}>+</div><div style={{fontSize:14,color:"#525252",marginBottom:12}}>{histSearch?'No records match "'+histSearch+'"':'No historical records yet. Upload vendor POs and customer invoices.'}</div><Btn onClick={()=>{setHistForm({type:'vendor_po',vendor:'',customer:'',docNumber:'',date:'',amount:'',job:'',description:'',notes:'',files:[]});setHistAdding('new')}}>Upload First Document</Btn></Card>:
+        {sorted.length===0&&!histAdding?<Card style={{padding:40,textAlign:"center"}}><div style={{fontSize:40,marginBottom:8,color:"#333"}}>+</div><div style={{fontSize:14,color:"#525252",marginBottom:12}}>{histSearch?'No records match "'+histSearch+'"':'No historical records yet. Upload vendor POs and customer invoices.'}</div><div style={{display:"flex",gap:8,justifyContent:"center"}}><Btn onClick={()=>{setHistForm({type:'vendor_po',vendor:'',customer:'',docNumber:'',date:'',amount:'',job:'',description:'',notes:'',files:[]});setHistAdding('new')}}>Single Upload</Btn><Btn v="secondary" onClick={()=>histBulkRef.current?.click()}>Bulk Upload Files</Btn></div></Card>:
         <Card style={{padding:0,overflow:"hidden"}}>
           <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:750}}>
-            <thead><tr style={{background:"#111111",borderBottom:"2px solid #222"}}>{["Type","Vendor / Customer","Doc #","Job / Project","Date","Files","Amount",""].map((h,i)=><th key={i} style={{padding:"10px 8px",textAlign:i===6?"right":"left",fontWeight:600,color:"#a3a3a3",fontSize:11,textTransform:"uppercase",letterSpacing:0.8,whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
-            <tbody>{filtered.map(h=><tr key={h.id} style={{borderBottom:"1px solid #111",cursor:"pointer",transition:"background 0.15s"}} onClick={()=>setHistViewing(h)} onMouseEnter={e=>{e.currentTarget.style.background="#111"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>
+            <thead><tr style={{background:"#111111",borderBottom:"2px solid #222"}}>{["Type","Vendor / Customer","Doc #","Job / Project","Date","Files","Amount",""].map((h,i)=><th key={i} onClick={()=>{if(h==='Vendor / Customer')setHistSort(histSort==='vendor'?'customer':'vendor');else if(h==='Date')setHistSort('date');else if(h==='Amount')setHistSort('amount');else if(h==='Doc #')setHistSort('doc')}} style={{padding:"10px 8px",textAlign:i===6?"right":"left",fontWeight:600,color:["Vendor / Customer","Date","Amount","Doc #"].includes(h)?"#8b5cf6":"#a3a3a3",fontSize:11,textTransform:"uppercase",letterSpacing:0.8,whiteSpace:"nowrap",cursor:["Vendor / Customer","Date","Amount","Doc #"].includes(h)?"pointer":"default"}}>{h}{h==='Date'&&histSort==='date'?' v':''}{h==='Amount'&&histSort==='amount'?' v':''}{h==='Vendor / Customer'&&(histSort==='vendor'||histSort==='customer')?' v':''}{h==='Doc #'&&histSort==='doc'?' v':''}</th>)}</tr></thead>
+            <tbody>{sorted.map(h=><tr key={h.id} style={{borderBottom:"1px solid #111",cursor:"pointer",transition:"background 0.15s"}} onClick={()=>setHistViewing(h)} onMouseEnter={e=>{e.currentTarget.style.background="#111"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>
               <td style={{padding:"10px 8px"}}><Badge label={h.type==='vendor_po'?'Vendor PO':'Customer Inv'} color={h.type==='vendor_po'?'#a78bfa':'#2dd4bf'}/></td>
               <td style={{padding:"10px 8px",fontWeight:600,color:"#e5e5e5"}}>{h.vendor||h.customer||'--'}</td>
               <td style={{padding:"10px 8px",fontFamily:"'JetBrains Mono',monospace",fontSize:11,color:h.type==='vendor_po'?'#a78bfa':'#2dd4bf'}}>{h.docNumber||'--'}</td>
@@ -2400,7 +2444,7 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
               <td style={{padding:"10px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,color:"#f0f0f0"}}>{h.amount?fmt(parseFloat(h.amount)):''}</td>
               <td style={{padding:"10px 8px",textAlign:"right"}} onClick={e=>e.stopPropagation()}><div style={{display:"flex",gap:4,justifyContent:"flex-end"}}><button onClick={()=>{setHistForm({type:h.type||'vendor_po',vendor:h.vendor||'',customer:h.customer||'',docNumber:h.docNumber||'',date:h.date||'',amount:h.amount||'',job:h.job||'',description:h.description||'',notes:h.notes||'',files:h.files||[]});setHistAdding('edit-'+h.id)}} style={{padding:"3px 8px",borderRadius:5,border:"1px solid #333",background:"transparent",color:"#a3a3a3",fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>Edit</button><button onClick={()=>deleteHist(h.id)} style={{padding:"3px 8px",borderRadius:5,border:"1px solid #f8717130",background:"transparent",color:"#f87171",fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>Del</button></div></td>
             </tr>)}
-            {filtered.length>0&&<tr style={{borderTop:"2px solid #222",background:"#0a0a0a"}}><td colSpan={5} style={{padding:"10px 8px",fontWeight:700,color:"#f0f0f0"}}>{filtered.length} record{filtered.length!==1?'s':''}</td><td style={{padding:"10px 8px"}}><span style={{fontSize:11,color:"#8b5cf6"}}>{filtered.reduce((s,h)=>s+(h.files||[]).length,0)} files</span></td><td style={{padding:"10px 8px",textAlign:"right",fontWeight:800,fontFamily:"'JetBrains Mono',monospace",color:"#8b5cf6"}}>{fmt(filtered.reduce((s,h)=>s+(parseFloat(h.amount)||0),0))}</td><td/></tr>}
+            {sorted.length>0&&<tr style={{borderTop:"2px solid #222",background:"#0a0a0a"}}><td colSpan={5} style={{padding:"10px 8px",fontWeight:700,color:"#f0f0f0"}}>{sorted.length} record{sorted.length!==1?'s':''}</td><td style={{padding:"10px 8px"}}><span style={{fontSize:11,color:"#8b5cf6"}}>{sorted.reduce((s,h)=>s+(h.files||[]).length,0)} files</span></td><td style={{padding:"10px 8px",textAlign:"right",fontWeight:800,fontFamily:"'JetBrains Mono',monospace",color:"#8b5cf6"}}>{fmt(sorted.reduce((s,h)=>s+(parseFloat(h.amount)||0),0))}</td><td/></tr>}
             </tbody>
           </table></div>
         </Card>}
