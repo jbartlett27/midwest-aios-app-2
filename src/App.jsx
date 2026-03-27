@@ -3585,6 +3585,9 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   const [plaidAccessToken,setPlaidAccessToken]=useState(()=>{try{return localStorage.getItem('mw_plaid_access_token')||''}catch{return ''}});
   const [plaidBankName,setPlaidBankName]=useState(()=>{try{return localStorage.getItem('mw_plaid_bank_name')||''}catch{return ''}});
   const [plaidLoading,setPlaidLoading]=useState(false);
+  const [plaidSyncRange,setPlaidSyncRange]=useState('quarter');
+  const [plaidSyncFrom,setPlaidSyncFrom]=useState('');
+  const [plaidSyncTo,setPlaidSyncTo]=useState('');
   const [txnSelected,setTxnSelected]=useState(new Set());
   const [showCatEditor,setShowCatEditor]=useState(false);
   const [newCatName,setNewCatName]=useState('');
@@ -3947,11 +3950,21 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       };
 
       // Plaid sync handler
-      const handlePlaidSync=async()=>{
+      const handlePlaidSync=async(rangeOverride)=>{
         if(!plaidAccessToken){notify('No access token. Reconnect bank.','error');return}
         setPlaidLoading(true);
+        const range=rangeOverride||plaidSyncRange;
+        const n=new Date();let startDate,endDate=n.toISOString().split('T')[0];
+        if(range==='custom'&&plaidSyncFrom){startDate=plaidSyncFrom;endDate=plaidSyncTo||endDate}
+        else if(range==='month'){const d=new Date(n);d.setMonth(d.getMonth()-1);startDate=d.toISOString().split('T')[0]}
+        else if(range==='quarter'){const d=new Date(n);d.setMonth(d.getMonth()-3);startDate=d.toISOString().split('T')[0]}
+        else if(range==='6months'){const d=new Date(n);d.setMonth(d.getMonth()-6);startDate=d.toISOString().split('T')[0]}
+        else if(range==='year'){const d=new Date(n);d.setFullYear(d.getFullYear()-1);startDate=d.toISOString().split('T')[0]}
+        else if(range==='2years'){const d=new Date(n);d.setFullYear(d.getFullYear()-2);startDate=d.toISOString().split('T')[0]}
+        else if(range==='all'){startDate='2020-01-01'}
+        else{const d=new Date(n);d.setMonth(d.getMonth()-3);startDate=d.toISOString().split('T')[0]}
         try{
-          const r=await fetch('/api/plaid-transactions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({access_token:plaidAccessToken})});
+          const r=await fetch('/api/plaid-transactions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({access_token:plaidAccessToken,start_date:startDate,end_date:endDate})});
           const data=await r.json();
           if(!r.ok||data.error_code||data.error){notify('Plaid: '+(data.error_message||data.error?.message||data.error||'Sync failed'),'error');setPlaidLoading(false);return}
           const txns=data.added||data.transactions||[];
@@ -3967,7 +3980,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
               plaidId:t.transaction_id,plaidCategory:t.category?.join(' > ')||''
             }),custom:true});imported++;
           });
-          notify(imported+' new transaction'+(imported!==1?'s':'')+' imported from bank');
+          notify(imported+' transaction'+(imported!==1?'s':'')+' imported ('+startDate+' to '+endDate+')');
         }catch(err){notify('Sync error: '+err.message,'error')}
         setPlaidLoading(false);
       };
@@ -3983,9 +3996,14 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
         <Card style={{padding:16}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
             <div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>{manualEditing?'Edit Transaction':'Add Transaction'}</div>
-            {plaidStatus==='connected'&&<div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}><div style={{width:8,height:8,borderRadius:"50%",background:"#34d399",boxShadow:"0 0 6px #34d39960"}}/><span style={{fontSize:11,color:"#34d399",fontWeight:600}}>{plaidBankName||'Bank'} connected</span><Btn v="secondary" style={{fontSize:11,padding:"4px 10px"}} onClick={handlePlaidSync}>{plaidLoading?'Syncing...':'Sync Transactions'}</Btn><Btn v="secondary" style={{fontSize:11,padding:"4px 10px",color:"#f87171",border:"1px solid #f8717130"}} onClick={()=>{localStorage.removeItem('mw_plaid_access_token');localStorage.removeItem('mw_plaid_status');localStorage.removeItem('mw_plaid_bank_name');setPlaidAccessToken('');setPlaidStatus('disconnected');setPlaidBankName('');notify('Bank disconnected')}}>Disconnect</Btn></div>}
+            {plaidStatus==='connected'&&<div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}><div style={{width:8,height:8,borderRadius:"50%",background:"#34d399",boxShadow:"0 0 6px #34d39960"}}/><span style={{fontSize:11,color:"#34d399",fontWeight:600}}>{plaidBankName||'Bank'} connected</span><Btn v="secondary" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>handlePlaidSync()}>{plaidLoading?'Syncing...':'Sync'}</Btn><Btn v="secondary" style={{fontSize:11,padding:"4px 10px",color:"#f87171",border:"1px solid #f8717130"}} onClick={()=>{localStorage.removeItem('mw_plaid_access_token');localStorage.removeItem('mw_plaid_status');localStorage.removeItem('mw_plaid_bank_name');setPlaidAccessToken('');setPlaidStatus('disconnected');setPlaidBankName('');notify('Bank disconnected')}}>Disconnect</Btn></div>}
             {plaidStatus!=='connected'&&<div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:8,height:8,borderRadius:"50%",background:"#525252"}}/><span style={{fontSize:11,color:"#525252"}}>Bank not connected</span><Btn v="secondary" style={{fontSize:11,padding:"4px 10px"}} onClick={handlePlaidConnect}>{plaidLoading?'Loading...':'Connect Bank (Plaid)'}</Btn></div>}
           </div>
+          {plaidStatus==='connected'&&<div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginBottom:12,padding:"8px 12px",background:"#111",borderRadius:8,border:"1px solid #222"}}>
+            <span style={{fontSize:11,color:"#737373",fontWeight:600}}>Sync range:</span>
+            {[["month","1 Month"],["quarter","3 Months"],["6months","6 Months"],["year","1 Year"],["2years","2 Years"],["all","All Time"],["custom","Custom"]].map(([v,l])=><button key={v} onClick={()=>{setPlaidSyncRange(v);if(v!=='custom')handlePlaidSync(v)}} style={{padding:"4px 10px",borderRadius:6,border:"none",cursor:"pointer",background:plaidSyncRange===v?"#2dd4bf":"transparent",color:plaidSyncRange===v?"#000":"#525252",fontSize:11,fontWeight:plaidSyncRange===v?600:400,fontFamily:"inherit",transition:"all 0.15s"}}>{l}</button>)}
+            {plaidSyncRange==='custom'&&<><input type="date" value={plaidSyncFrom} onChange={e=>setPlaidSyncFrom(e.target.value)} style={{padding:"3px 6px",background:"#0a0a0a",border:"1px solid #333",borderRadius:6,color:"#f0f0f0",fontSize:11,fontFamily:"inherit"}}/><span style={{color:"#525252",fontSize:11}}>to</span><input type="date" value={plaidSyncTo} onChange={e=>setPlaidSyncTo(e.target.value)} style={{padding:"3px 6px",background:"#0a0a0a",border:"1px solid #333",borderRadius:6,color:"#f0f0f0",fontSize:11,fontFamily:"inherit"}}/><Btn style={{fontSize:11,padding:"4px 10px"}} onClick={()=>handlePlaidSync('custom')}>{plaidLoading?'...':'Sync Range'}</Btn></>}
+          </div>}
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10,marginBottom:12}}>
             <div><label style={{fontSize:11,color:"#a3a3a3",display:"block",marginBottom:3}}>Date</label><input type="date" value={manualForm.date} onChange={e=>setManualForm({...manualForm,date:e.target.value})} style={inputStyle}/></div>
             <div><label style={{fontSize:11,color:"#a3a3a3",display:"block",marginBottom:3}}>Description</label><input value={manualForm.description} onChange={e=>setManualForm({...manualForm,description:e.target.value})} placeholder="e.g. Smith System payment" style={inputStyle}/></div>
