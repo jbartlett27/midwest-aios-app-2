@@ -3225,7 +3225,7 @@ function TasksKanban({jobs,allJobs,reps,updateJob,notify,customSops,addSop,delet
   const colColors={"To Do":"#fbbf24","In Progress":"#2dd4bf","Done":"#34d399"};
   const priColors={"high":"#f87171","normal":"#525252","low":"#333"};
 
-  const saveTask=(td,existingId)=>{const jn=td.jobId?(allJobs||jobs).find(j=>j.id===td.jobId)?.name||"":"";const sop={id:existingId||("TASK-"+Math.random().toString(36).slice(2,8)),title:td.text||"Untitled",cat:"Task",icon:"check",content:JSON.stringify({...td,jobName:jn}),custom:true};addSop(sop);notify(existingId?"Task updated":"Task created")};
+  const saveTask=(td,existingId)=>{const jn=td.jobId?(allJobs||jobs).find(j=>j.id===td.jobId)?.name||"":"";const {id:_id,sopId:_sid,isNew:_n,...cleanTd}=td;const sop={id:existingId||("TASK-"+Math.random().toString(36).slice(2,8)),title:td.text||"Untitled",cat:"Task",icon:"check",content:JSON.stringify({...cleanTd,jobName:jn}),custom:true};addSop(sop);notify(existingId?"Task updated":"Task created")};
   const moveTask=(id,newStatus)=>{const t=allTasks.find(x=>x.id===id);if(t)saveTask({...t,status:newStatus},t.sopId)};
   const handleDragStart=(e,id)=>{setDragId(id);e.dataTransfer.setData("taskId",id);e.dataTransfer.effectAllowed="move"};
   const handleDrop=(e,status)=>{e.preventDefault();const id=e.dataTransfer.getData("taskId")||dragId;if(id)moveTask(id,status);setDragId(null)};
@@ -3254,7 +3254,7 @@ function TasksKanban({jobs,allJobs,reps,updateJob,notify,customSops,addSop,delet
 // Edit Task Overlay (click blank space to close)
 function EditTaskOverlay({task,setEditTask,jobs,reps,saveTask,deleteSop,notify,inputStyle}){
   const [t,setT]=useState({...task});
-  const handleSave=()=>{if(t.text?.trim()){saveTask(t,t.isNew?null:t.sopId)}setEditTask(null)};
+  const handleSave=()=>{if(t.text?.trim()){saveTask(t,t.isNew?null:(t.sopId||t.id))}setEditTask(null)};
   const handleDelete=()=>{const id=t.sopId||t.id;if(id){deleteSop(id)}setEditTask(null);notify("Task deleted")};
   return <div onClick={(e)=>{if(e.target===e.currentTarget)setEditTask(null)}} style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(10,10,10,0.75)",backdropFilter:"blur(40px) saturate(180%)",WebkitBackdropFilter:"blur(40px) saturate(180%)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
     <div onClick={e=>e.stopPropagation()} style={{background:"#0a0a0a",borderRadius:16,border:"1px solid rgba(45,212,191,0.15)",padding:24,width:"100%",maxWidth:480,maxHeight:"85vh",overflow:"auto"}}>
