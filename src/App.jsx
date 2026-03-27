@@ -1793,7 +1793,7 @@ function DeliveryPage({jobs,lineItems,vendors,customers,getItemStatus,getJobItem
   allItems.forEach(item=>{if(!jobGroups[item.jobId])jobGroups[item.jobId]={job:jobs.find(j=>j.id===item.jobId),items:[]};jobGroups[item.jobId].items.push(item)});
   const groupedJobs=Object.values(jobGroups).filter(g=>g.job);
 
-  const handleReceive=()=>{const qty=parseInt(receiveQty)||0;if(qty<=0)return;const newRcv=Math.min(receiveModal.qtyReceived+qty,receiveModal.qtyOrdered);updateLineItem(receiveModal.id,{qtyReceived:newRcv,deliveryDate:new Date().toISOString().split("T")[0]});notify(`Logged ${qty} units received`);setReceiveModal(null);setReceiveQty("")};
+  const handleReceive=(item)=>{const qty=parseInt(receiveQty)||0;if(qty<=0)return;const newRcv=Math.min((item||receiveModal).qtyReceived+qty,(item||receiveModal).qtyOrdered);updateLineItem((item||receiveModal).id,{qtyReceived:newRcv,deliveryDate:new Date().toISOString().split("T")[0]});notify(`Logged ${qty} units received`);setReceiveModal(null);setReceiveQty("")};
   const completeAll=(jobItems)=>{jobItems.forEach(item=>{updateLineItem(item.id,{qtyReceived:item.qtyOrdered,deliveryDate:new Date().toISOString().split("T")[0]})});notify(`All ${jobItems.length} items marked complete`)};
 
   return <div style={{animation:"fadeUp 0.4s"}}><Header title="Deliveries" sub="Track shipments and plan receiving"/>
@@ -1806,7 +1806,7 @@ function DeliveryPage({jobs,lineItems,vendors,customers,getItemStatus,getJobItem
       <StatCard label="Total Ordered" value={fmtN(lineItems.reduce((s,i)=>s+i.qtyOrdered,0))} sub="units" icon="package" color="#525252"/>
       <StatCard label="Total Received" value={fmtN(lineItems.reduce((s,i)=>s+i.qtyReceived,0))} sub="units" icon="check" color="#34d399"/>
     </div>
-    {receiveModal&&<Card style={{marginBottom:20,border:"1px solid #d9770644"}}><div style={{fontSize:14,fontWeight:700,marginBottom:12,color:"#fbbf24"}}>Log Shipment Received</div><div style={{fontSize:13,color:"#a3a3a3",marginBottom:4}}>{receiveModal.description}</div><div style={{fontSize:12,color:"#a3a3a3",marginBottom:12}}>Outstanding: {fmtN(receiveModal.qtyOrdered-receiveModal.qtyReceived)} units - Already received: {fmtN(receiveModal.qtyReceived)}</div><div style={{display:"flex",gap:8,alignItems:"center"}}><input type="number" value={receiveQty} onChange={e=>setReceiveQty(e.target.value)} placeholder="Qty received" min="1" max={receiveModal.qtyOrdered-receiveModal.qtyReceived} style={{...inputStyle,width:120}}/><Btn onClick={handleReceive}>Log Receipt</Btn><Btn v="secondary" onClick={()=>{setReceiveModal(null);setReceiveQty("")}}>Cancel</Btn></div></Card>}
+    {/* Inline receive is now handled per-row in the table below */}
 
     {groupedJobs.length===0&&<Card style={{textAlign:"center",padding:40}}><div style={{fontSize:16,color:"#34d399",fontWeight:600,marginBottom:4}}>{delFilter==="pending"?"All deliveries complete":delFilter==="delivered"?"No delivered items yet":"No items found"}</div><div style={{fontSize:13,color:"#a3a3a3"}}>{delFilter==="pending"?"No outstanding items across any job.":"Try a different filter."}</div></Card>}
 
@@ -1829,15 +1829,21 @@ function DeliveryPage({jobs,lineItems,vendors,customers,getItemStatus,getJobItem
         <div style={{overflowX:"auto",marginTop:12,borderRadius:8,border:"1px solid #222222"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:600}}>
             <thead><tr style={{background:"#111111"}}><th style={{padding:"8px 10px",textAlign:"left",color:"#a3a3a3",fontSize:12,textTransform:"uppercase",letterSpacing:0.5,minWidth:150}}>Item</th><th style={{padding:"8px 10px",textAlign:"left",color:"#a3a3a3",fontSize:12,textTransform:"uppercase"}}>Vendor</th><th style={{padding:"8px 10px",textAlign:"right",color:"#a3a3a3",fontSize:12,textTransform:"uppercase"}}>Ordered</th><th style={{padding:"8px 10px",textAlign:"right",color:"#a3a3a3",fontSize:12,textTransform:"uppercase"}}>Received</th><th style={{padding:"8px 10px",textAlign:"right",color:"#a3a3a3",fontSize:12,textTransform:"uppercase"}}>Outstanding</th><th style={{padding:"8px 10px",textAlign:"center",color:"#a3a3a3",fontSize:12,textTransform:"uppercase"}}>Progress</th><th style={{padding:"8px 10px"}}></th></tr></thead>
-            <tbody>{items.map(item=><tr key={item.id} style={{borderBottom:"1px solid rgba(255,255,255,0.04)20"}}>
+            <tbody>{items.map(item=>{
+              const isEditing=receiveModal?.id===item.id;
+              const outstanding=item.qtyOrdered-item.qtyReceived;
+              return <React.Fragment key={item.id}>
+              <tr style={{borderBottom:isEditing?"none":"1px solid rgba(255,255,255,0.04)20"}}>
               <td style={{padding:"8px 10px",color:"#a3a3a3"}}>{item.description}</td>
               <td style={{padding:"8px 10px",color:"#c4c4c4"}}>{vendors.find(v=>v.id===item.vendor)?.name||"--"}</td>
               <td style={{padding:"8px 10px",textAlign:"right",color:"#a3a3a3",fontFamily:"'JetBrains Mono',monospace"}}>{fmtN(item.qtyOrdered)}</td>
               <td style={{padding:"8px 10px",textAlign:"right",color:item.qtyReceived>0?"#fbbf24":"#525252",fontFamily:"'JetBrains Mono',monospace"}}>{fmtN(item.qtyReceived)}</td>
-              <td style={{padding:"8px 10px",textAlign:"right",fontWeight:600,color:"#f87171",fontFamily:"'JetBrains Mono',monospace"}}>{fmtN(item.qtyOrdered-item.qtyReceived)}</td>
+              <td style={{padding:"8px 10px",textAlign:"right",fontWeight:600,color:outstanding>0?"#f87171":"#34d399",fontFamily:"'JetBrains Mono',monospace"}}>{fmtN(outstanding)}</td>
               <td style={{padding:"8px 10px"}}><div style={{width:80,margin:"0 auto"}}><Bar value={item.qtyReceived} max={item.qtyOrdered} color={item.qtyReceived>0?"#fbbf24":"#333333"} height={4}/></div></td>
-              <td style={{padding:"8px 10px"}}><div style={{display:"flex",gap:4,justifyContent:"flex-end"}}><Btn v="ghost" style={{fontSize:12,padding:"3px 8px"}} onClick={e=>{e.stopPropagation();setReceiveModal(item)}}>Receive</Btn><Btn v="secondary" style={{fontSize:12,padding:"3px 6px"}} onClick={e=>{e.stopPropagation();updateLineItem(item.id,{qtyReceived:item.qtyOrdered,deliveryDate:new Date().toISOString().split("T")[0]});notify("Complete")}}>Done</Btn></div></td>
-            </tr>)}</tbody>
+              <td style={{padding:"8px 10px"}}>{outstanding>0?<div style={{display:"flex",gap:4,justifyContent:"flex-end"}}>{isEditing?<Btn v="ghost" style={{fontSize:12,padding:"3px 8px",color:"#737373"}} onClick={e=>{e.stopPropagation();setReceiveModal(null);setReceiveQty("")}}>Cancel</Btn>:<Btn v="ghost" style={{fontSize:12,padding:"3px 8px"}} onClick={e=>{e.stopPropagation();setReceiveModal(item);setReceiveQty(String(outstanding))}}>Receive</Btn>}<Btn v="secondary" style={{fontSize:12,padding:"3px 6px"}} onClick={e=>{e.stopPropagation();updateLineItem(item.id,{qtyReceived:item.qtyOrdered,deliveryDate:new Date().toISOString().split("T")[0]});notify("Complete")}}>Done</Btn></div>:<Badge label="complete" color="#34d399"/>}</td>
+            </tr>
+            {isEditing&&<tr style={{borderBottom:"1px solid rgba(255,255,255,0.04)20"}}><td colSpan={7} style={{padding:"8px 10px 12px"}}><div style={{display:"flex",gap:8,alignItems:"center",background:"#111",padding:"10px 12px",borderRadius:8,border:"1px solid #d9770630"}}><span style={{fontSize:12,color:"#fbbf24",fontWeight:600,whiteSpace:"nowrap"}}>Receive:</span><span style={{fontSize:12,color:"#a3a3a3",whiteSpace:"nowrap"}}>{item.description}</span><span style={{fontSize:11,color:"#737373",whiteSpace:"nowrap"}}>({fmtN(outstanding)} outstanding)</span><input type="number" value={receiveQty} onChange={e=>setReceiveQty(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')handleReceive(item)}} placeholder="Qty" min="1" max={outstanding} autoFocus style={{...inputStyle,width:80,padding:"4px 8px",textAlign:"center",fontFamily:"'JetBrains Mono',monospace"}}/><Btn onClick={()=>handleReceive(item)} style={{fontSize:12,padding:"4px 12px"}}>Log</Btn><Btn v="secondary" style={{fontSize:12,padding:"4px 8px"}} onClick={()=>{setReceiveModal(null);setReceiveQty("")}}>Cancel</Btn></div></td></tr>}
+            </React.Fragment>})}</tbody>
           </table>
         </div>
       </Card>})}
