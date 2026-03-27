@@ -752,6 +752,7 @@ function MidwestAIOSInner() {
   const [notification, setNotification] = useState(null);
   const [brainQuery, setBrainQuery] = useState("");
   const [brainLoading, setBrainLoading] = useState(false);
+  const [brainHistory, setBrainHistory] = useState([{role:"system",content:"Welcome to the Midwest Brain. I'm connected to Claude Sonnet 4.6 and have access to all your live data -- jobs, vendors, customers, deliveries, financials, SOPs, notes, and tasks. Ask me anything."}]);
   const [qbConfig, setQbConfig] = useState({connected:false, clientId:"", clientSecret:"", realmId:"", accessToken:"", refreshToken:""});
   const [dbStatus, setDbStatus] = useState("connecting");
   const [appReady, setAppReady] = useState(false);
@@ -919,7 +920,7 @@ function MidwestAIOSInner() {
 
   
   const visibleJobs = userRole === "sales" && userRepId ? jobs.filter(j => j.salesRep === userRepId) : jobs;
-  const ctx = {jobs:visibleJobs,allJobs:jobs,setJobs,jobNum,currentUser,userRole,userRepId,logout,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,forceDeleteVendor,forceDeleteLineItem,forceDeleteCustomer,forceDeleteRep,setPage:p=>{setPage(p);setMobileMenuOpen(false)},viewCustomer:id=>{setPage("customer360");window._viewCustId=id},brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,qbConfig,setQbConfig,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter,pendingCommPreview,setPendingCommPreview};
+  const ctx = {jobs:visibleJobs,allJobs:jobs,setJobs,jobNum,currentUser,userRole,userRepId,logout,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,forceDeleteVendor,forceDeleteLineItem,forceDeleteCustomer,forceDeleteRep,setPage:p=>{setPage(p);setMobileMenuOpen(false)},viewCustomer:id=>{setPage("customer360");window._viewCustId=id},brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory,qbConfig,setQbConfig,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter,pendingCommPreview,setPendingCommPreview};
 
   const loadingScreen = (
 <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",width:"100vw",background:"#0a0a0a",fontFamily:"'Satoshi',sans-serif"}}>
@@ -3417,86 +3418,26 @@ function NotesPage({customSops,addSop,deleteSop,jobs,reps,notify,triggerPrint}){
   return <div style={{animation:"fadeUp 0.4s"}}><Header title="Notes" sub={(customSops||[]).filter(s=>s.cat==="Notes").length+" notes saved"}/><NotesView customSops={customSops} addSop={addSop} deleteSop={deleteSop} jobs={jobs} reps={reps} notify={notify} triggerPrint={triggerPrint}/></div>;
 }
 
-function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJobItems,brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading}){
-  const [history,setHistory]=useState([{role:"system",content:"Welcome to the Midwest Brain. I'm connected to Claude Sonnet 4.6 and have access to all your live data -- jobs, vendors, customers, deliveries, financials, SOPs, notes, and tasks. Ask me anything."}]);
+function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJobItems,brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory}){
+  const history=brainHistory;const setHistory=setBrainHistory;
   const suggestedQueries=["What is our total pipeline revenue?","Which vendor do we spend the most with?","Show me all jobs that are In Progress","What is our average margin?","Which reps have the highest revenue?","List all overdue deliveries","Summarize our commission obligations","What SOPs do we have documented?"];
   const chatRef=useRef(null);
-  useEffect(()=>{if(chatRef.current)chatRef.current.scrollTop=chatRef.current.scrollHeight},[history]);
-
-  // API key stored server-side in /api/brain.js
+  const [animatingIdx,setAnimatingIdx]=useState(-1);
+  useEffect(()=>{if(chatRef.current)chatRef.current.scrollTop=chatRef.current.scrollHeight},[history,animatingIdx]);
 
   const buildContext = (query) => {
     const q = (query || "").toLowerCase();
     const wantsSops = /sop|playbook|process|procedure|how.?to|training|workflow|step|guide|protocol|policy|onboard/i.test(q);
-    const wantsNotes = /note|meeting|call|memo|record|log|wrote|written/i.test(q);
-    const wantsItems = /item|line item|product|model|furniture|chair|desk|table|smith|virco|vendor spend|what did we order/i.test(q);
-
-    const jobSummaries = jobs.map(j => {
-      const c = customers.find(c => c.id === j.customer);
-      const r = reps.find(r => r.id === j.salesRep);
-      const items = lineItems.filter(li => li.jobId === j.id);
-      const rev = items.reduce((s,i) => s + (i.unitPrice||0) * i.qtyOrdered, 0);
-      const cost = items.reduce((s,i) => s + (i.unitCost||0) * i.qtyOrdered, 0);
-      const rcvd = items.reduce((s,i) => s + i.qtyReceived, 0);
-      const ord = items.reduce((s,i) => s + i.qtyOrdered, 0);
-      let out = j.name + "|" + j.phase + "|" + (c?.name||"?") + "|" + (r?.name||"?") + "|rev$" + Math.round(rev) + "|cost$" + Math.round(cost) + "|margin" + (rev>0?Math.round((rev-cost)/rev*100):0) + "%|" + rcvd + "/" + ord + "del|pay=" + j.paymentStatus + "|" + (j.dueDate||"-");
-      if (wantsItems) {
-        out += "\n  " + items.slice(0,15).map(i => {
-          const v = vendors.find(vn => vn.id === i.vendor);
-          return (v?.name||"?") + "|" + (i.modelNumber||"") + "|" + (i.description||"").substring(0,30) + "|q" + i.qtyOrdered + "|$" + (i.unitPrice||0);
-        }).join("\n  ");
-      }
-      return out;
-    }).join("\n");
-
-    const vendorSummaries = vendors.map(v => {
-      const ct = lineItems.filter(i => i.vendor === v.id).length;
-      const spend = lineItems.filter(i => i.vendor === v.id).reduce((s,i) => s + (i.unitCost||0) * i.qtyOrdered, 0);
-      return v.name + "|" + (v.category||"-") + "|" + ct + "items|$" + Math.round(spend) + "|disc" + Math.round((v.discountRate||0)*100) + "%";
-    }).join("\n");
-
-    const custSummaries = customers.map(c => {
-      const cj = jobs.filter(j => j.customer === c.id);
-      const rev = cj.reduce((s,j) => {const items=lineItems.filter(li=>li.jobId===j.id);return s+items.reduce((ss,i)=>ss+(i.unitPrice||0)*i.qtyOrdered,0)},0);
-      return c.name + "|" + (c.type||"-") + "|" + cj.length + "jobs|$" + Math.round(rev);
-    }).join("\n");
-
-    const repSummaries = reps.filter(r => !r.id.includes("SEED_FLAG")).map(r => {
-      const rj = jobs.filter(j => j.salesRep === r.id);
-      const rev = rj.reduce((s,j) => {const items=lineItems.filter(li=>li.jobId===j.id);return s+items.reduce((ss,i)=>ss+(i.unitPrice||0)*i.qtyOrdered,0)},0);
-      return r.name + "|" + (r.territory||"-") + "|rate" + Math.round((r.commissionRate||0)*100) + "%|" + rj.length + "jobs|$" + Math.round(rev);
-    }).join("\n");
-
-    let sopText = "";
-    if (wantsSops) {
-      const allS = [...DEFAULT_SOPS, ...(customSops||[]).filter(s => s.cat !== "Task" && s.cat !== "Notes" && s.cat !== "DocStatuses")];
-      sopText = allS.map(s => {
-        const t = (s.content||"").replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim();
-        return "## " + s.title + "\n" + t;
-      }).join("\n\n");
-    } else {
-      const allS = [...DEFAULT_SOPS, ...(customSops||[]).filter(s => s.cat !== "Task" && s.cat !== "Notes" && s.cat !== "DocStatuses")];
-      sopText = allS.map(s => s.title + " (" + s.cat + ")").join(", ");
-    }
-
-    let noteText = "";
-    if (wantsNotes) {
-      noteText = (customSops||[]).filter(s => s.cat === "Notes").map(s => {
-        let t="";try{const d=JSON.parse(s.content);t=(d.text||"").replace(/<[^>]+>/g," ").trim()}catch{t=(s.content||"").replace(/<[^>]+>/g," ").trim()}
-        return s.title + ": " + t;
-      }).join("\n");
-    } else {
-      noteText = (customSops||[]).filter(s => s.cat === "Notes").map(s => s.title).join(", ");
-    }
-
-    const taskText = (customSops||[]).filter(s => s.cat === "Task").map(s => {
-      try{const d=JSON.parse(s.content);return (d.text||s.title)+"|"+(d.status||"To Do")+"|due:"+(d.due||"-")}catch{return s.title}
-    }).join("\n");
-
-    const today = new Date().toISOString().split("T")[0];
-    const totalRev = jobs.reduce((s,j)=>{const items=lineItems.filter(li=>li.jobId===j.id);return s+items.reduce((ss,i)=>ss+(i.unitPrice||0)*i.qtyOrdered,0)},0);
-    const totalCost = jobs.reduce((s,j)=>{const items=lineItems.filter(li=>li.jobId===j.id);return s+items.reduce((ss,i)=>ss+(i.unitCost||0)*i.qtyOrdered,0)},0);
-
+    const today = new Date().toLocaleDateString("en-US", {weekday:"long",year:"numeric",month:"long",day:"numeric"});
+    const totalRev = jobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
+    const totalCost = jobs.reduce((s,j)=>s+getJobFinancials(j.id).totalCost,0);
+    const jobSummaries = jobs.map(j => {const f=getJobFinancials(j.id);const c=customers.find(c2=>c2.id===j.customer);const r=reps.find(r2=>r2.id===j.salesRep);const items=getJobItems(j.id);const totalOrd=items.reduce((s2,i2)=>s2+i2.qtyOrdered,0);const totalRcv=items.reduce((s2,i2)=>s2+i2.qtyReceived,0);return j.name+"("+j.phase+"|"+(c?.name||"")+" | Rep:"+(r?.name||"")+" | Rev:$"+Math.round(f.totalRevenue)+" | Cost:$"+Math.round(f.totalCost)+" | Margin:"+f.margin.toFixed(1)+"% | Delivered:"+totalRcv+"/"+totalOrd+" | Pay:"+j.paymentStatus+" | Due:"+(j.dueDate||"none")+" | ID:"+j.id+")"}).join("\n");
+    const vendorSummaries = vendors.map(v=>{const spend=lineItems.filter(i=>i.vendor===v.id).reduce((s2,i2)=>s2+i2.unitCost*i2.qtyOrdered,0);const itemCount=lineItems.filter(i=>i.vendor===v.id).length;return v.name+"("+v.category+" | Spend:$"+Math.round(spend)+" | "+itemCount+" items | Discount:"+(v.discountRate*100).toFixed(0)+"% | "+v.email+")"}).join("\n");
+    const custSummaries = customers.map(c=>{const cJobs=jobs.filter(j=>j.customer===c.id);const rev=cJobs.reduce((s2,j)=>s2+getJobFinancials(j.id).totalRevenue,0);return c.name+"("+c.type+" | "+cJobs.length+" jobs | Rev:$"+Math.round(rev)+" | "+(c.email||"")+")"}).join("\n");
+    const repSummaries = reps.filter(r=>!r.id.includes("SEED_FLAG")).map(r=>{const rJobs=jobs.filter(j=>j.salesRep===r.id);const rev=rJobs.reduce((s2,j)=>s2+getJobFinancials(j.id).totalRevenue,0);return r.name+"("+r.territory+" | "+rJobs.length+" jobs | Rev:$"+Math.round(rev)+" | Rate:"+(r.commissionRate*100).toFixed(0)+"%)"}).join("\n");
+    const sopText = wantsSops ? (customSops||[]).filter(s=>!["Notes","Task","DocStatuses","ManualTxn","HistoricalDoc","Settings"].includes(s.cat)).map(s=>s.title+": "+s.content.slice(0,800)).join("\n\n") : (customSops||[]).filter(s=>!["Notes","Task","DocStatuses","ManualTxn","HistoricalDoc","Settings"].includes(s.cat)).map(s=>s.title).join(", ");
+    const taskText = (customSops||[]).filter(s=>s.cat==="Task").map(s=>{try{const d=JSON.parse(s.content);return d.text+" ["+d.status+"]"+(d.assignees?.length?" -> "+d.assignees.join(","):"")+(d.due?" due:"+d.due:"")}catch{return s.title}}).join("\n");
+    const noteText = (customSops||[]).filter(s=>s.cat==="Notes").slice(0,10).map(s=>s.title).join(", ");
     return "You are the Midwest Brain for Midwest Educational Furnishings (Kildeer, IL). Owner: Maureen Welter. Today: " + today + "\n\nSTATS: " + jobs.length + " jobs|Rev $" + Math.round(totalRev) + "|Cost $" + Math.round(totalCost) + "|Margin " + (totalRev>0?Math.round((totalRev-totalCost)/totalRev*100):0) + "%|" + lineItems.length + " line items|" + vendors.length + " vendors|" + customers.length + " customers\n\nJOBS:\n" + jobSummaries + "\n\nVENDORS:\n" + vendorSummaries + "\n\nCUSTOMERS:\n" + custSummaries + "\n\nREPS:\n" + repSummaries + "\n\nSOPS: " + sopText + "\n\nTASKS:\n" + (taskText||"None") + "\n\nNOTES: " + (noteText||"None") + "\n\nINSTRUCTIONS:\n1. Be specific -- always use real names, dollar amounts, dates, and percentages from the data.\n2. When asked about financials, SHOW YOUR MATH: revenue = sum(unitPrice * qty), cost = sum(unitCost * qty), margin = (rev-cost)/rev * 100.\n3. Compare today (" + today + ") against due dates and delivery dates. Proactively flag anything overdue or due within 7 days.\n4. If a job has 0% margin or negative margin, flag it as a concern.\n5. When asked about a specific job, give a full status briefing: phase, customer, rep, revenue, margin, delivery progress, payment status, and any issues.\n6. When asked about a vendor, include total spend, number of items, discount rate, and which jobs use them.\n7. When asked about a customer, include total revenue, number of jobs, payment history, and relationship health.\n8. If you spot patterns (e.g. one vendor has most items, one rep has most revenue, margin trending down), mention them even if not asked.\n9. For process questions, give step-by-step answers from the SOPs. If the SOP content is abbreviated, tell the user to ask again mentioning playbook or SOP for full details.\n10. Think like a CFO and COO combined. Every answer should help Maureen make a decision or take action.\n11. Keep answers concise but complete. Use bold headers and bullet points for readability.\n12. At the end of every response, suggest 2-3 follow-up questions the user might find valuable:\n>> [question 1]\n>> [question 2]\n>> [question 3]\n13. NEVER use emoji in any response. No exceptions. Keep it clean and professional -- text only.";
   };
 
@@ -3506,23 +3447,19 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     setBrainQuery("");
     setHistory(p => [...p, { role: "user", content: q }]);
     setBrainLoading(true);
-
     try {
       const ctx = buildContext(q);
       const msgs = [...history.filter(h=>h.role==="user"||h.role==="assistant").slice(-8).map(h=>({role:h.role,content:h.content})),{role:"user",content:q}];
       let data;
       try {
-        const response = await fetch("/api/brain", {
-          method: "POST",
-          headers: {"Content-Type": "application/json"},
-          body: JSON.stringify({system: ctx, messages: msgs})
-        });
+        const response = await fetch("/api/brain", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({system:ctx,messages:msgs})});
         data = await response.json();
-      } catch(err) {
-        data = {error:{message:"Network error: " + err.message}};
-      }
+      } catch(err) {data = {error:{message:"Network error: " + err.message}}}
       if (data.content && data.content[0]) {
+        const newIdx=history.length+1;
         setHistory(p => [...p, { role: "assistant", content: data.content[0].text }]);
+        setAnimatingIdx(newIdx);
+        setTimeout(()=>setAnimatingIdx(-1),800);
       } else if (data.error) {
         const msg = data.error.message || JSON.stringify(data.error);
         const isRateLimit = msg.includes("rate limit") || msg.includes("rate_limit");
@@ -3539,39 +3476,42 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
   const renderMsg = (text) => {
     return text.split("\n").map((line,i) => {
       const bold = line.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-      if (line.startsWith("- ") || line.startsWith("* ")) return <div key={i} style={{display:"flex",gap:8,padding:"2px 0"}}><div style={{width:5,height:5,borderRadius:"50%",background:"#2dd4bf",marginTop:7,flexShrink:0}}/><span dangerouslySetInnerHTML={{__html:bold.slice(2)}}/></div>;
+      if (line.startsWith(">> ")) return <div key={i} onClick={()=>{setBrainQuery(line.slice(3));setTimeout(handleQuery,50)}} style={{padding:"6px 12px",margin:"3px 0",borderRadius:8,border:"1px solid rgba(45,212,191,0.12)",background:"rgba(45,212,191,0.03)",color:"#2dd4bf",fontSize:12,cursor:"pointer",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(45,212,191,0.08)"}} onMouseLeave={e=>{e.currentTarget.style.background="rgba(45,212,191,0.03)"}}>{line.slice(3)}</div>;
+      if (line.startsWith("- ") || line.startsWith("* ")) return <div key={i} style={{display:"flex",gap:8,padding:"2px 0"}}><div style={{width:4,height:4,borderRadius:"50%",background:"#2dd4bf",marginTop:8,flexShrink:0}}/><span dangerouslySetInnerHTML={{__html:bold.slice(2)}}/></div>;
       if (bold !== line) return <div key={i} style={{padding:"2px 0"}} dangerouslySetInnerHTML={{__html:bold}}/>;
       return <div key={i} style={{padding:"2px 0",minHeight:line?"auto":8}}>{line}</div>;
     });
   };
 
-  return <div style={{animation:"fadeUp 0.4s",display:"flex",flexDirection:"column",height:"calc(100vh - 80px)"}}>
-    <Header title="Brain" sub="Connected to Claude Sonnet 4.6"/>
-    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+  return <div style={{display:"flex",flexDirection:"column",height:"calc(100vh - 80px)",background:"#000"}}>
+    <div style={{display:"flex",alignItems:"center",gap:8,padding:"12px 16px"}}>
       <div style={{width:10,height:10,borderRadius:"50%",background:"#34d399",boxShadow:"0 0 8px #34d39980"}}/>
       <span style={{fontSize:13,color:"#34d399",fontWeight:600}}>Live</span>
-      <span style={{fontSize:12,color:"#737373"}}>Claude has access to {jobs.length} jobs, {vendors.length} vendors, {customers.length} customers, {lineItems.length} line items, {(customSops||[]).filter(s=>s.cat==="Task").length} tasks, {(customSops||[]).filter(s=>s.cat==="Notes").length} notes</span>
+      <span style={{fontSize:13,fontWeight:700,color:"#f0f0f0"}}>Midwest Brain</span>
+      <span style={{fontSize:11,color:"#333"}}>|</span>
+      <span style={{fontSize:11,color:"#525252"}}>{jobs.length} jobs, {vendors.length} vendors, {customers.length} customers</span>
     </div>
-    {/* Chat area */}
-    <Card style={{padding:0,overflow:"hidden",flex:1,display:"flex",flexDirection:"column",minHeight:0}}>
-      <div ref={chatRef} style={{flex:1,overflowY:"auto",padding:16,display:"flex",flexDirection:"column",gap:12,background:"#0a0a0a",minHeight:0}}>
-        {history.map((msg,i)=><div key={i} style={{display:"flex",justifyContent:msg.role==="user"?"flex-end":"flex-start"}}>
-          <div style={{maxWidth:"85%",padding:"10px 14px",borderRadius:msg.role==="user"?"14px 14px 4px 14px":"14px 14px 14px 4px",background:msg.role==="user"?"linear-gradient(135deg,#2dd4bf,#14b8a6)":msg.role==="system"?"rgba(167,139,250,0.08)":"#111",color:msg.role==="user"?"#000":"#e5e5e5",fontSize:13,lineHeight:1.7}}>{msg.role==="system"?<span style={{color:"#a78bfa"}}>{msg.content}</span>:renderMsg(msg.content)}</div>
-        </div>)}
-        {brainLoading&&<div style={{display:"flex",gap:4,padding:8}}><div style={{width:6,height:6,borderRadius:"50%",background:"#2dd4bf",animation:"pulse 1s infinite"}}/>
-          <div style={{width:6,height:6,borderRadius:"50%",background:"#2dd4bf",animation:"pulse 1s infinite 0.2s"}}/>
-          <div style={{width:6,height:6,borderRadius:"50%",background:"#2dd4bf",animation:"pulse 1s infinite 0.4s"}}/></div>}
-      </div>
-      <div style={{display:"flex",gap:8,padding:12,borderTop:"1px solid #1a1a1a",background:"#0a0a0a",flexShrink:0}}>
-        <input value={brainQuery} onChange={e=>setBrainQuery(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")handleQuery()}} placeholder="Ask the Brain anything..." style={{flex:1,padding:"10px 14px",background:"#000",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,color:"#e5e5e5",fontSize:13,outline:"none",fontFamily:"inherit"}}/>
-        <button onClick={handleQuery} disabled={brainLoading} style={{padding:"10px 20px",borderRadius:10,border:"none",background:"#2dd4bf",color:"#000",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",opacity:brainLoading?0.5:1}}>Send</button>
-      </div>
-    </Card>
-    {/* Suggested queries */}
-    {history.length<=1&&<div style={{display:"flex",flexWrap:"wrap",gap:8,marginTop:12}}>{suggestedQueries.map(q=><button key={q} onClick={()=>{setBrainQuery(q);setTimeout(()=>{handleQuery()},50)}} style={{padding:"8px 14px",borderRadius:8,border:"1px solid rgba(45,212,191,0.15)",background:"transparent",color:"#2dd4bf",fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"all 0.2s"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(45,212,191,0.06)"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>{q}</button>)}</div>}
+    <div ref={chatRef} style={{flex:1,overflowY:"auto",padding:"8px 16px",display:"flex",flexDirection:"column",gap:8,background:"#000",minHeight:0}}>
+      {history.map((msg,i)=><div key={i} style={{display:"flex",justifyContent:msg.role==="user"?"flex-end":"flex-start",animation:i===animatingIdx?"fadeUp 0.5s ease-out":"none"}}>
+        {msg.role==="user"?
+          <div style={{maxWidth:"75%",padding:"10px 16px",borderRadius:"18px 18px 4px 18px",background:"#1a1a1a",border:"1px solid #222",color:"#f0f0f0",fontSize:13,lineHeight:1.6}}>{msg.content}</div>
+        :msg.role==="system"?
+          <div style={{maxWidth:"85%",padding:"10px 0",color:"#525252",fontSize:13,lineHeight:1.6,fontStyle:"italic"}}>{msg.content}</div>
+        :
+          <div style={{maxWidth:"85%",padding:"2px 0",color:"#d4d4d4",fontSize:13,lineHeight:1.7,animation:i===animatingIdx?"fadeUp 0.5s ease-out":"none"}}>{renderMsg(msg.content)}</div>
+        }
+      </div>)}
+      {brainLoading&&<div style={{display:"flex",gap:4,padding:"8px 0"}}><div style={{width:6,height:6,borderRadius:"50%",background:"#2dd4bf",animation:"pulse 1s infinite"}}/>
+        <div style={{width:6,height:6,borderRadius:"50%",background:"#2dd4bf",animation:"pulse 1s infinite 0.2s"}}/>
+        <div style={{width:6,height:6,borderRadius:"50%",background:"#2dd4bf",animation:"pulse 1s infinite 0.4s"}}/></div>}
+    </div>
+    {history.length<=1&&<div style={{display:"flex",flexWrap:"wrap",gap:6,padding:"8px 16px"}}>{suggestedQueries.map(q=><button key={q} onClick={()=>{setBrainQuery(q);setTimeout(handleQuery,50)}} style={{padding:"6px 12px",borderRadius:8,border:"1px solid #1a1a1a",background:"transparent",color:"#525252",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.2s"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="#2dd4bf30";e.currentTarget.style.color="#2dd4bf"}} onMouseLeave={e=>{e.currentTarget.style.borderColor="#1a1a1a";e.currentTarget.style.color="#525252"}}>{q}</button>)}</div>}
+    <div style={{display:"flex",gap:8,padding:"12px 16px",background:"#000",flexShrink:0,borderTop:"1px solid #111"}}>
+      <input value={brainQuery} onChange={e=>setBrainQuery(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")handleQuery()}} placeholder="Ask the Brain anything..." style={{flex:1,padding:"10px 16px",background:"#0a0a0a",border:"1px solid #1a1a1a",borderRadius:24,color:"#f0f0f0",fontSize:13,outline:"none",fontFamily:"inherit"}} onFocus={e=>{e.currentTarget.style.borderColor="#2dd4bf30"}} onBlur={e=>{e.currentTarget.style.borderColor="#1a1a1a"}}/>
+      <button onClick={handleQuery} disabled={brainLoading} style={{width:40,height:40,borderRadius:20,border:"none",background:brainQuery.trim()?"#2dd4bf":"#1a1a1a",color:brainQuery.trim()?"#000":"#333",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.2s",flexShrink:0}} onMouseEnter={e=>{if(brainQuery.trim())e.currentTarget.style.background="#34d399"}} onMouseLeave={e=>{e.currentTarget.style.background=brainQuery.trim()?"#2dd4bf":"#1a1a1a"}}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+    </div>
   </div>;
 }
-
 function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,getJobItems,notify,triggerPrint,dateFilter,jobNum,customSops,addSop,deleteSop,...fCtx}){
   const [tab,setTab]=useState("overview");
   const now=new Date();
