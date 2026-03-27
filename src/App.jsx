@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { db } from "./supabase.js";
+import { useUser, useClerk, SignIn, UserButton, useAuth } from "@clerk/clerk-react";
 
 const DEFAULT_SOPS=[
     {id:"company-overview",cat:"Company",title:"Company Overview & Mission",icon:"shield",content:"MIDWEST EDUCATIONAL FURNISHINGS, INC.\nFull-service school furniture and equipment for K-12 districts and universities.\n\nMISSION\nTo enhance and improve learning experiences for students of all ages by providing full-service school furniture and equipment solutions that create inspiring, functional, and adaptable learning environments.\n\nWHAT WE DO\n- Design Consultation and Space Planning\n- Budgeting and Product Selection\n- Product Specification from 160 manufacturer partners\n- Project Management from quote to installation\n- Delivery Coordination and Installation Oversight\n\nWHO WE SERVE\nK-12 school districts (primary) and universities across the Midwest and beyond. Facilities directors, superintendents, purchasing managers, and project managers.\n\nTHE BUSINESS MODEL\nMidwest is a purchasing agent. We sit between the manufacturer and the school district. Revenue is generated on the margin between dealer cost (after vendor discount) and customer price. We do not manufacture or warehouse inventory.\n\nSCALE\n14+ years in operation. 160 manufacturer partners. Primarily IL and WI territory with national reach through rep network. Small founder-operated team. Busy season May through September aligned to school calendar."},
@@ -911,9 +912,28 @@ function MidwestAIOSInner() {
   // Auth state
   const [currentUser, setCurrentUser] = useState(()=>{try{return JSON.parse(sessionStorage.getItem("mw_user"))}catch{return null}});
   const [loginError, setLoginError] = useState("");
+  // Clerk auth integration
+  // Clerk auth integration - safe calls (only work when ClerkProvider wraps the app)
+  const clerkEnabled = !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
+  let clerkUser={user:null,isLoaded:true,isSignedIn:false},clerkAuth={isSignedIn:false},clerkSignOut=()=>{};
+  try{clerkUser=useUser();clerkAuth=useAuth();const ck=useClerk();clerkSignOut=ck.signOut}catch{}
+  // Auto-set currentUser from Clerk when signed in
+  useEffect(()=>{
+    if(clerkEnabled&&clerkUser.isLoaded&&clerkUser.isSignedIn&&clerkUser.user&&!currentUser){
+      const cu=clerkUser.user;
+      const email=(cu.primaryEmailAddress?.emailAddress||"").toLowerCase();
+      // Map Clerk user to AIOS role based on email or metadata
+      const clerkRole=cu.publicMetadata?.role||"admin";
+      const mapped={id:"clerk-"+cu.id,name:cu.fullName||cu.firstName||email,username:email,role:clerkRole,email:email,clerkId:cu.id,avatar:cu.imageUrl};
+      setCurrentUser(mapped);sessionStorage.setItem("mw_user",JSON.stringify(mapped));
+    }
+    if(clerkEnabled&&clerkUser.isLoaded&&!clerkUser.isSignedIn&&currentUser?.clerkId){
+      setCurrentUser(null);sessionStorage.removeItem("mw_user");
+    }
+  },[clerkUser.isLoaded,clerkUser.isSignedIn]);
   const userRole = currentUser?.role || null; // admin, office, sales
   const userRepId = currentUser?.rep_id || null;
-  const logout = () => { setCurrentUser(null); sessionStorage.removeItem("mw_user"); };
+  const logout = () => { setCurrentUser(null); sessionStorage.removeItem("mw_user"); if(clerkEnabled&&clerkAuth.isSignedIn)clerkSignOut().catch(()=>{}); };
 
   const [page, setPage] = useState("dashboard");
 
@@ -1138,20 +1158,24 @@ function MidwestAIOSInner() {
       <div style={{position:"absolute",bottom:"-10%",right:"-5%",width:"35vw",height:"35vw",borderRadius:"50%",background:"radial-gradient(circle,rgba(167,139,250,0.06) 0%,transparent 65%)",animation:"floatA 18s ease-in-out infinite reverse"}}/>
     </div>
     <style>{"@keyframes floatA{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(-15px,20px) scale(0.97)}}"}</style>
-    <div style={{width:"100%",maxWidth:400,padding:32,position:"relative",zIndex:1}}>
-      <div style={{textAlign:"center",marginBottom:40}}>
+    <div style={{width:"100%",maxWidth:420,padding:32,position:"relative",zIndex:1}}>
+      <div style={{textAlign:"center",marginBottom:32}}>
         <div style={{display:"inline-block",width:100,height:100,borderRadius:22,overflow:"hidden",marginBottom:20,boxShadow:"0 0 40px rgba(45,212,191,0.15)"}}><img src={MW_LOGO} alt="MW" style={{height:100,width:100,objectFit:"contain"}}/></div>
         <div style={{fontSize:24,fontWeight:800,color:"#f0f0f0",fontFamily:"'Satoshi',sans-serif",letterSpacing:-0.5}}>Midwest Educational Furnishings</div>
         <div style={{fontSize:14,color:"#a3a3a3",marginTop:8,letterSpacing:2,fontFamily:"'JetBrains Mono',monospace"}}>AI OPERATING SYSTEM</div>
       </div>
-      <div style={{background:"rgba(17,17,17,0.45)",backdropFilter:"blur(8px) saturate(220%) brightness(1.15)",WebkitBackdropFilter:"blur(8px) saturate(220%) brightness(1.15)",borderRadius:22,border:"1px solid rgba(255,255,255,0.12)",padding:32,boxShadow:"0 24px 64px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08)"}}>
-        <div style={{fontSize:18,fontWeight:700,color:"#f0f0f0",marginBottom:6}}>Sign In</div>
-        <div style={{fontSize:13,color:"#a3a3a3",marginBottom:24}}>Enter your credentials to access the system</div>
-        <div style={{marginBottom:16}}><label style={{fontSize:13,color:"#c4c4c4",display:"block",marginBottom:6}}>Username</label><input id="lu" placeholder="Enter username" autoFocus autoComplete="username" style={{width:"100%",padding:"14px 16px",background:"rgba(0,0,0,0.5)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,color:"#f0f0f0",fontSize:16,fontFamily:"'Satoshi',sans-serif",outline:"none",boxSizing:"border-box",transition:"border 0.2s"}} onFocus={e=>e.target.style.borderColor="rgba(45,212,191,0.4)"} onBlur={e=>e.target.style.borderColor="rgba(255,255,255,0.08)"}/></div>
-        <div style={{marginBottom:24}}><label style={{fontSize:13,color:"#c4c4c4",display:"block",marginBottom:6}}>Password</label><input id="lp" type="password" placeholder="Enter password" autoComplete="current-password" style={{width:"100%",padding:"14px 16px",background:"rgba(0,0,0,0.5)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,color:"#f0f0f0",fontSize:16,fontFamily:"'Satoshi',sans-serif",outline:"none",boxSizing:"border-box",transition:"border 0.2s"}} onFocus={e=>e.target.style.borderColor="rgba(45,212,191,0.4)"} onBlur={e=>e.target.style.borderColor="rgba(255,255,255,0.08)"} onKeyDown={e=>{if(e.key==="Enter")document.getElementById("loginBtn").click()}}/></div>
-        {loginError&&<div style={{fontSize:13,color:"#f87171",marginBottom:16,textAlign:"center",padding:"10px 14px",background:"rgba(248,113,113,0.06)",borderRadius:10,border:"1px solid rgba(248,113,113,0.12)"}}>{loginError}</div>}
-        <button id="loginBtn" onClick={async()=>{setLoginError("");const u=document.getElementById("lu").value.trim().toLowerCase();const p=document.getElementById("lp").value;if(!u||!p){setLoginError("Enter username and password");return}const user=await db.loginUser(u,p);if(user){setCurrentUser(user);sessionStorage.setItem("mw_user",JSON.stringify(user))}else{setLoginError("Invalid username or password")}}} style={{width:"100%",padding:"14px",borderRadius:12,border:"none",background:"linear-gradient(135deg,#2dd4bf,#14b8a6)",color:"#000",fontSize:15,fontWeight:700,cursor:"pointer",fontFamily:"'Satoshi',sans-serif",transition:"all 0.2s",boxShadow:"0 4px 20px rgba(45,212,191,0.25)"}} onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-1px)";e.currentTarget.style.boxShadow="0 8px 28px rgba(45,212,191,0.35)"}} onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="0 4px 20px rgba(45,212,191,0.25)"}}>Sign In</button>
-      </div>
+      {clerkEnabled?
+        <div style={{display:"flex",justifyContent:"center"}}><SignIn routing="hash" appearance={{elements:{rootBox:{width:"100%"},card:{backgroundColor:"rgba(17,17,17,0.45)",backdropFilter:"blur(8px) saturate(220%) brightness(1.15)",WebkitBackdropFilter:"blur(8px) saturate(220%) brightness(1.15)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:"22px",boxShadow:"0 24px 64px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08)",padding:"24px"},formButtonPrimary:{background:"linear-gradient(135deg,#2dd4bf,#14b8a6)",color:"#000",fontWeight:700,borderRadius:"12px",padding:"14px",fontSize:"15px",boxShadow:"0 4px 20px rgba(45,212,191,0.25)"},socialButtonsBlockButton:{border:"1px solid rgba(255,255,255,0.08)",borderRadius:"12px",backgroundColor:"rgba(0,0,0,0.5)",color:"#f0f0f0",padding:"12px"},formFieldInput:{backgroundColor:"rgba(0,0,0,0.5)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:"12px",color:"#f0f0f0",padding:"14px 16px",fontSize:"16px"},headerTitle:{color:"#f0f0f0",fontSize:"18px",fontWeight:700},headerSubtitle:{color:"#a3a3a3",fontSize:"13px"},dividerLine:{borderColor:"rgba(255,255,255,0.06)"},dividerText:{color:"#525252"},footer:{display:"none"}}}}/></div>
+      :
+        <div style={{background:"rgba(17,17,17,0.45)",backdropFilter:"blur(8px) saturate(220%) brightness(1.15)",WebkitBackdropFilter:"blur(8px) saturate(220%) brightness(1.15)",borderRadius:22,border:"1px solid rgba(255,255,255,0.12)",padding:32,boxShadow:"0 24px 64px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08)"}}>
+          <div style={{fontSize:18,fontWeight:700,color:"#f0f0f0",marginBottom:6}}>Sign In</div>
+          <div style={{fontSize:13,color:"#a3a3a3",marginBottom:24}}>Enter your credentials to access the system</div>
+          <div style={{marginBottom:16}}><label style={{fontSize:13,color:"#c4c4c4",display:"block",marginBottom:6}}>Username</label><input id="lu" placeholder="Enter username" autoFocus autoComplete="username" style={{width:"100%",padding:"14px 16px",background:"rgba(0,0,0,0.5)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,color:"#f0f0f0",fontSize:16,fontFamily:"'Satoshi',sans-serif",outline:"none",boxSizing:"border-box",transition:"border 0.2s"}} onFocus={e=>e.target.style.borderColor="rgba(45,212,191,0.4)"} onBlur={e=>e.target.style.borderColor="rgba(255,255,255,0.08)"}/></div>
+          <div style={{marginBottom:24}}><label style={{fontSize:13,color:"#c4c4c4",display:"block",marginBottom:6}}>Password</label><input id="lp" type="password" placeholder="Enter password" autoComplete="current-password" style={{width:"100%",padding:"14px 16px",background:"rgba(0,0,0,0.5)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,color:"#f0f0f0",fontSize:16,fontFamily:"'Satoshi',sans-serif",outline:"none",boxSizing:"border-box",transition:"border 0.2s"}} onFocus={e=>e.target.style.borderColor="rgba(45,212,191,0.4)"} onBlur={e=>e.target.style.borderColor="rgba(255,255,255,0.08)"} onKeyDown={e=>{if(e.key==="Enter")document.getElementById("loginBtn").click()}}/></div>
+          {loginError&&<div style={{fontSize:13,color:"#f87171",marginBottom:16,textAlign:"center",padding:"10px 14px",background:"rgba(248,113,113,0.06)",borderRadius:10,border:"1px solid rgba(248,113,113,0.12)"}}>{loginError}</div>}
+          <button id="loginBtn" onClick={async()=>{setLoginError("");const u=document.getElementById("lu").value.trim().toLowerCase();const p=document.getElementById("lp").value;if(!u||!p){setLoginError("Enter username and password");return}const user=await db.loginUser(u,p);if(user){setCurrentUser(user);sessionStorage.setItem("mw_user",JSON.stringify(user))}else{setLoginError("Invalid username or password")}}} style={{width:"100%",padding:"14px",borderRadius:12,border:"none",background:"linear-gradient(135deg,#2dd4bf,#14b8a6)",color:"#000",fontSize:15,fontWeight:700,cursor:"pointer",fontFamily:"'Satoshi',sans-serif",transition:"all 0.2s",boxShadow:"0 4px 20px rgba(45,212,191,0.25)"}} onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-1px)";e.currentTarget.style.boxShadow="0 8px 28px rgba(45,212,191,0.35)"}} onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="0 4px 20px rgba(45,212,191,0.25)"}}>Sign In</button>
+        </div>
+      }
       <div style={{textAlign:"center",marginTop:24,fontSize:13,color:"#525252",fontFamily:"'Satoshi',sans-serif"}}>Designing Spaces | Building Futures | WBE Certified</div>
     </div>
   </div>;
@@ -1212,7 +1236,7 @@ const sharedScreen = sharedQuote ? <ShareQuotePortal quoteData={sharedQuote} onA
       {/* MAIN */}
       <div style={{flex:1,overflow:"auto",background:"#000000"}}>
         <div className="main-content" style={{maxWidth:1400,margin:"0 auto",padding:"24px 32px"}}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:8,marginBottom:8}}><span style={{fontSize:12,color:"#a3a3a3"}}>{currentUser?.name}</span><Badge label={userRole} color={userRole==="admin"?"#2dd4bf":userRole==="office"?"#a78bfa":"#fbbf24"}/><button onClick={logout} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #222",background:"transparent",color:"#737373",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}} onMouseEnter={e=>e.currentTarget.style.color="#f87171"} onMouseLeave={e=>e.currentTarget.style.color="#737373"}>Logout</button></div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:8,marginBottom:8}}><span style={{fontSize:12,color:"#a3a3a3"}}>{currentUser?.name}</span><Badge label={userRole} color={userRole==="admin"?"#2dd4bf":userRole==="office"?"#a78bfa":"#fbbf24"}/>{clerkEnabled&&clerkAuth.isSignedIn?<UserButton afterSignOutUrl="/" appearance={{elements:{avatarBox:{width:28,height:28}}}}/>:<button onClick={logout} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #222",background:"transparent",color:"#737373",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}} onMouseEnter={e=>e.currentTarget.style.color="#f87171"} onMouseLeave={e=>e.currentTarget.style.color="#737373"}>Logout</button>}</div>
           {page==="dashboard"&&<Dashboard {...ctx}/>}
           {page==="jobs"&&<JobsPage {...ctx}/>}
           {page==="directory"&&<DirectoryPage {...ctx}/>}
