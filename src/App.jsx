@@ -2150,6 +2150,7 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
   const [emailModal,setEmailModal]=useState(null);const [emailBody,setEmailBody]=useState("");
   const [emailTo,setEmailTo]=useState("");
   const [stripeLoading,setStripeLoading]=useState(false);
+  const [stripePayUrl,setStripePayUrl]=useState("");
   const [emailFrom,setEmailFrom]=useState(()=>localStorage.getItem('mw_email_from')||"");
   const [emailSubject,setEmailSubject]=useState("");
   const [emailSending,setEmailSending]=useState(false);
@@ -2406,6 +2407,15 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
               <Btn onClick={()=>saveBillDetail(bill)}>Save Details</Btn>
               {!bill.paid&&!isVoid&&billPayDate&&<Btn onClick={()=>{setBillPayDate(billPayDate||new Date().toISOString().split('T')[0]);saveBillDetail(bill);setBillStatus('paid')}} style={{background:"#34d399",color:"#000"}}>Record Payment</Btn>}
               <Btn v="secondary" onClick={()=>printCheck(bill)}><I n="file" s={12}/> Print Check</Btn>
+              {!bill.paid&&!isVoid&&<Btn v="secondary" style={{color:"#a78bfa",border:"1px solid #a78bfa30"}} onClick={async()=>{
+                setStripeLoading(true);
+                try{const r=await fetch("/api/stripe-pay",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"create_checkout",job_name:bill.jobName||"Vendor Payment",customer_name:bill.vendor||"",amount_cents:Math.round((bill.cost||0)*100),job_id:bill.jobId||"",invoice_id:bill.docNum||""})});
+                  const data=await r.json();if(data.url){setStripePayUrl(data.url);navigator.clipboard.writeText(data.url).then(()=>notify("Vendor payment link created and copied!")).catch(()=>notify("Payment link created!"))}
+                  else{notify("Stripe error: "+(data.error||"Failed"),"error")}
+                }catch(err){notify("Error: "+err.message,"error")}
+                setStripeLoading(false);
+              }}>{stripeLoading?"Creating...":"Pay via Stripe"}</Btn>}
+              {stripePayUrl&&<a href={stripePayUrl} target="_blank" rel="noopener noreferrer" style={{fontSize:12,color:"#a78bfa",padding:"6px 12px",border:"1px solid #a78bfa30",borderRadius:8,textDecoration:"none",display:"flex",alignItems:"center",gap:6,background:"#a78bfa08",fontWeight:600}}>Open Payment</a>}
               <Btn v="secondary" onClick={()=>setBillDetail(null)}>Cancel</Btn>
             </div>
           </Card>
@@ -2499,12 +2509,56 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
         setPayAmt('');setPayRef('');setPayMemo('');setPayJob('');setPaySelected({});
       };
 
+      const syncStripePayments=async()=>{
+        setStripeLoading(true);
+        try{
+          // Find all jobs that have Stripe payment sessions
+          const stripeSessions=[];
+          jobs.forEach(j=>{
+            const ds=j.docStatuses||{};
+            Object.entries(ds).forEach(([k,v])=>{
+              if(k.endsWith('__stripe')&&v?.session_id){
+                const invNum=k.replace('__stripe','');
+                // Check if already recorded as payment
+                const alreadyLogged=paymentRecords.some(p=>p.ref==='Stripe:'+v.session_id||p.stripeSessionId===v.session_id);
+                if(!alreadyLogged)stripeSessions.push({session_id:v.session_id,jobId:j.id,jobName:j.name,invNum,amount:v.amount,customer:customers.find(c=>c.id===j.customer)?.name||''});
+              }
+            });
+          });
+          if(stripeSessions.length===0){notify('No pending Stripe payments to sync.');setStripeLoading(false);return}
+          let synced=0;
+          for(const sess of stripeSessions){
+            try{
+              const r=await fetch('/api/stripe-pay',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'check_status',session_id:sess.session_id})});
+              const data=await r.json();
+              if(data.status==='paid'){
+                // Auto-log the payment
+                const payId='PAY-STRIPE-'+Date.now()+'-'+Math.random().toString(36).slice(2,6);
+                const amt=(data.amount||0)/100;
+                setDocStatus(payId,{jobId:sess.jobId,customer:sess.customer||data.customer_name||'',jobName:sess.jobName,amount:amt,date:new Date().toISOString().split('T')[0],ref:'Stripe:'+sess.session_id,method:'credit_card',deposit:'Operating',memo:'Stripe online payment for '+sess.invNum,invoiceNum:sess.invNum,stripeSessionId:sess.session_id,customerEmail:data.customer_email||''});
+                // Update job payment status
+                const jobFinancials=getJobFinancials(sess.jobId);
+                const existingPaid=paymentRecords.filter(p=>p.jobId===sess.jobId).reduce((s,p)=>s+(p.amount||0),0)+amt;
+                if(existingPaid>=jobFinancials.totalRevenue*0.99){
+                  updateJob(sess.jobId,{paymentStatus:'paid',endDate:new Date().toISOString().split('T')[0]});
+                }else if(existingPaid>0){
+                  updateJob(sess.jobId,{paymentStatus:'partial'});
+                }
+                synced++;
+              }
+            }catch{}
+          }
+          notify(synced>0?synced+' Stripe payment'+(synced!==1?'s':'')+' synced and logged!':'No completed Stripe payments found.');
+        }catch(err){notify('Stripe sync error: '+err.message,'error')}
+        setStripeLoading(false);
+      };
+
       return <div style={{display:"flex",flexDirection:"column",gap:16}}>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12}} className="resp-grid-4">
           <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>TOTAL RECEIVED</div><div style={{fontSize:22,fontWeight:800,color:"#34d399",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalReceived)}</div><div style={{fontSize:11,color:"#a3a3a3",marginTop:4}}>{paymentRecords.length} payment{paymentRecords.length!==1?'s':''}</div></Card>
           <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>OUTSTANDING</div><div style={{fontSize:22,fontWeight:800,color:"#fbbf24",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(unpaidJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0))}</div><div style={{fontSize:11,color:"#a3a3a3",marginTop:4}}>{unpaidJobs.length} job{unpaidJobs.length!==1?'s':''}</div></Card>
           <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>PAID JOBS</div><div style={{fontSize:22,fontWeight:800,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{jobs.filter(j=>j.paymentStatus==='paid').length}</div><div style={{fontSize:11,color:"#a3a3a3",marginTop:4}}>of {jobs.length} total</div></Card>
-          <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>COLLECTION RATE</div><div style={{fontSize:22,fontWeight:800,color:"#34d399",fontFamily:"'JetBrains Mono',monospace"}}>{jobs.length>0?Math.round(jobs.filter(j=>j.paymentStatus==='paid').length/jobs.length*100):0}%</div></Card>
+          <Card style={{padding:14,textAlign:"center",cursor:"pointer",border:"1px solid #a78bfa20"}} hover onClick={syncStripePayments}><div style={{fontSize:10,color:"#a78bfa",fontWeight:600,letterSpacing:2,marginBottom:4}}>STRIPE SYNC</div><div style={{fontSize:14,fontWeight:800,color:stripeLoading?"#a78bfa":"#f0f0f0"}}>{stripeLoading?"Checking...":"Sync Payments"}</div><div style={{fontSize:11,color:"#a3a3a3",marginTop:4}}>check for online payments</div></Card>
         </div>
 
         <Card style={{padding:20}}>
@@ -2545,7 +2599,7 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
         {paymentRecords.length>0&&<Card style={{padding:20}}>
           <div style={{fontSize:18,fontWeight:800,color:"#f0f0f0",marginBottom:16,fontFamily:"'JetBrains Mono',monospace"}}>Payment History</div>
           <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:600}}><thead><tr style={{borderBottom:"2px solid #222"}}>{["Date","Customer / Job","Reference","Method","Deposit To","Amount"].map((h,i)=><th key={i} style={{padding:"8px 6px",textAlign:i>=5?"right":"left",color:"#737373",fontSize:11,fontWeight:600}}>{h}</th>)}</tr></thead><tbody>
-            {paymentRecords.map(p=><tr key={p.id} style={{borderBottom:"1px solid #111"}}><td style={{padding:"8px 6px",color:"#a3a3a3",whiteSpace:"nowrap"}}>{p.date}</td><td style={{padding:"8px 6px"}}><div style={{color:"#e5e5e5",fontWeight:500}}>{p.jobName}</div><div style={{fontSize:11,color:"#737373"}}>{p.customer}</div></td><td style={{padding:"8px 6px",fontFamily:"'JetBrains Mono',monospace",color:"#a78bfa",fontSize:11}}>{p.ref||'--'}</td><td style={{padding:"8px 6px",color:"#a3a3a3",textTransform:"capitalize"}}>{(p.method||'').replace('_',' ')}</td><td style={{padding:"8px 6px",color:"#a3a3a3"}}>{p.deposit||'--'}</td><td style={{padding:"8px 6px",textAlign:"right",fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:"#34d399"}}>{fmt(p.amount)}</td></tr>)}
+            {paymentRecords.map(p=><tr key={p.id} style={{borderBottom:"1px solid #111"}}><td style={{padding:"8px 6px",color:"#a3a3a3",whiteSpace:"nowrap"}}>{p.date}</td><td style={{padding:"8px 6px"}}><div style={{color:"#e5e5e5",fontWeight:500,display:"flex",alignItems:"center",gap:6}}>{p.jobName}{p.stripeSessionId&&<span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:"#a78bfa15",color:"#a78bfa",fontWeight:600}}>STRIPE</span>}</div><div style={{fontSize:11,color:"#737373"}}>{p.customer}{p.invoiceNum?" -- "+p.invoiceNum:""}</div></td><td style={{padding:"8px 6px",fontFamily:"'JetBrains Mono',monospace",color:"#a78bfa",fontSize:11}}>{p.ref||'--'}</td><td style={{padding:"8px 6px",color:"#a3a3a3",textTransform:"capitalize"}}>{(p.method||'').replace('_',' ')}</td><td style={{padding:"8px 6px",color:"#a3a3a3"}}>{p.deposit||'--'}</td><td style={{padding:"8px 6px",textAlign:"right",fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:"#34d399"}}>{fmt(p.amount)}</td></tr>)}
             <tr style={{borderTop:"2px solid #222"}}><td colSpan={5} style={{padding:"8px 6px",fontWeight:700}}>TOTAL RECEIVED</td><td style={{padding:"8px 6px",textAlign:"right",fontWeight:800,fontFamily:"'JetBrains Mono',monospace",color:"#34d399",fontSize:14}}>{fmt(totalReceived)}</td></tr>
           </tbody></table></div>
         </Card>}
@@ -2845,21 +2899,18 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
         </Card>}
       </div>})()}
 
-    {tab==="preview"&&previewDoc&&<Card style={{border:"1px solid #2dd4bf30",overflow:"hidden",maxWidth:"100%"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}><div style={{display:"flex",alignItems:"center",gap:12}}><div style={{fontSize:16,fontWeight:700,color:"#2dd4bf"}}>{previewDoc.type==="quote"?("PROJECT QUOTE"+(previewDoc.data.projectNum?" #"+previewDoc.data.projectNum:"")):previewDoc.type==="po"?"PURCHASE ORDER":previewDoc.type==="commission"?"COMMISSION STATEMENT":previewDoc.data?.isPartial?"PARTIAL INVOICE":"INVOICE"}</div><StatusBadge docNum={previewDoc.data.docNum}/></div><div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{previewDoc.data.docNum&&<div style={{display:"flex",gap:4}}>{["drafted","sent","approved"].map(s=><button key={s} onClick={()=>setDocStatus(previewDoc.data.docNum,s)} style={{padding:"4px 10px",borderRadius:6,border:"1px solid "+(docStatuses[previewDoc.data.docNum]===s?"#2dd4bf":"#333333"),background:docStatuses[previewDoc.data.docNum]===s?"#2dd4bf20":"transparent",color:docStatuses[previewDoc.data.docNum]===s?"#2dd4bf":"#525252",fontSize:12,fontFamily:"inherit",cursor:"pointer",textTransform:"capitalize"}}>{s}</button>)}</div>}<Btn onClick={()=>handleExportPDF(previewDoc)}><I n="download" s={14}/> Export PDF</Btn>{previewDoc.type==="quote"&&<Btn v="ghost" onClick={()=>{const data=btoa(JSON.stringify({hiddenCols,projectNum:previewDoc.data.projectNum,job:{name:previewDoc.job.name,terms:previewDoc.job.terms,shipTo:previewDoc.job.shipTo,shipVia:previewDoc.job.shipVia||"",poNumber:previewDoc.job.poNumber||"",billTo:previewDoc.job.billTo||""},customer:{name:previewDoc.data.customer?.name||"",contact:previewDoc.data.customer?.contact||"",address:previewDoc.data.customer?.address||"",email:previewDoc.data.customer?.email||""},items:previewDoc.data.items.map(it=>({description:it.description||"",tag:it.tag||"",manufacturer:it.manufacturer||"",modelNumber:it.modelNumber||"",color:it.color||"",qtyOrdered:it.qtyOrdered||0,unitPrice:it.unitPrice||0,shippingPerUnit:it.shippingPerUnit||0,installPerUnit:it.installPerUnit||0})),total:previewDoc.data.total,docNum:previewDoc.data.docNum}));const url=window.location.origin+window.location.pathname+"#quote="+data;window.open(url,"_blank");navigator.clipboard.writeText(url).catch(()=>{})}}><I n="send" s={14}/> Share Link</Btn>}<Btn v="ghost" onClick={()=>{const doc=previewDoc;const isQuote=doc.type==="quote";const isPO=doc.type==="po";const isComm=doc.type==="commission";const recipient=isQuote?doc.data.customer?.email:isPO?doc.data.vendor?.email:isComm?doc.data.rep?.email:doc.data.customer?.email;setEmailTo(recipient||"");setEmailSubject((isQuote?"Project Quote":isPO?"Purchase Order":isComm?"Commission Statement":"Invoice")+" - "+doc.job.name+" - "+(doc.data.docNum||""));setEmailModal(doc)}}><I n="send" s={14}/> Email</Btn>{previewDoc.type!=="quote"&&previewDoc.type!=="commission"&&<Btn v={qbConfig.connected?"primary":"secondary"} onClick={()=>qbConfig.connected?pushToQB(previewDoc):setPage("qbsetup")} style={pushing?{opacity:0.6,pointerEvents:"none"}:{}}><I n="send" s={14}/> {pushing?"Pushing...":qbConfig.connected?"Push to QB":"Connect QB"}</Btn>}<Btn v="secondary" onClick={()=>setTab(previewDoc.type==="commission"?"commissions":previewDoc.type==="quote"?"quotes":previewDoc.type==="po"?"pos":"invoices")}>&larr; Back</Btn>{previewDoc.type==="invoice"&&previewDoc.data.items.length>0&&<Btn v="ghost" style={{fontSize:12,color:"#34d399",border:"1px solid #05966930"}} onClick={()=>{previewDoc.data.items.forEach(item=>{if(item.qtyReceived>item.qtyInvoiced){ctx.updateLineItem(item.id,{qtyInvoiced:item.qtyReceived,invoiceDate:new Date().toISOString().split("T")[0]})}});notify("All "+previewDoc.data.items.length+" items marked as invoiced")}}>Mark All Invoiced</Btn>}{previewDoc.type==="invoice"&&previewDoc.data.total>0&&<Btn v="ghost" style={{fontSize:12,color:"#a78bfa",border:"1px solid #a78bfa30"}} onClick={async()=>{
+    {tab==="preview"&&previewDoc&&<Card style={{border:"1px solid #2dd4bf30",overflow:"hidden",maxWidth:"100%"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}><div style={{display:"flex",alignItems:"center",gap:12}}><div style={{fontSize:16,fontWeight:700,color:"#2dd4bf"}}>{previewDoc.type==="quote"?("PROJECT QUOTE"+(previewDoc.data.projectNum?" #"+previewDoc.data.projectNum:"")):previewDoc.type==="po"?"PURCHASE ORDER":previewDoc.type==="commission"?"COMMISSION STATEMENT":previewDoc.data?.isPartial?"PARTIAL INVOICE":"INVOICE"}</div><StatusBadge docNum={previewDoc.data.docNum}/></div><div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{previewDoc.data.docNum&&<div style={{display:"flex",gap:4}}>{["drafted","sent","approved"].map(s=><button key={s} onClick={()=>setDocStatus(previewDoc.data.docNum,s)} style={{padding:"4px 10px",borderRadius:6,border:"1px solid "+(docStatuses[previewDoc.data.docNum]===s?"#2dd4bf":"#333333"),background:docStatuses[previewDoc.data.docNum]===s?"#2dd4bf20":"transparent",color:docStatuses[previewDoc.data.docNum]===s?"#2dd4bf":"#525252",fontSize:12,fontFamily:"inherit",cursor:"pointer",textTransform:"capitalize"}}>{s}</button>)}</div>}<Btn onClick={()=>handleExportPDF(previewDoc)}><I n="download" s={14}/> Export PDF</Btn>{previewDoc.type==="quote"&&<Btn v="ghost" onClick={()=>{const data=btoa(JSON.stringify({hiddenCols,projectNum:previewDoc.data.projectNum,job:{name:previewDoc.job.name,terms:previewDoc.job.terms,shipTo:previewDoc.job.shipTo,shipVia:previewDoc.job.shipVia||"",poNumber:previewDoc.job.poNumber||"",billTo:previewDoc.job.billTo||""},customer:{name:previewDoc.data.customer?.name||"",contact:previewDoc.data.customer?.contact||"",address:previewDoc.data.customer?.address||"",email:previewDoc.data.customer?.email||""},items:previewDoc.data.items.map(it=>({description:it.description||"",tag:it.tag||"",manufacturer:it.manufacturer||"",modelNumber:it.modelNumber||"",color:it.color||"",qtyOrdered:it.qtyOrdered||0,unitPrice:it.unitPrice||0,shippingPerUnit:it.shippingPerUnit||0,installPerUnit:it.installPerUnit||0})),total:previewDoc.data.total,docNum:previewDoc.data.docNum}));const url=window.location.origin+window.location.pathname+"#quote="+data;window.open(url,"_blank");navigator.clipboard.writeText(url).catch(()=>{})}}><I n="send" s={14}/> Share Link</Btn>}<Btn v="ghost" onClick={()=>{const doc=previewDoc;const isQuote=doc.type==="quote";const isPO=doc.type==="po";const isComm=doc.type==="commission";const recipient=isQuote?doc.data.customer?.email:isPO?doc.data.vendor?.email:isComm?doc.data.rep?.email:doc.data.customer?.email;setEmailTo(recipient||"");setEmailSubject((isQuote?"Project Quote":isPO?"Purchase Order":isComm?"Commission Statement":"Invoice")+" - "+doc.job.name+" - "+(doc.data.docNum||""));setEmailModal(doc)}}><I n="send" s={14}/> Email</Btn>{previewDoc.type!=="quote"&&previewDoc.type!=="commission"&&<Btn v={qbConfig.connected?"primary":"secondary"} onClick={()=>qbConfig.connected?pushToQB(previewDoc):setPage("qbsetup")} style={pushing?{opacity:0.6,pointerEvents:"none"}:{}}><I n="send" s={14}/> {pushing?"Pushing...":qbConfig.connected?"Push to QB":"Connect QB"}</Btn>}<Btn v="secondary" onClick={()=>setTab(previewDoc.type==="commission"?"commissions":previewDoc.type==="quote"?"quotes":previewDoc.type==="po"?"pos":"invoices")}>&larr; Back</Btn>{previewDoc.type==="invoice"&&previewDoc.data.items.length>0&&<Btn v="ghost" style={{fontSize:12,color:"#34d399",border:"1px solid #05966930"}} onClick={()=>{previewDoc.data.items.forEach(item=>{if(item.qtyReceived>item.qtyInvoiced){ctx.updateLineItem(item.id,{qtyInvoiced:item.qtyReceived,invoiceDate:new Date().toISOString().split("T")[0]})}});notify("All "+previewDoc.data.items.length+" items marked as invoiced")}}>Mark All Invoiced</Btn>}{previewDoc.type==="invoice"&&previewDoc.data.total>0&&!stripePayUrl&&<Btn v="ghost" style={{fontSize:12,color:"#a78bfa",border:"1px solid #a78bfa30"}} onClick={async()=>{
               setStripeLoading(true);const doc=previewDoc;const cust=doc.data.customer;
               try{const r=await fetch("/api/stripe-pay",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"create_checkout",job_name:doc.job.name,customer_name:cust?.name||"",customer_email:cust?.email||"",amount_cents:Math.round(doc.data.total*100),job_id:doc.job.id,invoice_id:doc.data.docNum})});
                 const data=await r.json();if(data.url){
-                  // Save payment link to docStatuses
                   const ds={...(doc.job.docStatuses||{})};ds[doc.data.docNum+"__stripe"]={url:data.url,session_id:data.session_id,created:new Date().toISOString(),amount:doc.data.total};
                   updateJob(doc.job.id,{docStatuses:ds});
-                  // Copy link and open
-                  navigator.clipboard.writeText(data.url).catch(()=>{});
-                  window.open(data.url,"_blank");
-                  notify("Payment link created and copied! Share with "+( cust?.name||"customer"));
+                  setStripePayUrl(data.url);
+                  navigator.clipboard.writeText(data.url).then(()=>notify("Payment link created and copied to clipboard!")).catch(()=>notify("Payment link created! Click the link below to open."));
                 }else{notify("Stripe error: "+(data.error||"Could not create payment link"),"error")}
               }catch(err){notify("Payment link error: "+err.message,"error")}
               setStripeLoading(false);
-            }}>{stripeLoading?"Creating...":"Send Payment Link"}</Btn>}{previewDoc.type==="invoice"&&(previewDoc.job?.docStatuses||{})[previewDoc.data.docNum+"__stripe"]&&<a href={(previewDoc.job.docStatuses||{})[previewDoc.data.docNum+"__stripe"]?.url} target="_blank" rel="noopener" style={{fontSize:11,color:"#a78bfa",padding:"6px 10px",border:"1px solid #a78bfa20",borderRadius:6,textDecoration:"none",display:"flex",alignItems:"center",gap:4}} onClick={e=>e.stopPropagation()}>Payment Link Active</a>}</div></div>
+            }}>{stripeLoading?"Creating...":"Create Payment Link"}</Btn>}{(stripePayUrl||(previewDoc.type==="invoice"&&(previewDoc.job?.docStatuses||{})[previewDoc.data.docNum+"__stripe"]?.url))&&<a href={stripePayUrl||(previewDoc.job?.docStatuses||{})[previewDoc.data.docNum+"__stripe"]?.url} target="_blank" rel="noopener noreferrer" style={{fontSize:12,color:"#a78bfa",padding:"6px 12px",border:"1px solid #a78bfa30",borderRadius:8,textDecoration:"none",display:"flex",alignItems:"center",gap:6,background:"#a78bfa08",fontWeight:600,cursor:"pointer"}}><I n="send" s={12}/>Open Payment Link</a>}{(stripePayUrl||(previewDoc.type==="invoice"&&(previewDoc.job?.docStatuses||{})[previewDoc.data.docNum+"__stripe"]?.url))&&<Btn v="ghost" style={{fontSize:11,color:"#737373"}} onClick={()=>{navigator.clipboard.writeText(stripePayUrl||(previewDoc.job?.docStatuses||{})[previewDoc.data.docNum+"__stripe"]?.url||"").then(()=>notify("Link copied!")).catch(()=>{})}}>Copy Link</Btn>}</div></div>
 
       {/* Modern document preview */}
       {emailModal&&<div style={{background:"#1a1a1a",border:"1px solid #2dd4bf30",borderRadius:8,padding:20,marginBottom:16}}><div style={{fontSize:14,fontWeight:700,color:"#2dd4bf",marginBottom:12}}>Email Document</div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:12,marginBottom:12}}><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>From (your email)</label><input value={emailFrom} onChange={e=>setEmailFrom(e.target.value)} placeholder="lisa@mwfurnishings.com" style={inputStyle}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>To (recipient)</label><input value={emailTo} onChange={e=>setEmailTo(e.target.value)} placeholder="recipient@email.com" style={inputStyle}/></div></div><div style={{marginBottom:12}}><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Subject</label><input value={emailSubject} onChange={e=>setEmailSubject(e.target.value)} style={inputStyle}/></div><div style={{display:"flex",gap:8}}><Btn onClick={sendEmail} style={emailSending?{opacity:0.6,pointerEvents:"none"}:{}}>{emailSending?"Sending...":"Send Email"}</Btn><Btn v="secondary" onClick={()=>setEmailModal(null)}>Cancel</Btn></div></div>}
