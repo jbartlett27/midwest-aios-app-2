@@ -912,7 +912,7 @@ function MidwestAIOSInner() {
   // Auth state
   const [currentUser, setCurrentUser] = useState(()=>{try{return JSON.parse(sessionStorage.getItem("mw_user"))}catch{return null}});
   const [loginError, setLoginError] = useState("");
-  const [showLegacyLogin, setShowLegacyLogin] = useState(false);
+  const [showLegacyLogin, setShowLegacyLogin] = useState(true);
   // Clerk auth integration
   // Clerk auth integration - safe calls (only work when ClerkProvider wraps the app)
   const clerkEnabled = !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
@@ -1171,13 +1171,17 @@ function MidwestAIOSInner() {
       :
         <><div style={{background:"rgba(17,17,17,0.45)",backdropFilter:"blur(8px) saturate(220%) brightness(1.15)",WebkitBackdropFilter:"blur(8px) saturate(220%) brightness(1.15)",borderRadius:22,border:"1px solid rgba(255,255,255,0.12)",padding:32,boxShadow:"0 24px 64px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.08)"}}>
           <div style={{fontSize:18,fontWeight:700,color:"#f0f0f0",marginBottom:6}}>Sign In</div>
-          <div style={{fontSize:13,color:"#a3a3a3",marginBottom:24}}>Enter your credentials to access the system</div>
+          <div style={{fontSize:13,color:"#a3a3a3",marginBottom:20}}>Enter your credentials to access the system</div>
+          {clerkEnabled&&<div><div style={{display:"flex",gap:10,marginBottom:16}}>
+            <button onClick={()=>setShowLegacyLogin(false)} style={{flex:1,padding:"12px",borderRadius:12,border:"1px solid rgba(255,255,255,0.08)",background:"rgba(0,0,0,0.4)",color:"#f0f0f0",fontSize:14,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:8,transition:"all 0.2s"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="rgba(45,212,191,0.3)"}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.08)"}}>Apple</button>
+            <button onClick={()=>setShowLegacyLogin(false)} style={{flex:1,padding:"12px",borderRadius:12,border:"1px solid rgba(255,255,255,0.08)",background:"rgba(0,0,0,0.4)",color:"#f0f0f0",fontSize:14,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:8,transition:"all 0.2s"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="rgba(45,212,191,0.3)"}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.08)"}}>Google</button>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16}}><div style={{flex:1,height:1,background:"rgba(255,255,255,0.06)"}}/><span style={{fontSize:12,color:"#525252"}}>or</span><div style={{flex:1,height:1,background:"rgba(255,255,255,0.06)"}}/></div></div>}
           <div style={{marginBottom:16}}><label style={{fontSize:13,color:"#c4c4c4",display:"block",marginBottom:6}}>Username</label><input id="lu" placeholder="Enter username" autoFocus autoComplete="username" style={{width:"100%",padding:"14px 16px",background:"rgba(0,0,0,0.5)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,color:"#f0f0f0",fontSize:16,fontFamily:"'Satoshi',sans-serif",outline:"none",boxSizing:"border-box",transition:"border 0.2s"}} onFocus={e=>e.target.style.borderColor="rgba(45,212,191,0.4)"} onBlur={e=>e.target.style.borderColor="rgba(255,255,255,0.08)"}/></div>
           <div style={{marginBottom:24}}><label style={{fontSize:13,color:"#c4c4c4",display:"block",marginBottom:6}}>Password</label><input id="lp" type="password" placeholder="Enter password" autoComplete="current-password" style={{width:"100%",padding:"14px 16px",background:"rgba(0,0,0,0.5)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,color:"#f0f0f0",fontSize:16,fontFamily:"'Satoshi',sans-serif",outline:"none",boxSizing:"border-box",transition:"border 0.2s"}} onFocus={e=>e.target.style.borderColor="rgba(45,212,191,0.4)"} onBlur={e=>e.target.style.borderColor="rgba(255,255,255,0.08)"} onKeyDown={e=>{if(e.key==="Enter")document.getElementById("loginBtn").click()}}/></div>
           {loginError&&<div style={{fontSize:13,color:"#f87171",marginBottom:16,textAlign:"center",padding:"10px 14px",background:"rgba(248,113,113,0.06)",borderRadius:10,border:"1px solid rgba(248,113,113,0.12)"}}>{loginError}</div>}
           <button id="loginBtn" onClick={async()=>{setLoginError("");const u=document.getElementById("lu").value.trim().toLowerCase();const p=document.getElementById("lp").value;if(!u||!p){setLoginError("Enter username and password");return}const user=await db.loginUser(u,p);if(user){setCurrentUser(user);sessionStorage.setItem("mw_user",JSON.stringify(user))}else{setLoginError("Invalid username or password")}}} style={{width:"100%",padding:"14px",borderRadius:12,border:"none",background:"linear-gradient(135deg,#2dd4bf,#14b8a6)",color:"#000",fontSize:15,fontWeight:700,cursor:"pointer",fontFamily:"'Satoshi',sans-serif",transition:"all 0.2s",boxShadow:"0 4px 20px rgba(45,212,191,0.25)"}} onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-1px)";e.currentTarget.style.boxShadow="0 8px 28px rgba(45,212,191,0.35)"}} onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="0 4px 20px rgba(45,212,191,0.25)"}}>Sign In</button>
-        </div>
-        {clerkEnabled&&<div style={{textAlign:"center",marginTop:16}}><button onClick={()=>setShowLegacyLogin(false)} style={{background:"none",border:"none",color:"#525252",fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"color 0.15s"}} onMouseEnter={e=>e.currentTarget.style.color="#a3a3a3"} onMouseLeave={e=>e.currentTarget.style.color="#525252"}>Sign in with Google or Apple instead</button></div>}</>
+        </div></>
       }
       <div style={{textAlign:"center",marginTop:24,fontSize:13,color:"#525252",fontFamily:"'Satoshi',sans-serif"}}>Designing Spaces | Building Futures | WBE Certified</div>
     </div>
