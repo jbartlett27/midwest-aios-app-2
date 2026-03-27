@@ -2407,6 +2407,15 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
               <Btn onClick={()=>saveBillDetail(bill)}>Save Details</Btn>
               {!bill.paid&&!isVoid&&billPayDate&&<Btn onClick={()=>{setBillPayDate(billPayDate||new Date().toISOString().split('T')[0]);saveBillDetail(bill);setBillStatus('paid')}} style={{background:"#34d399",color:"#000"}}>Record Payment</Btn>}
               <Btn v="secondary" onClick={()=>printCheck(bill)}><I n="file" s={12}/> Print Check</Btn>
+              {!bill.paid&&!isVoid&&<Btn v="secondary" style={{color:"#a78bfa",border:"1px solid #a78bfa30"}} onClick={async()=>{
+                setStripeLoading(true);
+                try{const r=await fetch("/api/stripe-pay",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"create_checkout",job_name:bill.jobName||"Vendor Payment",customer_name:bill.vendor||"",amount_cents:Math.round((bill.cost||0)*100),job_id:bill.jobId||"",invoice_id:bill.docNum||""})});
+                  const data=await r.json();if(data.url){setStripePayUrl(data.url);navigator.clipboard.writeText(data.url).then(()=>notify("Vendor payment link created and copied!")).catch(()=>notify("Payment link created!"))}
+                  else{notify("Stripe error: "+(data.error||"Failed"),"error")}
+                }catch(err){notify("Error: "+err.message,"error")}
+                setStripeLoading(false);
+              }}>{stripeLoading?"Creating...":"Pay via Stripe"}</Btn>}
+              {stripePayUrl&&<a href={stripePayUrl} target="_blank" rel="noopener noreferrer" style={{fontSize:12,color:"#a78bfa",padding:"6px 12px",border:"1px solid #a78bfa30",borderRadius:8,textDecoration:"none",display:"flex",alignItems:"center",gap:6,background:"#a78bfa08",fontWeight:600}}>Open Payment</a>}
               <Btn v="secondary" onClick={()=>setBillDetail(null)}>Cancel</Btn>
             </div>
           </Card>
@@ -2500,12 +2509,56 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
         setPayAmt('');setPayRef('');setPayMemo('');setPayJob('');setPaySelected({});
       };
 
+      const syncStripePayments=async()=>{
+        setStripeLoading(true);
+        try{
+          // Find all jobs that have Stripe payment sessions
+          const stripeSessions=[];
+          jobs.forEach(j=>{
+            const ds=j.docStatuses||{};
+            Object.entries(ds).forEach(([k,v])=>{
+              if(k.endsWith('__stripe')&&v?.session_id){
+                const invNum=k.replace('__stripe','');
+                // Check if already recorded as payment
+                const alreadyLogged=paymentRecords.some(p=>p.ref==='Stripe:'+v.session_id||p.stripeSessionId===v.session_id);
+                if(!alreadyLogged)stripeSessions.push({session_id:v.session_id,jobId:j.id,jobName:j.name,invNum,amount:v.amount,customer:customers.find(c=>c.id===j.customer)?.name||''});
+              }
+            });
+          });
+          if(stripeSessions.length===0){notify('No pending Stripe payments to sync.');setStripeLoading(false);return}
+          let synced=0;
+          for(const sess of stripeSessions){
+            try{
+              const r=await fetch('/api/stripe-pay',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'check_status',session_id:sess.session_id})});
+              const data=await r.json();
+              if(data.status==='paid'){
+                // Auto-log the payment
+                const payId='PAY-STRIPE-'+Date.now()+'-'+Math.random().toString(36).slice(2,6);
+                const amt=(data.amount||0)/100;
+                setDocStatus(payId,{jobId:sess.jobId,customer:sess.customer||data.customer_name||'',jobName:sess.jobName,amount:amt,date:new Date().toISOString().split('T')[0],ref:'Stripe:'+sess.session_id,method:'credit_card',deposit:'Operating',memo:'Stripe online payment for '+sess.invNum,invoiceNum:sess.invNum,stripeSessionId:sess.session_id,customerEmail:data.customer_email||''});
+                // Update job payment status
+                const jobFinancials=getJobFinancials(sess.jobId);
+                const existingPaid=paymentRecords.filter(p=>p.jobId===sess.jobId).reduce((s,p)=>s+(p.amount||0),0)+amt;
+                if(existingPaid>=jobFinancials.totalRevenue*0.99){
+                  updateJob(sess.jobId,{paymentStatus:'paid',endDate:new Date().toISOString().split('T')[0]});
+                }else if(existingPaid>0){
+                  updateJob(sess.jobId,{paymentStatus:'partial'});
+                }
+                synced++;
+              }
+            }catch{}
+          }
+          notify(synced>0?synced+' Stripe payment'+(synced!==1?'s':'')+' synced and logged!':'No completed Stripe payments found.');
+        }catch(err){notify('Stripe sync error: '+err.message,'error')}
+        setStripeLoading(false);
+      };
+
       return <div style={{display:"flex",flexDirection:"column",gap:16}}>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12}} className="resp-grid-4">
           <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>TOTAL RECEIVED</div><div style={{fontSize:22,fontWeight:800,color:"#34d399",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalReceived)}</div><div style={{fontSize:11,color:"#a3a3a3",marginTop:4}}>{paymentRecords.length} payment{paymentRecords.length!==1?'s':''}</div></Card>
           <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>OUTSTANDING</div><div style={{fontSize:22,fontWeight:800,color:"#fbbf24",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(unpaidJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0))}</div><div style={{fontSize:11,color:"#a3a3a3",marginTop:4}}>{unpaidJobs.length} job{unpaidJobs.length!==1?'s':''}</div></Card>
           <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>PAID JOBS</div><div style={{fontSize:22,fontWeight:800,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{jobs.filter(j=>j.paymentStatus==='paid').length}</div><div style={{fontSize:11,color:"#a3a3a3",marginTop:4}}>of {jobs.length} total</div></Card>
-          <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>COLLECTION RATE</div><div style={{fontSize:22,fontWeight:800,color:"#34d399",fontFamily:"'JetBrains Mono',monospace"}}>{jobs.length>0?Math.round(jobs.filter(j=>j.paymentStatus==='paid').length/jobs.length*100):0}%</div></Card>
+          <Card style={{padding:14,textAlign:"center",cursor:"pointer",border:"1px solid #a78bfa20"}} hover onClick={syncStripePayments}><div style={{fontSize:10,color:"#a78bfa",fontWeight:600,letterSpacing:2,marginBottom:4}}>STRIPE SYNC</div><div style={{fontSize:14,fontWeight:800,color:stripeLoading?"#a78bfa":"#f0f0f0"}}>{stripeLoading?"Checking...":"Sync Payments"}</div><div style={{fontSize:11,color:"#a3a3a3",marginTop:4}}>check for online payments</div></Card>
         </div>
 
         <Card style={{padding:20}}>
@@ -2546,7 +2599,7 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
         {paymentRecords.length>0&&<Card style={{padding:20}}>
           <div style={{fontSize:18,fontWeight:800,color:"#f0f0f0",marginBottom:16,fontFamily:"'JetBrains Mono',monospace"}}>Payment History</div>
           <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:600}}><thead><tr style={{borderBottom:"2px solid #222"}}>{["Date","Customer / Job","Reference","Method","Deposit To","Amount"].map((h,i)=><th key={i} style={{padding:"8px 6px",textAlign:i>=5?"right":"left",color:"#737373",fontSize:11,fontWeight:600}}>{h}</th>)}</tr></thead><tbody>
-            {paymentRecords.map(p=><tr key={p.id} style={{borderBottom:"1px solid #111"}}><td style={{padding:"8px 6px",color:"#a3a3a3",whiteSpace:"nowrap"}}>{p.date}</td><td style={{padding:"8px 6px"}}><div style={{color:"#e5e5e5",fontWeight:500}}>{p.jobName}</div><div style={{fontSize:11,color:"#737373"}}>{p.customer}</div></td><td style={{padding:"8px 6px",fontFamily:"'JetBrains Mono',monospace",color:"#a78bfa",fontSize:11}}>{p.ref||'--'}</td><td style={{padding:"8px 6px",color:"#a3a3a3",textTransform:"capitalize"}}>{(p.method||'').replace('_',' ')}</td><td style={{padding:"8px 6px",color:"#a3a3a3"}}>{p.deposit||'--'}</td><td style={{padding:"8px 6px",textAlign:"right",fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:"#34d399"}}>{fmt(p.amount)}</td></tr>)}
+            {paymentRecords.map(p=><tr key={p.id} style={{borderBottom:"1px solid #111"}}><td style={{padding:"8px 6px",color:"#a3a3a3",whiteSpace:"nowrap"}}>{p.date}</td><td style={{padding:"8px 6px"}}><div style={{color:"#e5e5e5",fontWeight:500,display:"flex",alignItems:"center",gap:6}}>{p.jobName}{p.stripeSessionId&&<span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:"#a78bfa15",color:"#a78bfa",fontWeight:600}}>STRIPE</span>}</div><div style={{fontSize:11,color:"#737373"}}>{p.customer}{p.invoiceNum?" -- "+p.invoiceNum:""}</div></td><td style={{padding:"8px 6px",fontFamily:"'JetBrains Mono',monospace",color:"#a78bfa",fontSize:11}}>{p.ref||'--'}</td><td style={{padding:"8px 6px",color:"#a3a3a3",textTransform:"capitalize"}}>{(p.method||'').replace('_',' ')}</td><td style={{padding:"8px 6px",color:"#a3a3a3"}}>{p.deposit||'--'}</td><td style={{padding:"8px 6px",textAlign:"right",fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:"#34d399"}}>{fmt(p.amount)}</td></tr>)}
             <tr style={{borderTop:"2px solid #222"}}><td colSpan={5} style={{padding:"8px 6px",fontWeight:700}}>TOTAL RECEIVED</td><td style={{padding:"8px 6px",textAlign:"right",fontWeight:800,fontFamily:"'JetBrains Mono',monospace",color:"#34d399",fontSize:14}}>{fmt(totalReceived)}</td></tr>
           </tbody></table></div>
         </Card>}
