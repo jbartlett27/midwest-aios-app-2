@@ -3428,17 +3428,58 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
   const buildContext = (query) => {
     const q = (query || "").toLowerCase();
     const wantsSops = /sop|playbook|process|procedure|how.?to|training|workflow|step|guide|protocol|policy|onboard/i.test(q);
+    const wantsItems = /item|line.?item|deliver|ship|receive|product|furniture|chair|desk|table|model|vendor.*order|what.*order|what.*deliver|po |purchase.?order|detail|breakdown|specific/i.test(q);
+    const wantsFinancials = /financ|revenue|cost|margin|profit|loss|p&l|balance|expense|money|dollar|budget|invoice|payment|commission|paid|unpaid|overdue|ar |ap |receivable|payable/i.test(q);
     const today = new Date().toLocaleDateString("en-US", {weekday:"long",year:"numeric",month:"long",day:"numeric"});
     const totalRev = jobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
     const totalCost = jobs.reduce((s,j)=>s+getJobFinancials(j.id).totalCost,0);
+
+    // Smart job matching: find which jobs the query is about
+    const matchedJobs=jobs.filter(j=>{const jn=j.name.toLowerCase();const words=q.split(/\s+/).filter(w=>w.length>3);return words.some(w=>jn.includes(w))||q.includes(j.id.toLowerCase())});
+    // Also match by customer name
+    const matchedByCustomer=q.length>5?jobs.filter(j=>{const c=customers.find(c2=>c2.id===j.customer);return c&&c.name.toLowerCase().split(/\s+/).some(w=>w.length>3&&q.includes(w.toLowerCase()))}):[]; 
+    // Also match by vendor name
+    const matchedVendors=vendors.filter(v=>v.name.toLowerCase().split(/\s+/).some(w=>w.length>3&&q.includes(w.toLowerCase())));
+    const relevantJobs=[...new Set([...matchedJobs,...matchedByCustomer])];
+
+    // Build job summaries -- always included, compact
     const jobSummaries = jobs.map(j => {const f=getJobFinancials(j.id);const c=customers.find(c2=>c2.id===j.customer);const r=reps.find(r2=>r2.id===j.salesRep);const items=getJobItems(j.id);const totalOrd=items.reduce((s2,i2)=>s2+i2.qtyOrdered,0);const totalRcv=items.reduce((s2,i2)=>s2+i2.qtyReceived,0);return j.name+"("+j.phase+"|"+(c?.name||"")+" | Rep:"+(r?.name||"")+" | Rev:$"+Math.round(f.totalRevenue)+" | Cost:$"+Math.round(f.totalCost)+" | Margin:"+f.margin.toFixed(1)+"% | Delivered:"+totalRcv+"/"+totalOrd+" | Pay:"+j.paymentStatus+" | Due:"+(j.dueDate||"none")+" | ID:"+j.id+")"}).join("\n");
-    const vendorSummaries = vendors.map(v=>{const spend=lineItems.filter(i=>i.vendor===v.id).reduce((s2,i2)=>s2+i2.unitCost*i2.qtyOrdered,0);const itemCount=lineItems.filter(i=>i.vendor===v.id).length;return v.name+"("+v.category+" | Spend:$"+Math.round(spend)+" | "+itemCount+" items | Discount:"+(v.discountRate*100).toFixed(0)+"% | "+v.email+")"}).join("\n");
-    const custSummaries = customers.map(c=>{const cJobs=jobs.filter(j=>j.customer===c.id);const rev=cJobs.reduce((s2,j)=>s2+getJobFinancials(j.id).totalRevenue,0);return c.name+"("+c.type+" | "+cJobs.length+" jobs | Rev:$"+Math.round(rev)+" | "+(c.email||"")+")"}).join("\n");
-    const repSummaries = reps.filter(r=>!r.id.includes("SEED_FLAG")).map(r=>{const rJobs=jobs.filter(j=>j.salesRep===r.id);const rev=rJobs.reduce((s2,j)=>s2+getJobFinancials(j.id).totalRevenue,0);return r.name+"("+r.territory+" | "+rJobs.length+" jobs | Rev:$"+Math.round(rev)+" | Rate:"+(r.commissionRate*100).toFixed(0)+"%)"}).join("\n");
-    const sopText = wantsSops ? (customSops||[]).filter(s=>!["Notes","Task","DocStatuses","ManualTxn","HistoricalDoc","Settings"].includes(s.cat)).map(s=>s.title+": "+s.content.slice(0,800)).join("\n\n") : (customSops||[]).filter(s=>!["Notes","Task","DocStatuses","ManualTxn","HistoricalDoc","Settings"].includes(s.cat)).map(s=>s.title).join(", ");
-    const taskText = (customSops||[]).filter(s=>s.cat==="Task").map(s=>{try{const d=JSON.parse(s.content);return d.text+" ["+d.status+"]"+(d.assignees?.length?" -> "+d.assignees.join(","):"")+(d.due?" due:"+d.due:"")}catch{return s.title}}).join("\n");
-    const noteText = (customSops||[]).filter(s=>s.cat==="Notes").slice(0,10).map(s=>s.title).join(", ");
-    return "You are the Midwest Brain for Midwest Educational Furnishings (Kildeer, IL). Owner: Maureen Welter. Today: " + today + "\n\nSTATS: " + jobs.length + " jobs|Rev $" + Math.round(totalRev) + "|Cost $" + Math.round(totalCost) + "|Margin " + (totalRev>0?Math.round((totalRev-totalCost)/totalRev*100):0) + "%|" + lineItems.length + " line items|" + vendors.length + " vendors|" + customers.length + " customers\n\nJOBS:\n" + jobSummaries + "\n\nVENDORS:\n" + vendorSummaries + "\n\nCUSTOMERS:\n" + custSummaries + "\n\nREPS:\n" + repSummaries + "\n\nSOPS: " + sopText + "\n\nTASKS:\n" + (taskText||"None") + "\n\nNOTES: " + (noteText||"None") + "\n\nINSTRUCTIONS:\n1. Be specific -- always use real names, dollar amounts, dates, and percentages from the data.\n2. When asked about financials, SHOW YOUR MATH: revenue = sum(unitPrice * qty), cost = sum(unitCost * qty), margin = (rev-cost)/rev * 100.\n3. Compare today (" + today + ") against due dates and delivery dates. Proactively flag anything overdue or due within 7 days.\n4. If a job has 0% margin or negative margin, flag it as a concern.\n5. When asked about a specific job, give a full status briefing: phase, customer, rep, revenue, margin, delivery progress, payment status, and any issues.\n6. When asked about a vendor, include total spend, number of items, discount rate, and which jobs use them.\n7. When asked about a customer, include total revenue, number of jobs, payment history, and relationship health.\n8. If you spot patterns (e.g. one vendor has most items, one rep has most revenue, margin trending down), mention them even if not asked.\n9. For process questions, give step-by-step answers from the SOPs. If the SOP content is abbreviated, tell the user to ask again mentioning playbook or SOP for full details.\n10. Think like a CFO and COO combined. Every answer should help Maureen make a decision or take action.\n11. Keep answers concise but complete. Use bold headers and bullet points for readability.\n12. At the end of every response, suggest 2-3 follow-up questions the user might find valuable:\n>> [question 1]\n>> [question 2]\n>> [question 3]\n13. NEVER use emoji in any response. No exceptions. Keep it clean and professional -- text only.";
+
+    // Line item details: include for relevant jobs OR if user asks about items/deliveries
+    let lineItemDetail="";
+    const jobsToDetail=relevantJobs.length>0?relevantJobs:(wantsItems?jobs.slice(0,5):[]); 
+    if(jobsToDetail.length>0){
+      lineItemDetail="\n\nLINE ITEM DETAILS:\n"+jobsToDetail.map(j=>{
+        const items=getJobItems(j.id);if(items.length===0)return "";
+        return "--- "+j.name+" ("+j.id+") ---\n"+items.map(i=>{
+          const v=vendors.find(v2=>v2.id===i.vendor);
+          return "  "+i.description+" | Vendor:"+(v?.name||"--")+" | Model:"+(i.modelNumber||"--")+" | Qty:"+i.qtyOrdered+" | Received:"+i.qtyReceived+" | Cost:$"+(i.unitCost||0).toFixed(2)+" | Price:$"+(i.unitPrice||0).toFixed(2)+" | Color:"+(i.color||"--")+" | Tag:"+(i.tag||"--");
+        }).join("\n");
+      }).filter(Boolean).join("\n");
+    }
+
+    // Vendor details: include item breakdown if asking about specific vendors
+    let vendorDetail="";
+    if(matchedVendors.length>0){
+      vendorDetail="\n\nVENDOR ITEM DETAILS:\n"+matchedVendors.map(v=>{
+        const vItems=lineItems.filter(i=>i.vendor===v.id);
+        return "--- "+v.name+" ---\n"+vItems.slice(0,30).map(i=>{
+          const j=jobs.find(j2=>j2.id===i.jobId);
+          return "  "+i.description+" | Job:"+(j?.name||"--")+" | Qty:"+i.qtyOrdered+" | Cost:$"+(i.unitCost||0).toFixed(2)+" | Price:$"+(i.unitPrice||0).toFixed(2);
+        }).join("\n");
+      }).join("\n");
+    }
+
+    // Compact vendor and customer summaries
+    const vendorSummaries = vendors.map(v=>{const spend=lineItems.filter(i=>i.vendor===v.id).reduce((s2,i2)=>s2+i2.unitCost*i2.qtyOrdered,0);const itemCount=lineItems.filter(i=>i.vendor===v.id).length;return v.name+"($"+Math.round(spend)+"|"+itemCount+" items|"+(v.discountRate*100).toFixed(0)+"%)"}).join(", ");
+    const custSummaries = customers.map(c=>{const cJobs=jobs.filter(j=>j.customer===c.id);const rev=cJobs.reduce((s2,j)=>s2+getJobFinancials(j.id).totalRevenue,0);return c.name+"("+cJobs.length+" jobs|$"+Math.round(rev)+")"}).join(", ");
+    const repSummaries = reps.filter(r=>!r.id.includes("SEED_FLAG")).map(r=>{const rJobs=jobs.filter(j=>j.salesRep===r.id);const rev=rJobs.reduce((s2,j)=>s2+getJobFinancials(j.id).totalRevenue,0);return r.name+"("+rJobs.length+" jobs|$"+Math.round(rev)+"|"+(r.commissionRate*100).toFixed(0)+"%)"}).join(", ");
+
+    // Only include SOPs, tasks, notes when relevant
+    const sopText = wantsSops ? (customSops||[]).filter(s=>!["Notes","Task","DocStatuses","ManualTxn","HistoricalDoc","Settings"].includes(s.cat)).map(s=>s.title+": "+s.content.slice(0,800)).join("\n\n") : "";
+    const taskText = /task|todo|assign|follow.?up/i.test(q) ? (customSops||[]).filter(s=>s.cat==="Task").map(s=>{try{const d=JSON.parse(s.content);return d.text+" ["+d.status+"]"+(d.assignees?.length?" -> "+d.assignees.join(","):"")+(d.due?" due:"+d.due:"")}catch{return s.title}}).join("\n") : "";
+
+    return "You are the Midwest Brain -- the AI operating system for Midwest Educational Furnishings (Kildeer, IL). Owner: Maureen Welter. Today: " + today + ".\nYou have COMPLETE access to all live database records below. Use this data to answer with specifics.\n\nSTATS: " + jobs.length + " jobs | Rev $" + Math.round(totalRev) + " | Cost $" + Math.round(totalCost) + " | Margin " + (totalRev>0?Math.round((totalRev-totalCost)/totalRev*100):0) + "% | " + lineItems.length + " line items | " + vendors.length + " vendors | " + customers.length + " customers\n\nALL JOBS:\n" + jobSummaries + lineItemDetail + "\n\nVENDORS: " + vendorSummaries + vendorDetail + "\n\nCUSTOMERS: " + custSummaries + "\n\nREPS: " + repSummaries + (sopText?"\n\nSOPS:\n"+sopText:"") + (taskText?"\n\nTASKS:\n"+taskText:"") + "\n\nRULES:\n1. You have FULL access to every job, line item, vendor, and customer. NEVER say you don't have the data -- it's all above.\n2. When asked about a job, look at its LINE ITEM DETAILS section for individual products, vendors, quantities, and costs.\n3. Always use exact names, dollar amounts, and percentages from the data.\n4. Show your math: revenue = sum(unitPrice * qty), cost = sum(unitCost * qty), margin = (rev-cost)/rev * 100.\n5. If asked about items/deliveries for a job not in LINE ITEM DETAILS, reference the job summary's Delivered count and total revenue/cost.\n6. Think like a CFO+COO. Every answer should help Maureen make a decision.\n7. Keep answers concise but complete with real numbers.\n8. At the end, suggest 2-3 follow-up questions:\n>> [question 1]\n>> [question 2]\n>> [question 3]\n9. NEVER use emoji. Text only.";
   };
 
   const handleQuery = async () => {
