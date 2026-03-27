@@ -2407,15 +2407,6 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
               <Btn onClick={()=>saveBillDetail(bill)}>Save Details</Btn>
               {!bill.paid&&!isVoid&&billPayDate&&<Btn onClick={()=>{setBillPayDate(billPayDate||new Date().toISOString().split('T')[0]);saveBillDetail(bill);setBillStatus('paid')}} style={{background:"#34d399",color:"#000"}}>Record Payment</Btn>}
               <Btn v="secondary" onClick={()=>printCheck(bill)}><I n="file" s={12}/> Print Check</Btn>
-              {!bill.paid&&!isVoid&&<Btn v="secondary" style={{color:"#a78bfa",border:"1px solid #a78bfa30"}} onClick={async()=>{
-                setStripeLoading(true);
-                try{const r=await fetch("/api/stripe-pay",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"create_checkout",job_name:bill.jobName||"Vendor Payment",customer_name:bill.vendor||"",amount_cents:Math.round((bill.cost||0)*100),job_id:bill.jobId||"",invoice_id:bill.docNum||""})});
-                  const data=await r.json();if(data.url){setStripePayUrl(data.url);navigator.clipboard.writeText(data.url).then(()=>notify("Vendor payment link created and copied!")).catch(()=>notify("Payment link created!"))}
-                  else{notify("Stripe error: "+(data.error||"Failed"),"error")}
-                }catch(err){notify("Error: "+err.message,"error")}
-                setStripeLoading(false);
-              }}>{stripeLoading?"Creating...":"Pay via Stripe"}</Btn>}
-              {stripePayUrl&&<a href={stripePayUrl} target="_blank" rel="noopener noreferrer" style={{fontSize:12,color:"#a78bfa",padding:"6px 12px",border:"1px solid #a78bfa30",borderRadius:8,textDecoration:"none",display:"flex",alignItems:"center",gap:6,background:"#a78bfa08",fontWeight:600}}>Open Payment</a>}
               <Btn v="secondary" onClick={()=>setBillDetail(null)}>Cancel</Btn>
             </div>
           </Card>
