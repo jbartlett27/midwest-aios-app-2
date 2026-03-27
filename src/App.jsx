@@ -119,7 +119,6 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
           else if(v==="install"||v==="install each"||v==="installation")h.install=c;
           else if(v==="install total"||v==="installation total")h.installTotal=c;
         }
-        // Don't match "total" as a header keyword for priceExt -- it's a summary label in Maureen's spreadsheets
         return Object.keys(h).length>=3?h:null;
       };
       const defaultMap={tag:0,manuf:1,model:2,desc:3,color:4,qty:5,list:6,listExt:7,net:8,netExt:9,price:10,priceExt:11};
@@ -141,25 +140,18 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
           const g=v=>cm[v]!==undefined?row[cm[v]]:"";
           const n=v=>safeNum(g(v));
           const s=v=>String(g(v)||"").trim();
-          // Check if any cell in the row contains "Total"/"Subtotal"/"Grand Total" (catches totals in ANY column)
           const rowHasTotal=row.some(cell=>/^(total|subtotal|grand total)$/i.test(String(cell||"").trim()));
           if(rowHasTotal)continue;
-          const desc=s("desc");const tag=s("tag");const manuf=s("manuf");
-          if(desc&&!tag&&!manuf&&!n("qty")&&!n("list")&&!n("net")&&!n("price")){grp=desc.replace(/\n/g," ").substring(0,80);groups.add(grp);continue}
-          if(!desc)continue;
-          let cleanDesc=desc.replace(/\r/g,"").split("\n")[0].trim();
-          const si2=cleanDesc.indexOf("Item Specifics");if(si2>0)cleanDesc=cleanDesc.substring(0,si2).trim();
-          const ri=cleanDesc.indexOf("-- Room Number");if(ri>0)cleanDesc=cleanDesc.substring(0,ri).trim();
-          const ri2=cleanDesc.indexOf("Room Number");if(ri2>20)cleanDesc=cleanDesc.substring(0,ri2).trim();
-          if(/^quote\s*[#]?\d/i.test(cleanDesc)||cleanDesc.startsWith("#"))continue;
-          if(/^(subtotal|grand total)$/i.test(cleanDesc.trim())||/^total$/i.test(cleanDesc.trim()))continue;
-          // Skip disclaimer/notes rows (long text with no pricing data at all)
-          if(cleanDesc.startsWith("*")&&!n("qty")&&!n("list")&&!n("net")&&!n("price")&&!n("priceExt"))continue;
-          const qty=Math.round(n("qty"));const list=n("list");const net=n("net");const price=n("price");const priceExt=n("priceExt");
-          if(qty<=0&&list<=0&&net<=0&&price<=0&&priceExt<=0)continue;
-          const mfr=manuf||lastManuf;if(manuf)lastManuf=manuf;if(mfr)vendorSet.add(mfr);
-          items.push({tag:tag.replace(/\.0$/,""),manufacturer:mfr||sn,
-            modelNumber:s("model").replace(/\.0$/,""),description:cleanDesc,
+          const desc=s("desc");const tag=s("tag");const manuf=s("manuf");const model=s("model");
+          if(!desc&&!tag&&!manuf)continue;
+          if(/^(freight|frt|surcharge|tariff|shipping|handling|delivery|install|installation|address|disclaimer|terms|conditions)/i.test(desc)&&!tag&&!model)continue;
+          const qty=n("qty")||0;if(qty<=0&&!tag)continue;
+          const list=n("list");const net=n("net");
+          const priceExt=n("priceExt");const price=n("price")||(priceExt&&qty>0?priceExt/qty:0);
+          if(manuf)lastManuf=manuf;
+          const mfr=manuf||lastManuf||"";
+          if(mfr)vendorSet.add(mfr);if(tag)groups.add(tag);
+          items.push({tag,manufacturer:mfr,modelNumber:model,description:desc||("Quote for "+mfr),
             color:s("color"),qtyOrdered:qty||1,listPrice:list,
             unitCost:net||0,shippingPerUnit:n("ship"),
             installPerUnit:n("install"),unitPrice:price||(priceExt&&qty>0?priceExt/qty:0)||0,
@@ -172,50 +164,52 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
         if(d0[0]&&d0[0][4])name=String(d0[0][4]).split("\n")[0].trim()}catch{}
       if(fileRef.current)fileRef.current.value="";
       setJobName(name);
-      const sel={};sheets.forEach(s=>{sel[s.name]=true});setSelectedSheets(sel);
+      const sel={};sheets.forEach(s2=>{sel[s2.name]=true});setSelectedSheets(sel);
       setParsed({items,vendors:vendorSet,groups,sheets});
       setStep("config");
-      if(items.length===0){notify("No items detected by standard parser. Try AI Assist to read this file.","error")}
-      else{notify(items.length+" line items found across "+sheets.length+" sheet"+(sheets.length>1?"s":""))}
+      notify(items.length+" items found by parser"+(items.length>0?" -- AI verifying in background...":". AI scanning..."));
+      // AI runs in parallel on EVERY quote upload
+      runAiVerify(f,wb,XLSX,items);
     }catch(err){notify("Error reading file: "+err.message,"error")}
   };
 
-  // AI-assisted Excel reading: converts spreadsheet to text, sends to Claude for parsing
-  const aiAssistExcel=async(f)=>{
-    if(!f)return;setAiScanning(true);
+  // AI verification runs alongside every quote upload
+  const runAiVerify=async(f,wb,XLSX,standardItems)=>{
+    setAiScanning(true);
     try{
-      const XLSX=await import("xlsx");
-      const data=await f.arrayBuffer();
-      const wb=XLSX.read(data,{type:"array"});
-      // Convert all sheets to readable text for Claude
-      let textContent="";
+      let textContent="FILE: "+f.name+"\n\n";
       for(const sn of wb.SheetNames){
         const ws=wb.Sheets[sn];
         const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:""});
+        const hiddenRows=ws["!rows"]||[];
         textContent+="=== Sheet: "+sn+" ===\n";
-        rows.slice(0,100).forEach((row,ri)=>{textContent+="Row "+ri+": "+row.map(c=>String(c||"").trim()).filter(Boolean).join(" | ")+"\n"});
+        rows.slice(0,150).forEach((row,ri)=>{
+          const isHidden=hiddenRows[ri]&&hiddenRows[ri].hidden;
+          textContent+=(isHidden?"[HIDDEN] ":"")+"Row "+ri+": "+row.map(c=>String(c||"").trim()).filter(Boolean).join(" | ")+"\n";
+        });
         textContent+="\n";
       }
       const r=await fetch("/api/ai-scan",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
         image_data:btoa(unescape(encodeURIComponent(textContent))),media_type:"text/plain",scan_type:"quote_document",
-        extra_context:"This is spreadsheet data from file: "+f.name+". Each row is pipe-separated. Find all furniture line items with tag, manufacturer, model, description, color, quantity, list price, net cost, and sell price. Ignore total/subtotal rows, headers, addresses, and disclaimers."
+        extra_context:"This is a furniture dealer quote spreadsheet. Extract EVERY furniture line item. Include tag number, manufacturer, model number, full description, color/finish, quantity, list price, net/dealer cost, and sell/customer price. Skip freight, surcharges, totals, subtotals, headers, addresses, and disclaimers. Rows marked [HIDDEN] should be SKIPPED. Be thorough."
       })});
       const resp=await r.json();
-      if(!r.ok||resp.error){notify("AI scan error: "+(resp.error?.message||"Failed"),"error");setAiScanning(false);return}
+      if(!r.ok||resp.error){setAiScanning(false);return}
       const text=(resp.content||[])[0]?.text||"";
       const clean=text.replace(/```json\s*/g,"").replace(/```\s*/g,"").trim();
       try{
-        const parsed2=JSON.parse(clean);
-        if(parsed2.items&&parsed2.items.length>0){
-          setAiResult(parsed2);
-          notify("AI found "+parsed2.items.length+" items. Review and import below.");
-          setStep("ai_review");
-        }else{notify("AI couldn't find line items in this file","error")}
-      }catch{notify("AI returned non-structured data. Try the AI Document Scan with a PDF/image instead.","error")}
-    }catch(err){notify("AI assist error: "+err.message,"error")}
+        const aiData=JSON.parse(clean);
+        if(aiData.items&&aiData.items.length>0){
+          setAiResult(aiData);
+          const stdCount=standardItems.length;const aiCount=aiData.items.length;
+          if(stdCount===0)notify("AI found "+aiCount+" items the standard parser missed. Click 'Use AI Results' to review.");
+          else if(aiCount>stdCount)notify("AI found "+(aiCount-stdCount)+" extra items vs parser ("+aiCount+" total). Click 'Use AI Results' to compare.");
+          else notify("AI verified "+aiCount+" items. Parser results confirmed.");
+        }
+      }catch{}
+    }catch{}
     setAiScanning(false);
   };
-
   const parseCSV=async(f)=>{
     const ext=f.name.split(".").pop().toLowerCase();
     if(ext==="xls"||ext==="xlsx"){
@@ -588,7 +582,8 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
       <div style={{display:"flex",gap:10,justifyContent:"flex-end",alignItems:"center"}}>
         {parsed&&parsed.items.length===0&&<span style={{fontSize:12,color:"#f87171",marginRight:"auto"}}>Standard parser found 0 items</span>}
         <Btn v="secondary" onClick={reset}>Cancel</Btn>
-        {(parsed?.items?.length===0||parsed?.items?.length>0)&&<Btn v="secondary" onClick={()=>aiAssistExcel(file)} style={{border:"1px solid #fbbf2430",color:"#fbbf24"}}>{aiScanning?"Scanning...":"AI Assist"}</Btn>}
+        {aiScanning&&<span style={{fontSize:12,color:"#fbbf24",display:"flex",alignItems:"center",gap:6}}><div style={{width:6,height:6,borderRadius:"50%",background:"#fbbf24",animation:"pulse 1s infinite"}}/>AI verifying...</span>}
+        {aiResult&&aiResult.items&&!aiScanning&&<Btn v="secondary" onClick={()=>setStep("ai_review")} style={{border:"1px solid #fbbf2430",color:"#fbbf24"}}>Use AI Results ({aiResult.items.length} items)</Btn>}
         {selCount>0&&<Btn onClick={importQuote} style={{padding:"12px 28px",fontSize:15,...(importing?{opacity:0.6,pointerEvents:"none"}:{})}}>{importing?"Importing...":"Import "+selCount+" Items"}</Btn>}
       </div>
     </div>}
