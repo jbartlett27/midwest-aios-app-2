@@ -77,6 +77,11 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
   const [target,setTarget]=useState("vendors");
   const [errors,setErrors]=useState([]);
   const fileRef=useRef(null);
+  const aiFileRef=useRef(null);
+  const [aiScanning,setAiScanning]=useState(false);
+  const [aiResult,setAiResult]=useState(null);
+  const [aiScanType,setAiScanType]=useState("general");
+  const [aiFile,setAiFile]=useState(null);
 
   const validate=(val,type)=>{
     if(type==="text")return val&&val.trim().length>=2;
@@ -170,8 +175,45 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
       const sel={};sheets.forEach(s=>{sel[s.name]=true});setSelectedSheets(sel);
       setParsed({items,vendors:vendorSet,groups,sheets});
       setStep("config");
-      notify(items.length+" line items found across "+sheets.length+" sheet"+(sheets.length>1?"s":""));
+      if(items.length===0){notify("No items detected by standard parser. Try AI Assist to read this file.","error")}
+      else{notify(items.length+" line items found across "+sheets.length+" sheet"+(sheets.length>1?"s":""))}
     }catch(err){notify("Error reading file: "+err.message,"error")}
+  };
+
+  // AI-assisted Excel reading: converts spreadsheet to text, sends to Claude for parsing
+  const aiAssistExcel=async(f)=>{
+    if(!f)return;setAiScanning(true);
+    try{
+      const XLSX=await import("xlsx");
+      const data=await f.arrayBuffer();
+      const wb=XLSX.read(data,{type:"array"});
+      // Convert all sheets to readable text for Claude
+      let textContent="";
+      for(const sn of wb.SheetNames){
+        const ws=wb.Sheets[sn];
+        const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:""});
+        textContent+="=== Sheet: "+sn+" ===\n";
+        rows.slice(0,100).forEach((row,ri)=>{textContent+="Row "+ri+": "+row.map(c=>String(c||"").trim()).filter(Boolean).join(" | ")+"\n"});
+        textContent+="\n";
+      }
+      const r=await fetch("/api/ai-scan",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+        image_data:btoa(unescape(encodeURIComponent(textContent))),media_type:"text/plain",scan_type:"quote_document",
+        extra_context:"This is spreadsheet data from file: "+f.name+". Each row is pipe-separated. Find all furniture line items with tag, manufacturer, model, description, color, quantity, list price, net cost, and sell price. Ignore total/subtotal rows, headers, addresses, and disclaimers."
+      })});
+      const resp=await r.json();
+      if(!r.ok||resp.error){notify("AI scan error: "+(resp.error?.message||"Failed"),"error");setAiScanning(false);return}
+      const text=(resp.content||[])[0]?.text||"";
+      const clean=text.replace(/```json\s*/g,"").replace(/```\s*/g,"").trim();
+      try{
+        const parsed2=JSON.parse(clean);
+        if(parsed2.items&&parsed2.items.length>0){
+          setAiResult(parsed2);
+          notify("AI found "+parsed2.items.length+" items. Review and import below.");
+          setStep("ai_review");
+        }else{notify("AI couldn't find line items in this file","error")}
+      }catch{notify("AI returned non-structured data. Try the AI Document Scan with a PDF/image instead.","error")}
+    }catch(err){notify("AI assist error: "+err.message,"error")}
+    setAiScanning(false);
   };
 
   const parseCSV=async(f)=>{
@@ -300,7 +342,75 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
     setImporting(false);
   };
 
-  const reset=()=>{setMode(null);setStep("upload");setFile(null);setParsed(null);setCsvData(null);setColMap({});setDone(null);setErrors([]);setJobName("");if(fileRef.current)fileRef.current.value=""};
+  const reset=()=>{setMode(null);setStep("upload");setFile(null);setParsed(null);setCsvData(null);setColMap({});setDone(null);setErrors([]);setJobName("");setAiResult(null);setAiFile(null);if(fileRef.current)fileRef.current.value="";if(aiFileRef.current)aiFileRef.current.value=""};
+
+  // AI Document Scanning
+  const handleAiScan=async(f,scanType)=>{
+    if(!f)return;setAiScanning(true);setAiResult(null);setAiFile(f);
+    try{
+      const reader=new FileReader();
+      const base64=await new Promise((res,rej)=>{reader.onload=()=>res(reader.result);reader.onerror=rej;reader.readAsDataURL(f)});
+      const parts=base64.split(",");const mediaType=parts[0].match(/:(.*?);/)?.[1]||"image/png";const data64=parts[1];
+      // For PDFs, use application/pdf; for images use detected type
+      const r=await fetch("/api/ai-scan",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({image_data:data64,media_type:mediaType,scan_type:scanType||aiScanType})});
+      const resp=await r.json();
+      if(!r.ok||resp.error){notify("Scan error: "+(resp.error?.message||JSON.stringify(resp.error)),"error");setAiScanning(false);return}
+      const text=(resp.content||[])[0]?.text||"";
+      // Parse JSON from response (strip markdown fences if present)
+      const clean=text.replace(/```json\s*/g,"").replace(/```\s*/g,"").trim();
+      try{const parsed2=JSON.parse(clean);setAiResult(parsed2);notify("Document scanned -- review results below")}
+      catch{setAiResult({raw_text:text,parse_error:true});notify("Scanned but couldn't parse structured data. Raw text extracted.","error")}
+    }catch(err){notify("Scan failed: "+err.message,"error")}
+    setAiScanning(false);
+  };
+  const importAiVendorInvoice=(data)=>{
+    if(!data)return;
+    const id="HIST-AI-"+Date.now()+"-"+Math.random().toString(36).slice(2,6);
+    const amt=data.total||data.subtotal||0;
+    addVendor&&data.vendor&&!vendors.find(v=>v.name.toLowerCase()===data.vendor.toLowerCase())&&addVendor({id:"V-AI-"+Date.now(),name:data.vendor,category:"Furniture",email:"",phone:"",discountRate:0,contact:""});
+    notify("Vendor invoice scanned: "+(data.vendor||"Unknown")+" #"+(data.invoice_number||"")+" for $"+Number(amt).toLocaleString());
+    setDone({type:"AI Scan",count:1,detail:"Vendor: "+(data.vendor||"--")+", Invoice: "+(data.invoice_number||"--")+", Amount: $"+Number(amt).toLocaleString()});setMode(null);
+  };
+  const importAiQuote=(data)=>{
+    if(!data||!data.items||data.items.length===0){notify("No items found in scan","error");return}
+    const jobId="JOB-"+new Date().getFullYear()+"-"+String(jobs.length+1).padStart(3,"0");
+    const jn=jobName||(data.customer?data.customer+" - AI Import":"AI Scanned Quote");
+    // Create vendor if needed
+    if(data.vendor){const existing=vendors.find(v=>v.name.toLowerCase()===data.vendor.toLowerCase());if(!existing)addVendor({id:"V-AI-"+Date.now(),name:data.vendor,category:"Furniture",email:"",phone:"",discountRate:0,contact:""})}
+    const vendorObj=vendors.find(v=>v.name.toLowerCase()===(data.vendor||"").toLowerCase());
+    addJob({id:jobId,name:jn,customer:"",salesRep:"",phase:"Quoting",paymentStatus:"unpaid",paymentTerms:"Net 30",dueDate:"",notes:"AI scanned from "+(aiFile?.name||"document")});
+    let ct=0;
+    data.items.forEach((item,idx)=>{
+      const v2=item.manufacturer?vendors.find(v=>v.name.toLowerCase()===item.manufacturer.toLowerCase()):vendorObj;
+      if(item.manufacturer&&!vendors.find(v=>v.name.toLowerCase()===item.manufacturer.toLowerCase()))addVendor({id:"V-AI-"+Date.now()+"-"+idx,name:item.manufacturer,category:"Furniture",email:"",phone:"",discountRate:0,contact:""});
+      addLineItem({id:"LI-AI-"+Date.now()+"-"+idx,jobId,description:item.description||"",modelNumber:item.model||"",color:item.color||"",tag:item.tag||"",vendor:v2?.id||vendorObj?.id||"",qtyOrdered:item.quantity||1,qtyReceived:0,unitCost:item.net_cost||item.unit_cost||0,unitPrice:item.sell_price||item.list_price||0,shippingCost:0,installCost:0});
+      ct++;
+    });
+    notify(ct+" items imported into "+jn);
+    setDone({type:"AI Quote Scan",count:ct,detail:"Job: "+jn+", Vendor: "+(data.vendor||"--")+", Items: "+ct});setMode(null);
+  };
+  const importAiCustomers=(data)=>{
+    if(!data?.customers?.length){notify("No customers found","error");return}
+    let ct=0;
+    data.customers.forEach((c,i)=>{
+      if(!c.name)return;
+      if(customers.find(x=>x.name.toLowerCase()===c.name.toLowerCase()))return;
+      addCustomer({id:"C-AI-"+Date.now()+"-"+i,name:c.name,contact:c.contact||"",email:c.email||"",phone:c.phone||"",type:c.type||"School District",address:(c.address||"")+(c.city?", "+c.city:"")+(c.state?" "+c.state:"")+(c.zip?" "+c.zip:"")});
+      ct++;
+    });
+    notify(ct+" customers imported");setDone({type:"AI Customer Scan",count:ct});setMode(null);
+  };
+  const importAiVendors=(data)=>{
+    if(!data?.vendors?.length){notify("No vendors found","error");return}
+    let ct=0;
+    data.vendors.forEach((v,i)=>{
+      if(!v.name)return;
+      if(vendors.find(x=>x.name.toLowerCase()===v.name.toLowerCase()))return;
+      addVendor({id:"V-AI-"+Date.now()+"-"+i,name:v.name,contact:v.contact||"",email:v.email||"",phone:v.phone||"",category:v.category||"Furniture",discountRate:0,website:v.website||""});
+      ct++;
+    });
+    notify(ct+" vendors imported");setDone({type:"AI Vendor Scan",count:ct});setMode(null);
+  };
 
   const selCount=parsed?parsed.items.filter(i=>selectedSheets[i.sheet]).length:0;
   const selCost=parsed?parsed.items.filter(i=>selectedSheets[i.sheet]).reduce((s,i)=>s+(i.unitCost*i.qtyOrdered),0):0;
@@ -321,8 +431,9 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
       {[
         {id:"quote",icon:"file",title:"Upload Excel Quote",sub:"Import Lisa's Excel spreadsheets with full line item parsing. Auto-detects tags, manufacturers, model numbers, quantities, pricing, shipping, and installation costs.",color:"#2dd4bf",tags:["XLS","XLSX","Auto-Map","Multi-Sheet"]},
         {id:"vendors",icon:"package",title:"Import Vendors",sub:"Bulk import vendor data from Excel or CSV. Smart column mapping with validation for company names, contacts, emails, and phone numbers.",color:"#a78bfa",tags:["XLS","XLSX","CSV","TSV"]},
-        {id:"customers",icon:"users",title:"Import Customers",sub:"Upload customer data from Excel or CSV. Auto-detects organization names, contacts, addresses, and school district types.",color:"#34d399",tags:["XLS","XLSX","CSV","TSV"]}
-      ].map(m=><Card key={m.id} onClick={()=>{setMode(m.id==="quote"?"quote":"csv");if(m.id!=="quote")setTarget(m.id)}} style={{cursor:"pointer",transition:"all 0.25s",border:"1px solid rgba(255,255,255,0.04)",position:"relative",overflow:"hidden"}} hover>
+        {id:"customers",icon:"users",title:"Import Customers",sub:"Upload customer data from Excel or CSV. Auto-detects organization names, contacts, addresses, and school district types.",color:"#34d399",tags:["XLS","XLSX","CSV","TSV"]},
+        {id:"ai",icon:"brain",title:"AI Document Scan",sub:"Upload any document -- vendor invoices, delivery receipts, quotes, customer lists, vendor lists. Claude Vision reads and extracts all data automatically.",color:"#fbbf24",tags:["PDF","PNG","JPG","Any Doc"]}
+      ].map(m=><Card key={m.id} onClick={()=>{if(m.id==="ai"){setMode("ai")}else{setMode(m.id==="quote"?"quote":"csv");if(m.id!=="quote")setTarget(m.id)}}} style={{cursor:"pointer",transition:"all 0.25s",border:"1px solid rgba(255,255,255,0.04)",position:"relative",overflow:"hidden"}} hover>
         <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
           <div style={{width:40,height:40,borderRadius:12,background:m.color+"15",display:"flex",alignItems:"center",justifyContent:"center",color:m.color}}><I n={m.icon} s={20}/></div>
           <div style={{fontSize:16,fontWeight:700,color:"#f0f0f0"}}>{m.title}</div>
@@ -350,7 +461,7 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
     <Card style={{textAlign:"center",padding:"48px 32px",border:"1px solid rgba(45,212,191,0.15)"}}>
       <div style={{width:64,height:64,borderRadius:"50%",background:"rgba(52,211,153,0.12)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",color:"#34d399"}}><I n="check" s={32}/></div>
       <div style={{fontSize:24,fontWeight:800,color:"#f0f0f0",marginBottom:8}}>Import Complete</div>
-      <div style={{fontSize:14,color:"#a3a3a3",marginBottom:24}}>{done.type==="quote"?done.items+" line items imported into \""+done.jobName+"\"":done.imported+" "+done.target+" imported"+(done.errors>0?" ("+done.errors+" warnings)":"")}</div>
+      <div style={{fontSize:14,color:"#a3a3a3",marginBottom:24}}>{done.type==="quote"?done.items+" line items imported into \""+done.jobName+"\"":done.detail?done.detail:done.imported+" "+done.target+" imported"+(done.errors>0?" ("+done.errors+" warnings)":"")}</div>
       <div style={{display:"flex",gap:12,justifyContent:"center",flexWrap:"wrap",marginBottom:24}}>
         {done.type==="quote"&&<><Card style={{padding:16,minWidth:110}}><div style={{fontSize:11,color:"#737373",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Items</div><div style={{fontSize:26,fontWeight:700,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{done.items}</div></Card><Card style={{padding:16,minWidth:110}}><div style={{fontSize:11,color:"#737373",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>New Vendors</div><div style={{fontSize:26,fontWeight:700,color:"#a78bfa",fontFamily:"'JetBrains Mono',monospace"}}>{done.vendors}</div></Card></>}
         {done.type==="csv"&&<Card style={{padding:16,minWidth:110}}><div style={{fontSize:11,color:"#737373",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Imported</div><div style={{fontSize:26,fontWeight:700,color:"#34d399",fontFamily:"'JetBrains Mono',monospace"}}>{done.imported}</div></Card>}
@@ -358,6 +469,63 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
       {errors.length>0&&<div style={{textAlign:"left",padding:14,background:"rgba(251,191,36,0.06)",border:"1px solid rgba(251,191,36,0.12)",borderRadius:10,marginBottom:16,maxHeight:120,overflow:"auto"}}>{errors.slice(0,10).map((e,i)=><div key={i} style={{fontSize:12,color:"#fbbf24",padding:"2px 0"}}>{e}</div>)}{errors.length>10&&<div style={{fontSize:11,color:"#737373"}}>+{errors.length-10} more warnings</div>}</div>}
       <div style={{display:"flex",gap:10,justifyContent:"center"}}><Btn onClick={reset}>Import More</Btn><Btn v="secondary" onClick={reset}>Done</Btn></div>
     </Card>
+  </div>;
+
+  // AI DOCUMENT SCAN FLOW
+  if(mode==="ai")return <div style={{animation:"fadeUp 0.4s"}}>
+    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:20}}>
+      <span onClick={reset} style={{color:"#737373",cursor:"pointer",fontSize:13,transition:"color 0.15s"}} onMouseEnter={e=>e.currentTarget.style.color="#2dd4bf"} onMouseLeave={e=>e.currentTarget.style.color="#737373"}>Data Import</span>
+      <span style={{color:"#333"}}>/</span>
+      <span style={{color:"#fbbf24",fontWeight:600,fontSize:13}}>AI Document Scan</span>
+    </div>
+    {!aiResult&&!aiScanning&&<>
+      <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+        <span style={{fontSize:12,color:"#737373",alignSelf:"center"}}>Scan type:</span>
+        {[["vendor_invoice","Vendor Invoice"],["quote_document","Quote / Proposal"],["delivery_receipt","Delivery Receipt"],["customer_list","Customer List"],["vendor_list","Vendor List"],["general","General / Other"]].map(([v,l])=><button key={v} onClick={()=>setAiScanType(v)} style={{padding:"6px 14px",borderRadius:8,border:"none",background:aiScanType===v?"#fbbf24":"#111",color:aiScanType===v?"#000":"#737373",fontSize:12,fontWeight:aiScanType===v?600:400,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>{l}</button>)}
+      </div>
+      <div onClick={()=>aiFileRef.current?.click()} onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor="rgba(251,191,36,0.4)"}} onDragLeave={e=>{e.currentTarget.style.borderColor="rgba(251,191,36,0.12)"}} onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor="rgba(251,191,36,0.12)";const f2=e.dataTransfer.files[0];if(f2)handleAiScan(f2,aiScanType)}} style={{textAlign:"center",padding:"48px 32px",border:"2px dashed rgba(251,191,36,0.12)",borderRadius:16,cursor:"pointer",transition:"all 0.3s",background:"rgba(251,191,36,0.02)"}}>
+        <div style={{width:56,height:56,borderRadius:16,background:"rgba(251,191,36,0.08)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px",color:"#fbbf24"}}><I n="brain" s={24}/></div>
+        <div style={{fontSize:16,fontWeight:600,color:"#e5e5e5",marginBottom:6}}>Drop any document here</div>
+        <div style={{fontSize:13,color:"#737373",marginBottom:16}}>PDF, PNG, JPG, JPEG, TIFF -- Claude Vision will read and extract all data</div>
+        <input ref={aiFileRef} type="file" accept=".pdf,.png,.jpg,.jpeg,.tiff,.gif,.webp" onChange={e=>{const f2=e.target.files?.[0];if(f2)handleAiScan(f2,aiScanType)}} style={{display:"none"}}/>
+        <Btn v="secondary" style={{fontSize:13,border:"1px solid #fbbf2430",color:"#fbbf24"}} onClick={e=>{e.stopPropagation();aiFileRef.current?.click()}}>Choose File</Btn>
+      </div>
+    </>}
+    {aiScanning&&<Card style={{textAlign:"center",padding:"48px 32px",border:"1px solid rgba(251,191,36,0.15)"}}><div style={{display:"flex",gap:4,justifyContent:"center",marginBottom:16}}><div style={{width:8,height:8,borderRadius:"50%",background:"#fbbf24",animation:"pulse 1s infinite"}}/><div style={{width:8,height:8,borderRadius:"50%",background:"#fbbf24",animation:"pulse 1s infinite 0.2s"}}/><div style={{width:8,height:8,borderRadius:"50%",background:"#fbbf24",animation:"pulse 1s infinite 0.4s"}}/></div><div style={{fontSize:16,fontWeight:600,color:"#fbbf24"}}>Claude is reading your document...</div><div style={{fontSize:13,color:"#737373",marginTop:8}}>{aiFile?.name||"Document"} -- scanning with AI vision</div></Card>}
+    {aiResult&&!aiResult.parse_error&&<Card style={{border:"1px solid rgba(251,191,36,0.15)",padding:20}}>
+      <div style={{fontSize:16,fontWeight:700,color:"#fbbf24",marginBottom:16}}>Scan Results</div>
+      {/* Vendor Invoice Results */}
+      {(aiResult.vendor||aiResult.invoice_number)&&<div style={{marginBottom:16}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10,marginBottom:12}}>
+          {aiResult.vendor&&<div style={{padding:10,background:"#111",borderRadius:8}}><div style={{fontSize:10,color:"#737373",textTransform:"uppercase"}}>Vendor</div><div style={{fontSize:14,fontWeight:600,color:"#f0f0f0"}}>{aiResult.vendor}</div></div>}
+          {aiResult.invoice_number&&<div style={{padding:10,background:"#111",borderRadius:8}}><div style={{fontSize:10,color:"#737373",textTransform:"uppercase"}}>Invoice #</div><div style={{fontSize:14,fontWeight:600,color:"#f0f0f0"}}>{aiResult.invoice_number||aiResult.quote_number}</div></div>}
+          {aiResult.date&&<div style={{padding:10,background:"#111",borderRadius:8}}><div style={{fontSize:10,color:"#737373",textTransform:"uppercase"}}>Date</div><div style={{fontSize:14,fontWeight:600,color:"#f0f0f0"}}>{aiResult.date}</div></div>}
+          {(aiResult.total||aiResult.total===0)&&<div style={{padding:10,background:"#111",borderRadius:8}}><div style={{fontSize:10,color:"#737373",textTransform:"uppercase"}}>Total</div><div style={{fontSize:14,fontWeight:600,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>${Number(aiResult.total).toLocaleString()}</div></div>}
+        </div>
+        {aiResult.items&&aiResult.items.length>0&&<div style={{overflowX:"auto",borderRadius:8,border:"1px solid #222",marginBottom:12}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><thead><tr style={{background:"#111"}}><th style={{padding:"8px 10px",textAlign:"left",color:"#737373"}}>Description</th><th style={{padding:"8px 10px",textAlign:"right",color:"#737373"}}>Qty</th><th style={{padding:"8px 10px",textAlign:"right",color:"#737373"}}>Unit Cost</th><th style={{padding:"8px 10px",textAlign:"right",color:"#737373"}}>Extended</th></tr></thead><tbody>{aiResult.items.map((item,i)=><tr key={i} style={{borderBottom:"1px solid #1a1a1a"}}><td style={{padding:"6px 10px",color:"#a3a3a3"}}>{item.description||item.model||"Item "+(i+1)}{item.manufacturer?" ("+item.manufacturer+")":""}{item.tag?" ["+item.tag+"]":""}</td><td style={{padding:"6px 10px",textAlign:"right",color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>{item.quantity||item.quantity_shipped||1}</td><td style={{padding:"6px 10px",textAlign:"right",color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>${Number(item.unit_cost||item.net_cost||item.list_price||0).toLocaleString()}</td><td style={{padding:"6px 10px",textAlign:"right",color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>${Number(item.extended||(item.quantity||1)*(item.unit_cost||item.net_cost||0)).toLocaleString()}</td></tr>)}</tbody></table></div>}
+      </div>}
+      {/* Customer List Results */}
+      {aiResult.customers&&<div style={{marginBottom:12}}><div style={{fontSize:13,color:"#a3a3a3",marginBottom:8}}>{aiResult.customers.length} customers found</div>{aiResult.customers.slice(0,10).map((c,i)=><div key={i} style={{fontSize:12,color:"#f0f0f0",padding:"4px 0"}}>{c.name}{c.type?" ("+c.type+")":""}{c.email?" -- "+c.email:""}</div>)}{aiResult.customers.length>10&&<div style={{fontSize:11,color:"#525252"}}>+{aiResult.customers.length-10} more</div>}</div>}
+      {/* Vendor List Results */}
+      {aiResult.vendors&&<div style={{marginBottom:12}}><div style={{fontSize:13,color:"#a3a3a3",marginBottom:8}}>{aiResult.vendors.length} vendors found</div>{aiResult.vendors.slice(0,10).map((v,i)=><div key={i} style={{fontSize:12,color:"#f0f0f0",padding:"4px 0"}}>{v.name}{v.category?" ("+v.category+")":""}{v.email?" -- "+v.email:""}</div>)}</div>}
+      {/* General/raw results */}
+      {aiResult.summary&&<div style={{fontSize:13,color:"#a3a3a3",marginBottom:12}}>{aiResult.summary}</div>}
+      {aiResult.raw_text&&!aiResult.items&&!aiResult.customers&&!aiResult.vendors&&<div style={{fontSize:12,color:"#a3a3a3",padding:12,background:"#111",borderRadius:8,whiteSpace:"pre-wrap",maxHeight:200,overflow:"auto"}}>{aiResult.raw_text}</div>}
+      <div style={{display:"flex",gap:8,marginTop:16,flexWrap:"wrap"}}>
+        {(aiResult.vendor||aiResult.invoice_number)&&!aiResult.items?.length&&<Btn onClick={()=>importAiVendorInvoice(aiResult)} style={{background:"#fbbf24",color:"#000"}}>Import as Vendor Bill</Btn>}
+        {aiResult.items?.length>0&&<><input value={jobName} onChange={e=>setJobName(e.target.value)} placeholder="Job name (optional)" style={{...inputStyle,width:200,padding:"6px 12px",fontSize:12}}/><Btn onClick={()=>importAiQuote(aiResult)} style={{background:"#2dd4bf",color:"#000"}}>Import as Job + Line Items</Btn></>}
+        {aiResult.items?.length>0&&(aiResult.vendor||aiResult.invoice_number)&&<Btn onClick={()=>importAiVendorInvoice(aiResult)} v="secondary" style={{fontSize:12}}>Import as Vendor Bill Only</Btn>}
+        {aiResult.customers?.length>0&&<Btn onClick={()=>importAiCustomers(aiResult)} style={{background:"#34d399",color:"#000"}}>Import {aiResult.customers.length} Customers</Btn>}
+        {aiResult.vendors?.length>0&&<Btn onClick={()=>importAiVendors(aiResult)} style={{background:"#a78bfa",color:"#000"}}>Import {aiResult.vendors.length} Vendors</Btn>}
+        <Btn v="secondary" onClick={()=>{setAiResult(null);setAiFile(null);if(aiFileRef.current)aiFileRef.current.value=""}}>Scan Another</Btn>
+        <Btn v="secondary" onClick={reset}>Back</Btn>
+      </div>
+    </Card>}
+    {aiResult&&aiResult.parse_error&&<Card style={{border:"1px solid rgba(251,191,36,0.15)",padding:20}}>
+      <div style={{fontSize:16,fontWeight:700,color:"#fbbf24",marginBottom:12}}>Raw Scan Results</div>
+      <div style={{fontSize:12,color:"#a3a3a3",padding:12,background:"#111",borderRadius:8,whiteSpace:"pre-wrap",maxHeight:400,overflow:"auto"}}>{aiResult.raw_text}</div>
+      <div style={{display:"flex",gap:8,marginTop:16}}><Btn v="secondary" onClick={()=>{setAiResult(null);setAiFile(null)}}>Scan Another</Btn><Btn v="secondary" onClick={reset}>Back</Btn></div>
+    </Card>}
   </div>;
 
   // EXCEL QUOTE FLOW
@@ -417,10 +585,41 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
           {selCount>40&&<div style={{padding:10,textAlign:"center",color:"#525252",fontSize:12}}>Showing 40 of {selCount}</div>}
         </div>
       </Card>
-      <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+      <div style={{display:"flex",gap:10,justifyContent:"flex-end",alignItems:"center"}}>
+        {parsed&&parsed.items.length===0&&<span style={{fontSize:12,color:"#f87171",marginRight:"auto"}}>Standard parser found 0 items</span>}
         <Btn v="secondary" onClick={reset}>Cancel</Btn>
-        <Btn onClick={importQuote} style={{padding:"12px 28px",fontSize:15,...(importing?{opacity:0.6,pointerEvents:"none"}:{})}}>{importing?"Importing...":"Import "+selCount+" Items"}</Btn>
+        {(parsed?.items?.length===0||parsed?.items?.length>0)&&<Btn v="secondary" onClick={()=>aiAssistExcel(file)} style={{border:"1px solid #fbbf2430",color:"#fbbf24"}}>{aiScanning?"Scanning...":"AI Assist"}</Btn>}
+        {selCount>0&&<Btn onClick={importQuote} style={{padding:"12px 28px",fontSize:15,...(importing?{opacity:0.6,pointerEvents:"none"}:{})}}>{importing?"Importing...":"Import "+selCount+" Items"}</Btn>}
       </div>
+    </div>}
+
+    {/* AI Assist review step for Excel quotes */}
+    {step==="ai_review"&&aiResult&&aiResult.items&&<div style={{display:"flex",flexDirection:"column",gap:16}}>
+      <Card style={{border:"1px solid rgba(251,191,36,0.15)",padding:20}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16}}><div style={{width:8,height:8,borderRadius:"50%",background:"#fbbf24"}}/><span style={{fontSize:16,fontWeight:700,color:"#fbbf24"}}>AI Found {aiResult.items.length} Items</span></div>
+        {aiResult.vendor&&<div style={{fontSize:13,color:"#a3a3a3",marginBottom:12}}>Vendor: <strong style={{color:"#f0f0f0"}}>{aiResult.vendor}</strong></div>}
+        <div style={{marginBottom:12}}><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Job Name</label><input value={jobName} onChange={e=>setJobName(e.target.value)} style={inputStyle} placeholder="e.g. DeKalb Mitchell ES"/></div>
+        <div style={{overflowX:"auto",borderRadius:10,border:"1px solid rgba(255,255,255,0.06)"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:800}}>
+            <thead><tr style={{background:"#0a0a0a"}}>{["Tag","Manufacturer","Model","Description","Color","Qty","Net Cost","Sell Price"].map(h=><th key={h} style={{padding:"6px 8px",textAlign:"left",fontWeight:600,color:"#737373",fontSize:10,textTransform:"uppercase",letterSpacing:0.8,borderBottom:"1px solid rgba(255,255,255,0.06)"}}>{h}</th>)}</tr></thead>
+            <tbody>{aiResult.items.slice(0,50).map((it,idx)=><tr key={idx} style={{borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
+              <td style={{padding:"5px 8px",color:"#a78bfa"}}>{it.tag||""}</td>
+              <td style={{padding:"5px 8px",color:"#c4c4c4"}}>{it.manufacturer||aiResult.vendor||""}</td>
+              <td style={{padding:"5px 8px",color:"#c4c4c4",fontFamily:"'JetBrains Mono',monospace",fontSize:11}}>{it.model||""}</td>
+              <td style={{padding:"5px 8px",color:"#e5e5e5",maxWidth:240,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{it.description||""}</td>
+              <td style={{padding:"5px 8px",color:"#c4c4c4"}}>{it.color||""}</td>
+              <td style={{padding:"5px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",color:"#f0f0f0"}}>{it.quantity||1}</td>
+              <td style={{padding:"5px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",color:"#fbbf24"}}>${Number(it.net_cost||it.unit_cost||0).toFixed(2)}</td>
+              <td style={{padding:"5px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",color:"#2dd4bf",fontWeight:600}}>${Number(it.sell_price||it.list_price||0).toFixed(2)}</td>
+            </tr>)}</tbody>
+          </table>
+          {aiResult.items.length>50&&<div style={{padding:10,textAlign:"center",color:"#525252",fontSize:12}}>Showing 50 of {aiResult.items.length}</div>}
+        </div>
+        <div style={{display:"flex",gap:10,marginTop:16,justifyContent:"flex-end"}}>
+          <Btn v="secondary" onClick={()=>{setAiResult(null);setStep("config")}}>Back to Standard Parser</Btn>
+          <Btn onClick={()=>importAiQuote(aiResult)} style={{padding:"12px 28px",fontSize:15,background:"#fbbf24",color:"#000"}}>{importing?"Importing...":"Import "+aiResult.items.length+" Items (AI)"}</Btn>
+        </div>
+      </Card>
     </div>}
   </div>;
 
@@ -2496,13 +2695,36 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
         const files=e.target?.files;if(!files||!files.length)return;
         try{
           const XLSX=await import('xlsx');
-          let grandTotal=0;
+          let grandTotal=0;let failedSheets=[];
           for(const file of Array.from(files)){
             if(!/\.(xls|xlsx|csv|tsv)$/i.test(file.name)){notify('Skipped non-spreadsheet: '+file.name,'error');continue}
             const count=await parseOneExcel(file,XLSX);
+            if(count===0){failedSheets.push(file)}
             grandTotal+=count;
           }
-          notify(grandTotal+' transaction'+(grandTotal!==1?'s':'')+' imported from '+files.length+' file'+(files.length!==1?'s':''));
+          if(grandTotal>0)notify(grandTotal+' transaction'+(grandTotal!==1?'s':'')+' imported from '+files.length+' file'+(files.length!==1?'s':''));
+          if(failedSheets.length>0&&grandTotal===0){
+            // All files failed standard parsing -- try AI on first file
+            notify('Standard parser found 0 records. Trying AI assist on '+failedSheets[0].name+'...');
+            try{
+              const f=failedSheets[0];const data2=await f.arrayBuffer();const wb2=XLSX.read(data2,{type:'array'});
+              let textContent="";
+              for(const sn of wb2.SheetNames){const ws2=wb2.Sheets[sn];const rows2=XLSX.utils.sheet_to_json(ws2,{header:1,defval:""});
+                textContent+="=== Sheet: "+sn+" ===\n";rows2.slice(0,80).forEach((row,ri)=>{textContent+="Row "+ri+": "+row.map(c=>String(c||"").trim()).filter(Boolean).join(" | ")+"\n"});textContent+="\n"}
+              const r=await fetch("/api/ai-scan",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({image_data:btoa(unescape(encodeURIComponent(textContent))),media_type:"text/plain",scan_type:"general",extra_context:"This is transaction/accounting data from file: "+f.name+". Extract transactions with Date, Type, Number, Vendor/Payee, Description/Memo, Amount, Status. Return JSON with format: {\"transactions\":[{\"date\":\"\",\"type\":\"\",\"docNumber\":\"\",\"vendor\":\"\",\"memo\":\"\",\"amount\":0,\"status\":\"\"}]}"})});
+              const resp=await r.json();const text=(resp.content||[])[0]?.text||"";const clean=text.replace(/```json\s*/g,"").replace(/```\s*/g,"").trim();
+              try{const parsed3=JSON.parse(clean);const txns=parsed3.transactions||parsed3.items||[];let aiCount=0;
+                txns.forEach((t,idx)=>{
+                  if(!t.vendor&&!t.memo&&!t.amount&&!t.date)return;
+                  const id='HIST-AI-'+Date.now()+'-'+Math.random().toString(36).slice(2,6)+'-'+idx;
+                  const recType=/sale|income|deposit|revenue|receivable/i.test(t.type||'')?'customer_invoice':'vendor_po';
+                  addSop({id,title:(recType==='vendor_po'?'PO':'INV')+' '+(t.docNumber||id)+' - '+(t.vendor||''),cat:'HistoricalDoc',icon:'file',content:JSON.stringify({type:recType,vendor:recType==='vendor_po'?(t.vendor||''):'',customer:recType==='customer_invoice'?(t.vendor||''):'',docNumber:t.docNumber||'',date:t.date||'',amount:String(Math.abs(t.amount||0)),job:'',description:(t.type?t.type+' -- ':'')+t.memo,notes:'AI imported | Status: '+(t.status||'imported'),files:[]}),custom:true});
+                  aiCount++;
+                });
+                notify(aiCount+' records imported via AI from '+f.name);
+              }catch{notify('AI could not parse structured data from this file','error')}
+            }catch(err2){notify('AI assist failed: '+err2.message,'error')}
+          }else if(failedSheets.length>0){notify(failedSheets.length+' file'+(failedSheets.length>1?'s':'')+' had unrecognized format. Use AI Document Scan in Data Import for those.')}
         }catch(err){notify('Error reading Excel: '+err.message,'error')}
         if(histExcelRef.current)histExcelRef.current.value='';
         if(histBulkExcelRef.current)histBulkExcelRef.current.value='';
