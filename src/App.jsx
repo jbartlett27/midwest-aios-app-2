@@ -3475,11 +3475,73 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     const custSummaries = customers.map(c=>{const cJobs=jobs.filter(j=>j.customer===c.id);const rev=cJobs.reduce((s2,j)=>s2+getJobFinancials(j.id).totalRevenue,0);return c.name+"("+cJobs.length+" jobs|$"+Math.round(rev)+")"}).join(", ");
     const repSummaries = reps.filter(r=>!r.id.includes("SEED_FLAG")).map(r=>{const rJobs=jobs.filter(j=>j.salesRep===r.id);const rev=rJobs.reduce((s2,j)=>s2+getJobFinancials(j.id).totalRevenue,0);return r.name+"("+rJobs.length+" jobs|$"+Math.round(rev)+"|"+(r.commissionRate*100).toFixed(0)+"%)"}).join(", ");
 
-    // Only include SOPs, tasks, notes when relevant
-    const sopText = wantsSops ? (customSops||[]).filter(s=>!["Notes","Task","DocStatuses","ManualTxn","HistoricalDoc","Settings"].includes(s.cat)).map(s=>s.title+": "+s.content.slice(0,800)).join("\n\n") : "";
+    // Smart SOP matching -- always know what SOPs exist, include full content when relevant
+    const allSopDocs=(customSops||[]).filter(s=>!["Notes","Task","DocStatuses","ManualTxn","HistoricalDoc","Settings"].includes(s.cat));
+    // Build a compact index of all SOPs (always sent -- very cheap, ~50 tokens)
+    const sopIndex=allSopDocs.map(s=>s.title+" ["+s.cat+"]").join(", ");
+    // Determine which SOPs are relevant to this query using multi-signal matching
+    const qWords=q.split(/\s+/).filter(w=>w.length>2);
+    const matchedSops=allSopDocs.filter(s=>{
+      const title=s.title.toLowerCase();const content=(s.content||'').toLowerCase().slice(0,500);const cat=(s.cat||'').toLowerCase();
+      // Direct keyword match in title
+      if(qWords.some(w=>title.includes(w)))return true;
+      // Category match
+      if(qWords.some(w=>cat.includes(w)))return true;
+      // Semantic matches -- common question patterns to SOP topics
+      const topicMap=[
+        [/how.*(quote|bid|price|pricing|estimate)/,'quote'],
+        [/how.*(invoice|bill|invoicing)/,'invoice'],
+        [/how.*(order|purchase|po |buying)/,'purchase'],
+        [/how.*(deliver|ship|receive|track)/,'deliver'],
+        [/how.*(commission|comp|pay.*rep|rep.*pay)/,'commission'],
+        [/how.*(customer|client|school|district)/,'customer'],
+        [/how.*(vendor|manufacturer|supplier)/,'vendor'],
+        [/how.*(document|report|export|pdf|print)/,'document'],
+        [/how.*(discount|markup|margin|pricing)/,'discount'],
+        [/how.*(new.*job|create.*job|start.*job|setup.*job|add.*job)/,'job'],
+        [/how.*(sale|sell|selling|close|pipeline)/,'sale'],
+        [/how.*(onboard|train|new.*hire|new.*person)/,'onboard'],
+        [/how.*(plan|season|capacity|forecast)/,'plan'],
+        [/what.*(process|procedure|workflow|system|step)/,'process'],
+        [/what.*(brand|voice|tone|communication|messaging)/,'brand'],
+        [/what.*(guideline|standard|rule|policy|requirement)/,'guide'],
+        [/what.*(role|responsibility|team|who.*does|who.*handle)/,'role'],
+        [/what.*(mission|vision|values|about.*company|company.*about)/,'mission'],
+        [/who.*(contact|call|reach|responsible|handle)/,'role'],
+        [/where.*(find|look|go|navigate|located)/,'process'],
+        [/when.*(should|need|do.*i|supposed)/,'process'],
+        [/can.*you.*(explain|walk|show|help|tell).*how/,'process'],
+        [/tell.*me.*about.*(process|system|how)/,'process'],
+        [/explain.*(process|system|how|workflow)/,'process'],
+        [/walk.*me.*through/,'process'],
+        [/step.*by.*step/,'process'],
+        [/what.*are.*the.*steps/,'process'],
+      ];
+      for(const [pattern,keyword] of topicMap){
+        if(pattern.test(q)&&(title.includes(keyword)||content.includes(keyword)))return true;
+      }
+      // Fuzzy: if query has 3+ word overlap with SOP content
+      const contentWords=new Set(content.split(/\s+/).filter(w=>w.length>3));
+      const overlap=qWords.filter(w=>contentWords.has(w)).length;
+      if(overlap>=3)return true;
+      return false;
+    });
+    // Broad detection: is this a "how do I" / process / help question?
+    const isHelpQuestion=/^(how|what|where|when|who|can you|tell me|explain|walk|show me|help|steps|guide|process)/i.test(q);
+    // If it's a help question and no SOPs matched, try a looser match
+    let extraSops=[];
+    if(isHelpQuestion&&matchedSops.length===0){
+      extraSops=allSopDocs.filter(s=>{const t=s.title.toLowerCase();const c=(s.content||'').toLowerCase().slice(0,300);return qWords.filter(w=>w.length>3).some(w=>t.includes(w)||c.includes(w))}).slice(0,3);
+    }
+    const relevantSops=[...matchedSops,...extraSops];
+    // Build SOP text: full content for matched SOPs, just index for everything else
+    const sopFullText=relevantSops.length>0?relevantSops.map(s=>"=== "+s.title+" ["+s.cat+"] ===\n"+s.content.slice(0,1200)).join("\n\n"):"";
+    const sopSection="\n\nALL SOPs AVAILABLE: "+sopIndex+(sopFullText?"\n\nRELEVANT SOP DETAILS:\n"+sopFullText:"");
+
+    // Only include tasks when relevant
     const taskText = /task|todo|assign|follow.?up/i.test(q) ? (customSops||[]).filter(s=>s.cat==="Task").map(s=>{try{const d=JSON.parse(s.content);return d.text+" ["+d.status+"]"+(d.assignees?.length?" -> "+d.assignees.join(","):"")+(d.due?" due:"+d.due:"")}catch{return s.title}}).join("\n") : "";
 
-    return "You are the Midwest Brain -- the AI operating system for Midwest Educational Furnishings (Kildeer, IL). Owner: Maureen Welter. Today: " + today + ".\nYou have COMPLETE access to all live database records below. Use this data to answer with specifics.\n\nSTATS: " + jobs.length + " jobs | Rev $" + Math.round(totalRev) + " | Cost $" + Math.round(totalCost) + " | Margin " + (totalRev>0?Math.round((totalRev-totalCost)/totalRev*100):0) + "% | " + lineItems.length + " line items | " + vendors.length + " vendors | " + customers.length + " customers\n\nALL JOBS:\n" + jobSummaries + lineItemDetail + "\n\nVENDORS: " + vendorSummaries + vendorDetail + "\n\nCUSTOMERS: " + custSummaries + "\n\nREPS: " + repSummaries + (sopText?"\n\nSOPS:\n"+sopText:"") + (taskText?"\n\nTASKS:\n"+taskText:"") + "\n\nRULES:\n1. You have FULL access to every job, line item, vendor, and customer. NEVER say you don't have the data -- it's all above.\n2. When asked about a job, look at its LINE ITEM DETAILS section for individual products, vendors, quantities, and costs.\n3. Always use exact names, dollar amounts, and percentages from the data.\n4. Show your math: revenue = sum(unitPrice * qty), cost = sum(unitCost * qty), margin = (rev-cost)/rev * 100.\n5. If asked about items/deliveries for a job not in LINE ITEM DETAILS, reference the job summary's Delivered count and total revenue/cost.\n6. Think like a CFO+COO. Every answer should help Maureen make a decision.\n7. Keep answers concise but complete with real numbers.\n8. At the end, suggest 2-3 follow-up questions:\n>> [question 1]\n>> [question 2]\n>> [question 3]\n9. NEVER use emoji. Text only.";
+    return "You are the Midwest Brain -- the AI operating system for Midwest Educational Furnishings (Kildeer, IL). Owner: Maureen Welter. Today: " + today + ".\nYou have COMPLETE access to all live database records and SOPs below. Use this data to answer with specifics.\n\nSTATS: " + jobs.length + " jobs | Rev $" + Math.round(totalRev) + " | Cost $" + Math.round(totalCost) + " | Margin " + (totalRev>0?Math.round((totalRev-totalCost)/totalRev*100):0) + "% | " + lineItems.length + " line items | " + vendors.length + " vendors | " + customers.length + " customers\n\nALL JOBS:\n" + jobSummaries + lineItemDetail + "\n\nVENDORS: " + vendorSummaries + vendorDetail + "\n\nCUSTOMERS: " + custSummaries + "\n\nREPS: " + repSummaries + sopSection + (taskText?"\n\nTASKS:\n"+taskText:"") + "\n\nRULES:\n1. You have FULL access to every job, line item, vendor, customer, AND SOP/playbook document. NEVER say you don't have the data.\n2. When asked about a job, look at its LINE ITEM DETAILS section for individual products, vendors, quantities, and costs.\n3. Always use exact names, dollar amounts, and percentages from the data.\n4. Show your math: revenue = sum(unitPrice * qty), cost = sum(unitCost * qty), margin = (rev-cost)/rev * 100.\n5. For ANY 'how do I' question, process question, or guideline question: check the RELEVANT SOP DETAILS section first. If an SOP covers it, answer FROM the SOP with specific steps. If no SOP matches, give your best operational advice.\n6. When someone asks about brand guidelines, company policies, team roles, communication standards, or any operational topic: check SOPs first.\n7. The ALL SOPs AVAILABLE list shows every documented procedure. If the user asks about a topic and a relevant SOP exists, reference it by name and give the steps from it.\n8. Think like a CFO+COO. Every answer should help Maureen make a decision or take action.\n9. Keep answers concise but complete with real numbers and specific steps.\n10. At the end, suggest 2-3 follow-up questions:\n>> [question 1]\n>> [question 2]\n>> [question 3]\n11. NEVER use emoji. Text only.";
   };
 
   const handleQuery = async () => {
