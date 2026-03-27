@@ -777,7 +777,15 @@ function MidwestAIOSInner() {
           if (data.reps && data.reps.length > 0) setReps(data.reps.filter(r=>r.name && !r.id.includes("SEED_FLAG")));
           if (data.jobs && data.jobs.length > 0) setJobs(data.jobs);
           if (data.lineItems && data.lineItems.length > 0) setLineItems(data.lineItems);
-          if (data.sops && data.sops.length > 0) setCustomSops(data.sops);
+          if (data.sops && data.sops.length > 0) {
+            // Deduplicate SOPs -- keep latest version of each ID
+            const deduped = [];const seen = new Set();
+            for (let i = data.sops.length - 1; i >= 0; i--) {
+              if (!seen.has(data.sops[i].id)) { seen.add(data.sops[i].id); deduped.unshift(data.sops[i]); }
+              else { db.deleteSop(data.sops[i].id).catch(()=>{}); } // Clean up duplicate from DB
+            }
+            setCustomSops(deduped);
+          }
         } else {
           // Database is completely empty (first-time setup only) -- seed with sample data
           await db.seedSafe(INIT_JOBS, INIT_LINE_ITEMS, INIT_VENDORS, INIT_CUSTOMERS, INIT_REPS);
@@ -870,7 +878,7 @@ function MidwestAIOSInner() {
   };
   const deleteCustomer = async (id) => { if (!await confirm("Delete this customer? Their jobs will be unlinked.")) return; setCustomers(p => p.filter(c => c.id !== id)); db.deleteCustomer(id); };
   const forceDeleteCustomer = (id) => { setCustomers(p => p.filter(c => c.id !== id)); db.deleteCustomer(id); };
-  const addSop = (sop) => { setCustomSops(p => { const exists = p.findIndex(s => s.id === sop.id); if (exists >= 0) { const updated = [...p]; updated[exists] = sop; return updated; } return [...p, sop]; }); db.saveSop(sop); };
+  const addSop = (sop) => { setCustomSops(p => { const exists = p.findIndex(s => s.id === sop.id); if (exists >= 0) { const updated = [...p]; updated[exists] = sop; return updated; } return [...p, sop]; }); db.deleteSop(sop.id).then(()=>db.saveSop(sop)); };
   const deleteSop = (id) => { setCustomSops(p => p.filter(s => s.id !== id)); db.deleteSop(id); };
   const addVendor = v => { const nv = {...v, id: "V-"+uid()}; setVendors(p => [...p, nv]); db.saveVendor(nv); };
   const updateVendor = (id, u) => {
@@ -3159,7 +3167,8 @@ function PlaybookPage({jobs,reps,vendors,customers,lineItems,getJobFinancials,se
 
   // DEFAULT_SOPS defined at module level
 
-  const customIds=new Set((customSops||[]).filter(s=>s.cat!=="Notes"&&s.cat!=="Task"&&s.cat!=="DocStatuses").map(s=>s.overrideId||s.id));const allSops=[...DEFAULT_SOPS.filter(d=>!customIds.has(d.id)),...(customSops||[])].filter(s=>s.cat!=="Notes"&&s.cat!=="Task"&&s.cat!=="DocStatuses");
+  const internalCats=new Set(["Notes","Task","DocStatuses","ManualTxn","HistoricalDoc","Settings"]);
+  const customIds=new Set((customSops||[]).filter(s=>!internalCats.has(s.cat)).map(s=>s.overrideId||s.id));const allSops=[...DEFAULT_SOPS.filter(d=>!customIds.has(d.id)),...(customSops||[])].filter(s=>!internalCats.has(s.cat));
   const cats=[...new Set(allSops.map(s=>s.cat))];
   const filtered=search?allSops.filter(s=>s.title.toLowerCase().includes(search.toLowerCase())||s.content.toLowerCase().includes(search.toLowerCase())):allSops;
 
