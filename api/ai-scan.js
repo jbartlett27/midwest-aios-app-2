@@ -40,17 +40,26 @@ Extract every vendor/manufacturer listed.`
 
     const systemPrompt = prompts[scan_type] || prompts.general;
     
-    // If media_type is text/plain, send as text content (for Excel-to-text conversion)
-    // Otherwise send as image/document for vision
+    // Route content by media type:
+    // - text/plain: send as text (Excel-to-text conversion)
+    // - application/pdf: send as document type (Claude native PDF support)
+    // - image/*: send as image type (vision)
     let userContent;
     if (media_type === 'text/plain') {
       const textData = Buffer.from(image_data, 'base64').toString('utf-8');
       userContent = [
         { type: "text", text: (extra_context ? extra_context + "\n\n" : "") + "Here is the spreadsheet data:\n\n" + textData + "\n\nExtract all data. Return ONLY valid JSON." }
       ];
-    } else {
+    } else if (media_type === 'application/pdf') {
       userContent = [
-        { type: "image", source: { type: "base64", media_type: media_type || "image/png", data: image_data } },
+        { type: "document", source: { type: "base64", media_type: "application/pdf", data: image_data } },
+        { type: "text", text: (extra_context ? extra_context + "\n\n" : "") + "Extract all data from this document. Return ONLY valid JSON." }
+      ];
+    } else {
+      // image/png, image/jpeg, image/gif, image/webp
+      const safeType = ['image/jpeg','image/png','image/gif','image/webp'].includes(media_type) ? media_type : 'image/png';
+      userContent = [
+        { type: "image", source: { type: "base64", media_type: safeType, data: image_data } },
         { type: "text", text: (extra_context ? extra_context + "\n\n" : "") + "Extract all data from this document. Return ONLY valid JSON." }
       ];
     }
