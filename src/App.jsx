@@ -2851,7 +2851,7 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
                 const data=await r.json();if(data.url){
                   // Save payment link to docStatuses
                   const ds={...(doc.job.docStatuses||{})};ds[doc.data.docNum+"__stripe"]={url:data.url,session_id:data.session_id,created:new Date().toISOString(),amount:doc.data.total};
-                  ctx.updateJob(doc.job.id,{docStatuses:ds});
+                  updateJob(doc.job.id,{docStatuses:ds});
                   // Copy link and open
                   navigator.clipboard.writeText(data.url).catch(()=>{});
                   window.open(data.url,"_blank");
