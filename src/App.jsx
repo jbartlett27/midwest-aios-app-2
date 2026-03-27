@@ -3543,6 +3543,10 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   const [plaidBankName,setPlaidBankName]=useState(()=>{try{return localStorage.getItem('mw_plaid_bank_name')||''}catch{return ''}});
   const [plaidLoading,setPlaidLoading]=useState(false);
   const [txnSelected,setTxnSelected]=useState(new Set());
+  const [showCatEditor,setShowCatEditor]=useState(false);
+  const [newCatName,setNewCatName]=useState('');
+  const [editingCat,setEditingCat]=useState(null);
+  const [editingCatName,setEditingCatName]=useState('');
   const [bankSearch,setBankSearch]=useState('');
   const [bankCatFilter,setBankCatFilter]=useState('all');
 
@@ -3822,7 +3826,16 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       </div>})()}
 
     {tab==="banking"&&(()=>{
-      const categories=['Uncategorized','Revenue - Product Sales','Revenue - Shipping','Revenue - Installation','COGS - Vendor Payments','COGS - Freight','Operating - Rent','Operating - Utilities','Operating - Insurance','Operating - Office Supplies','Operating - Commissions','Operating - Payroll','Operating - Marketing','Operating - Professional Services','Tax Payment','Transfer','Owner Draw','Owner Investment','Refund','Other'];
+      const defaultCats=['Uncategorized','Revenue - Product Sales','Revenue - Shipping','Revenue - Installation','COGS - Vendor Payments','COGS - Freight','Operating - Rent','Operating - Utilities','Operating - Insurance','Operating - Office Supplies','Operating - Commissions','Operating - Payroll','Operating - Marketing','Operating - Professional Services','Tax Payment','Transfer','Owner Draw','Owner Investment','Refund','Other'];
+      const customCatRecord=(customSops||[]).find(s=>s.id==='CUSTOM_CATEGORIES');
+      const customCats=customCatRecord?(()=>{try{return JSON.parse(customCatRecord.content)}catch{return []}})():[];
+      const categories=[...defaultCats,...customCats.filter(c=>!defaultCats.includes(c))];
+      const addCustomCat=(name)=>{if(!name||categories.includes(name))return;const next=[...customCats,name];addSop({id:'CUSTOM_CATEGORIES',title:'Custom Categories',cat:'Settings',icon:'tag',content:JSON.stringify(next),custom:true});notify('Category added: '+name)};
+      const removeCustomCat=(name)=>{const next=customCats.filter(c=>c!==name);addSop({id:'CUSTOM_CATEGORIES',title:'Custom Categories',cat:'Settings',icon:'tag',content:JSON.stringify(next),custom:true});notify('Category removed: '+name)};
+      const renameCustomCat=(oldName,newName)=>{if(!newName||categories.includes(newName))return;const next=customCats.map(c=>c===oldName?newName:c);addSop({id:'CUSTOM_CATEGORIES',title:'Custom Categories',cat:'Settings',icon:'tag',content:JSON.stringify(next),custom:true});
+        // Also rename in all transactions that used the old name
+        manualTxns.filter(t=>t.category===oldName).forEach(t=>{addSop({id:t.id,title:t.description||'Transaction',cat:'ManualTxn',icon:'dollar',content:JSON.stringify({...t,category:newName}),custom:true})});
+        notify('Category renamed: '+oldName+' -> '+newName);setEditingCat(null);setEditingCatName('')};
       const allTxns=manualTxns.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
       const filteredBankTxns=allTxns.filter(t=>{
         if(bankCatFilter!=='all'&&t.category!==bankCatFilter)return false;
@@ -3940,8 +3953,26 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
         <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
           <input value={bankSearch} onChange={e=>setBankSearch(e.target.value)} placeholder="Search transactions..." style={{...inputStyle,flex:1,minWidth:200,maxWidth:300}}/>
           <select value={bankCatFilter} onChange={e=>setBankCatFilter(e.target.value)} style={{...inputStyle,width:"auto"}}><option value="all">All Categories</option>{categories.map(c=><option key={c} value={c}>{c}</option>)}</select>
-          <span style={{fontSize:11,color:"#737373"}}>{filteredBankTxns.length} transaction{filteredBankTxns.length!==1?'s':''}</span>
+          <Btn v="secondary" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>setShowCatEditor(!showCatEditor)}><I n="tag" s={12}/> {showCatEditor?'Close':'Manage Categories'}</Btn>
+          <span style={{fontSize:11,color:"#737373"}}>{filteredBankTxns.length} transaction{filteredBankTxns.length!==1?'s':''}{customCats.length>0?' -- '+customCats.length+' custom':''}</span>
         </div>
+
+        {showCatEditor&&<Card style={{padding:16,border:"1px solid #2dd4bf20"}}>
+          <div style={{fontSize:14,fontWeight:700,color:"#f0f0f0",marginBottom:12}}>Manage Categories</div>
+          <div style={{display:"flex",gap:8,marginBottom:14}}>
+            <input value={newCatName} onChange={e=>setNewCatName(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&newCatName.trim()){addCustomCat(newCatName.trim());setNewCatName('')}}} placeholder="New category name..." style={{...inputStyle,flex:1,maxWidth:300}}/>
+            <Btn onClick={()=>{if(newCatName.trim()){addCustomCat(newCatName.trim());setNewCatName('')}}} style={{fontSize:12}}>Add Category</Btn>
+          </div>
+          {customCats.length>0&&<div style={{marginBottom:12}}>
+            <div style={{fontSize:11,color:"#737373",marginBottom:6,fontWeight:600}}>CUSTOM CATEGORIES ({customCats.length})</div>
+            <div style={{display:"flex",flexDirection:"column",gap:4}}>{customCats.map(c=><div key={c} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",background:"#111",borderRadius:6,border:"1px solid #222"}}>
+              {editingCat===c?<><input value={editingCatName} onChange={e=>setEditingCatName(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')renameCustomCat(c,editingCatName.trim());if(e.key==='Escape'){setEditingCat(null);setEditingCatName('')}}} style={{...inputStyle,flex:1,padding:"2px 6px",fontSize:12}} autoFocus/><button onClick={()=>renameCustomCat(c,editingCatName.trim())} style={{background:"none",border:"none",color:"#34d399",cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>Save</button><button onClick={()=>{setEditingCat(null);setEditingCatName('')}} style={{background:"none",border:"none",color:"#737373",cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>Cancel</button></>
+              :<><span style={{flex:1,fontSize:12,color:"#e5e5e5"}}>{c}</span><span style={{fontSize:10,color:"#525252"}}>{manualTxns.filter(t=>t.category===c).length} txns</span><button onClick={()=>{setEditingCat(c);setEditingCatName(c)}} style={{background:"none",border:"none",color:"#a3a3a3",cursor:"pointer",fontSize:10,fontFamily:"inherit"}}>Rename</button><button onClick={()=>removeCustomCat(c)} style={{background:"none",border:"none",color:"#f87171",cursor:"pointer",fontSize:10,fontFamily:"inherit"}}>Remove</button></>}
+            </div>)}</div>
+          </div>}
+          <div style={{fontSize:11,color:"#737373",marginBottom:6,fontWeight:600}}>DEFAULT CATEGORIES ({defaultCats.length})</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:4}}>{defaultCats.map(c=><span key={c} style={{padding:"3px 8px",background:"#0a0a0a",border:"1px solid #1a1a1a",borderRadius:5,fontSize:10,color:"#737373"}}>{c}</span>)}</div>
+        </Card>}
 
         {txnSelected.size>0&&<div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:"#2dd4bf08",border:"1px solid #2dd4bf20",borderRadius:8}}>
           <span style={{fontSize:13,color:"#2dd4bf",fontWeight:600}}>{txnSelected.size} selected</span>
