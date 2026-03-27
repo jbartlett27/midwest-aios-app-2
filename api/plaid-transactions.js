@@ -28,36 +28,45 @@ export default async function handler(req, res) {
     const defaultStart = new Date(now);
     defaultStart.setDate(defaultStart.getDate() - 90);
 
-    const response = await fetch(`${baseUrl}/transactions/sync`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        client_id: CLIENT_ID,
-        secret: SECRET,
-        access_token,
-      }),
-    });
-    const data = await response.json();
+    const useStart = start_date || defaultStart.toISOString().split('T')[0];
+    const useEnd = end_date || now.toISOString().split('T')[0];
 
-    // If sync isn't available, fall back to transactions/get
-    if (data.error_code === 'PRODUCT_NOT_READY' || !response.ok) {
-      const fallback = await fetch(`${baseUrl}/transactions/get`, {
+    // Use transactions/get for date-range queries (more reliable than sync for historical data)
+    const fetchPage = async (offset = 0, accumulated = []) => {
+      const response = await fetch(`${baseUrl}/transactions/get`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           client_id: CLIENT_ID,
           secret: SECRET,
           access_token,
-          start_date: start_date || defaultStart.toISOString().split('T')[0],
-          end_date: end_date || now.toISOString().split('T')[0],
-          options: { count: 500, offset: 0 },
+          start_date: useStart,
+          end_date: useEnd,
+          options: { count: 500, offset },
         }),
       });
-      const fbData = await fallback.json();
-      return res.status(fallback.status).json(fbData);
-    }
+      const data = await response.json();
+      if (data.error_code || !response.ok) {
+        // If transactions/get fails, try sync as fallback
+        if (offset === 0) {
+          const syncResp = await fetch(`${baseUrl}/transactions/sync`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ client_id: CLIENT_ID, secret: SECRET, access_token }),
+          });
+          return res.status(syncResp.status).json(await syncResp.json());
+        }
+        return res.status(response.status).json(data);
+      }
+      const all = [...accumulated, ...(data.transactions || [])];
+      // If there are more transactions, paginate (up to 5 pages / 2500 transactions)
+      if (all.length < data.total_transactions && offset + 500 < data.total_transactions && offset < 2000) {
+        return fetchPage(offset + 500, all);
+      }
+      return res.status(200).json({ transactions: all, total_transactions: data.total_transactions, start_date: useStart, end_date: useEnd });
+    };
 
-    return res.status(200).json(data);
+    return fetchPage();
   } catch (error) {
     return res.status(500).json({ error: 'Server error: ' + error.message });
   }
