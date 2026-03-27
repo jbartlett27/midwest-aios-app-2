@@ -3865,14 +3865,18 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       const handlePlaidConnect=async()=>{
         setPlaidLoading(true);
         try{
-          const r=await fetch('/api/plaid-link',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'create_link_token'})});
-          const data=await r.json();
-          if(!r.ok||data.error||!data.link_token){
-            const msg=data.error_message||data.error?.message||data.error||(typeof data.error==='string'?data.error:'Could not create link token. Make sure PLAID_CLIENT_ID, PLAID_SECRET, and PLAID_ENV are set in Vercel and you redeployed.');
-            notify('Plaid error: '+msg,'error');setPlaidLoading(false);return;
+          const r=await fetch('/api/plaid-link',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'create_link_token'})}).catch(()=>null);
+          if(!r){notify('Cannot reach /api/plaid-link. Make sure plaid-link.js is in the api/ folder on GitHub and Vercel has redeployed.','error');setPlaidLoading(false);return}
+          if(r.status===404){notify('API route not found. Push plaid-link.js to the api/ folder in GitHub and redeploy Vercel.','error');setPlaidLoading(false);return}
+          const text=await r.text();let data;try{data=JSON.parse(text)}catch{notify('API returned invalid response. Go to Vercel > Deployments and click Redeploy.','error');setPlaidLoading(false);return}
+          if(!r.ok||!data.link_token){
+            const msg=typeof data.error==='string'?data.error:data.error_message||data.error?.message||'Unknown error';
+            if(msg.includes('not set')||msg.includes('CLIENT_ID')||msg.includes('SECRET')){
+              notify('Plaid keys not active yet. Go to Vercel > Settings > Environment Variables, confirm PLAID_CLIENT_ID, PLAID_SECRET, PLAID_ENV are there, then go to Deployments and click Redeploy.','error');
+            } else {notify('Plaid: '+msg,'error')}
+            setPlaidLoading(false);return;
           }
           if(typeof window.Plaid==='undefined'){
-            // Load Plaid SDK dynamically if not loaded
             await new Promise((resolve,reject)=>{const s=document.createElement('script');s.src='https://cdn.plaid.com/link/v2/stable/link-initialize.js';s.onload=resolve;s.onerror=()=>reject(new Error('Failed to load Plaid SDK'));document.head.appendChild(s)});
           }
           const handler=window.Plaid.create({
