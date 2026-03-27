@@ -3954,7 +3954,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       // Plaid sync handler
       // Build dedup set once: plaidIds + fallback hashes for all existing transactions
       const existingPlaidIds=new Set(manualTxns.filter(mt=>mt.plaidId).map(mt=>mt.plaidId));
-      const existingHashes=new Set(manualTxns.map(mt=>(mt.date||'')+'|'+(mt.amount||'')+'|'+(mt.description||'').slice(0,30).toLowerCase()));
+      const existingHashes=new Set(manualTxns.map(mt=>(mt.date||'')+'|'+(mt.amount||'')+'|'+(mt.description||'').slice(0,5).toLowerCase()));
 
       const handlePlaidSync=async(rangeOverride,silent)=>{
         if(!plaidAccessToken){if(!silent)notify('No access token. Reconnect bank.','error');return}
@@ -3979,7 +3979,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
             // Smart dedup: check Plaid transaction ID first
             if(t.transaction_id&&existingPlaidIds.has(t.transaction_id)){skipped++;return}
             // Fallback dedup: check date+amount+description hash
-            const hash=(t.date||'')+'|'+String(Math.abs(t.amount||0).toFixed(2))+'|'+(t.name||t.merchant_name||'').slice(0,30).toLowerCase();
+            const hash=(t.date||'')+'|'+String(Math.abs(t.amount||0).toFixed(2))+'|'+(t.name||t.merchant_name||'').slice(0,5).toLowerCase();
             if(existingHashes.has(hash)){skipped++;return}
             // Mark as seen for this sync batch
             if(t.transaction_id)existingPlaidIds.add(t.transaction_id);
