@@ -2268,6 +2268,8 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
   const [payAmt,setPayAmt]=useState('');
   const [payDeposit,setPayDeposit]=useState('Operating Account');
   const [payMemo,setPayMemo]=useState('');
+  const [payDocUrl,setPayDocUrl]=useState('');
+  const [payDocName,setPayDocName]=useState('');
   const [paySelected,setPaySelected]=useState({});
   // Historical records state
   const [histSearch,setHistSearch]=useState('');
@@ -2951,7 +2953,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
         const amt=parseFloat(payAmt)||0;
         if(amt<=0)return;
         const payId='PAY-'+Date.now()+'-'+Math.random().toString(36).slice(2,6);
-        setDocStatus(payId,{jobId:payJob,customer:selCustomer?.name||'',jobName:selectedJob?.name||'',amount:amt,date:payDate,ref:payRef,method:payMethod,deposit:payDeposit,memo:payMemo,invoiceNum:invDocNum});
+        setDocStatus(payId,{jobId:payJob,customer:selCustomer?.name||'',jobName:selectedJob?.name||'',amount:amt,date:payDate,ref:payRef,method:payMethod,deposit:payDeposit,memo:payMemo,invoiceNum:invDocNum,docUrl:payDocUrl||'',docName:payDocName||''});
         // Update job payment status
         const totalPaidForJob=paymentRecords.filter(p=>p.jobId===payJob).reduce((s,p)=>s+(p.amount||0),0)+amt;
         if(totalPaidForJob>=selFinancials.totalRevenue*0.99){
@@ -2960,7 +2962,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
           updateJob(payJob,{paymentStatus:'partial'});
         }
         notify('Payment of '+fmt(amt)+' recorded for '+selectedJob?.name);
-        setPayAmt('');setPayRef('');setPayMemo('');setPayJob('');setPaySelected({});
+        setPayAmt('');setPayRef('');setPayMemo('');setPayJob('');setPaySelected({});setPayDocUrl('');setPayDocName('');
       };
 
       const syncStripePayments=async()=>{
@@ -3045,16 +3047,54 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
           </div>}
 
           <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:16}}>
-            <Btn v="secondary" onClick={()=>{setPayJob('');setPayAmt('');setPayRef('');setPayMemo('');setPaySelected({})}}>Clear</Btn>
-            <Btn onClick={handleRecord} style={{padding:"10px 24px",opacity:(!payJob||!payAmt)?0.4:1,pointerEvents:(!payJob||!payAmt)?'none':'auto'}}>Record Payment</Btn>
+            <input type="file" id="paymentDocUpload" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.tiff" style={{display:"none"}} onChange={async e=>{
+              const file=e.target.files?.[0];if(!file)return;
+              notify('Scanning document...');
+              try{
+                // Upload to Supabase Storage
+                const ext=file.name.split('.').pop()||'pdf';
+                const path='payments/pay_'+Date.now()+'.'+ext;
+                const url=await window._supabase.uploadFile('vendor-invoices',path,file);
+                if(url)setPayDocUrl(url);
+                setPayDocName(file.name);
+                // AI scan to extract check number, date, method
+                const reader=new FileReader();
+                reader.onload=async()=>{
+                  const base64=reader.result.split(',')[1];
+                  const mediaType=file.type||'application/pdf';
+                  try{
+                    const resp=await fetch('/api/ai-scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:base64,mediaType,prompt:'Extract from this payment document: 1) check number or reference number, 2) payment date (format YYYY-MM-DD), 3) payment method (check, ach, credit_card, cash, or other), 4) amount. Return ONLY a JSON object like: {"ref":"12345","date":"2026-03-28","method":"check","amount":"5000.00"}. If a field is not found, use empty string.'})});
+                    if(resp.ok){
+                      const data=await resp.json();
+                      const text=(data.text||'').trim();
+                      try{
+                        const cleaned=text.replace(/```json\s*/g,'').replace(/```/g,'').trim();
+                        const parsed=JSON.parse(cleaned);
+                        if(parsed.ref)setPayRef(parsed.ref);
+                        if(parsed.date)setPayDate(parsed.date);
+                        if(parsed.method)setPayMethod(parsed.method);
+                        if(parsed.amount)setPayAmt(parsed.amount);
+                        notify('AI extracted: Ref #'+(parsed.ref||'--')+', Date: '+(parsed.date||'--')+', Method: '+(parsed.method||'--'));
+                      }catch{if(text.length<50)setPayRef(text);notify('AI extracted reference: '+text)}
+                    }
+                  }catch(err){console.error('AI scan error:',err)}
+                };
+                reader.readAsDataURL(file);
+              }catch(err){console.error('Upload error:',err);notify('Upload error: '+err.message)}
+              e.target.value='';
+            }}/>
+            <Btn v="secondary" onClick={()=>document.getElementById('paymentDocUpload')?.click()} style={{display:"flex",alignItems:"center",gap:6}}><I n="upload" s={12}/> Upload Payment Doc</Btn>
+            {payDocName&&<span style={{fontSize:11,color:"#a78bfa",display:"flex",alignItems:"center",gap:4}}><I n="file" s={10} color="#a78bfa"/>{payDocName}</span>}
+            <Btn v="secondary" onClick={()=>{setPayJob('');setPayAmt('');setPayRef('');setPayMemo('');setPaySelected({});setPayDocUrl('');setPayDocName('')}}>Clear</Btn>
+            <Btn onClick={()=>{handleRecord();if(payDocUrl){/* doc url saved with record */}}} style={{padding:"10px 24px",opacity:(!payJob||!payAmt)?0.4:1,pointerEvents:(!payJob||!payAmt)?'none':'auto'}}>Record Payment</Btn>
           </div>
         </Card>
 
         {paymentRecords.length>0&&<Card style={{padding:20}}>
           <div style={{fontSize:18,fontWeight:800,color:"#f0f0f0",marginBottom:16,fontFamily:"'JetBrains Mono',monospace"}}>Payment History</div>
-          <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:600}}><thead><tr style={{borderBottom:"2px solid #222"}}>{["Date","Customer / Job","Reference","Method","Deposit To","Amount"].map((h,i)=><th key={i} style={{padding:"8px 6px",textAlign:i>=5?"right":"left",color:"#737373",fontSize:11,fontWeight:600}}>{h}</th>)}</tr></thead><tbody>
-            {paymentRecords.map(p=><tr key={p.id} style={{borderBottom:"1px solid #111"}}><td style={{padding:"8px 6px",color:"#a3a3a3",whiteSpace:"nowrap"}}>{p.date}</td><td style={{padding:"8px 6px"}}><div style={{color:"#e5e5e5",fontWeight:500,display:"flex",alignItems:"center",gap:6}}>{p.jobName}{p.stripeSessionId&&<span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:"#a78bfa15",color:"#a78bfa",fontWeight:600}}>STRIPE</span>}</div><div style={{fontSize:11,color:"#737373"}}>{p.customer}{p.invoiceNum?" -- "+p.invoiceNum:""}</div></td><td style={{padding:"8px 6px",fontFamily:"'JetBrains Mono',monospace",color:"#a78bfa",fontSize:11}}>{p.ref||'--'}</td><td style={{padding:"8px 6px",color:"#a3a3a3",textTransform:"capitalize"}}>{(p.method||'').replace('_',' ')}</td><td style={{padding:"8px 6px",color:"#a3a3a3"}}>{p.deposit||'--'}</td><td style={{padding:"8px 6px",textAlign:"right",fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:"#34d399"}}>{fmt(p.amount)}</td></tr>)}
-            <tr style={{borderTop:"2px solid #222"}}><td colSpan={5} style={{padding:"8px 6px",fontWeight:700}}>TOTAL RECEIVED</td><td style={{padding:"8px 6px",textAlign:"right",fontWeight:800,fontFamily:"'JetBrains Mono',monospace",color:"#34d399",fontSize:14}}>{fmt(totalReceived)}</td></tr>
+          <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:700}}><thead><tr style={{borderBottom:"2px solid #222"}}>{["Date","Customer / Job","Reference","Method","Deposit To","Doc","Amount",""].map((h,i)=><th key={i} style={{padding:"8px 6px",textAlign:i>=6?"right":"left",color:"#737373",fontSize:11,fontWeight:600}}>{h}</th>)}</tr></thead><tbody>
+            {paymentRecords.map(p=><tr key={p.id} style={{borderBottom:"1px solid #111"}}><td style={{padding:"8px 6px",color:"#a3a3a3",whiteSpace:"nowrap"}}>{p.date}</td><td style={{padding:"8px 6px"}}><div style={{color:"#e5e5e5",fontWeight:500,display:"flex",alignItems:"center",gap:6}}>{p.jobName}{p.stripeSessionId&&<span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:"#a78bfa15",color:"#a78bfa",fontWeight:600}}>STRIPE</span>}</div><div style={{fontSize:11,color:"#737373"}}>{p.customer}{p.invoiceNum?" -- "+p.invoiceNum:""}</div></td><td style={{padding:"8px 6px",fontFamily:"'JetBrains Mono',monospace",color:"#a78bfa",fontSize:11}}>{p.ref||'--'}</td><td style={{padding:"8px 6px",color:"#a3a3a3",textTransform:"capitalize"}}>{(p.method||'').replace('_',' ')}</td><td style={{padding:"8px 6px",color:"#a3a3a3"}}>{p.deposit||'--'}</td><td style={{padding:"8px 6px"}}>{p.docUrl?<a href={p.docUrl} target="_blank" rel="noopener noreferrer" style={{fontSize:10,color:"#a78bfa",textDecoration:"none",display:"flex",alignItems:"center",gap:3}}><I n="file" s={10} color="#a78bfa"/>{p.docName?p.docName.slice(0,15)+'...':'View'}</a>:<span style={{color:"#333"}}>--</span>}</td><td style={{padding:"8px 6px",textAlign:"right",fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:"#34d399"}}>{fmt(p.amount)}</td><td style={{padding:"8px 6px",textAlign:"right"}}><div style={{display:"flex",gap:4,justifyContent:"flex-end"}}><button onClick={()=>{setPayJob(p.jobId||'');setPayDate(p.date||'');setPayRef(p.ref||'');setPayMethod(p.method||'check');setPayDeposit(p.deposit||'Operating Account');setPayMemo(p.memo||'');setPayAmt(String(p.amount||''));setPayDocUrl(p.docUrl||'');setPayDocName(p.docName||'');setDocStatus(p.id,null);notify('Editing payment -- make changes and Record again')}} style={{padding:"3px 8px",borderRadius:5,border:"1px solid #333",background:"transparent",color:"#a3a3a3",fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>Edit</button><button onClick={()=>{if(confirm('Delete this payment record?')){setDocStatus(p.id,null);notify('Payment deleted: '+fmt(p.amount))}}} style={{padding:"3px 8px",borderRadius:5,border:"1px solid #f8717130",background:"transparent",color:"#f87171",fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>Del</button></div></td></tr>)}
+            <tr style={{borderTop:"2px solid #222"}}><td colSpan={6} style={{padding:"8px 6px",fontWeight:700}}>TOTAL RECEIVED</td><td style={{padding:"8px 6px",textAlign:"right",fontWeight:800,fontFamily:"'JetBrains Mono',monospace",color:"#34d399",fontSize:14}}>{fmt(totalReceived)}</td><td/></tr>
           </tbody></table></div>
         </Card>}
       </div>})()}
