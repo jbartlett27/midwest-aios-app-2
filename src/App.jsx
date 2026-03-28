@@ -2518,12 +2518,13 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           const today=new Date();const mm=String(today.getMonth()+1).padStart(2,'0');const dd=String(today.getDate()).padStart(2,'0');const yyyy=today.getFullYear();
           const dateStr=mm+'/'+dd+'/'+yyyy;
           // Auto-generate check number if empty: find highest existing check number and increment
-          let checkNo=billCheckNum;
+          // Auto-generate check number: always ensure a real number
+          let checkNo=billCheckNum&&billCheckNum.trim()&&billCheckNum.trim()!=='____'?billCheckNum.trim():'';
           if(!checkNo){
-            const allCheckNums=Object.values(docStatuses).filter(v=>typeof v==='object'&&v.checkNum).map(v=>parseInt(v.checkNum)).filter(n=>!isNaN(n));
+            const allCheckNums=Object.values(docStatuses).filter(v=>typeof v==='object'&&v.checkNum&&v.checkNum!=='____').map(v=>parseInt(v.checkNum)).filter(n=>!isNaN(n)&&n>0);
             const maxCheck=allCheckNums.length>0?Math.max(...allCheckNums):9240;
             checkNo=String(maxCheck+1);
-            setBillCheckNum(checkNo); // auto-populate the input field
+            setBillCheckNum(checkNo);
           }
           const amtDollars=Math.floor(bill2.cost);const amtCents=Math.round((bill2.cost-amtDollars)*100);
           const amtWords=(()=>{const ones=['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];const tens=['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
@@ -2536,9 +2537,9 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           const billDate=bill2.payDate||bill2.poDate||dateStr;
           const refNum=bill2.vendorInvNum||billInvNum||bill2.poDocNum||'';
           // MICR line: check number, routing number, account number (from Maureen's check)
-          const micrCheck='C'+checkNo.padStart(6,'0')+'C';
-          const micrRouting='T071926155T';
-          const micrAccount='O0159796200O';
+          const micrCheck=String(checkNo).padStart(6,'0');
+          // MICR format matching Maureen's Cornerstone Bank check: ⑆checknum⑆ ⑈routing⑈ ⑆account⑆
+          const micrLine='\u2446'+micrCheck+'\u2446  \u2448071926155\u2448  \u2446015979620\u2446';
           const html=`<!DOCTYPE html><html><head><title>Check ${checkNo}</title><style>
 @page{size:8.5in 11in;margin:0}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -2550,7 +2551,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
 .company-name{font-size:13px;font-weight:700;letter-spacing:0.3px}
 .company-addr{font-size:10px;color:#444}
 .bank-block{text-align:center;font-size:10px;color:#444;line-height:1.4}
-.check-no{font-size:24px;font-weight:700;font-family:'Courier New',monospace;text-align:right;min-width:80px}
+.check-no{font-size:28px;font-weight:700;font-family:'Courier New',monospace;text-align:right;min-width:80px}
 .date-row{text-align:right;margin-bottom:8px;font-size:12px}
 .date-val{border-bottom:1px solid #333;padding:0 12px;font-style:italic}
 .payto-row{display:flex;align-items:center;gap:6px;margin-bottom:4px}
@@ -2600,7 +2601,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
   <div class="words-row">${amtWords}${'*'.repeat(Math.max(0,80-amtWords.length))} DOLLARS</div>
   <div class="vendor-addr">${vendorAddrHtml}</div>
   <div class="memo-row"><span class="memo-label">MEMO</span><span class="memo-val">${billMemo||''}</span></div>
-  <div class="micr-line">${micrCheck}&nbsp;&nbsp;&nbsp;${micrRouting}&nbsp;&nbsp;&nbsp;${micrAccount}</div>
+  <div class="micr-line">${micrLine}</div>
 </div>
 
 <!-- STUB 1 (middle third -- company copy) -->
@@ -4008,6 +4009,10 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     {name:"create_sop",description:"Create a new SOP/playbook document.",input_schema:{type:"object",properties:{title:{type:"string"},category:{type:"string",description:"Company, Workflow, Financial, Operations, Strategic, Custom"},content:{type:"string",description:"The full SOP content"}},required:["title","content"]}},
     {name:"conditional_update",description:"Find all jobs matching a condition, then update them. Use for: 'For every job that is In Progress with all items received, change phase to Delivered' or 'Mark all jobs with payment status partial as paid'. First finds matching jobs and shows them, then updates on confirm.",input_schema:{type:"object",properties:{condition_description:{type:"string",description:"Human-readable description of the condition"},filters:{type:"object",description:"Filter criteria to match jobs",properties:{phase:{type:"string"},paymentStatus:{type:"string"},all_items_received:{type:"boolean",description:"true to match only jobs where qtyReceived >= qtyOrdered for ALL items"},has_invoiced_items:{type:"boolean"},customer_name:{type:"string"},rep_name:{type:"string"}}},updates:{type:"object",description:"What to change on matched jobs",properties:{phase:{type:"string"},paymentStatus:{type:"string"},notes:{type:"string"},dueDate:{type:"string"}}}},required:["condition_description","filters","updates"]}},
     {name:"generate_document",description:"Generate and open a document preview (invoice, quote, or PO) for a specific job. Use when user says 'generate invoice for X', 'create the quote for Y', 'show me the PO for Z'. This navigates to the Documents page and opens the document preview.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name keywords"},doc_type:{type:"string",description:"invoice, quote, or po"}},required:["job_id","doc_type"]}},
+    {name:"delete_job",description:"Delete a job and all its line items. Use when user says 'delete this job', 'remove the test job', etc. Always confirm the job name before deleting.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name keywords"}},required:["job_id"]}},
+    {name:"duplicate_job",description:"Duplicate a job with all its line items, customer, and rep. Resets phase to Quoting and payment to unpaid. Use when user says 'duplicate this job', 'copy the job for next year', 'clone this project'.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name keywords to duplicate"},new_name:{type:"string",description:"Optional new name for the duplicated job. If not provided, appends ' (Copy)' to the original name."}},required:["job_id"]}},
+    {name:"search_and_report",description:"Search and filter jobs, vendors, customers, or line items by complex criteria and return a formatted report. Use for 'list all jobs over $50K', 'show me vendors with spend over $10K', 'find all unpaid jobs for College of DuPage', 'which jobs have the lowest margin'.",input_schema:{type:"object",properties:{entity:{type:"string",description:"What to search: jobs, vendors, customers, or items"},filters:{type:"object",description:"Filter criteria",properties:{min_revenue:{type:"number"},max_revenue:{type:"number"},min_margin:{type:"number"},max_margin:{type:"number"},phase:{type:"string"},paymentStatus:{type:"string"},customer_name:{type:"string"},vendor_name:{type:"string"},rep_name:{type:"string"},min_spend:{type:"number",description:"For vendors: minimum total spend across all jobs"}}},sort_by:{type:"string",description:"Sort field: revenue, cost, margin, name, spend"},limit:{type:"number",description:"Max results to return (default 20)"}},required:["entity"]}},
+    {name:"add_line_items",description:"Add one or more line items to a job. Use when user says 'add 20 desks to the Lincoln job at $297 each', 'add a line item for chairs', etc.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name keywords"},items:{type:"array",description:"Array of items to add",items:{type:"object",properties:{description:{type:"string"},manufacturer:{type:"string"},model_number:{type:"string"},color:{type:"string"},quantity:{type:"number"},unit_price:{type:"number",description:"Customer price per unit"},unit_cost:{type:"number",description:"Dealer cost per unit"},vendor_name:{type:"string",description:"Vendor/manufacturer name"}}}}},required:["job_id","items"]}},
     {name:"navigate_to_page",description:"Navigate to a page in the app.",input_schema:{type:"object",properties:{page:{type:"string"}},required:["page"]}}
   ];
 
@@ -4148,6 +4153,87 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         window._brainDocTarget={jobId:job.id,docType:dt,timestamp:Date.now()};
         const docLabel=dt==="invoice"?"Invoice":dt==="quote"?"Quote":dt==="po"?"Purchase Orders":"Document";
         return{success:true,message:"Opening "+docLabel+" for "+job.name+". Navigate to the "+docLabel+" tab in Documents to view and export it."};
+      }
+      if(toolName==="delete_job"){
+        const job=findJob(input.job_id);
+        if(!job)return{error:"Job not found: "+input.job_id};
+        const jobItems=getJobItems(job.id);
+        jobItems.forEach(i=>deleteLineItem(i.id));
+        deleteJob(job.id);
+        return{success:true,message:"Deleted job '"+job.name+"' and "+jobItems.length+" line items."};
+      }
+      if(toolName==="duplicate_job"){
+        const job=findJob(input.job_id);
+        if(!job)return{error:"Job not found: "+input.job_id};
+        const newId="JOB-"+new Date().getFullYear()+"-"+String(jobs.length+1).padStart(3,"0");
+        const newName=input.new_name||job.name+" (Copy)";
+        addJob({id:newId,name:newName,customer:job.customer,salesRep:job.salesRep,phase:"Quoting",paymentStatus:"unpaid",notes:job.notes||"",terms:job.terms||"Net 30",shipTo:job.shipTo||"",billTo:job.billTo||""});
+        const srcItems=getJobItems(job.id);
+        let ct=0;
+        srcItems.forEach(item=>{
+          const newItemId=newId+"-item-"+String(ct+1).padStart(3,"0");
+          addLineItem({id:newItemId,jobId:newId,description:item.description,vendor:item.vendor,tag:item.tag||"",manufacturer:item.manufacturer||"",modelNumber:item.modelNumber||"",color:item.color||"",unitCost:item.unitCost,unitPrice:item.unitPrice,shippingPerUnit:item.shippingPerUnit||0,installPerUnit:item.installPerUnit||0,qtyOrdered:item.qtyOrdered,qtyReceived:0,qtyInvoiced:0,listPrice:item.listPrice||0});
+          ct++;
+        });
+        const cust=customers.find(c=>c.id===job.customer);
+        return{success:true,message:"Duplicated '"+job.name+"' as '"+newName+"' ("+newId+") with "+ct+" line items. Phase: Quoting. Customer: "+(cust?.name||"same")+"."};
+      }
+      if(toolName==="search_and_report"){
+        const f=input.filters||{};const entity=(input.entity||"jobs").toLowerCase();const limit=input.limit||20;
+        if(entity==="jobs"||entity==="job"){
+          let results=[...jobs];
+          if(f.phase)results=results.filter(j=>j.phase.toLowerCase()===f.phase.toLowerCase());
+          if(f.paymentStatus)results=results.filter(j=>j.paymentStatus===f.paymentStatus);
+          if(f.customer_name){const cn=f.customer_name.toLowerCase();results=results.filter(j=>{const c=customers.find(c2=>c2.id===j.customer);return c&&c.name.toLowerCase().includes(cn)})}
+          if(f.rep_name){const rn=f.rep_name.toLowerCase();results=results.filter(j=>{const r=reps.find(r2=>r2.id===j.salesRep);return r&&r.name.toLowerCase().includes(rn)})}
+          results=results.map(j=>{const fin=getJobFinancials(j.id);const c=customers.find(c2=>c2.id===j.customer);const r=reps.find(r2=>r2.id===j.salesRep);return{...j,revenue:fin.totalRevenue,cost:fin.totalCost,margin:fin.margin,customerName:c?.name||"",repName:r?.name||""}});
+          if(f.min_revenue)results=results.filter(j=>j.revenue>=f.min_revenue);
+          if(f.max_revenue)results=results.filter(j=>j.revenue<=f.max_revenue);
+          if(f.min_margin)results=results.filter(j=>j.margin>=f.min_margin);
+          if(f.max_margin)results=results.filter(j=>j.margin<=f.max_margin);
+          const sortKey=input.sort_by||"revenue";
+          results.sort((a,b)=>(b[sortKey]||0)-(a[sortKey]||0));
+          results=results.slice(0,limit);
+          if(results.length===0)return{success:true,message:"No jobs matched the criteria."};
+          const report=results.map((j,i)=>(i+1)+". **"+j.name+"** | "+j.phase+" | Rev: $"+Math.round(j.revenue).toLocaleString()+" | Cost: $"+Math.round(j.cost).toLocaleString()+" | Margin: "+j.margin.toFixed(1)+"% | Pay: "+j.paymentStatus+" | Customer: "+j.customerName+" | Rep: "+j.repName).join("\n");
+          return{success:true,message:"Found "+results.length+" jobs:\n\n"+report};
+        }
+        if(entity==="vendors"||entity==="vendor"){
+          let results=vendors.map(v=>{const spend=lineItems.filter(i=>i.vendor===v.id||i.vendor===v.name).reduce((s,i)=>s+(i.unitCost||0)*i.qtyOrdered,0);const jobCount=new Set(lineItems.filter(i=>i.vendor===v.id||i.vendor===v.name).map(i=>i.jobId)).size;return{...v,spend,jobCount}});
+          if(f.min_spend)results=results.filter(v=>v.spend>=f.min_spend);
+          if(f.vendor_name)results=results.filter(v=>v.name.toLowerCase().includes(f.vendor_name.toLowerCase()));
+          results.sort((a,b)=>b.spend-a.spend);
+          results=results.filter(v=>v.spend>0).slice(0,limit);
+          if(results.length===0)return{success:true,message:"No vendors matched the criteria."};
+          const report=results.map((v,i)=>(i+1)+". **"+v.name+"** | Spend: $"+Math.round(v.spend).toLocaleString()+" | "+v.jobCount+" jobs | Cat: "+(v.category||"--")+" | Discount: "+(v.discountRate?(v.discountRate*100).toFixed(0)+"%":"--")).join("\n");
+          return{success:true,message:"Found "+results.length+" vendors:\n\n"+report};
+        }
+        if(entity==="customers"||entity==="customer"){
+          let results=customers.map(c=>{const cJobs=jobs.filter(j=>j.customer===c.id);const revenue=cJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);return{...c,revenue,jobCount:cJobs.length}});
+          if(f.customer_name)results=results.filter(c=>c.name.toLowerCase().includes(f.customer_name.toLowerCase()));
+          if(f.min_revenue)results=results.filter(c=>c.revenue>=f.min_revenue);
+          results.sort((a,b)=>b.revenue-a.revenue);
+          results=results.filter(c=>c.revenue>0).slice(0,limit);
+          if(results.length===0)return{success:true,message:"No customers matched the criteria."};
+          const report=results.map((c,i)=>(i+1)+". **"+c.name+"** | Revenue: $"+Math.round(c.revenue).toLocaleString()+" | "+c.jobCount+" jobs | Type: "+(c.type||"--")).join("\n");
+          return{success:true,message:"Found "+results.length+" customers:\n\n"+report};
+        }
+        return{error:"Unknown entity type: "+entity+". Use: jobs, vendors, or customers"};
+      }
+      if(toolName==="add_line_items"){
+        const job=findJob(input.job_id);
+        if(!job)return{error:"Job not found: "+input.job_id};
+        const items=input.items||[];
+        if(items.length===0)return{error:"No items provided"};
+        let ct=0;const existingCount=getJobItems(job.id).length;
+        items.forEach((item,idx)=>{
+          const itemId=job.id+"-item-"+String(existingCount+idx+1).padStart(3,"0");
+          const vendor=item.vendor_name?findVendor(item.vendor_name):null;
+          addLineItem({id:itemId,jobId:job.id,description:item.description||"",manufacturer:item.manufacturer||"",modelNumber:item.model_number||"",color:item.color||"",vendor:vendor?.id||item.vendor_name||"",unitPrice:item.unit_price||0,unitCost:item.unit_cost||0,qtyOrdered:item.quantity||1,qtyReceived:0,qtyInvoiced:0,shippingPerUnit:0,installPerUnit:0,listPrice:0,tag:""});
+          ct++;
+        });
+        const totalRev=items.reduce((s,i)=>(s+(i.unit_price||0)*(i.quantity||1)),0);
+        return{success:true,message:"Added "+ct+" line item"+(ct!==1?"s":"")+" to "+job.name+":\n"+items.map(i=>"- "+(i.quantity||1)+"x "+(i.description||i.manufacturer||"item")+" @ $"+(i.unit_price||0).toLocaleString()+" each").join("\n")+"\nTotal added: $"+totalRev.toLocaleString()};
       }
       if(toolName==="navigate_to_page"){
         const pageMap={dashboard:"dashboard",jobs:"jobs",documents:"documents",deliveries:"deliveries",financials:"financials",playbook:"playbook",tasks:"tasks",notes:"notes",brain:"brain",dataimport:"dataimport",commissions:"commissions",salesportal:"salesportal",import:"dataimport",sales:"salesportal"};
@@ -4319,6 +4405,10 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
           if(a.name==="create_sop")return "Create SOP: **"+(a.input.title||"")+"** ["+(a.input.category||"Custom")+"]";
           if(a.name==="conditional_update")return "Conditional update: **"+(a.input.condition_description||"")+"** >> "+Object.entries(a.input.updates||{}).map(([k,v])=>"**"+k+"**=**"+v+"**").join(", ");
           if(a.name==="generate_document")return "Generate **"+(a.input.doc_type||"document")+"** for **"+(a.input.job_id||"job")+"**";
+          if(a.name==="delete_job")return "Delete job: **"+(a.input.job_id||"")+"** and all its line items";
+          if(a.name==="duplicate_job")return "Duplicate **"+(a.input.job_id||"job")+"**"+(a.input.new_name?" as **"+a.input.new_name+"**":" (Copy)");
+          if(a.name==="search_and_report")return "Search **"+(a.input.entity||"jobs")+"**"+(a.input.filters?" with filters: "+JSON.stringify(a.input.filters):"");
+          if(a.name==="add_line_items")return "Add **"+(a.input.items?.length||0)+" item"+(a.input.items?.length!==1?"s":"")+"** to **"+(a.input.job_id||"job")+"**";
           if(a.name==="navigate_to_page")return "Navigate to **"+(a.input.page||"")+"**";
           if(a.name==="update_line_item")return "Update line item **"+(a.input.item_id||"")+"**";
           return a.name+"("+JSON.stringify(a.input).slice(0,60)+")";
