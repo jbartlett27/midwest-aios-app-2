@@ -2538,34 +2538,8 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           const refNum=bill2.vendorInvNum||billInvNum||bill2.poDocNum||'';
           // MICR line matching Maureen's Cornerstone Bank check exactly
           const micrCheckNum=String(checkNo).padStart(6,'0');
-          // MICR line - render as inline SVG so no font dependency needed
-          // Draws MICR E-13B style characters matching Maureen's Cornerstone Bank check
-          const micrSvgChar=(ch,x)=>{
-            // MICR E-13B digits are blocky with specific notch patterns
-            const digitPaths={
-              '0':'M2,0H8V14H2V0M4,2V12H6V2H4',
-              '1':'M3,0H7V14H3V0M5,2V12',
-              '2':'M2,0H8V6H4V8H8V14H2V8H6V6H2V0',
-              '3':'M2,0H8V14H2V10H6V8H2V6H6V4H2V0',
-              '4':'M2,0H4V6H6V0H8V14H6V8H2V0',
-              '5':'M2,0H8V2H4V6H8V14H2V8H6V8H6V6H2V0',
-              '6':'M2,0H8V2H4V6H8V14H2V0M4,8V12H6V8H4',
-              '7':'M2,0H8V14H6V4H2V0',
-              '8':'M2,0H8V14H2V0M4,2V6H6V2H4M4,8V12H6V8H4',
-              '9':'M2,0H8V14H6V8H2V0M4,2V6H6V2H4'
-            };
-            if(digitPaths[ch])return '<g transform="translate('+x+',2)"><path d="'+digitPaths[ch]+'" fill="#111"/></g>';
-            // Transit symbol ⑈ - vertical bars with dots
-            if(ch==='A')return '<g transform="translate('+x+',0)"><rect x="1" y="0" width="2.5" height="18" fill="#111"/><rect x="6" y="0" width="2.5" height="18" fill="#111"/><rect x="3.5" y="5" width="2.5" height="3" fill="#111"/><rect x="3.5" y="11" width="2.5" height="3" fill="#111"/></g>';
-            // On-Us symbol ⑆ - vertical bar with gap
-            if(ch==='C')return '<g transform="translate('+x+',0)"><rect x="1" y="0" width="2.5" height="7" fill="#111"/><rect x="1" y="11" width="2.5" height="7" fill="#111"/><rect x="5.5" y="0" width="2.5" height="18" fill="#111"/></g>';
-            if(ch===' ')return '';
-            return '<g transform="translate('+x+',2)"><text x="0" y="12" font-family="monospace" font-size="14" fill="#111">'+ch+'</text></g>';
-          };
-          const micrChars=('A'+micrCheckNum+'A   C071926155C   A01597962A').split('');
-          let micrSvg='';let mx=0;
-          micrChars.forEach(ch=>{if(ch===' '){mx+=6}else{micrSvg+=micrSvgChar(ch,mx);mx+=12}});
-          const micrHtml='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+mx+' 20" width="'+Math.round(mx*2.2)+'" height="44" style="display:block;margin:10px auto 0">'+micrSvg+'</svg>';
+          // MICR line - plain Unicode characters, no font needed
+          const micrHtml='<div style="text-align:center;margin-top:10px;font-family:monospace;font-size:12px;letter-spacing:3px;color:#111;position:relative;z-index:1">\u2448'+micrCheckNum+'\u2448   \u2446071926155\u2446   \u244801597962\u2448</div>';
           const html=`<!DOCTYPE html><html><head><title>Check ${checkNo}</title><style>
 @page{size:8.5in 11in;margin:0}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -2578,7 +2552,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
   radial-gradient(ellipse at 70% 50%,rgba(180,210,180,0.08) 0%,transparent 70%);
   background-color:#fcfcfa}
 .check-section::before{content:'';position:absolute;inset:0;border:3px solid #4a7a4a;border-radius:2px;pointer-events:none}
-.check-section::after{content:'';position:absolute;inset:4px;border:1px solid #8aaa8a;border-radius:1px;pointer-events:none}
+
 .check-watermark{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:72px;font-weight:900;color:rgba(100,140,100,0.04);letter-spacing:20px;white-space:nowrap;pointer-events:none;font-family:serif}
 .check-security-banner{position:absolute;top:0;left:0;right:0;background:linear-gradient(90deg,#3a6a3a,#5a8a5a,#3a6a3a);color:#d4e8d4;text-align:center;font-size:7px;letter-spacing:1.5px;padding:2px 0;font-weight:600;text-transform:uppercase}
 .check-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;margin-top:10px;position:relative;z-index:1}
@@ -2599,7 +2573,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
 .memo-row{display:flex;align-items:center;gap:6px;font-size:10px}
 .memo-label{font-weight:700}
 .memo-val{padding:2px 6px;font-size:10px}
-.sig-line{width:250px;border-bottom:1px solid #444;font-size:7px;color:#999;text-align:right;padding-bottom:1px;letter-spacing:0.5px}
+.sig-line{width:250px;border-bottom:1px solid #444;font-size:7px;color:#111;text-align:right;padding-bottom:1px;letter-spacing:0.5px}
 .stub-section{width:100%;height:3.5in;padding:0.25in 0.4in;position:relative;border-bottom:1px dashed #999;background:#fff}
 .stub-section:last-child{border-bottom:none}
 .stub-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px}
