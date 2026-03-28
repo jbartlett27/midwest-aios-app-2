@@ -2674,7 +2674,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
           notify('Check #'+checkNo+' printed for '+bill2.vendorName+' -- '+fmt(bill2.cost));
         };
         return <div>
-          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16}}><button onClick={()=>setBillDetail(null)} style={{background:"none",border:"none",color:"#737373",cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>&larr; Back to Bills</button></div>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16}}><button onClick={()=>setBillDetail(null)} style={{background:"#14b8a620",border:"1px solid #14b8a640",color:"#14b8a6",cursor:"pointer",fontSize:13,fontFamily:"inherit",padding:"8px 16px",borderRadius:8,fontWeight:600,transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.background="#14b8a630"}} onMouseLeave={e=>{e.currentTarget.style.background="#14b8a620"}}>&larr; Back to Bills</button></div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}} className="resp-grid-2">
             <Card style={{padding:16}}>
               <div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:8}}>VENDOR</div>
