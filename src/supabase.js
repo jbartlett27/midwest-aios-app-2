@@ -1,7 +1,9 @@
 // Supabase Client -- Pure fetch(), zero npm packages
 
 const URL = 'https://kogjthgceejpzxnekprr.supabase.co/rest/v1';
+const SUPABASE_PROJECT = 'kogjthgceejpzxnekprr';
 const KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtvZ2p0aGdjZWVqcHp4bmVrcHJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyODgyODUsImV4cCI6MjA4ODg2NDI4NX0.W0bhVfPNjCPYKzs6KpIeYaXk5epKRbLmDzgSN8NEjHo';
+const REALTIME_URL = 'wss://' + SUPABASE_PROJECT + '.supabase.co/realtime/v1/websocket?apikey=' + KEY + '&vsn=1.0.0';
 
 const hdrs = {
   'apikey': KEY,
@@ -179,6 +181,94 @@ async function loginUser(username, password) {
   } catch (e) { console.error('Login:', e); return null; }
 }
 
+// ---- REALTIME ----
+class RealtimeConnection {
+  constructor() { this.ws = null; this.ref = 0; this.heartbeat = null; this.listeners = {}; this.connected = false; }
+
+  connect() {
+    if (this.ws) return;
+    try {
+      this.ws = new WebSocket(REALTIME_URL);
+      this.ws.onopen = () => {
+        this.connected = true;
+        // Start heartbeat every 30s
+        this.heartbeat = setInterval(() => { this._send({ topic: 'phoenix', event: 'heartbeat', payload: {}, ref: String(++this.ref) }); }, 30000);
+        // Subscribe to all tables we care about
+        ['jobs', 'line_items', 'vendors', 'customers', 'reps', 'sops'].forEach(table => {
+          this._send({
+            topic: 'realtime:public:' + table,
+            event: 'phx_join',
+            payload: { config: { postgres_changes: [{ event: '*', schema: 'public', table }] } },
+            ref: String(++this.ref)
+          });
+        });
+        // Subscribe to presence channel
+        this._send({
+          topic: 'realtime:presence:midwest-aios',
+          event: 'phx_join',
+          payload: {},
+          ref: String(++this.ref)
+        });
+      };
+      this.ws.onmessage = (evt) => {
+        try {
+          const msg = JSON.parse(evt.data);
+          if (msg.event === 'postgres_changes') {
+            const payload = msg.payload?.data || msg.payload;
+            const table = payload?.table || msg.topic?.replace('realtime:public:', '');
+            const type = payload?.type || payload?.eventType; // INSERT, UPDATE, DELETE
+            const record = payload?.record || payload?.new;
+            const oldRecord = payload?.old_record || payload?.old;
+            if (table && this.listeners[table]) {
+              this.listeners[table].forEach(fn => fn({ type, record, oldRecord, table }));
+            }
+          }
+          // Handle presence sync
+          if (msg.event === 'presence_state' || msg.event === 'presence_diff') {
+            if (this.listeners['_presence']) {
+              this.listeners['_presence'].forEach(fn => fn(msg));
+            }
+          }
+        } catch {}
+      };
+      this.ws.onclose = () => {
+        this.connected = false;
+        if (this.heartbeat) clearInterval(this.heartbeat);
+        this.ws = null;
+        // Auto-reconnect after 3s
+        setTimeout(() => this.connect(), 3000);
+      };
+      this.ws.onerror = () => { if (this.ws) this.ws.close(); };
+    } catch {}
+  }
+
+  _send(msg) { if (this.ws?.readyState === 1) this.ws.send(JSON.stringify(msg)); }
+
+  on(table, fn) {
+    if (!this.listeners[table]) this.listeners[table] = [];
+    this.listeners[table].push(fn);
+    return () => { this.listeners[table] = this.listeners[table].filter(f => f !== fn); };
+  }
+
+  trackPresence(user) {
+    if (!this.ws || this.ws.readyState !== 1) return;
+    this._send({
+      topic: 'realtime:presence:midwest-aios',
+      event: 'presence',
+      payload: { type: 'presence', event: 'track', payload: { user_id: user.id, name: user.name, role: user.role, avatar: user.avatar || '', online_at: new Date().toISOString() } },
+      ref: String(++this.ref)
+    });
+  }
+
+  disconnect() {
+    if (this.heartbeat) clearInterval(this.heartbeat);
+    if (this.ws) this.ws.close();
+    this.ws = null; this.connected = false;
+  }
+}
+
+const realtime = new RealtimeConnection();
+
 export const db = {
   async loadAll() {
     const [jobsRaw, liRaw, vRaw, cRaw, rRaw, sRaw] = await Promise.all([
@@ -235,4 +325,13 @@ export const db = {
   async batchSaveReps(rs) { return upsertMany('reps', rs.map(repToDb)); },
   async batchSaveJobs(js) { return upsertMany('jobs', js.map(jobToDb)); },
   async batchSaveLineItems(lis) { return upsertMany('line_items', lis.map(liToDb)); },
+  // Realtime
+  realtime,
+  connectRealtime() { realtime.connect(); },
+  onTableChange(table, fn) { return realtime.on(table, fn); },
+  onPresence(fn) { return realtime.on('_presence', fn); },
+  trackPresence(user) { realtime.trackPresence(user); },
+  disconnectRealtime() { realtime.disconnect(); },
+  // Mappers (exposed for realtime to convert records)
+  jobFromDb, liFromDb, vendorFromDb, custFromDb, repFromDb, sopFromDb,
 };
