@@ -2538,8 +2538,9 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           const refNum=bill2.vendorInvNum||billInvNum||bill2.poDocNum||'';
           // MICR line matching Maureen's Cornerstone Bank check exactly
           const micrCheckNum=String(checkNo).padStart(6,'0');
-          // MICR format matching Maureen's check exactly: ⑈checknum⑈ ⑆routing⑆ ⑈account⑈
-          const micrLine='\u2448'+micrCheckNum+'\u2448  \u2446071926155\u2446  \u244801597962\u2448';
+          // MICR format matching Maureen's check exactly
+          // In MICR Encoding font: A=Transit(⑈), B=Dash, C=On-Us(⑆), D=Amount
+          const micrLine='A'+micrCheckNum+'A   C071926155C   A01597962A';
           const html=`<!DOCTYPE html><html><head><title>Check ${checkNo}</title><style>
 @page{size:8.5in 11in;margin:0}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -2565,7 +2566,8 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
 .memo-label{font-weight:700}
 .memo-val{padding:2px 6px;font-size:10px}
 .sig-line{text-align:right;width:250px;border-top:1px solid #333;padding-top:2px;font-size:9px;color:#888}
-.micr-line{text-align:center;margin-top:12px;font-family:'Courier New',monospace;font-size:16px;letter-spacing:3px;color:#111;font-weight:700;padding-top:8px}
+@font-face{font-family:'MICR';src:url('https://cdn.jsdelivr.net/gh/AaronMartel/MICR-Encoding@master/MICREncoding.woff2') format('woff2'),url('https://cdn.jsdelivr.net/gh/AaronMartel/MICR-Encoding@master/MICREncoding.woff') format('woff'),url('https://cdn.jsdelivr.net/gh/davelab6/micr-encoding-font@main/MICREncoding.woff2') format('woff2');font-weight:normal;font-style:normal;font-display:swap}
+.micr-line{text-align:center;margin-top:12px;font-family:'MICR','MICR Encoding','IDAutomation MICR',monospace;font-size:18px;letter-spacing:2px;color:#111;padding-top:8px}
 .stub-section{width:100%;height:3.5in;padding:0.25in 0.4in;position:relative;border-bottom:1px dashed #999}
 .stub-section:last-child{border-bottom:none}
 .stub-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px}
