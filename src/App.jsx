@@ -2560,9 +2560,11 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
 .amount-dollars{border:2px solid #333;padding:3px 10px;font-size:15px;font-weight:700;font-family:'Courier New',monospace;white-space:nowrap}
 .words-row{border-bottom:1px solid #333;padding:3px 0;margin-bottom:6px;font-size:11px}
 .vendor-addr{font-size:10px;line-height:1.5;margin-top:6px;min-height:40px}
-.memo-row{display:flex;align-items:center;gap:6px;font-size:10px;margin-top:6px}
+.memo-sig-row{display:flex;justify-content:space-between;align-items:flex-end;margin-top:8px}
+.memo-row{display:flex;align-items:center;gap:6px;font-size:10px}
 .memo-label{font-weight:700}
-.memo-val{flex:1;border-bottom:1px solid #333;padding:2px 6px;min-height:14px}
+.memo-val{padding:2px 6px;font-size:10px}
+.sig-line{text-align:right;width:250px;border-top:1px solid #333;padding-top:2px;font-size:9px;color:#888}
 .micr-line{text-align:center;margin-top:12px;font-family:'Courier New',monospace;font-size:16px;letter-spacing:3px;color:#111;font-weight:700;padding-top:8px}
 .stub-section{width:100%;height:3.5in;padding:0.25in 0.4in;position:relative;border-bottom:1px dashed #999}
 .stub-section:last-child{border-bottom:none}
@@ -2600,7 +2602,10 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
   </div>
   <div class="words-row">${amtWords}${'*'.repeat(Math.max(0,80-amtWords.length))} DOLLARS</div>
   <div class="vendor-addr">${vendorAddrHtml}</div>
-  <div class="memo-row"><span class="memo-label">MEMO</span><span class="memo-val">${billMemo||''}</span></div>
+  <div class="memo-sig-row">
+    <div class="memo-row"><span class="memo-label">MEMO</span><span class="memo-val">${billMemo||''}</span></div>
+    <div class="sig-line">Authorized Signature</div>
+  </div>
   <div class="micr-line">${micrLine}</div>
 </div>
 
