@@ -2538,37 +2538,69 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           const refNum=bill2.vendorInvNum||billInvNum||bill2.poDocNum||'';
           // MICR line matching Maureen's Cornerstone Bank check exactly
           const micrCheckNum=String(checkNo).padStart(6,'0');
-          // MICR format matching Maureen's check exactly
-          // In MICR Encoding font: A=Transit(⑈), B=Dash, C=On-Us(⑆), D=Amount
-          const micrLine='A'+micrCheckNum+'A   C071926155C   A01597962A';
+          // MICR line - render as inline SVG so no font dependency needed
+          // Draws MICR E-13B style characters matching Maureen's Cornerstone Bank check
+          const micrSvgChar=(ch,x)=>{
+            // MICR E-13B digits are blocky with specific notch patterns
+            const digitPaths={
+              '0':'M2,0H8V14H2V0M4,2V12H6V2H4',
+              '1':'M3,0H7V14H3V0M5,2V12',
+              '2':'M2,0H8V6H4V8H8V14H2V8H6V6H2V0',
+              '3':'M2,0H8V14H2V10H6V8H2V6H6V4H2V0',
+              '4':'M2,0H4V6H6V0H8V14H6V8H2V0',
+              '5':'M2,0H8V2H4V6H8V14H2V8H6V8H6V6H2V0',
+              '6':'M2,0H8V2H4V6H8V14H2V0M4,8V12H6V8H4',
+              '7':'M2,0H8V14H6V4H2V0',
+              '8':'M2,0H8V14H2V0M4,2V6H6V2H4M4,8V12H6V8H4',
+              '9':'M2,0H8V14H6V8H2V0M4,2V6H6V2H4'
+            };
+            if(digitPaths[ch])return '<g transform="translate('+x+',2)"><path d="'+digitPaths[ch]+'" fill="#111"/></g>';
+            // Transit symbol ⑈ - vertical bars with dots
+            if(ch==='A')return '<g transform="translate('+x+',0)"><rect x="1" y="0" width="2.5" height="18" fill="#111"/><rect x="6" y="0" width="2.5" height="18" fill="#111"/><rect x="3.5" y="5" width="2.5" height="3" fill="#111"/><rect x="3.5" y="11" width="2.5" height="3" fill="#111"/></g>';
+            // On-Us symbol ⑆ - vertical bar with gap
+            if(ch==='C')return '<g transform="translate('+x+',0)"><rect x="1" y="0" width="2.5" height="7" fill="#111"/><rect x="1" y="11" width="2.5" height="7" fill="#111"/><rect x="5.5" y="0" width="2.5" height="18" fill="#111"/></g>';
+            if(ch===' ')return '';
+            return '<g transform="translate('+x+',2)"><text x="0" y="12" font-family="monospace" font-size="14" fill="#111">'+ch+'</text></g>';
+          };
+          const micrChars=('A'+micrCheckNum+'A   C071926155C   A01597962A').split('');
+          let micrSvg='';let mx=0;
+          micrChars.forEach(ch=>{if(ch===' '){mx+=6}else{micrSvg+=micrSvgChar(ch,mx);mx+=12}});
+          const micrHtml='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 '+mx+' 20" width="'+Math.round(mx*2.2)+'" height="44" style="display:block;margin:10px auto 0">'+micrSvg+'</svg>';
           const html=`<!DOCTYPE html><html><head><title>Check ${checkNo}</title><style>
 @page{size:8.5in 11in;margin:0}
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
-.check-section{width:100%;height:3.5in;padding:0.25in 0.4in;position:relative;border-bottom:1px dashed #999;page-break-inside:avoid}
-.check-section:last-child{border-bottom:none}
-.check-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px}
+.check-section{width:100%;height:3.5in;padding:0.3in 0.5in 0.25in 0.5in;position:relative;border-bottom:1px dashed #999;page-break-inside:avoid;overflow:hidden;background:
+  linear-gradient(135deg,rgba(200,220,200,0.15) 0%,rgba(220,235,220,0.08) 25%,rgba(200,215,195,0.12) 50%,rgba(215,230,215,0.06) 75%,rgba(200,220,200,0.1) 100%),
+  repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(100,140,100,0.02) 2px,rgba(100,140,100,0.02) 4px),
+  repeating-linear-gradient(90deg,transparent,transparent 2px,rgba(100,140,100,0.02) 2px,rgba(100,140,100,0.02) 4px),
+  radial-gradient(ellipse at 30% 50%,rgba(180,210,180,0.1) 0%,transparent 70%),
+  radial-gradient(ellipse at 70% 50%,rgba(180,210,180,0.08) 0%,transparent 70%);
+  background-color:#fcfcfa}
+.check-section::before{content:'';position:absolute;inset:0;border:3px solid #4a7a4a;border-radius:2px;pointer-events:none}
+.check-section::after{content:'';position:absolute;inset:4px;border:1px solid #8aaa8a;border-radius:1px;pointer-events:none}
+.check-watermark{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:72px;font-weight:900;color:rgba(100,140,100,0.04);letter-spacing:20px;white-space:nowrap;pointer-events:none;font-family:serif}
+.check-security-banner{position:absolute;top:0;left:0;right:0;background:linear-gradient(90deg,#3a6a3a,#5a8a5a,#3a6a3a);color:#d4e8d4;text-align:center;font-size:7px;letter-spacing:1.5px;padding:2px 0;font-weight:600;text-transform:uppercase}
+.check-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;margin-top:10px;position:relative;z-index:1}
 .company-block{line-height:1.4}
 .company-name{font-size:13px;font-weight:700;letter-spacing:0.3px}
 .company-addr{font-size:10px;color:#444}
 .bank-block{text-align:center;font-size:10px;color:#444;line-height:1.4}
-.check-no{font-size:28px;font-weight:700;font-family:'Courier New',monospace;text-align:right;min-width:80px}
-.date-row{text-align:right;margin-bottom:8px;font-size:12px}
-.date-val{border-bottom:1px solid #333;padding:0 12px;font-style:italic}
-.payto-row{display:flex;align-items:center;gap:6px;margin-bottom:4px}
+.check-no{font-size:28px;font-weight:700;font-family:'Courier New',monospace;text-align:right;min-width:80px;position:relative;z-index:1}
+.date-row{text-align:right;margin-bottom:8px;font-size:12px;position:relative;z-index:1}
+.date-val{border-bottom:1px solid #444;padding:0 12px;font-style:italic}
+.payto-row{display:flex;align-items:center;gap:6px;margin-bottom:4px;position:relative;z-index:1;background:rgba(240,245,240,0.3);padding:4px 6px;border:1px solid #bbb}
 .payto-label{font-size:10px;font-weight:700;white-space:nowrap}
-.payto-name{flex:1;border-bottom:1px solid #333;padding:2px 8px;font-size:14px;font-weight:600}
-.amount-dollars{border:2px solid #333;padding:3px 10px;font-size:15px;font-weight:700;font-family:'Courier New',monospace;white-space:nowrap}
-.words-row{border-bottom:1px solid #333;padding:3px 0;margin-bottom:6px;font-size:11px}
-.vendor-addr{font-size:10px;line-height:1.5;margin-top:6px;min-height:40px}
-.memo-sig-row{display:flex;justify-content:space-between;align-items:flex-end;margin-top:8px}
+.payto-name{flex:1;border-bottom:1px solid #444;padding:2px 8px;font-size:14px;font-weight:600}
+.amount-dollars{border:2px solid #444;padding:3px 10px;font-size:15px;font-weight:700;font-family:'Courier New',monospace;white-space:nowrap;background:rgba(255,255,255,0.6)}
+.words-row{border-bottom:1px solid #444;padding:3px 0;margin-bottom:6px;font-size:11px;position:relative;z-index:1;background:rgba(240,245,240,0.3);padding:4px 6px}
+.vendor-addr{font-size:10px;line-height:1.5;margin-top:6px;min-height:40px;position:relative;z-index:1}
+.memo-sig-row{display:flex;justify-content:space-between;align-items:flex-end;margin-top:8px;position:relative;z-index:1}
 .memo-row{display:flex;align-items:center;gap:6px;font-size:10px}
 .memo-label{font-weight:700}
 .memo-val{padding:2px 6px;font-size:10px}
-.sig-line{text-align:right;width:250px;border-top:1px solid #333;padding-top:2px;font-size:9px;color:#888}
-@font-face{font-family:'MICR';src:url('https://cdn.jsdelivr.net/gh/AaronMartel/MICR-Encoding@master/MICREncoding.woff2') format('woff2'),url('https://cdn.jsdelivr.net/gh/AaronMartel/MICR-Encoding@master/MICREncoding.woff') format('woff'),url('https://cdn.jsdelivr.net/gh/davelab6/micr-encoding-font@main/MICREncoding.woff2') format('woff2');font-weight:normal;font-style:normal;font-display:swap}
-.micr-line{text-align:center;margin-top:12px;font-family:'MICR','MICR Encoding','IDAutomation MICR',monospace;font-size:18px;letter-spacing:2px;color:#111;padding-top:8px}
-.stub-section{width:100%;height:3.5in;padding:0.25in 0.4in;position:relative;border-bottom:1px dashed #999}
+.sig-line{width:250px;border-bottom:1px solid #444;font-size:7px;color:#999;text-align:right;padding-bottom:1px;letter-spacing:0.5px}
+.stub-section{width:100%;height:3.5in;padding:0.25in 0.4in;position:relative;border-bottom:1px dashed #999;background:#fff}
 .stub-section:last-child{border-bottom:none}
 .stub-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px}
 .stub-company{font-size:12px;font-weight:700}
@@ -2588,6 +2620,8 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
 
 <!-- CHECK (top third) -->
 <div class="check-section">
+  <div class="check-security-banner">CASH ONLY IF ALL SECURITY FEATURES ARE PRESENT &bull; ORIGINAL DOCUMENT HAS COLORED BACKGROUND &bull; VOID IF COPIED</div>
+  <div class="check-watermark">MIDWEST</div>
   <div class="check-header">
     <div class="company-block">
       <div class="company-name">MIDWEST EDUCATIONAL FURNISHINGS, INC</div>
@@ -2606,9 +2640,9 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
   <div class="vendor-addr">${vendorAddrHtml}</div>
   <div class="memo-sig-row">
     <div class="memo-row"><span class="memo-label">MEMO</span><span class="memo-val">${billMemo||''}</span></div>
-    <div class="sig-line">Authorized Signature</div>
+    <div class="sig-line">MP</div>
   </div>
-  <div class="micr-line">${micrLine}</div>
+  ${micrHtml}
 </div>
 
 <!-- STUB 1 (middle third -- company copy) -->
