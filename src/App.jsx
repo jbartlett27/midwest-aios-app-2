@@ -2502,6 +2502,97 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
       const toggleSelect=(idx)=>{const next=new Set(billSelected);if(next.has(idx))next.delete(idx);else next.add(idx);setBillSelected(next)};
       const selectAll=()=>{if(billSelected.size===unpaidBills.length)setBillSelected(new Set());else setBillSelected(new Set(unpaidBills.map((_,i)=>i)))};
       const markSelectedPaid=()=>{const today=new Date().toISOString().split('T')[0];unpaidBills.forEach((bill,i)=>{if(billSelected.has(i)){setDocStatus(bill.billDocNum,{paid:true,payDate:today,vendorInvNum:bill.vendorInvNum,checkNum:'',memo:'Batch payment'})}});notify(billSelected.size+' bill'+(billSelected.size!==1?'s':'')+' marked as paid');setBillSelected(new Set())};
+      const selectByVendor=(vendorName)=>{const next=new Set();unpaidBills.forEach((b,i)=>{if(b.vendorName===vendorName)next.add(i)});setBillSelected(next)};
+      const selectByJob=(jobName)=>{const next=new Set();unpaidBills.forEach((b,i)=>{if(b.job.name===jobName)next.add(i)});setBillSelected(next)};
+      const printBatchCheck=()=>{
+        const selectedBills=Array.from(billSelected).map(i=>unpaidBills[i]).filter(Boolean);
+        if(selectedBills.length===0)return;
+        const totalCost=selectedBills.reduce((s,b)=>s+b.cost,0);
+        const vendorName=selectedBills[0].vendorName;
+        const vendorAddr=selectedBills[0].vendor?(selectedBills[0].vendor.contact?(selectedBills[0].vendor.contact+'\n'):'')+(vendorName||'')+'\n'+(selectedBills[0].vendor.address||''):'';
+        const vendorAddrHtml=vendorAddr.split('\n').filter(Boolean).join('<br>');
+        const today=new Date();const mm=String(today.getMonth()+1).padStart(2,'0');const dd=String(today.getDate()).padStart(2,'0');const yyyy=today.getFullYear();
+        const dateStr=mm+'/'+dd+'/'+yyyy;
+        // Auto-generate check number
+        const allCheckNums=Object.values(docStatuses).filter(v=>typeof v==='object'&&v.checkNum&&v.checkNum!=='____').map(v=>parseInt(v.checkNum)).filter(n=>!isNaN(n)&&n>0);
+        const maxCheck=allCheckNums.length>0?Math.max(...allCheckNums):1110;
+        const checkNo=String(maxCheck+1);
+        const amtDollars=Math.floor(totalCost);const amtCents=Math.round((totalCost-amtDollars)*100);
+        const amtWords=(()=>{const ones=['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];const tens=['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];const convert=(n)=>{if(n<20)return ones[n];if(n<100)return tens[Math.floor(n/10)]+(n%10?' '+ones[n%10]:'');if(n<1000)return ones[Math.floor(n/100)]+' Hundred'+(n%100?' '+convert(n%100):'');if(n<1000000)return convert(Math.floor(n/1000))+' Thousand'+(n%1000?' '+convert(n%1000):'');return String(n)};return convert(amtDollars)+' and '+String(amtCents).padStart(2,'0')+'/100'})();
+        const amtFmt=totalCost.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+        const micrCheckNum=String(checkNo).padStart(6,'0');
+        const micrFontStr='C'+micrCheckNum+'C   A071926155A   C01597962C';
+        // Build stub rows for all included POs
+        const stubRows=selectedBills.map(b=>{const bDate=b.payDate||b.poDate||dateStr;const ref=b.vendorInvNum||b.poDocNum||'';const af=b.cost.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});return '<tr><td>'+bDate+'</td><td>Bill</td><td>'+ref+'</td><td class="amt">'+af+'</td><td class="amt">'+af+'</td><td class="amt">'+af+'</td></tr>'}).join('');
+        const fontB64=(() => { try { const m=document.querySelector('style'); return ''; } catch(e) { return ''; }})();
+        const html=`<!DOCTYPE html><html><head><title>Batch Check ${checkNo}</title><style>
+@font-face{font-family:'MICR';src:url(data:font/truetype;base64,${(() => { const el=document.createElement('div');el.innerHTML=document.querySelector('[data-micr-font]')?.getAttribute('data-micr-font')||'';return el.textContent; })()}) format('truetype');font-weight:normal;font-style:normal}
+@page{size:8.5in 11in;margin:0}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
+.check-section{width:100%;height:3.5in;padding:0.3in 0.5in 0.25in 0.5in;position:relative;border-bottom:1px dashed #999;page-break-inside:avoid;overflow:hidden;background:linear-gradient(135deg,rgba(200,220,200,0.15) 0%,rgba(220,235,220,0.08) 25%,rgba(200,215,195,0.12) 50%,rgba(215,230,215,0.06) 75%,rgba(200,220,200,0.1) 100%),repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(100,140,100,0.02) 2px,rgba(100,140,100,0.02) 4px),repeating-linear-gradient(90deg,transparent,transparent 2px,rgba(100,140,100,0.02) 2px,rgba(100,140,100,0.02) 4px),radial-gradient(ellipse at 30% 50%,rgba(180,210,180,0.1) 0%,transparent 70%),radial-gradient(ellipse at 70% 50%,rgba(180,210,180,0.08) 0%,transparent 70%);background-color:#fcfcfa}
+.check-section::before{content:'';position:absolute;inset:0;border:3px solid #4a7a4a;border-radius:2px;pointer-events:none}
+.check-watermark{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:72px;font-weight:900;color:rgba(100,140,100,0.04);letter-spacing:20px;white-space:nowrap;pointer-events:none;font-family:serif}
+.check-security-banner{position:absolute;top:0;left:0;right:0;background:linear-gradient(90deg,#3a6a3a,#5a8a5a,#3a6a3a);color:#d4e8d4;text-align:center;font-size:7px;letter-spacing:1.5px;padding:2px 0;font-weight:600;text-transform:uppercase}
+.check-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;margin-top:10px;position:relative;z-index:1}
+.company-block{line-height:1.4}.company-name{font-size:13px;font-weight:700;letter-spacing:0.3px}.company-addr{font-size:10px;color:#444}
+.bank-block{text-align:center;font-size:10px;color:#444;line-height:1.4}
+.check-no{font-size:28px;font-weight:700;font-family:'Courier New',monospace;text-align:right;min-width:80px;position:relative;z-index:1}
+.date-row{text-align:right;margin-bottom:8px;font-size:12px;position:relative;z-index:1}
+.date-val{border-bottom:1px solid #444;padding:0 12px;font-style:italic}
+.payto-row{display:flex;align-items:center;gap:6px;margin-bottom:4px;position:relative;z-index:1;background:rgba(240,245,240,0.3);padding:4px 6px;border:1px solid #bbb}
+.payto-label{font-size:10px;font-weight:700;white-space:nowrap}
+.payto-name{flex:1;border-bottom:1px solid #444;padding:2px 8px;font-size:14px;font-weight:600}
+.amount-dollars{border:2px solid #444;padding:3px 10px;font-size:15px;font-weight:700;font-family:'Courier New',monospace;white-space:nowrap;background:rgba(255,255,255,0.6)}
+.words-row{border-bottom:1px solid #444;padding:4px 6px;margin-bottom:6px;font-size:11px;position:relative;z-index:1;background:rgba(240,245,240,0.3)}
+.vendor-addr{font-size:10px;line-height:1.5;margin-top:6px;min-height:40px;position:relative;z-index:1}
+.memo-sig-row{display:flex;justify-content:space-between;align-items:flex-end;margin-top:8px;position:relative;z-index:1}
+.memo-row{display:flex;align-items:center;gap:6px;font-size:10px}.memo-label{font-weight:700}.memo-val{padding:2px 6px;font-size:10px}
+.sig-line{width:250px;border-bottom:1px solid #444;font-size:7px;color:#111;text-align:right;padding-bottom:1px;letter-spacing:0.5px}
+.stub-section{width:100%;height:3.5in;padding:0.25in 0.4in;position:relative;border-bottom:1px dashed #999;background:#fff}
+.stub-section:last-child{border-bottom:none}
+.stub-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px}
+.stub-company{font-size:12px;font-weight:700}.stub-date-vendor{font-size:11px;color:#333;margin-top:2px}
+.stub-checkno{font-size:20px;font-weight:700;font-family:'Courier New',monospace}
+.stub-table{width:100%;border-collapse:collapse;margin-top:6px;font-size:10px}
+.stub-table th{text-align:left;padding:3px 6px;border-bottom:1.5px solid #333;font-weight:700;font-size:9px}
+.stub-table td{padding:3px 6px;border-bottom:1px solid #ddd;font-size:10px}
+.stub-table .amt{text-align:right;font-family:'Courier New',monospace}
+.stub-total-row td{border-top:1.5px solid #333;font-weight:700}
+.stub-footer{display:flex;justify-content:space-between;position:absolute;bottom:0.25in;left:0.4in;right:0.4in;font-size:11px}
+.stub-bank{color:#444}.stub-amount{font-weight:700;font-family:'Courier New',monospace;font-size:13px}
+.payment-record{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-25deg);font-size:48px;font-weight:700;color:rgba(0,0,0,0.06);letter-spacing:8px;white-space:nowrap;pointer-events:none}
+@media print{body{width:8.5in}.check-section,.stub-section{page-break-inside:avoid}}
+</style></head><body>
+<div class="check-section">
+  <div class="check-security-banner">CASH ONLY IF ALL SECURITY FEATURES ARE PRESENT &bull; ORIGINAL DOCUMENT HAS COLORED BACKGROUND &bull; VOID IF COPIED</div>
+  <div class="check-watermark">MIDWEST</div>
+  <div class="check-header"><div class="company-block"><div class="company-name">MIDWEST EDUCATIONAL FURNISHINGS, INC</div><div class="company-addr">21191 N Valley Rd<br>Kildeer, IL 60047<br>847-847-1865</div></div><div class="bank-block">CORNERSTONE NATL BANK AND TR CO<br>Palatine, IL 60067<br>70-2615/719</div><div class="check-no">${checkNo}</div></div>
+  <div class="date-row"><span class="date-val">${dateStr}</span></div>
+  <div class="payto-row"><div class="payto-label">PAY TO THE<br>ORDER OF</div><div class="payto-name">${vendorName}</div><div class="amount-dollars">$ **${amtFmt}</div></div>
+  <div class="words-row">${amtWords}${'*'.repeat(Math.max(0,80-amtWords.length))} DOLLARS</div>
+  <div class="vendor-addr">${vendorAddrHtml}</div>
+  <div class="memo-sig-row"><div class="memo-row"><span class="memo-label">MEMO</span><span class="memo-val">Batch -- ${selectedBills.length} POs</span></div><div class="sig-line">MP</div></div>
+  <div style="text-align:center;margin-top:38px;position:relative;z-index:1"><div style="font-family:'MICR',monospace;font-size:14pt;letter-spacing:3px;color:#111">${micrFontStr}</div></div>
+</div>
+<div class="stub-section">
+  <div class="stub-header"><div><div class="stub-company">MIDWEST EDUCATIONAL FURNISHINGS, INC</div><div class="stub-date-vendor">${dateStr}&nbsp;&nbsp;&nbsp;&nbsp;${vendorName}</div></div><div class="stub-checkno">${checkNo}</div></div>
+  <table class="stub-table"><thead><tr><th>Date</th><th>Type</th><th>Reference</th><th class="amt">Original Amount</th><th class="amt">Balance Due</th><th class="amt">Payment</th></tr></thead><tbody>${stubRows}<tr class="stub-total-row"><td colspan="3">${selectedBills.length} POs</td><td></td><td>Check Amount</td><td class="amt">${amtFmt}</td></tr></tbody></table>
+  <div class="stub-footer"><div class="stub-bank">Cornerstone Bank Ch</div><div class="stub-amount">${amtFmt}</div></div>
+</div>
+<div class="stub-section" style="border-bottom:none">
+  <div class="payment-record">PAYMENT RECORD</div>
+  <div class="stub-header"><div><div class="stub-company">MIDWEST EDUCATIONAL FURNISHINGS, INC</div><div class="stub-date-vendor">${dateStr}&nbsp;&nbsp;&nbsp;&nbsp;${vendorName}</div></div><div class="stub-checkno">${checkNo}</div></div>
+  <table class="stub-table"><thead><tr><th>Date</th><th>Type</th><th>Reference</th><th class="amt">Original Amount</th><th class="amt">Balance Due</th><th class="amt">Payment</th></tr></thead><tbody>${stubRows}<tr class="stub-total-row"><td colspan="3">${selectedBills.length} POs</td><td></td><td>Check Amount</td><td class="amt">${amtFmt}</td></tr></tbody></table>
+  <div class="stub-footer"><div class="stub-bank">Cornerstone Bank Ch</div><div class="stub-amount">${amtFmt}</div></div>
+</div>
+</body></html>`;
+        const w=window.open('','_blank');w.document.write(html);w.document.close();w.print();
+        // Save check number to all included bills
+        selectedBills.forEach(b=>{const existing=typeof docStatuses[b.billDocNum]==='object'?docStatuses[b.billDocNum]:{};setDocStatus(b.billDocNum,{...existing,checkNum:checkNo,checkPrinted:new Date().toISOString(),status:'check_sent',memo:existing.memo||'Batch check #'+checkNo})});
+        notify('Batch Check #'+checkNo+' printed for '+vendorName+' -- '+fmt(totalCost)+' ('+selectedBills.length+' POs)');
+        setBillSelected(new Set());
+      };
       const saveBillDetail=(bill)=>{const existing=typeof docStatuses[bill.billDocNum]==='object'?docStatuses[bill.billDocNum]:{};setDocStatus(bill.billDocNum,{...existing,vendorInvNum:billInvNum,checkNum:billCheckNum,payDate:billPayDate,memo:billMemo,paid:existing.status==='paid'||!!billPayDate});notify('Bill updated: '+bill.vendorName);setBillDetail(null)};
 
       // Detail view for a single bill
@@ -2804,7 +2895,12 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
           <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>DUE IN 14 DAYS</div><div style={{fontSize:22,fontWeight:800,color:dueSoonBills.length>0?"#fbbf24":"#34d399",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(dueSoonBills.reduce((s,b)=>s+b.cost,0))}</div><div style={{fontSize:11,color:"#a3a3a3",marginTop:4}}>{dueSoonBills.length} bill{dueSoonBills.length!==1?'s':''}</div></Card>
           <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>PAID</div><div style={{fontSize:22,fontWeight:800,color:"#34d399",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(allBills.filter(b=>b.paid).reduce((s,b)=>s+b.cost,0))}</div><div style={{fontSize:11,color:"#a3a3a3",marginTop:4}}>{allBills.filter(b=>b.paid).length} bill{allBills.filter(b=>b.paid).length!==1?'s':''}</div></Card>
         </div>
-        {billSelected.size>0&&<div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12,padding:"10px 14px",background:"#f9731610",border:"1px solid #f9731625",borderRadius:8}}><span style={{fontSize:13,color:"#f97316",fontWeight:600}}>{billSelected.size} bill{billSelected.size!==1?'s':''} selected</span><span style={{fontSize:13,color:"#a3a3a3"}}>({fmt(Array.from(billSelected).reduce((s,i)=>s+(unpaidBills[i]?.cost||0),0))})</span><Btn onClick={markSelectedPaid} style={{fontSize:12,padding:"4px 12px",background:"#34d399",color:"#000"}}>Pay Selected</Btn><button onClick={()=>setBillSelected(new Set())} style={{background:"none",border:"none",color:"#737373",cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>Clear</button></div>}
+        {/* Group-by buttons */}
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,flexWrap:"wrap"}}>
+          <span style={{fontSize:11,color:"#525252",fontWeight:600,letterSpacing:1}}>SELECT BY:</span>
+          {[...new Set(unpaidBills.map(b=>b.vendorName))].sort().map(v=>{const ct=unpaidBills.filter(b=>b.vendorName===v).length;return ct>1?<button key={v} onClick={()=>selectByVendor(v)} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #333",background:Array.from(billSelected).every(i=>unpaidBills[i]?.vendorName===v)&&billSelected.size>0&&unpaidBills.filter(b=>b.vendorName===v).length===billSelected.size?"#a78bfa18":"transparent",color:"#a3a3a3",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.background="#a78bfa15"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>{v} <span style={{color:"#525252"}}>({ct})</span></button>:null})}
+        </div>
+        {billSelected.size>0&&<div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12,padding:"10px 14px",background:"#f9731610",border:"1px solid #f9731625",borderRadius:8,flexWrap:"wrap"}}><span style={{fontSize:13,color:"#f97316",fontWeight:600}}>{billSelected.size} bill{billSelected.size!==1?'s':''} selected</span><span style={{fontSize:13,color:"#a3a3a3"}}>({fmt(Array.from(billSelected).reduce((s,i)=>s+(unpaidBills[i]?.cost||0),0))})</span><Btn onClick={printBatchCheck} style={{fontSize:12,padding:"4px 12px",background:"#14b8a6",color:"#000"}}><I n="file" s={12}/> Print Batch Check</Btn><Btn onClick={markSelectedPaid} style={{fontSize:12,padding:"4px 12px",background:"#34d399",color:"#000"}}>Mark Paid</Btn><button onClick={()=>setBillSelected(new Set())} style={{background:"none",border:"none",color:"#737373",cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>Clear</button></div>}
         {allBills.length===0?<Card style={{padding:40,textAlign:"center"}}><div style={{fontSize:14,color:"#525252"}}>No vendor bills yet. Bills appear after POs are drafted or sent.</div></Card>:
         <Card style={{padding:0,overflow:"hidden"}}>
           <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:900}}>
