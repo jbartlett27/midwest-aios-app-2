@@ -2536,10 +2536,10 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           const vendorAddrHtml=vendorAddr.split('\n').filter(Boolean).join('<br>');
           const billDate=bill2.payDate||bill2.poDate||dateStr;
           const refNum=bill2.vendorInvNum||billInvNum||bill2.poDocNum||'';
-          // MICR line: check number, routing number, account number (from Maureen's check)
-          const micrCheck=String(checkNo).padStart(6,'0');
-          // MICR format matching Maureen's Cornerstone Bank check: ⑆checknum⑆ ⑈routing⑈ ⑆account⑆
-          const micrLine='\u2446'+micrCheck+'\u2446  \u2448071926155\u2448  \u2446015979620\u2446';
+          // MICR line matching Maureen's Cornerstone Bank check exactly
+          const micrCheckNum=String(checkNo).padStart(6,'0');
+          // MICR format matching Maureen's check exactly: ⑈checknum⑈ ⑆routing⑆ ⑈account⑈
+          const micrLine='\u2448'+micrCheckNum+'\u2448  \u2446071926155\u2446  \u244801597962\u2448';
           const html=`<!DOCTYPE html><html><head><title>Check ${checkNo}</title><style>
 @page{size:8.5in 11in;margin:0}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -2563,7 +2563,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
 .memo-row{display:flex;align-items:center;gap:6px;font-size:10px;margin-top:6px}
 .memo-label{font-weight:700}
 .memo-val{flex:1;border-bottom:1px solid #333;padding:2px 6px;min-height:14px}
-.micr-line{text-align:center;margin-top:10px;font-family:'MICR','Courier New',monospace;font-size:14px;letter-spacing:4px;color:#111}
+.micr-line{text-align:center;margin-top:12px;font-family:'Courier New',monospace;font-size:16px;letter-spacing:3px;color:#111;font-weight:700;padding-top:8px}
 .stub-section{width:100%;height:3.5in;padding:0.25in 0.4in;position:relative;border-bottom:1px dashed #999}
 .stub-section:last-child{border-bottom:none}
 .stub-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px}
