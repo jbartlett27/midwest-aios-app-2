@@ -2543,7 +2543,7 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           // MICR E-13B: provide both MICR Encoding font chars (A=Transit, C=On-Us) and Unicode fallback
           // If MICR Encoding font is installed: A renders as ⑈, C renders as ⑆
           // If no MICR font: Unicode symbols ⑈⑆ render directly
-          const micrFontStr='A'+micrCheckNum+'A   B071926155B   A01597962A';
+          const micrFontStr='B'+micrCheckNum+'B   A071926155A   B01597962B';
           const micrUnicodeStr='\u2448'+micrCheckNum+'\u2448   \u2446071926155\u2446   \u244801597962\u2448';
           // Use system-installed MICR font with comprehensive fallback chain
           // Two lines: MICR font version on top (visible if font installed), Unicode fallback hidden behind
