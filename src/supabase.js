@@ -332,6 +332,23 @@ export const db = {
   onPresence(fn) { return realtime.on('_presence', fn); },
   trackPresence(user) { realtime.trackPresence(user); },
   disconnectRealtime() { realtime.disconnect(); },
+  // Storage -- vendor invoice uploads
+  async uploadFile(bucket, path, file) {
+    try {
+      const storageUrl = 'https://' + SUPABASE_PROJECT + '.supabase.co/storage/v1/object/' + bucket + '/' + path;
+      const r = await fetch(storageUrl, {
+        method: 'POST',
+        headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + KEY, 'Content-Type': file.type || 'application/octet-stream', 'x-upsert': 'true' },
+        body: file
+      });
+      if (!r.ok) { const err = await r.text(); console.error('Upload error:', err); return null; }
+      const publicUrl = 'https://' + SUPABASE_PROJECT + '.supabase.co/storage/v1/object/public/' + bucket + '/' + path;
+      return publicUrl;
+    } catch (e) { console.error('Upload failed:', e); return null; }
+  },
+  getPublicUrl(bucket, path) {
+    return 'https://' + SUPABASE_PROJECT + '.supabase.co/storage/v1/object/public/' + bucket + '/' + path;
+  },
   // Mappers (exposed for realtime to convert records)
   jobFromDb, liFromDb, vendorFromDb, custFromDb, repFromDb, sopFromDb,
 };
