@@ -2522,7 +2522,7 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           let checkNo=billCheckNum&&billCheckNum.trim()&&billCheckNum.trim()!=='____'?billCheckNum.trim():'';
           if(!checkNo){
             const allCheckNums=Object.values(docStatuses).filter(v=>typeof v==='object'&&v.checkNum&&v.checkNum!=='____').map(v=>parseInt(v.checkNum)).filter(n=>!isNaN(n)&&n>0);
-            const maxCheck=allCheckNums.length>0?Math.max(...allCheckNums):9240;
+            const maxCheck=allCheckNums.length>0?Math.max(...allCheckNums):1110;
             checkNo=String(maxCheck+1);
             setBillCheckNum(checkNo);
           }
@@ -4013,6 +4013,10 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     {name:"duplicate_job",description:"Duplicate a job with all its line items, customer, and rep. Resets phase to Quoting and payment to unpaid. Use when user says 'duplicate this job', 'copy the job for next year', 'clone this project'.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name keywords to duplicate"},new_name:{type:"string",description:"Optional new name for the duplicated job. If not provided, appends ' (Copy)' to the original name."}},required:["job_id"]}},
     {name:"search_and_report",description:"Search and filter jobs, vendors, customers, or line items by complex criteria and return a formatted report. Use for 'list all jobs over $50K', 'show me vendors with spend over $10K', 'find all unpaid jobs for College of DuPage', 'which jobs have the lowest margin'.",input_schema:{type:"object",properties:{entity:{type:"string",description:"What to search: jobs, vendors, customers, or items"},filters:{type:"object",description:"Filter criteria",properties:{min_revenue:{type:"number"},max_revenue:{type:"number"},min_margin:{type:"number"},max_margin:{type:"number"},phase:{type:"string"},paymentStatus:{type:"string"},customer_name:{type:"string"},vendor_name:{type:"string"},rep_name:{type:"string"},min_spend:{type:"number",description:"For vendors: minimum total spend across all jobs"}}},sort_by:{type:"string",description:"Sort field: revenue, cost, margin, name, spend"},limit:{type:"number",description:"Max results to return (default 20)"}},required:["entity"]}},
     {name:"add_line_items",description:"Add one or more line items to a job. Use when user says 'add 20 desks to the Lincoln job at $297 each', 'add a line item for chairs', etc.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name keywords"},items:{type:"array",description:"Array of items to add",items:{type:"object",properties:{description:{type:"string"},manufacturer:{type:"string"},model_number:{type:"string"},color:{type:"string"},quantity:{type:"number"},unit_price:{type:"number",description:"Customer price per unit"},unit_cost:{type:"number",description:"Dealer cost per unit"},vendor_name:{type:"string",description:"Vendor/manufacturer name"}}}}},required:["job_id","items"]}},
+    {name:"delete_job",description:"Delete a job record. Use when user says 'delete the test job' or 'remove job X'. Requires confirmation.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name keywords"}},required:["job_id"]}},
+    {name:"duplicate_job",description:"Duplicate an existing job with all its line items. Resets phase to Quoting and payment to unpaid. Use for recurring orders like 'duplicate College of DuPage for next year'.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name keywords to duplicate"},new_name:{type:"string",description:"Name for the new job (optional, defaults to original + ' (Copy)')"}},required:["job_id"]}},
+    {name:"add_line_items",description:"Add one or more line items to a job. Use when user says 'add 20 desks at $297 to Lincoln Elementary' or 'add chairs to the Naperville job'.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name keywords"},items:{type:"array",items:{type:"object",properties:{description:{type:"string"},manufacturer:{type:"string"},model_number:{type:"string"},color:{type:"string"},quantity:{type:"number"},unit_cost:{type:"number"},unit_price:{type:"number"},vendor:{type:"string"}}},description:"Array of line items to add"}},required:["job_id","items"]}},
+    {name:"search_and_report",description:"Run a complex search/filter on jobs, vendors, or line items and return a formatted report. Use for 'show me all jobs over $50K', 'list vendors we spend more than $10K with', 'find unpaid jobs older than 30 days', etc.",input_schema:{type:"object",properties:{report_type:{type:"string",description:"jobs, vendors, customers, line_items, or financial"},filters:{type:"object",description:"Filter criteria",properties:{min_revenue:{type:"number"},max_revenue:{type:"number"},phase:{type:"string"},payment_status:{type:"string"},vendor_name:{type:"string"},customer_name:{type:"string"},min_margin:{type:"number"},max_margin:{type:"number"},min_spend:{type:"number"},overdue:{type:"boolean"}}},sort_by:{type:"string",description:"Field to sort by: revenue, cost, margin, name, date"},limit:{type:"number",description:"Max results to return (default 20)"}},required:["report_type"]}},
     {name:"navigate_to_page",description:"Navigate to a page in the app.",input_schema:{type:"object",properties:{page:{type:"string"}},required:["page"]}}
   ];
 
@@ -4179,7 +4183,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         return{success:true,message:"Duplicated '"+job.name+"' as '"+newName+"' ("+newId+") with "+ct+" line items. Phase: Quoting. Customer: "+(cust?.name||"same")+"."};
       }
       if(toolName==="search_and_report"){
-        const f=input.filters||{};const entity=(input.entity||"jobs").toLowerCase();const limit=input.limit||20;
+        const f=input.filters||{};const entity=(input.report_type||"jobs").toLowerCase();const limit=input.limit||20;
         if(entity==="jobs"||entity==="job"){
           let results=[...jobs];
           if(f.phase)results=results.filter(j=>j.phase.toLowerCase()===f.phase.toLowerCase());
@@ -4228,7 +4232,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         let ct=0;const existingCount=getJobItems(job.id).length;
         items.forEach((item,idx)=>{
           const itemId=job.id+"-item-"+String(existingCount+idx+1).padStart(3,"0");
-          const vendor=item.vendor_name?findVendor(item.vendor_name):null;
+          const vendor=item.vendor?findVendor(item.vendor):(item.vendor_name?findVendor(item.vendor_name):null);
           addLineItem({id:itemId,jobId:job.id,description:item.description||"",manufacturer:item.manufacturer||"",modelNumber:item.model_number||"",color:item.color||"",vendor:vendor?.id||item.vendor_name||"",unitPrice:item.unit_price||0,unitCost:item.unit_cost||0,qtyOrdered:item.quantity||1,qtyReceived:0,qtyInvoiced:0,shippingPerUnit:0,installPerUnit:0,listPrice:0,tag:""});
           ct++;
         });
@@ -4405,6 +4409,10 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
           if(a.name==="create_sop")return "Create SOP: **"+(a.input.title||"")+"** ["+(a.input.category||"Custom")+"]";
           if(a.name==="conditional_update")return "Conditional update: **"+(a.input.condition_description||"")+"** >> "+Object.entries(a.input.updates||{}).map(([k,v])=>"**"+k+"**=**"+v+"**").join(", ");
           if(a.name==="generate_document")return "Generate **"+(a.input.doc_type||"document")+"** for **"+(a.input.job_id||"job")+"**";
+          if(a.name==="delete_job")return "Delete job **"+(a.input.job_id||"")+"** and all its line items";
+          if(a.name==="duplicate_job")return "Duplicate **"+(a.input.job_id||"")+"** as **"+(a.input.new_name||"copy")+"**";
+          if(a.name==="add_line_items")return "Add "+(a.input.items?.length||0)+" line item"+(a.input.items?.length!==1?"s":"")+" to **"+(a.input.job_id||"job")+"**";
+          if(a.name==="search_and_report")return "Search **"+(a.input.report_type||"jobs")+"** with filters";
           if(a.name==="delete_job")return "Delete job: **"+(a.input.job_id||"")+"** and all its line items";
           if(a.name==="duplicate_job")return "Duplicate **"+(a.input.job_id||"job")+"**"+(a.input.new_name?" as **"+a.input.new_name+"**":" (Copy)");
           if(a.name==="search_and_report")return "Search **"+(a.input.entity||"jobs")+"**"+(a.input.filters?" with filters: "+JSON.stringify(a.input.filters):"");
