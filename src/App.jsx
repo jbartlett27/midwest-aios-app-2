@@ -2515,38 +2515,125 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           setBillDetail({...bill,paid:newStatus==='paid'});
         };
         const printCheck=(bill2)=>{
-          const today=new Date();const dateStr=(today.getMonth()+1)+'/'+today.getDate()+'/'+today.getFullYear();
-          const checkNo=billCheckNum||'____';const amtDollars=Math.floor(bill2.cost);const amtCents=Math.round((bill2.cost-amtDollars)*100);
+          const today=new Date();const mm=String(today.getMonth()+1).padStart(2,'0');const dd=String(today.getDate()).padStart(2,'0');const yyyy=today.getFullYear();
+          const dateStr=mm+'/'+dd+'/'+yyyy;
+          const checkNo=billCheckNum||'____';
+          const amtDollars=Math.floor(bill2.cost);const amtCents=Math.round((bill2.cost-amtDollars)*100);
           const amtWords=(()=>{const ones=['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];const tens=['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
             const convert=(n)=>{if(n<20)return ones[n];if(n<100)return tens[Math.floor(n/10)]+(n%10?' '+ones[n%10]:'');if(n<1000)return ones[Math.floor(n/100)]+' Hundred'+(n%100?' '+convert(n%100):'');if(n<1000000)return convert(Math.floor(n/1000))+' Thousand'+(n%1000?' '+convert(n%1000):'');return String(n)};
             return convert(amtDollars)+' and '+String(amtCents).padStart(2,'0')+'/100';
           })();
-          const html='<html><head><title>Check '+checkNo+'</title><style>@page{size:8.5in 3.5in;margin:0.25in}body{font-family:Arial,sans-serif;margin:0;padding:20px;color:#111}'+
-            '.check{border:2px solid #333;border-radius:8px;padding:24px;max-width:750px;margin:0 auto;position:relative}'+
-            '.check-no{position:absolute;top:20px;right:24px;font-size:14px;font-weight:700;color:#555;font-family:monospace}'+
-            '.company{margin-bottom:16px}.company-name{font-size:16px;font-weight:700}.company-addr{font-size:11px;color:#555}'+
-            '.date-line{text-align:right;margin-bottom:12px;font-size:13px}.date-line b{border-bottom:1px solid #333;padding:0 16px}'+
-            '.payto{display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:13px}.payto-label{font-weight:600;white-space:nowrap}.payto-value{flex:1;border-bottom:1px solid #333;padding:2px 8px;font-size:15px;font-weight:600}'+
-            '.amount-box{border:2px solid #333;padding:4px 12px;font-size:16px;font-weight:700;font-family:monospace;min-width:100px;text-align:center}'+
-            '.words{border-bottom:1px solid #333;padding:4px 0;margin-bottom:12px;font-size:12px;font-style:italic}'+
-            '.memo-line{display:flex;align-items:center;gap:8px;margin-top:16px;font-size:12px}.memo-label{font-weight:600}.memo-value{flex:1;border-bottom:1px solid #333;padding:2px 8px}'+
-            '.sig-line{margin-top:20px;text-align:right}.sig-line span{display:inline-block;border-bottom:1px solid #333;width:250px;padding-bottom:4px;font-size:12px;color:#888}'+
-            '.stub{margin-top:24px;border-top:2px dashed #999;padding-top:16px}'+
-            '.stub-table{width:100%;border-collapse:collapse;font-size:12px}.stub-table th{text-align:left;padding:4px 8px;border-bottom:1px solid #ccc;color:#555;font-weight:600}.stub-table td{padding:4px 8px;border-bottom:1px solid #eee}'+
-            '</style></head><body>'+
-            '<div class="check"><div class="check-no">Check #'+checkNo+'</div>'+
-            '<div class="company"><div class="company-name">Midwest Educational Furnishings, Inc.</div><div class="company-addr">21191 N Valley Rd, Kildeer, IL 60047<br>(847) 847-1865</div></div>'+
-            '<div class="date-line">Date: <b>'+dateStr+'</b></div>'+
-            '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><div class="payto"><div class="payto-label">PAY TO THE ORDER OF:</div><div class="payto-value">'+bill2.vendorName+'</div></div><div class="amount-box">$'+bill2.cost.toLocaleString('en-US',{minimumFractionDigits:2})+'</div></div>'+
-            '<div class="words">'+amtWords+' DOLLARS</div>'+
-            '<div class="memo-line"><span class="memo-label">Memo:</span><span class="memo-value">'+(billMemo||bill2.poDocNum+' - '+bill2.job.name)+'</span></div>'+
-            '<div class="sig-line"><span>Authorized Signature</span></div></div>'+
-            '<div class="stub"><table class="stub-table"><thead><tr><th>Date</th><th>Description</th><th>PO #</th><th>Invoice #</th><th>Amount</th></tr></thead><tbody>'+
-            '<tr><td>'+dateStr+'</td><td>'+bill2.job.name+'</td><td>'+bill2.poDocNum+'</td><td>'+(billInvNum||bill2.vendorInvNum||'--')+'</td><td style="font-weight:700;font-family:monospace">$'+bill2.cost.toLocaleString('en-US',{minimumFractionDigits:2})+'</td></tr>'+
-            bill2.items.map(item=>'<tr><td></td><td style="color:#555;font-size:11px">'+item.description+'</td><td></td><td></td><td style="font-size:11px;font-family:monospace">$'+((item.unitCost||0)*item.qtyOrdered).toFixed(2)+'</td></tr>').join('')+
-            '</tbody></table></div></body></html>';
+          const amtFmt=bill2.cost.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+          const vendorAddr=bill2.vendor?(bill2.vendor.contact?(bill2.vendor.contact+'\n'):'')+(bill2.vendorName||'')+'\n'+(bill2.vendor.address||''):'';
+          const vendorAddrHtml=vendorAddr.split('\n').filter(Boolean).join('<br>');
+          const billDate=bill2.payDate||bill2.poDate||dateStr;
+          const refNum=bill2.vendorInvNum||billInvNum||bill2.poDocNum||'';
+          // 3-part check layout matching QuickBooks check format
+          const html=`<!DOCTYPE html><html><head><title>Check ${checkNo}</title><style>
+@page{size:8.5in 11in;margin:0}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
+.check-section{width:100%;height:3.5in;padding:0.3in 0.4in;position:relative;border-bottom:1px dashed #999;page-break-inside:avoid}
+.check-section:last-child{border-bottom:none}
+/* CHECK (top) */
+.check-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px}
+.company-block{line-height:1.4}
+.company-name{font-size:13px;font-weight:700;letter-spacing:0.3px}
+.company-addr{font-size:10px;color:#444}
+.bank-block{text-align:center;font-size:10px;color:#444;line-height:1.4}
+.check-no{font-size:22px;font-weight:700;font-family:'Courier New',monospace;text-align:right}
+.date-row{text-align:right;margin-bottom:10px;font-size:12px}
+.date-val{border-bottom:1px solid #333;padding:0 12px;font-style:italic}
+.payto-row{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+.payto-label{font-size:10px;font-weight:700;white-space:nowrap}
+.payto-name{flex:1;border-bottom:1px solid #333;padding:2px 8px;font-size:14px;font-weight:600}
+.amount-dollars{border:2px solid #333;padding:3px 10px;font-size:15px;font-weight:700;font-family:'Courier New',monospace;white-space:nowrap}
+.words-row{border-bottom:1px solid #333;padding:4px 0;margin-bottom:10px;font-size:11px}
+.vendor-addr{font-size:10px;line-height:1.5;margin-top:8px;min-height:50px}
+.memo-row{display:flex;align-items:center;gap:6px;font-size:10px;margin-top:8px}
+.memo-label{font-weight:700}
+.memo-val{flex:1;border-bottom:1px solid #333;padding:2px 6px;min-height:14px}
+/* STUBS */
+.stub-section{width:100%;height:3.5in;padding:0.3in 0.4in;position:relative;border-bottom:1px dashed #999}
+.stub-section:last-child{border-bottom:none}
+.stub-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px}
+.stub-company{font-size:12px;font-weight:700}
+.stub-date-vendor{font-size:11px;color:#333;margin-top:2px}
+.stub-checkno{font-size:20px;font-weight:700;font-family:'Courier New',monospace}
+.stub-table{width:100%;border-collapse:collapse;margin-top:10px;font-size:11px}
+.stub-table th{text-align:left;padding:4px 8px;border-bottom:1.5px solid #333;font-weight:700;font-size:10px}
+.stub-table td{padding:4px 8px;border-bottom:1px solid #ddd}
+.stub-table .amt{text-align:right;font-family:'Courier New',monospace}
+.stub-total-row td{border-top:1.5px solid #333;font-weight:700}
+.stub-footer{display:flex;justify-content:space-between;position:absolute;bottom:0.3in;left:0.4in;right:0.4in;font-size:11px}
+.stub-bank{color:#444}
+.stub-amount{font-weight:700;font-family:'Courier New',monospace;font-size:13px}
+.payment-record{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-25deg);font-size:48px;font-weight:700;color:rgba(0,0,0,0.06);letter-spacing:8px;white-space:nowrap;pointer-events:none}
+@media print{body{width:8.5in}.check-section,.stub-section{page-break-inside:avoid}}
+</style></head><body>
+
+<!-- CHECK (top third) -->
+<div class="check-section">
+  <div class="check-header">
+    <div class="company-block">
+      <div class="company-name">MIDWEST EDUCATIONAL FURNISHINGS, INC</div>
+      <div class="company-addr">21191 N Valley Rd<br>Kildeer, IL 60047<br>847-847-1865</div>
+    </div>
+    <div class="bank-block">CORNERSTONE NATL BANK AND TR CO<br>Palatine, IL 60067<br>70-2615/719</div>
+    <div class="check-no">${checkNo}</div>
+  </div>
+  <div class="date-row"><span class="date-val">${dateStr}</span></div>
+  <div class="payto-row">
+    <div class="payto-label">PAY TO THE<br>ORDER OF</div>
+    <div class="payto-name">${bill2.vendorName||''}</div>
+    <div class="amount-dollars">$ **${amtFmt}</div>
+  </div>
+  <div class="words-row">${amtWords}${'*'.repeat(Math.max(0,80-amtWords.length))} DOLLARS</div>
+  <div class="vendor-addr">${vendorAddrHtml}</div>
+  <div class="memo-row"><span class="memo-label">MEMO</span><span class="memo-val">${billMemo||''}</span></div>
+</div>
+
+<!-- STUB 1 (middle third -- company copy) -->
+<div class="stub-section">
+  <div class="stub-header">
+    <div>
+      <div class="stub-company">MIDWEST EDUCATIONAL FURNISHINGS, INC</div>
+      <div class="stub-date-vendor">${dateStr}&nbsp;&nbsp;&nbsp;&nbsp;${bill2.vendorName||''}</div>
+    </div>
+    <div class="stub-checkno">${checkNo}</div>
+  </div>
+  <table class="stub-table">
+    <thead><tr><th>Date</th><th>Type</th><th>Reference</th><th class="amt">Original Amount</th><th class="amt">Balance Due</th><th class="amt">Payment</th></tr></thead>
+    <tbody>
+      <tr><td>${billDate}</td><td>Bill</td><td>${refNum}</td><td class="amt">${amtFmt}</td><td class="amt">${amtFmt}</td><td class="amt">${amtFmt}</td></tr>
+      <tr class="stub-total-row"><td></td><td></td><td></td><td></td><td>Check Amount</td><td class="amt">${amtFmt}</td></tr>
+    </tbody>
+  </table>
+  <div class="stub-footer"><div class="stub-bank">Cornerstone Bank Ch</div><div class="stub-amount">${amtFmt}</div></div>
+</div>
+
+<!-- STUB 2 (bottom third -- payment record) -->
+<div class="stub-section" style="border-bottom:none">
+  <div class="payment-record">PAYMENT RECORD</div>
+  <div class="stub-header">
+    <div>
+      <div class="stub-company">MIDWEST EDUCATIONAL FURNISHINGS, INC</div>
+      <div class="stub-date-vendor">${dateStr}&nbsp;&nbsp;&nbsp;&nbsp;${bill2.vendorName||''}</div>
+    </div>
+    <div class="stub-checkno">${checkNo}</div>
+  </div>
+  <table class="stub-table">
+    <thead><tr><th>Date</th><th>Type</th><th>Reference</th><th class="amt">Original Amount</th><th class="amt">Balance Due</th><th class="amt">Payment</th></tr></thead>
+    <tbody>
+      <tr><td>${billDate}</td><td>Bill</td><td>${refNum}</td><td class="amt">${amtFmt}</td><td class="amt">${amtFmt}</td><td class="amt">${amtFmt}</td></tr>
+      <tr class="stub-total-row"><td></td><td></td><td></td><td></td><td>Check Amount</td><td class="amt">${amtFmt}</td></tr>
+    </tbody>
+  </table>
+  <div class="stub-footer"><div class="stub-bank">Cornerstone Bank Ch</div><div class="stub-amount">${amtFmt}</div></div>
+</div>
+
+</body></html>`;
           const w=window.open('','_blank');w.document.write(html);w.document.close();w.print();
-          // Save check record
           const existing2=typeof docStatuses[bill2.billDocNum]==='object'?docStatuses[bill2.billDocNum]:{};
           setDocStatus(bill2.billDocNum,{...existing2,checkNum:billCheckNum||existing2.checkNum||checkNo,checkPrinted:new Date().toISOString(),vendorInvNum:billInvNum||existing2.vendorInvNum||'',payDate:billPayDate||existing2.payDate||'',memo:billMemo||existing2.memo||''});
           notify('Check printed for '+bill2.vendorName+' -- '+fmt(bill2.cost));
