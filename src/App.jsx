@@ -2517,7 +2517,14 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
         const printCheck=(bill2)=>{
           const today=new Date();const mm=String(today.getMonth()+1).padStart(2,'0');const dd=String(today.getDate()).padStart(2,'0');const yyyy=today.getFullYear();
           const dateStr=mm+'/'+dd+'/'+yyyy;
-          const checkNo=billCheckNum||'____';
+          // Auto-generate check number if empty: find highest existing check number and increment
+          let checkNo=billCheckNum;
+          if(!checkNo){
+            const allCheckNums=Object.values(docStatuses).filter(v=>typeof v==='object'&&v.checkNum).map(v=>parseInt(v.checkNum)).filter(n=>!isNaN(n));
+            const maxCheck=allCheckNums.length>0?Math.max(...allCheckNums):9240;
+            checkNo=String(maxCheck+1);
+            setBillCheckNum(checkNo); // auto-populate the input field
+          }
           const amtDollars=Math.floor(bill2.cost);const amtCents=Math.round((bill2.cost-amtDollars)*100);
           const amtWords=(()=>{const ones=['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];const tens=['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
             const convert=(n)=>{if(n<20)return ones[n];if(n<100)return tens[Math.floor(n/10)]+(n%10?' '+ones[n%10]:'');if(n<1000)return ones[Math.floor(n/100)]+' Hundred'+(n%100?' '+convert(n%100):'');if(n<1000000)return convert(Math.floor(n/1000))+' Thousand'+(n%1000?' '+convert(n%1000):'');return String(n)};
@@ -2528,33 +2535,35 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           const vendorAddrHtml=vendorAddr.split('\n').filter(Boolean).join('<br>');
           const billDate=bill2.payDate||bill2.poDate||dateStr;
           const refNum=bill2.vendorInvNum||billInvNum||bill2.poDocNum||'';
-          // 3-part check layout matching QuickBooks check format
+          // MICR line: check number, routing number, account number (from Maureen's check)
+          const micrCheck='C'+checkNo.padStart(6,'0')+'C';
+          const micrRouting='T071926155T';
+          const micrAccount='O0159796200O';
           const html=`<!DOCTYPE html><html><head><title>Check ${checkNo}</title><style>
 @page{size:8.5in 11in;margin:0}
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
-.check-section{width:100%;height:3.5in;padding:0.3in 0.4in;position:relative;border-bottom:1px dashed #999;page-break-inside:avoid}
+.check-section{width:100%;height:3.5in;padding:0.25in 0.4in;position:relative;border-bottom:1px dashed #999;page-break-inside:avoid}
 .check-section:last-child{border-bottom:none}
-/* CHECK (top) */
-.check-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px}
+.check-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px}
 .company-block{line-height:1.4}
 .company-name{font-size:13px;font-weight:700;letter-spacing:0.3px}
 .company-addr{font-size:10px;color:#444}
 .bank-block{text-align:center;font-size:10px;color:#444;line-height:1.4}
-.check-no{font-size:22px;font-weight:700;font-family:'Courier New',monospace;text-align:right}
-.date-row{text-align:right;margin-bottom:10px;font-size:12px}
+.check-no{font-size:24px;font-weight:700;font-family:'Courier New',monospace;text-align:right;min-width:80px}
+.date-row{text-align:right;margin-bottom:8px;font-size:12px}
 .date-val{border-bottom:1px solid #333;padding:0 12px;font-style:italic}
-.payto-row{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+.payto-row{display:flex;align-items:center;gap:6px;margin-bottom:4px}
 .payto-label{font-size:10px;font-weight:700;white-space:nowrap}
 .payto-name{flex:1;border-bottom:1px solid #333;padding:2px 8px;font-size:14px;font-weight:600}
 .amount-dollars{border:2px solid #333;padding:3px 10px;font-size:15px;font-weight:700;font-family:'Courier New',monospace;white-space:nowrap}
-.words-row{border-bottom:1px solid #333;padding:4px 0;margin-bottom:10px;font-size:11px}
-.vendor-addr{font-size:10px;line-height:1.5;margin-top:8px;min-height:50px}
-.memo-row{display:flex;align-items:center;gap:6px;font-size:10px;margin-top:8px}
+.words-row{border-bottom:1px solid #333;padding:3px 0;margin-bottom:6px;font-size:11px}
+.vendor-addr{font-size:10px;line-height:1.5;margin-top:6px;min-height:40px}
+.memo-row{display:flex;align-items:center;gap:6px;font-size:10px;margin-top:6px}
 .memo-label{font-weight:700}
 .memo-val{flex:1;border-bottom:1px solid #333;padding:2px 6px;min-height:14px}
-/* STUBS */
-.stub-section{width:100%;height:3.5in;padding:0.3in 0.4in;position:relative;border-bottom:1px dashed #999}
+.micr-line{text-align:center;margin-top:10px;font-family:'MICR','Courier New',monospace;font-size:14px;letter-spacing:4px;color:#111}
+.stub-section{width:100%;height:3.5in;padding:0.25in 0.4in;position:relative;border-bottom:1px dashed #999}
 .stub-section:last-child{border-bottom:none}
 .stub-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px}
 .stub-company{font-size:12px;font-weight:700}
@@ -2565,7 +2574,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
 .stub-table td{padding:4px 8px;border-bottom:1px solid #ddd}
 .stub-table .amt{text-align:right;font-family:'Courier New',monospace}
 .stub-total-row td{border-top:1.5px solid #333;font-weight:700}
-.stub-footer{display:flex;justify-content:space-between;position:absolute;bottom:0.3in;left:0.4in;right:0.4in;font-size:11px}
+.stub-footer{display:flex;justify-content:space-between;position:absolute;bottom:0.25in;left:0.4in;right:0.4in;font-size:11px}
 .stub-bank{color:#444}
 .stub-amount{font-weight:700;font-family:'Courier New',monospace;font-size:13px}
 .payment-record{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-25deg);font-size:48px;font-weight:700;color:rgba(0,0,0,0.06);letter-spacing:8px;white-space:nowrap;pointer-events:none}
@@ -2591,6 +2600,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
   <div class="words-row">${amtWords}${'*'.repeat(Math.max(0,80-amtWords.length))} DOLLARS</div>
   <div class="vendor-addr">${vendorAddrHtml}</div>
   <div class="memo-row"><span class="memo-label">MEMO</span><span class="memo-val">${billMemo||''}</span></div>
+  <div class="micr-line">${micrCheck}&nbsp;&nbsp;&nbsp;${micrRouting}&nbsp;&nbsp;&nbsp;${micrAccount}</div>
 </div>
 
 <!-- STUB 1 (middle third -- company copy) -->
@@ -2635,8 +2645,8 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
 </body></html>`;
           const w=window.open('','_blank');w.document.write(html);w.document.close();w.print();
           const existing2=typeof docStatuses[bill2.billDocNum]==='object'?docStatuses[bill2.billDocNum]:{};
-          setDocStatus(bill2.billDocNum,{...existing2,checkNum:billCheckNum||existing2.checkNum||checkNo,checkPrinted:new Date().toISOString(),vendorInvNum:billInvNum||existing2.vendorInvNum||'',payDate:billPayDate||existing2.payDate||'',memo:billMemo||existing2.memo||''});
-          notify('Check printed for '+bill2.vendorName+' -- '+fmt(bill2.cost));
+          setDocStatus(bill2.billDocNum,{...existing2,checkNum:checkNo,checkPrinted:new Date().toISOString(),vendorInvNum:billInvNum||existing2.vendorInvNum||'',payDate:billPayDate||existing2.payDate||'',memo:billMemo||existing2.memo||''});
+          notify('Check #'+checkNo+' printed for '+bill2.vendorName+' -- '+fmt(bill2.cost));
         };
         return <div>
           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16}}><button onClick={()=>setBillDetail(null)} style={{background:"none",border:"none",color:"#737373",cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>&larr; Back to Bills</button></div>
