@@ -38,7 +38,7 @@ const Badge = ({label,color})=><span style={{fontSize:11,fontWeight:600,color:co
 
 const StatCard = ({label,value,sub,color})=><Card style={{padding:16,textAlign:"center"}} hover><span style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2}}>{label}</span><div style={{fontSize:"clamp(22px,5vw,36px)",fontWeight:800,color:color||"#f0f0f0",fontFamily:"'JetBrains Mono',monospace",letterSpacing:-1,lineHeight:1,margin:"8px 0 6px"}}>{value}</div>{sub&&<div style={{fontSize:12,color:"#a3a3a3"}}>{sub}</div>}</Card>;
 
-const Tbl = ({columns,data,onRowClick})=><div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}><thead><tr>{columns.map((c,i)=><th key={i} style={{padding:"10px 8px",textAlign:"left",fontSize:11,fontWeight:600,color:"#737373",borderBottom:"1px solid #222",whiteSpace:"nowrap"}}>{c.header}</th>)}</tr></thead><tbody>{(data||[]).map((r,i)=><tr key={r.id||i} onClick={onRowClick?()=>onRowClick(r):undefined} style={{cursor:onRowClick?"pointer":"default",transition:"background 0.15s"}} onMouseEnter={e=>e.currentTarget.style.background="#0a0a0a"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>{columns.map((c,j)=><td key={j} style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}}>{c.render?c.render(r):r[c.key]}</td>)}</tr>)}</tbody></table></div>;
+const Tbl = ({columns,data,onRowClick})=><div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}><thead><tr>{columns.map((c,i)=><th key={i} style={{padding:"10px 8px",textAlign:"left",fontSize:11,fontWeight:600,color:"#737373",borderBottom:"1px solid #222",whiteSpace:"nowrap"}}>{c.header}</th>)}</tr></thead><tbody>{(data||[]).map((r,i)=><tr key={r.id||i} onClick={onRowClick?()=>onRowClick(r):undefined} style={{cursor:onRowClick?"pointer":"default",transition:"background 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.background="#0a0a0a"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>{columns.map((c,j)=><td key={j} style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}}>{c.render?c.render(r):r[c.key]}</td>)}</tr>)}</tbody></table></div>;
 
 const Check = ({checked,onChange,size=16})=><div onClick={e=>{e.stopPropagation();onChange?.(!checked)}} style={{width:size,height:size,borderRadius:4,border:"1px solid "+(checked?"#2dd4bf":"#444"),background:checked?"#2dd4bf":"transparent",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"all 0.15s",flexShrink:0}}>{checked&&<span style={{color:"#000",fontSize:size-4,lineHeight:1}}>&#10003;</span>}</div>;
 
@@ -923,10 +923,21 @@ function MidwestAIOSInner() {
     if(clerkEnabled&&clerkUser.isLoaded&&clerkUser.isSignedIn&&clerkUser.user&&!currentUser){
       const cu=clerkUser.user;
       const email=(cu.primaryEmailAddress?.emailAddress||"").toLowerCase();
-      // Map Clerk user to AIOS role based on email or metadata
-      const clerkRole=cu.publicMetadata?.role||"admin";
-      const mapped={id:"clerk-"+cu.id,name:cu.fullName||cu.firstName||email,username:email,role:clerkRole,email:email,clerkId:cu.id,avatar:cu.imageUrl};
+      const clerkId=cu.id;
+      // Check for role override in CLERK_USER_ROLES settings
+      const rolesRecord=(customSops||[]).find(s=>s.id==="CLERK_USER_ROLES"&&s.cat==="Settings");
+      let storedRoles={};try{storedRoles=rolesRecord?JSON.parse(rolesRecord.content||"{}"):{};}catch{}
+      const existingRole=storedRoles["clerk-"+clerkId];
+      // New users default to "office" role (not admin) -- Maureen can upgrade in Users & Permissions
+      const role=existingRole?.role||"office";
+      const pages=existingRole?.pages||undefined;
+      const mapped={id:"clerk-"+clerkId,name:cu.fullName||cu.firstName||email,username:email,role,email,clerkId:"clerk-"+clerkId,avatar:cu.imageUrl,pages,source:"clerk"};
       setCurrentUser(mapped);sessionStorage.setItem("mw_user",JSON.stringify(mapped));
+      // Auto-register this Clerk user if not already in the roles store
+      if(!existingRole){
+        const updated={...storedRoles,["clerk-"+clerkId]:{role:"office",name:cu.fullName||cu.firstName||email,email,avatar:cu.imageUrl,pages:["dashboard","jobs","dataimport","deliveries","documents","salesportal","playbook","tasks","notes","brain"],createdAt:new Date().toISOString()}};
+        addSop({id:"CLERK_USER_ROLES",title:"Clerk User Roles",cat:"Settings",icon:"shield",content:JSON.stringify(updated),custom:true});
+      }
     }
     if(clerkEnabled&&clerkUser.isLoaded&&!clerkUser.isSignedIn&&currentUser?.clerkId){
       setCurrentUser(null);sessionStorage.removeItem("mw_user");
@@ -1028,6 +1039,83 @@ function MidwestAIOSInner() {
   // Save QB config to localStorage (not DB -- contains secrets)
   useEffect(() => { try { localStorage.setItem('mw_qbConfig', JSON.stringify(qbConfig)); } catch {} }, [qbConfig]);
 
+  // --- REALTIME COLLABORATION ---
+  const [onlineUsers, setOnlineUsers] = useState([]);
+  const [realtimeStatus, setRealtimeStatus] = useState("off");
+  useEffect(() => {
+    if (!appReady || !currentUser) return;
+    // Connect to Supabase Realtime
+    db.connectRealtime();
+    setRealtimeStatus("connected");
+    // Track this user's presence
+    db.trackPresence(currentUser);
+    const presenceInterval = setInterval(() => db.trackPresence(currentUser), 30000);
+
+    // Subscribe to table changes from OTHER users
+    const unsubs = [];
+    unsubs.push(db.onTableChange('jobs', (evt) => {
+      if (!evt.record) return;
+      const mapped = db.jobFromDb(evt.record);
+      if (evt.type === 'INSERT') setJobs(p => p.some(j => j.id === mapped.id) ? p : [...p, mapped]);
+      if (evt.type === 'UPDATE') setJobs(p => p.map(j => j.id === mapped.id ? mapped : j));
+      if (evt.type === 'DELETE' && evt.oldRecord) setJobs(p => p.filter(j => j.id !== evt.oldRecord.id));
+    }));
+    unsubs.push(db.onTableChange('line_items', (evt) => {
+      if (!evt.record) return;
+      const mapped = db.liFromDb(evt.record);
+      if (evt.type === 'INSERT') setLineItems(p => p.some(i => i.id === mapped.id) ? p : [...p, mapped]);
+      if (evt.type === 'UPDATE') setLineItems(p => p.map(i => i.id === mapped.id ? mapped : i));
+      if (evt.type === 'DELETE' && evt.oldRecord) setLineItems(p => p.filter(i => i.id !== evt.oldRecord.id));
+    }));
+    unsubs.push(db.onTableChange('vendors', (evt) => {
+      if (!evt.record) return;
+      const mapped = db.vendorFromDb(evt.record);
+      if (evt.type === 'INSERT') setVendors(p => p.some(v => v.id === mapped.id) ? p : [...p, mapped]);
+      if (evt.type === 'UPDATE') setVendors(p => p.map(v => v.id === mapped.id ? mapped : v));
+      if (evt.type === 'DELETE' && evt.oldRecord) setVendors(p => p.filter(v => v.id !== evt.oldRecord.id));
+    }));
+    unsubs.push(db.onTableChange('customers', (evt) => {
+      if (!evt.record) return;
+      const mapped = db.custFromDb(evt.record);
+      if (evt.type === 'INSERT') setCustomers(p => p.some(c => c.id === mapped.id) ? p : [...p, mapped]);
+      if (evt.type === 'UPDATE') setCustomers(p => p.map(c => c.id === mapped.id ? mapped : c));
+      if (evt.type === 'DELETE' && evt.oldRecord) setCustomers(p => p.filter(c => c.id !== evt.oldRecord.id));
+    }));
+    unsubs.push(db.onTableChange('reps', (evt) => {
+      if (!evt.record) return;
+      const mapped = db.repFromDb(evt.record);
+      if (evt.type === 'INSERT') setReps(p => p.some(r => r.id === mapped.id) ? p : [...p, mapped]);
+      if (evt.type === 'UPDATE') setReps(p => p.map(r => r.id === mapped.id ? mapped : r));
+      if (evt.type === 'DELETE' && evt.oldRecord) setReps(p => p.filter(r => r.id !== evt.oldRecord.id));
+    }));
+    unsubs.push(db.onTableChange('sops', (evt) => {
+      if (!evt.record) return;
+      const mapped = db.sopFromDb(evt.record);
+      if (evt.type === 'INSERT') setCustomSops(p => p.some(s => s.id === mapped.id) ? p.map(s => s.id === mapped.id ? mapped : s) : [...p, mapped]);
+      if (evt.type === 'UPDATE') setCustomSops(p => p.map(s => s.id === mapped.id ? mapped : s));
+      if (evt.type === 'DELETE' && evt.oldRecord) setCustomSops(p => p.filter(s => s.id !== evt.oldRecord.id));
+    }));
+    // Presence tracking
+    unsubs.push(db.onPresence((msg) => {
+      try {
+        if (msg.event === 'presence_state') {
+          const users = Object.values(msg.payload || {}).flat().map(p => p.metas?.[0] || p).filter(p => p.name);
+          setOnlineUsers(users);
+        }
+        if (msg.event === 'presence_diff') {
+          const joins = Object.values(msg.payload?.joins || {}).flat().map(p => p.metas?.[0] || p);
+          const leaves = Object.values(msg.payload?.leaves || {}).flat().map(p => p.metas?.[0] || p);
+          setOnlineUsers(prev => {
+            let next = [...prev.filter(u => !leaves.some(l => l.user_id === u.user_id)), ...joins.filter(j => j.name)];
+            const seen = new Set(); return next.filter(u => { if (seen.has(u.user_id)) return false; seen.add(u.user_id); return true; });
+          });
+        }
+      } catch {}
+    }));
+
+    return () => { unsubs.forEach(fn => fn()); clearInterval(presenceInterval); db.disconnectRealtime(); setRealtimeStatus("off"); };
+  }, [appReady, currentUser?.id]);
+
   // --- DERIVED COMPUTATIONS ----------------------------------
   const getJobItems = jobId => lineItems.filter(li => li.jobId === jobId);
   const getJobFinancials = jobId => {
@@ -1126,6 +1214,11 @@ function MidwestAIOSInner() {
     {id:"qbsetup",label:"QuickBooks",icon:"settings"},
     {id:"usermgmt",label:"Users & Permissions",icon:"shield"},
   ].filter(item => {
+    // Check for custom page-level permissions (set in Users & Permissions for Clerk users)
+    if(currentUser?.pages&&Array.isArray(currentUser.pages)){
+      if(item.id==="usermgmt")return currentUser.role==="admin";
+      return currentUser.pages.includes(item.id);
+    }
     if (userRole === "admin") return true;
     if (item.id === "usermgmt") return false;
     if (userRole === "office") return !["financials","commissions","exitready"].includes(item.id);
@@ -1236,14 +1329,17 @@ const sharedScreen = sharedQuote ? <ShareQuotePortal quoteData={sharedQuote} onA
 
         {/* Footer */}
         <div style={{padding:sidebarCollapsed?"10px 8px":"10px 16px",borderTop:"1px solid rgba(255,255,255,0.04)"}}>
-          {!sidebarCollapsed?<div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:6,height:6,borderRadius:"50%",background:dbStatus==="connected"?"#34d399":dbStatus==="connecting"?"#fbbf24":"#f87171",flexShrink:0}}/><span style={{fontSize:11,color:"#444"}}>{dbStatus==="connected"?"Connected":"Connecting..."}</span><span style={{marginLeft:"auto",fontSize:9,color:"#333",letterSpacing:1}}>DYFRENT</span></div>:<div style={{display:"flex",justifyContent:"center"}}><div style={{width:6,height:6,borderRadius:"50%",background:dbStatus==="connected"?"#34d399":"#fbbf24"}}/></div>}
+          {!sidebarCollapsed?<div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:6,height:6,borderRadius:"50%",background:realtimeStatus==="connected"?"#34d399":dbStatus==="connected"?"#2dd4bf":dbStatus==="connecting"?"#fbbf24":"#f87171",flexShrink:0,boxShadow:realtimeStatus==="connected"?"0 0 6px rgba(52,211,153,0.4)":"none"}}/><span style={{fontSize:11,color:"#444"}}>{realtimeStatus==="connected"?"Live":dbStatus==="connected"?"Connected":"Connecting..."}</span>{onlineUsers.length>1&&<span style={{fontSize:10,color:"#34d399"}}>{onlineUsers.length} online</span>}<span style={{marginLeft:"auto",fontSize:9,color:"#333",letterSpacing:1}}>DYFRENT</span></div>:<div style={{display:"flex",justifyContent:"center"}}><div style={{width:6,height:6,borderRadius:"50%",background:realtimeStatus==="connected"?"#34d399":"#fbbf24",boxShadow:realtimeStatus==="connected"?"0 0 6px rgba(52,211,153,0.4)":"none"}}/></div>}
         </div>
       </div>
 
       {/* MAIN */}
       <div style={{flex:1,overflow:"auto",background:"#000000"}}>
         <div className="main-content" style={{maxWidth:1400,margin:"0 auto",padding:"24px 32px"}}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:8,marginBottom:8}}><span style={{fontSize:12,color:"#a3a3a3"}}>{currentUser?.name}</span><Badge label={userRole} color={userRole==="admin"?"#2dd4bf":userRole==="office"?"#a78bfa":"#fbbf24"}/>{clerkEnabled&&clerkAuth.isSignedIn?<UserButton afterSignOutUrl="/" appearance={{elements:{avatarBox:{width:28,height:28}}}}/>:<button onClick={logout} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #222",background:"transparent",color:"#737373",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}} onMouseEnter={e=>e.currentTarget.style.color="#f87171"} onMouseLeave={e=>e.currentTarget.style.color="#737373"}>Logout</button>}</div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:8,marginBottom:8}}>
+            {onlineUsers.length>0&&<div style={{display:"flex",alignItems:"center",gap:4,marginRight:4}}>{onlineUsers.slice(0,5).map((u,i)=><div key={u.user_id||i} title={u.name+" ("+u.role+")"} style={{width:24,height:24,borderRadius:"50%",border:"2px solid #000",marginLeft:i>0?-8:0,zIndex:5-i,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700,color:"#000",background:u.role==="admin"?"#2dd4bf":u.role==="office"?"#a78bfa":"#fbbf24",position:"relative"}}>{u.avatar?<img src={u.avatar} style={{width:20,height:20,borderRadius:"50%",objectFit:"cover"}}/>:(u.name||"?")[0]}<div style={{position:"absolute",bottom:-1,right:-1,width:8,height:8,borderRadius:"50%",background:"#34d399",border:"1.5px solid #000"}}/></div>)}{onlineUsers.length>5&&<span style={{fontSize:10,color:"#525252",marginLeft:4}}>+{onlineUsers.length-5}</span>}<span style={{fontSize:10,color:"#34d399",marginLeft:4}}>{onlineUsers.length} online</span></div>}
+            {realtimeStatus==="connected"&&<div title="Real-time sync active" style={{width:6,height:6,borderRadius:"50%",background:"#34d399",boxShadow:"0 0 6px rgba(52,211,153,0.5)"}}/>}
+            <span style={{fontSize:12,color:"#a3a3a3"}}>{currentUser?.name}</span><Badge label={userRole} color={userRole==="admin"?"#2dd4bf":userRole==="office"?"#a78bfa":"#fbbf24"}/>{clerkEnabled&&clerkAuth.isSignedIn?<UserButton afterSignOutUrl="/" appearance={{elements:{avatarBox:{width:28,height:28}}}}/>:<button onClick={logout} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #222",background:"transparent",color:"#737373",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}} onMouseEnter={e=>e.currentTarget.style.color="#f87171"} onMouseLeave={e=>e.currentTarget.style.color="#737373"}>Logout</button>}</div>
           {page==="dashboard"&&<Dashboard {...ctx}/>}
           {page==="jobs"&&<JobsPage {...ctx}/>}
           {page==="directory"&&<DirectoryPage {...ctx}/>}
@@ -1487,7 +1583,7 @@ function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJo
         <div style={{display:"flex",flexDirection:"column",gap:8}}>{filtered.map(job=>{const f=getJobFinancials(job.id);return <div key={job.id} onClick={()=>{setSelectedJob(job.id);setPage("jobs")}} style={{padding:"10px 12px",background:"#000",borderRadius:10,cursor:"pointer",transition:"all 0.2s",border:"1px solid rgba(255,255,255,0.04)"}} onMouseEnter={e=>{e.currentTarget.style.background="#0a0a0a";e.currentTarget.style.borderColor="rgba(45,212,191,0.15)";e.currentTarget.style.transform="translateY(-1px)"}} onMouseLeave={e=>{e.currentTarget.style.background="#000";e.currentTarget.style.borderColor="rgba(255,255,255,0.04)";e.currentTarget.style.transform="translateY(0)"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}><span style={{fontSize:14,fontWeight:600,color:"#f0f0f0"}}><span style={{fontFamily:"'JetBrains Mono',monospace",color:"#737373",fontSize:11,marginRight:6}}>{jobNum(job.id)}</span>{job.name}</span><Badge label={job.phase} color={statusColor(job.phase)}/></div><Bar value={f.totalReceived} max={f.totalOrdered||1} color={statusColor(job.phase)} height={5}/><div style={{display:"flex",justifyContent:"space-between",marginTop:4}}><span style={{fontSize:12,color:"#a3a3a3"}}>{fmtN(f.totalReceived)}/{fmtN(f.totalOrdered)} units</span><span style={{fontSize:13,fontWeight:700,color:"#e5e5e5",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(f.totalRevenue)}</span></div></div>})}</div>
       </Card>
       <Card style={{padding:16}} hover><div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:14,fontFamily:"'JetBrains Mono',monospace"}}>Team Leaderboard</div>
-        {[...reps].filter(r=>!r.id.includes("SEED_FLAG")).sort((a,b)=>{const ar=jobs.filter(j=>j.salesRep===b.id).reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const br=jobs.filter(j=>j.salesRep===a.id).reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);return ar-br}).map((r,i)=>{const rv=jobs.filter(j=>j.salesRep===r.id).reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const jc=jobs.filter(j=>j.salesRep===r.id).length;const comm=rv*(r.commissionRate||0);return <div key={r.id} style={{padding:"10px 0",borderBottom:"1px solid #111",transition:"all 0.15s"}} onMouseEnter={e=>e.currentTarget.style.background="#0a0a0a"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><div style={{display:"flex",alignItems:"center",gap:10}}><div style={{width:30,height:30,borderRadius:"50%",background:["#2dd4bf","#a78bfa","#fbbf24","#34d399","#f87171","#8b5cf6"][i%6]+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,color:["#2dd4bf","#a78bfa","#fbbf24","#34d399","#f87171","#8b5cf6"][i%6],fontWeight:800,fontFamily:"'JetBrains Mono',monospace"}}>{i+1}</div><div style={{flex:1}}><div style={{fontSize:14,fontWeight:600,color:"#f0f0f0"}}>{r.name}</div><div style={{fontSize:12,color:"#a3a3a3"}}>{r.territory||""} - {jc} job{jc!==1?"s":""} - {((r.commissionRate||0)*100).toFixed(1)}%</div></div><div style={{textAlign:"right"}}><div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(rv)}</div><div style={{fontSize:11,color:"#737373"}}>comm: {fmt(comm)}</div></div></div></div>})}
+        {[...reps].filter(r=>!r.id.includes("SEED_FLAG")).sort((a,b)=>{const ar=jobs.filter(j=>j.salesRep===b.id).reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const br=jobs.filter(j=>j.salesRep===a.id).reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);return ar-br}).map((r,i)=>{const rv=jobs.filter(j=>j.salesRep===r.id).reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const jc=jobs.filter(j=>j.salesRep===r.id).length;const comm=rv*(r.commissionRate||0);return <div key={r.id} style={{padding:"10px 0",borderBottom:"1px solid #111",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.background="#0a0a0a"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}><div style={{display:"flex",alignItems:"center",gap:10}}><div style={{width:30,height:30,borderRadius:"50%",background:["#2dd4bf","#a78bfa","#fbbf24","#34d399","#f87171","#8b5cf6"][i%6]+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,color:["#2dd4bf","#a78bfa","#fbbf24","#34d399","#f87171","#8b5cf6"][i%6],fontWeight:800,fontFamily:"'JetBrains Mono',monospace"}}>{i+1}</div><div style={{flex:1}}><div style={{fontSize:14,fontWeight:600,color:"#f0f0f0"}}>{r.name}</div><div style={{fontSize:12,color:"#a3a3a3"}}>{r.territory||""} - {jc} job{jc!==1?"s":""} - {((r.commissionRate||0)*100).toFixed(1)}%</div></div><div style={{textAlign:"right"}}><div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(rv)}</div><div style={{fontSize:11,color:"#737373"}}>comm: {fmt(comm)}</div></div></div></div>})}
       </Card>
     </div>
 
@@ -1515,10 +1611,10 @@ function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJo
     {/* Row 6: Top Customers + Top Vendors */}
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}} className="resp-grid-2">
       <Card style={{padding:16}} hover><div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:14,fontFamily:"'JetBrains Mono',monospace"}}>Top Customers</div>
-        {topCustomers.map(([name,rev],i)=><div key={name} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:i<topCustomers.length-1?"1px solid #111":"none",transition:"all 0.15s"}} onMouseEnter={e=>e.currentTarget.style.background="#0a0a0a"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><div style={{width:28,height:28,borderRadius:8,background:"#2dd4bf12",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:"#2dd4bf",fontWeight:800,fontFamily:"'JetBrains Mono',monospace"}}>{i+1}</div><span style={{fontSize:14,color:"#f0f0f0",flex:1,fontWeight:500}}>{name}</span><span style={{fontSize:14,fontWeight:700,color:"#e5e5e5",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(rev)}</span></div>)}
+        {topCustomers.map(([name,rev],i)=><div key={name} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:i<topCustomers.length-1?"1px solid #111":"none",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.background="#0a0a0a"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}><div style={{width:28,height:28,borderRadius:8,background:"#2dd4bf12",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:"#2dd4bf",fontWeight:800,fontFamily:"'JetBrains Mono',monospace"}}>{i+1}</div><span style={{fontSize:14,color:"#f0f0f0",flex:1,fontWeight:500}}>{name}</span><span style={{fontSize:14,fontWeight:700,color:"#e5e5e5",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(rev)}</span></div>)}
       </Card>
       <Card style={{padding:16}} hover><div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:14,fontFamily:"'JetBrains Mono',monospace"}}>Top Vendors</div>
-        {vendorSpend.map(([name,spend],i)=><div key={name} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:i<vendorSpend.length-1?"1px solid #111":"none",transition:"all 0.15s"}} onMouseEnter={e=>e.currentTarget.style.background="#0a0a0a"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><div style={{width:28,height:28,borderRadius:8,background:["#2dd4bf","#a78bfa","#34d399","#fbbf24","#f87171","#8b5cf6"][i%6]+"12",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:["#2dd4bf","#a78bfa","#34d399","#fbbf24","#f87171","#8b5cf6"][i%6],fontWeight:800,fontFamily:"'JetBrains Mono',monospace"}}>{i+1}</div><span style={{fontSize:14,color:"#f0f0f0",flex:1,fontWeight:500}}>{name}</span><span style={{fontSize:14,fontWeight:700,color:"#e5e5e5",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(spend)}</span></div>)}
+        {vendorSpend.map(([name,spend],i)=><div key={name} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:i<vendorSpend.length-1?"1px solid #111":"none",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.background="#0a0a0a"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}><div style={{width:28,height:28,borderRadius:8,background:["#2dd4bf","#a78bfa","#34d399","#fbbf24","#f87171","#8b5cf6"][i%6]+"12",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:["#2dd4bf","#a78bfa","#34d399","#fbbf24","#f87171","#8b5cf6"][i%6],fontWeight:800,fontFamily:"'JetBrains Mono',monospace"}}>{i+1}</div><span style={{fontSize:14,color:"#f0f0f0",flex:1,fontWeight:500}}>{name}</span><span style={{fontSize:14,fontWeight:700,color:"#e5e5e5",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(spend)}</span></div>)}
       </Card>
     </div>
 
@@ -1965,6 +2061,7 @@ function JobDetail({job,ctx}){
 // ===============================================================
 function DeliveryCalendar({jobs,lineItems,vendors,customers,getJobItems,setPage,setSelectedJob,notify,jobNum}){
   const [monthOffset,setMonthOffset]=useState(0);
+  const [calFilter,setCalFilter]=useState("all"); // all, pending, delivered, po, due
   const now=new Date();
   const viewDate=new Date(now.getFullYear(),now.getMonth()+monthOffset,1);
   const year=viewDate.getFullYear();
@@ -1973,41 +2070,90 @@ function DeliveryCalendar({jobs,lineItems,vendors,customers,getJobItems,setPage,
   const daysInMonth=new Date(year,month+1,0).getDate();
   const firstDay=new Date(year,month,1).getDay();
 
-  // Build delivery events from line items with delivery dates or due dates
+  // Build ALL events from line items and jobs
   const events=[];
   lineItems.forEach(item=>{
+    const job=jobs.find(j=>j.id===item.jobId);
+    const vendor=vendors.find(v=>v.id===item.vendor||v.name===item.vendor);
+    const vName=vendor?.name||item.vendor||"";
+    // Pending deliveries (not fully received, has a delivery/due date)
     if(item.qtyReceived<item.qtyOrdered){
-      const job=jobs.find(j=>j.id===item.jobId);
-      const vendor=vendors.find(v=>v.id===item.vendor);
       const dateStr=item.deliveryDate||job?.dueDate||"";
-      if(dateStr){
-        const d=new Date(dateStr);
-        if(d.getFullYear()===year&&d.getMonth()===month){
-          events.push({day:d.getDate(),item:item.description,vendor:vendor?.name||"",job:job?.name||"",jobId:job?.id,qty:item.qtyOrdered-item.qtyReceived,color:statusColor(job?.phase||"Quoting")});
-        }
+      if(dateStr){const d=new Date(dateStr);if(d.getFullYear()===year&&d.getMonth()===month){
+        events.push({day:d.getDate(),label:vName+": "+(item.qtyOrdered-item.qtyReceived)+" "+item.description.slice(0,25),type:"pending",color:"#fbbf24",jobId:job?.id,jobName:job?.name||"",detail:item.description,qty:item.qtyOrdered-item.qtyReceived,vendor:vName});
+      }}
+    }
+    // Delivered items (has delivery date and received qty > 0)
+    if(item.qtyReceived>0&&item.deliveryDate){
+      const d=new Date(item.deliveryDate);if(d.getFullYear()===year&&d.getMonth()===month){
+        events.push({day:d.getDate(),label:vName+": "+item.qtyReceived+" "+item.description.slice(0,25)+" received",type:"delivered",color:"#34d399",jobId:job?.id,jobName:job?.name||"",detail:item.description,qty:item.qtyReceived,vendor:vName});
+      }
+    }
+    // PO dates (when the order was placed)
+    if(item.poDate){
+      const d=new Date(item.poDate);if(d.getFullYear()===year&&d.getMonth()===month){
+        events.push({day:d.getDate(),label:"PO: "+vName+" -- "+item.description.slice(0,25),type:"po",color:"#a78bfa",jobId:job?.id,jobName:job?.name||"",detail:item.description,qty:item.qtyOrdered,vendor:vName});
       }
     }
   });
+  // Job due dates
+  jobs.forEach(j=>{
+    if(j.dueDate){const d=new Date(j.dueDate);if(d.getFullYear()===year&&d.getMonth()===month){
+      const cust=customers.find(c=>c.id===j.customer);
+      events.push({day:d.getDate(),label:"DUE: "+j.name,type:"due",color:"#f87171",jobId:j.id,jobName:j.name,detail:(cust?.name||"")+" -- "+j.phase,qty:0,vendor:""});
+    }}
+  });
 
+  const filtered=calFilter==="all"?events:events.filter(e=>e.type===calFilter);
   const days=[];
-    for(let i=0;i<firstDay;i++)days.push(null);
+  for(let i=0;i<firstDay;i++)days.push(null);
   for(let d=1;d<=daysInMonth;d++)days.push(d);
 
-  return <div style={{animation:"fadeUp 0.4s"}}><Header title="Delivery Calendar" sub={monthName+" "+year+" -- expected deliveries for active jobs"} action={<div style={{display:"flex",gap:8}}><Btn v="secondary" onClick={()=>setMonthOffset(p=>p-1)}>&larr; Prev</Btn><Btn v="secondary" onClick={()=>setMonthOffset(0)}>Today</Btn><Btn v="secondary" onClick={()=>setMonthOffset(p=>p+1)}>Next &rarr;</Btn></div>}/>
+  const filterBtns=[["all","All Events"],["pending","Pending"],["delivered","Delivered"],["po","PO Sent"],["due","Due Dates"]];
+  const filterColors={all:"#2dd4bf",pending:"#fbbf24",delivered:"#34d399",po:"#a78bfa",due:"#f87171"};
+
+  return <div style={{animation:"fadeUp 0.4s"}}>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:10}}>
+      <div>
+        <div style={{fontSize:22,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>{monthName} {year}</div>
+        <div style={{fontSize:12,color:"#a3a3a3",marginTop:2}}>{filtered.length} event{filtered.length!==1?"s":""} this month</div>
+      </div>
+      <div style={{display:"flex",gap:6,alignItems:"center"}}>
+        <button onClick={()=>setMonthOffset(p=>p-1)} style={{width:36,height:36,borderRadius:10,border:"1px solid #222",background:"transparent",color:"#a3a3a3",fontSize:16,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="#2dd4bf";e.currentTarget.style.color="#2dd4bf"}} onMouseLeave={e=>{e.currentTarget.style.borderColor="#222";e.currentTarget.style.color="#a3a3a3"}}>&larr;</button>
+        <button onClick={()=>setMonthOffset(0)} style={{padding:"8px 16px",borderRadius:10,border:"1px solid "+(monthOffset===0?"#2dd4bf40":"#222"),background:monthOffset===0?"#2dd4bf10":"transparent",color:monthOffset===0?"#2dd4bf":"#a3a3a3",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>Today</button>
+        <button onClick={()=>setMonthOffset(p=>p+1)} style={{width:36,height:36,borderRadius:10,border:"1px solid #222",background:"transparent",color:"#a3a3a3",fontSize:16,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="#2dd4bf";e.currentTarget.style.color="#2dd4bf"}} onMouseLeave={e=>{e.currentTarget.style.borderColor="#222";e.currentTarget.style.color="#a3a3a3"}}>&rarr;</button>
+      </div>
+    </div>
+    {/* Filter bar */}
+    <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
+      {filterBtns.map(([id,label])=>{const ct=id==="all"?events.length:events.filter(e=>e.type===id).length;return <button key={id} onClick={()=>setCalFilter(id)} style={{padding:"6px 14px",borderRadius:8,border:"1px solid "+(calFilter===id?filterColors[id]+"40":"#222"),background:calFilter===id?filterColors[id]+"12":"transparent",color:calFilter===id?filterColors[id]:"#525252",fontSize:12,fontWeight:calFilter===id?600:400,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s",display:"flex",alignItems:"center",gap:6}}>{label}{ct>0&&<span style={{fontSize:10,padding:"1px 6px",borderRadius:10,background:calFilter===id?filterColors[id]+"20":"#222",color:calFilter===id?filterColors[id]:"#525252"}}>{ct}</span>}</button>})}
+    </div>
+    {/* Calendar grid */}
     <div className="cal-grid" style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:1,background:"#222222",borderRadius:12,overflow:"hidden",border:"1px solid #222222"}}>
       {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=><div key={d} style={{padding:"10px 8px",textAlign:"center",fontSize:12,fontWeight:600,color:"#a3a3a3",background:"#111111"}}>{d}</div>)}
       {days.map((day,i)=>{
-        const dayEvents=day?events.filter(e=>e.day===day):[];
+        const dayEvents=day?filtered.filter(e=>e.day===day):[];
         const isToday=day&&month===now.getMonth()&&year===now.getFullYear()&&day===now.getDate();
-        return <div key={i} style={{minHeight:90,padding:6,background:day?"#000000":"#0a0a0a",borderTop:"1px solid #222222",position:"relative"}}>
+        const isPast=day&&new Date(year,month,day)<new Date(now.getFullYear(),now.getMonth(),now.getDate());
+        return <div key={i} style={{minHeight:90,padding:6,background:day?(isToday?"#0d0d0d":"#000000"):"#0a0a0a",borderTop:"1px solid #222222",position:"relative",opacity:isPast&&!isToday?0.6:1}}>
           {day&&<div style={{fontSize:12,fontWeight:isToday?700:400,color:isToday?"#2dd4bf":"#525252",marginBottom:4}}>{isToday?<span style={{background:"#2dd4bf",color:"#000000",borderRadius:10,padding:"1px 6px",fontSize:11}}>{day}</span>:day}</div>}
-          {dayEvents.slice(0,3).map((ev,ei)=><div key={ei} onClick={()=>{if(ev.jobId){setSelectedJob(ev.jobId);setPage("jobs")}}} style={{fontSize:12,padding:"2px 4px",marginBottom:2,borderRadius:4,background:ev.color+"18",color:ev.color,cursor:"pointer",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",borderLeft:"2px solid "+ev.color}}>{ev.vendor}: {ev.qty} {ev.item.slice(0,20)}</div>)}
-          {dayEvents.length>3&&<div style={{fontSize:12,color:"#a3a3a3"}}>+{dayEvents.length-3} more</div>}
+          {dayEvents.slice(0,3).map((ev,ei)=><div key={ei} onClick={()=>{if(ev.jobId){setSelectedJob(ev.jobId);setPage("jobs")}}} style={{fontSize:10,padding:"2px 4px",marginBottom:2,borderRadius:4,background:ev.color+"15",color:ev.color,cursor:"pointer",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",borderLeft:"2px solid "+ev.color,transition:"all 0.15s"}} onMouseEnter={e=>e.currentTarget.style.background=ev.color+"25"} onMouseLeave={e=>e.currentTarget.style.background=ev.color+"15"}>{ev.label}</div>)}
+          {dayEvents.length>3&&<div style={{fontSize:10,color:"#737373",padding:"1px 4px"}}>+{dayEvents.length-3} more</div>}
         </div>
       })}
     </div>
-    {events.length===0&&<Card style={{marginTop:16,textAlign:"center",padding:30}}><div style={{fontSize:14,color:"#a3a3a3"}}>No deliveries scheduled for {monthName} {year}. Set delivery dates on line items or due dates on jobs to see them here.</div></Card>}
-    {events.length>0&&<Card style={{marginTop:16}}><div style={{fontSize:14,fontWeight:700,color:"#e5e5e5",marginBottom:12}}>{monthName} Deliveries ({events.length} items)</div>{events.sort((a,b)=>a.day-b.day).map((ev,i)=><div key={i} className="slide-row" onClick={()=>{if(ev.jobId){setSelectedJob(ev.jobId);setPage("jobs")}}} style={{display:"flex",alignItems:"center",gap:12,padding:"8px 0",borderBottom:"1px solid #222222",cursor:"pointer"}}><div style={{width:32,textAlign:"center",fontSize:14,fontWeight:700,color:"#2dd4bf"}}>{ev.day}</div><div style={{width:4,height:24,borderRadius:2,background:ev.color}}/><div style={{flex:1}}><div style={{fontSize:12,fontWeight:600,color:"#d4d4d4"}}>{ev.vendor} -- {ev.item.slice(0,40)}</div><div style={{fontSize:12,color:"#a3a3a3"}}>{ev.job} - {ev.qty} units pending</div></div></div>)}</Card>}
+    {/* Event legend */}
+    <div style={{display:"flex",gap:16,marginTop:12,flexWrap:"wrap"}}>
+      {[["#fbbf24","Pending Delivery"],["#34d399","Received"],["#a78bfa","PO Sent"],["#f87171","Job Due Date"]].map(([c,l])=><div key={l} style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:"#737373"}}><div style={{width:10,height:10,borderRadius:3,background:c}}/>{l}</div>)}
+    </div>
+    {/* Monthly summary list */}
+    {filtered.length>0&&<Card style={{marginTop:16}}><div style={{fontSize:14,fontWeight:700,color:"#e5e5e5",marginBottom:12}}>{monthName} {year} -- {filtered.length} Events</div>{filtered.sort((a,b)=>a.day-b.day).map((ev,i)=><div key={i} className="slide-row" onClick={()=>{if(ev.jobId){setSelectedJob(ev.jobId);setPage("jobs")}}} style={{display:"flex",alignItems:"center",gap:12,padding:"8px 0",borderBottom:i<filtered.length-1?"1px solid #111":"none",cursor:"pointer",transition:"background 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.background="#0a0a0a"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>
+      <div style={{width:36,textAlign:"center"}}><div style={{fontSize:16,fontWeight:700,color:"#f0f0f0",lineHeight:1}}>{ev.day}</div><div style={{fontSize:9,color:"#525252",textTransform:"uppercase"}}>{new Date(year,month,ev.day).toLocaleString("default",{weekday:"short"})}</div></div>
+      <div style={{width:4,height:28,borderRadius:2,background:ev.color,flexShrink:0}}/>
+      <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600,color:"#d4d4d4",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ev.label}</div><div style={{fontSize:11,color:"#737373"}}>{ev.jobName}{ev.qty?" -- "+ev.qty+" units":""}</div></div>
+      <span style={{fontSize:10,padding:"3px 8px",borderRadius:6,background:ev.color+"12",color:ev.color,fontWeight:600,flexShrink:0}}>{ev.type==="pending"?"PENDING":ev.type==="delivered"?"RECEIVED":ev.type==="po"?"PO SENT":"DUE"}</span>
+    </div>)}</Card>}
+    {filtered.length===0&&<Card style={{marginTop:16,textAlign:"center",padding:30}}><div style={{fontSize:14,color:"#a3a3a3"}}>No {calFilter==="all"?"events":calFilter} for {monthName} {year}. Set delivery dates on line items or due dates on jobs to populate the calendar.</div></Card>}
   </div>;
 }
 
@@ -2096,6 +2242,16 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
   const allQuoteCols=[{key:"tag",label:"Tag"},{key:"manuf",label:"Manuf."},{key:"model",label:"Model #"},{key:"description",label:"Description"},{key:"color",label:"Color"},{key:"qty",label:"Qty"},{key:"shippingEach",label:"Shipping Each"},{key:"shippingTotal",label:"Shipping Total"},{key:"installEach",label:"Install Each"},{key:"installTotal",label:"Install Total"},{key:"unitPrice",label:"Your Price"},{key:"lineTotal",label:"Line Total"}];
   const projectNum=(jobId)=>{const sorted=[...jobs].sort((a,b)=>(a.createdDate||'').localeCompare(b.createdDate||'')||a.id.localeCompare(b.id));const idx=sorted.findIndex(j=>j.id===jobId);return 'MW-'+String(idx+1).padStart(4,'0')};
   useEffect(()=>{if(pendingCommPreview){setPreviewDoc(pendingCommPreview);setTab("preview");setPendingCommPreview(null)}},[pendingCommPreview]);
+  // Pick up Brain's generate_document request
+  useEffect(()=>{
+    if(window._brainDocTarget&&(Date.now()-window._brainDocTarget.timestamp)<5000){
+      const t=window._brainDocTarget;window._brainDocTarget=null;
+      const job=jobs.find(j=>j.id===t.jobId);if(!job)return;
+      if(t.docType==="invoice"||t.docType==="invoices")setTab("invoices");
+      else if(t.docType==="quote"||t.docType==="quotes")setTab("quotes");
+      else if(t.docType==="po"||t.docType==="pos")setTab("pos");
+    }
+  },[]);
   const [pushing,setPushing]=useState(false);
   const [billDetail,setBillDetail]=useState(null);
   const [billInvNum,setBillInvNum]=useState('');
@@ -3723,12 +3879,188 @@ function NotesPage({customSops,addSop,deleteSop,jobs,reps,notify,triggerPrint}){
   return <div style={{animation:"fadeUp 0.4s"}}><Header title="Notes" sub={(customSops||[]).filter(s=>s.cat==="Notes").length+" notes saved"}/><NotesView customSops={customSops} addSop={addSop} deleteSop={deleteSop} jobs={jobs} reps={reps} notify={notify} triggerPrint={triggerPrint}/></div>;
 }
 
-function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJobItems,brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory}){
+function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJobItems,brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory,updateJob,addJob,updateLineItem,addLineItem,deleteLineItem,updateRep,addRep,addCustomer,updateCustomer,addVendor,updateVendor,notify,setPage,deleteJob}){
   const history=brainHistory;const setHistory=setBrainHistory;
   const suggestedQueries=["What is our total pipeline revenue?","Which vendor do we spend the most with?","Show me all jobs that are In Progress","What is our average margin?","Which reps have the highest revenue?","List all overdue deliveries","Summarize our commission obligations","What SOPs do we have documented?"];
   const chatRef=useRef(null);
   const [animatingIdx,setAnimatingIdx]=useState(-1);
-  useEffect(()=>{if(chatRef.current)chatRef.current.scrollTop=chatRef.current.scrollHeight},[history,animatingIdx]);
+  const [pendingActions,setPendingActions]=useState([]);
+  useEffect(()=>{if(chatRef.current)chatRef.current.scrollTop=chatRef.current.scrollHeight},[history,animatingIdx,pendingActions]);
+
+  // Tool definitions for Claude function calling
+  // Helper: find job by ID or name keywords
+  const findJob=(ref)=>{if(!ref)return null;const r=ref.toLowerCase();return jobs.find(j=>j.id.toLowerCase()===r)||jobs.find(j=>j.name.toLowerCase().includes(r))||jobs.find(j=>{const words=r.split(/\s+/).filter(w=>w.length>3);return words.length>0&&words.every(w=>j.name.toLowerCase().includes(w))})};
+  const findVendor=(ref)=>{if(!ref)return null;const r=ref.toLowerCase();return vendors.find(v=>v.id===ref)||vendors.find(v=>v.name.toLowerCase().includes(r))};
+  const findCustomer=(ref)=>{if(!ref)return null;const r=ref.toLowerCase();return customers.find(c=>c.id===ref)||customers.find(c=>c.name.toLowerCase().includes(r))};
+
+  const brainTools=[
+    {name:"update_job",description:"Update a job's phase, payment status, notes, due date, or other fields.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name keywords"},updates:{type:"object",properties:{phase:{type:"string"},paymentStatus:{type:"string"},notes:{type:"string"},dueDate:{type:"string"},paymentTerms:{type:"string"},shipTo:{type:"string"},poNumber:{type:"string"}}}},required:["job_id","updates"]}},
+    {name:"create_job",description:"Create a new job record.",input_schema:{type:"object",properties:{name:{type:"string"},customer_name:{type:"string",description:"Customer name to link"},sales_rep_name:{type:"string",description:"Rep name to link"},phase:{type:"string"},notes:{type:"string"}},required:["name"]}},
+    {name:"update_line_item",description:"Update a specific line item's received qty, price, cost, description.",input_schema:{type:"object",properties:{item_id:{type:"string"},updates:{type:"object",properties:{qtyReceived:{type:"number"},unitPrice:{type:"number"},unitCost:{type:"number"},description:{type:"string"},deliveryDate:{type:"string"}}}},required:["item_id","updates"]}},
+    {name:"mark_items_received",description:"Mark ALL items on a job as fully received. Sets phase to Delivered.",input_schema:{type:"object",properties:{job_id:{type:"string"}},required:["job_id"]}},
+    {name:"log_delivery",description:"Log a specific quantity received for a line item on a job. Use when user says 'log 25 desks received' or 'received 10 chairs on job X'. Finds the item by description keywords.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name"},item_description:{type:"string",description:"Keywords to match the line item description (e.g. 'desk', 'chair', 'table')"},quantity:{type:"number",description:"Number of units received"}},required:["job_id","item_description","quantity"]}},
+    {name:"bulk_update_jobs",description:"Update multiple jobs at once based on a filter. Use for 'mark all Quoting jobs as Ordered' or 'set all delivered jobs to paid'.",input_schema:{type:"object",properties:{filter:{type:"object",description:"Filter criteria",properties:{phase:{type:"string",description:"Match jobs in this phase"},paymentStatus:{type:"string",description:"Match jobs with this payment status"},all_delivered:{type:"boolean",description:"Match jobs where all items are received"}}},updates:{type:"object",properties:{phase:{type:"string"},paymentStatus:{type:"string"},notes:{type:"string"}}}},required:["filter","updates"]}},
+    {name:"create_task",description:"Create a new task/to-do.",input_schema:{type:"object",properties:{text:{type:"string"},assignees:{type:"array",items:{type:"string"}},due:{type:"string"},priority:{type:"string"},status:{type:"string"},job_id:{type:"string"}},required:["text"]}},
+    {name:"add_note",description:"Create a note.",input_schema:{type:"object",properties:{title:{type:"string"},content:{type:"string"},folder:{type:"string"}},required:["content"]}},
+    {name:"update_payment_status",description:"Update payment status on a job.",input_schema:{type:"object",properties:{job_id:{type:"string"},status:{type:"string"},amount:{type:"number"},method:{type:"string"}},required:["job_id","status"]}},
+    {name:"create_payment_link",description:"Create a Stripe payment link for a job's invoice. Returns a payment URL to share with the customer.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name"}},required:["job_id"]}},
+    {name:"add_vendor",description:"Add a new vendor/manufacturer to the directory.",input_schema:{type:"object",properties:{name:{type:"string"},category:{type:"string",description:"e.g. Furniture, Cafeteria, STEM, Technology"},contact:{type:"string"},email:{type:"string"},phone:{type:"string"},discount_rate:{type:"number",description:"Decimal, e.g. 0.35 for 35%"}},required:["name"]}},
+    {name:"update_vendor",description:"Update an existing vendor's info (discount rate, contact, email, category, etc).",input_schema:{type:"object",properties:{vendor_name:{type:"string",description:"Vendor name to find"},updates:{type:"object",properties:{name:{type:"string"},category:{type:"string"},contact:{type:"string"},email:{type:"string"},phone:{type:"string"},discountRate:{type:"number"}}}},required:["vendor_name","updates"]}},
+    {name:"add_customer",description:"Add a new customer/organization to the directory.",input_schema:{type:"object",properties:{name:{type:"string"},type:{type:"string",description:"School District, Private School, Charter School, University, Other"},contact:{type:"string"},email:{type:"string"},phone:{type:"string"},address:{type:"string"}},required:["name"]}},
+    {name:"update_customer",description:"Update an existing customer's info.",input_schema:{type:"object",properties:{customer_name:{type:"string"},updates:{type:"object",properties:{name:{type:"string"},type:{type:"string"},contact:{type:"string"},email:{type:"string"},phone:{type:"string"},address:{type:"string"}}}},required:["customer_name","updates"]}},
+    {name:"create_sop",description:"Create a new SOP/playbook document.",input_schema:{type:"object",properties:{title:{type:"string"},category:{type:"string",description:"Company, Workflow, Financial, Operations, Strategic, Custom"},content:{type:"string",description:"The full SOP content"}},required:["title","content"]}},
+    {name:"conditional_update",description:"Find all jobs matching a condition, then update them. Use for: 'For every job that is In Progress with all items received, change phase to Delivered' or 'Mark all jobs with payment status partial as paid'. First finds matching jobs and shows them, then updates on confirm.",input_schema:{type:"object",properties:{condition_description:{type:"string",description:"Human-readable description of the condition"},filters:{type:"object",description:"Filter criteria to match jobs",properties:{phase:{type:"string"},paymentStatus:{type:"string"},all_items_received:{type:"boolean",description:"true to match only jobs where qtyReceived >= qtyOrdered for ALL items"},has_invoiced_items:{type:"boolean"},customer_name:{type:"string"},rep_name:{type:"string"}}},updates:{type:"object",description:"What to change on matched jobs",properties:{phase:{type:"string"},paymentStatus:{type:"string"},notes:{type:"string"},dueDate:{type:"string"}}}},required:["condition_description","filters","updates"]}},
+    {name:"generate_document",description:"Generate and open a document preview (invoice, quote, or PO) for a specific job. Use when user says 'generate invoice for X', 'create the quote for Y', 'show me the PO for Z'. This navigates to the Documents page and opens the document preview.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name keywords"},doc_type:{type:"string",description:"invoice, quote, or po"}},required:["job_id","doc_type"]}},
+    {name:"navigate_to_page",description:"Navigate to a page in the app.",input_schema:{type:"object",properties:{page:{type:"string"}},required:["page"]}}
+  ];
+
+  // Execute a tool call locally
+  const executeTool=async(toolName,input)=>{
+    try{
+      if(toolName==="update_job"){
+        const job=findJob(input.job_id);
+        if(!job)return{error:"Job not found: "+input.job_id};
+        updateJob(job.id,input.updates||{});
+        return{success:true,message:"Updated "+job.name+": "+Object.entries(input.updates||{}).map(([k,v])=>k+"="+v).join(", ")};
+      }
+      if(toolName==="create_job"){
+        const id="JOB-"+new Date().getFullYear()+"-"+String(jobs.length+1).padStart(3,"0");
+        const cust=input.customer_name?findCustomer(input.customer_name):null;
+        const rep=input.sales_rep_name?reps.find(r=>r.name.toLowerCase().includes(input.sales_rep_name.toLowerCase())):null;
+        addJob({id,name:input.name,customer:cust?.id||"",salesRep:rep?.id||"",phase:input.phase||"Quoting",paymentStatus:"unpaid",notes:input.notes||""});
+        return{success:true,message:"Created job: "+input.name+" ("+id+")"+(cust?" for "+cust.name:"")+(rep?" rep: "+rep.name:"")};
+      }
+      if(toolName==="update_line_item"){
+        const item=lineItems.find(i=>i.id===input.item_id);
+        if(!item)return{error:"Line item not found: "+input.item_id};
+        updateLineItem(item.id,input.updates||{});
+        return{success:true,message:"Updated line item: "+item.description};
+      }
+      if(toolName==="mark_items_received"){
+        const job=findJob(input.job_id);
+        if(!job)return{error:"Job not found: "+input.job_id};
+        const items=getJobItems(job.id);let ct=0;
+        items.forEach(item=>{if(item.qtyReceived<item.qtyOrdered){updateLineItem(item.id,{qtyReceived:item.qtyOrdered,deliveryDate:new Date().toISOString().split("T")[0]});ct++}});
+        updateJob(job.id,{phase:"Delivered"});
+        return{success:true,message:"Marked "+ct+" items as received on "+job.name+". Phase >> Delivered."};
+      }
+      if(toolName==="log_delivery"){
+        const job=findJob(input.job_id);
+        if(!job)return{error:"Job not found: "+input.job_id};
+        const items=getJobItems(job.id);
+        const kw=(input.item_description||"").toLowerCase();
+        const item=items.find(i=>i.description.toLowerCase().includes(kw))||items.find(i=>{const words=kw.split(/\s+/);return words.some(w=>w.length>2&&i.description.toLowerCase().includes(w))});
+        if(!item)return{error:"No line item matching '"+input.item_description+"' on "+job.name+". Items: "+items.map(i=>i.description).join(", ")};
+        const qty=input.quantity||0;
+        const newRcv=Math.min(item.qtyReceived+qty,item.qtyOrdered);
+        updateLineItem(item.id,{qtyReceived:newRcv,deliveryDate:new Date().toISOString().split("T")[0]});
+        return{success:true,message:"Logged "+qty+" received for '"+item.description+"' on "+job.name+" (now "+newRcv+"/"+item.qtyOrdered+")"};
+      }
+      if(toolName==="bulk_update_jobs"){
+        const f=input.filter||{};const u=input.updates||{};
+        let matched=jobs;
+        if(f.phase)matched=matched.filter(j=>j.phase.toLowerCase()===f.phase.toLowerCase());
+        if(f.paymentStatus)matched=matched.filter(j=>j.paymentStatus===f.paymentStatus);
+        if(f.all_delivered)matched=matched.filter(j=>{const items=getJobItems(j.id);return items.length>0&&items.every(i=>i.qtyReceived>=i.qtyOrdered)});
+        if(matched.length===0)return{error:"No jobs matched the filter: "+JSON.stringify(f)};
+        matched.forEach(j=>updateJob(j.id,u));
+        return{success:true,message:"Updated "+matched.length+" jobs: "+matched.map(j=>j.name).join(", ")+" >> "+Object.entries(u).map(([k,v])=>k+"="+v).join(", ")};
+      }
+      if(toolName==="create_task"){
+        const id="TASK-"+Math.random().toString(36).slice(2,8);
+        const job=input.job_id?findJob(input.job_id):null;
+        addSop({id,title:input.text||"Untitled",cat:"Task",icon:"check",content:JSON.stringify({text:input.text,assignees:input.assignees||[],due:input.due||"",priority:input.priority||"normal",status:input.status||"To Do",jobId:job?.id||"",jobName:job?.name||"",notes:"",link:""}),custom:true});
+        return{success:true,message:"Created task: "+input.text+(input.assignees?.length?" (assigned to "+input.assignees.join(", ")+")":"")+(input.due?" due "+input.due:"")};
+      }
+      if(toolName==="add_note"){
+        const id="NOTE-"+Math.random().toString(36).slice(2,8);
+        const title=input.title||(input.content||"").split("\n")[0].slice(0,60)||"Untitled";
+        addSop({id,title,cat:"Notes",icon:"file",content:JSON.stringify({text:input.content,folder:input.folder||"General",date:new Date().toISOString()}),custom:true});
+        return{success:true,message:"Note saved: "+title};
+      }
+      if(toolName==="update_payment_status"){
+        const job=findJob(input.job_id);
+        if(!job)return{error:"Job not found: "+input.job_id};
+        updateJob(job.id,{paymentStatus:input.status,endDate:input.status==="paid"?new Date().toISOString().split("T")[0]:job.endDate||""});
+        return{success:true,message:job.name+" payment >> "+input.status};
+      }
+      if(toolName==="create_payment_link"){
+        const job=findJob(input.job_id);
+        if(!job)return{error:"Job not found: "+input.job_id};
+        const f=getJobFinancials(job.id);const cust=customers.find(c=>c.id===job.customer);
+        if(f.totalRevenue<=0)return{error:job.name+" has $0 revenue -- cannot create payment link"};
+        try{
+          const r=await fetch("/api/stripe-pay",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"create_checkout",job_name:job.name,customer_name:cust?.name||"",customer_email:cust?.email||"",amount_cents:Math.round(f.totalRevenue*100),job_id:job.id})});
+          const data=await r.json();
+          if(data.url)return{success:true,message:"Payment link created for "+job.name+" ($"+f.totalRevenue.toLocaleString()+"): "+data.url,paymentUrl:data.url};
+          return{error:"Stripe error: "+(data.error||"Failed")};
+        }catch(err){return{error:"Stripe error: "+err.message}}
+      }
+      if(toolName==="add_vendor"){
+        const existing=vendors.find(v=>v.name.toLowerCase()===input.name.toLowerCase());
+        if(existing)return{error:"Vendor already exists: "+existing.name};
+        const id="V-"+Date.now()+"-"+Math.random().toString(36).slice(2,6);
+        addVendor({id,name:input.name,category:input.category||"Furniture",contact:input.contact||"",email:input.email||"",phone:input.phone||"",discountRate:input.discount_rate||0});
+        return{success:true,message:"Added vendor: "+input.name+(input.category?" ("+input.category+")":"")+(input.discount_rate?" at "+Math.round(input.discount_rate*100)+"% discount":"")};
+      }
+      if(toolName==="update_vendor"){
+        const v=findVendor(input.vendor_name);
+        if(!v)return{error:"Vendor not found: "+input.vendor_name};
+        updateVendor(v.id,input.updates||{});
+        return{success:true,message:"Updated "+v.name+": "+Object.entries(input.updates||{}).map(([k,val])=>k+"="+val).join(", ")};
+      }
+      if(toolName==="add_customer"){
+        const existing=customers.find(c=>c.name.toLowerCase()===input.name.toLowerCase());
+        if(existing)return{error:"Customer already exists: "+existing.name};
+        const id="C-"+Date.now()+"-"+Math.random().toString(36).slice(2,6);
+        addCustomer({id,name:input.name,type:input.type||"School District",contact:input.contact||"",email:input.email||"",phone:input.phone||"",address:input.address||""});
+        return{success:true,message:"Added customer: "+input.name+(input.type?" ("+input.type+")":"")};
+      }
+      if(toolName==="update_customer"){
+        const c=findCustomer(input.customer_name);
+        if(!c)return{error:"Customer not found: "+input.customer_name};
+        updateCustomer(c.id,input.updates||{});
+        return{success:true,message:"Updated "+c.name+": "+Object.entries(input.updates||{}).map(([k,val])=>k+"="+val).join(", ")};
+      }
+      if(toolName==="create_sop"){
+        const id="SOP-"+Math.random().toString(36).slice(2,8);
+        addSop({id,title:input.title,cat:input.category||"Custom",icon:"file",content:input.content,custom:true});
+        return{success:true,message:"Created SOP: "+input.title+" ["+( input.category||"Custom")+"]"};
+      }
+      if(toolName==="conditional_update"){
+        const f=input.filters||{};const u=input.updates||{};
+        let matched=[...jobs];
+        if(f.phase)matched=matched.filter(j=>j.phase.toLowerCase()===f.phase.toLowerCase());
+        if(f.paymentStatus)matched=matched.filter(j=>j.paymentStatus===f.paymentStatus);
+        if(f.all_items_received)matched=matched.filter(j=>{const items=getJobItems(j.id);return items.length>0&&items.every(i=>i.qtyReceived>=i.qtyOrdered)});
+        if(f.has_invoiced_items)matched=matched.filter(j=>{const items=getJobItems(j.id);return items.some(i=>i.qtyInvoiced>0)});
+        if(f.customer_name){const cn=f.customer_name.toLowerCase();matched=matched.filter(j=>{const c=customers.find(c2=>c2.id===j.customer);return c&&c.name.toLowerCase().includes(cn)})}
+        if(f.rep_name){const rn=f.rep_name.toLowerCase();matched=matched.filter(j=>{const r=reps.find(r2=>r2.id===j.salesRep);return r&&r.name.toLowerCase().includes(rn)})}
+        if(matched.length===0)return{error:"No jobs matched: "+input.condition_description+". Filters: "+JSON.stringify(f)};
+        matched.forEach(j=>updateJob(j.id,u));
+        const details=matched.map(j=>{const c=customers.find(c2=>c2.id===j.customer);return j.name+(c?" ("+c.name+")":"")}).join(", ");
+        return{success:true,message:"Condition: "+input.condition_description+"\nMatched "+matched.length+" jobs: "+details+"\nApplied: "+Object.entries(u).map(([k,v])=>k+" >> "+v).join(", ")};
+      }
+      if(toolName==="generate_document"){
+        const job=findJob(input.job_id);
+        if(!job)return{error:"Job not found: "+input.job_id};
+        const dt=(input.doc_type||"").toLowerCase();
+        // Navigate to documents page and set up for the right tab
+        if(setPage)setPage("documents");
+        // Store the target document info globally so DocumentsPage can pick it up
+        window._brainDocTarget={jobId:job.id,docType:dt,timestamp:Date.now()};
+        const docLabel=dt==="invoice"?"Invoice":dt==="quote"?"Quote":dt==="po"?"Purchase Orders":"Document";
+        return{success:true,message:"Opening "+docLabel+" for "+job.name+". Navigate to the "+docLabel+" tab in Documents to view and export it."};
+      }
+      if(toolName==="navigate_to_page"){
+        const pageMap={dashboard:"dashboard",jobs:"jobs",documents:"documents",deliveries:"deliveries",financials:"financials",playbook:"playbook",tasks:"tasks",notes:"notes",brain:"brain",dataimport:"dataimport",commissions:"commissions",salesportal:"salesportal",import:"dataimport",sales:"salesportal"};
+        const p=pageMap[(input.page||"").toLowerCase()]||input.page;
+        if(p&&setPage)setPage(p);
+        return{success:true,message:"Navigated to "+p};
+      }
+      return{error:"Unknown tool: "+toolName};
+    }catch(err){return{error:"Execution error: "+err.message}}
+  };
 
   const buildContext = (query) => {
     const q = (query || "").toLowerCase();
@@ -3846,7 +4178,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     // Only include tasks when relevant
     const taskText = /task|todo|assign|follow.?up/i.test(q) ? (customSops||[]).filter(s=>s.cat==="Task").map(s=>{try{const d=JSON.parse(s.content);return d.text+" ["+d.status+"]"+(d.assignees?.length?" -> "+d.assignees.join(","):"")+(d.due?" due:"+d.due:"")}catch{return s.title}}).join("\n") : "";
 
-    return "You are the Midwest Brain -- a full-capability AI assistant powered by Claude, built into the operating system for Midwest Educational Furnishings (Kildeer, IL). Owner: Maureen Welter. Today: " + today + ".\n\nYou are a COMPLETE AI assistant. You can do everything Claude can do: write emails, draft proposals, create content, analyze data, brainstorm ideas, explain concepts, write code, give advice, and more. You happen to ALSO have full access to the live Midwest business database below, so you can weave in real company data when relevant.\n\nIf someone asks you to write an email -- write a great email, using Midwest context if relevant. If they ask for a marketing idea -- give one. If they ask to explain a concept -- explain it. You are not limited to just answering data questions.\n\nBUSINESS CONTEXT:\nSTATS: " + jobs.length + " jobs | Rev $" + Math.round(totalRev) + " | Cost $" + Math.round(totalCost) + " | Margin " + (totalRev>0?Math.round((totalRev-totalCost)/totalRev*100):0) + "% | " + lineItems.length + " line items | " + vendors.length + " vendors | " + customers.length + " customers\n\nALL JOBS:\n" + jobSummaries + lineItemDetail + "\n\nVENDORS: " + vendorSummaries + vendorDetail + "\n\nCUSTOMERS: " + custSummaries + "\n\nREPS: " + repSummaries + sopSection + (taskText?"\n\nTASKS:\n"+taskText:"") + "\n\nRULES:\n1. You are a FULL AI assistant. You can write emails, draft documents, create proposals, brainstorm, explain anything, give business advice, and do everything Claude can normally do.\n2. When the question relates to Midwest business data, use the real numbers above. NEVER say you don't have the data.\n3. When writing emails or documents, use Midwest context naturally: 'Midwest Educational Furnishings', Maureen Welter, Kildeer IL, the customer/vendor names from the database.\n4. For 'how do I' questions about business processes: check the RELEVANT SOP DETAILS section. If an SOP covers it, answer FROM the SOP.\n5. For general knowledge questions, advice, brainstorming, writing help: answer like a world-class AI assistant would. You are not limited to business data.\n6. When asked about a job, use its LINE ITEM DETAILS for specific products, vendors, quantities, and costs.\n7. Show your math when doing financial calculations.\n8. Think like a CFO+COO+executive assistant combined.\n9. Keep answers concise but complete. Match the tone to what's being asked -- formal for emails, casual for brainstorming, detailed for analysis.\n10. At the end of business-related answers, suggest 2-3 follow-up questions:\n>> [question 1]\n>> [question 2]\n>> [question 3]\n11. NEVER use emoji. Text only.";
+    return "You are the Midwest Brain -- a full-capability AI assistant powered by Claude, built into the operating system for Midwest Educational Furnishings (Kildeer, IL). Owner: Maureen Welter. Today: " + today + ".\n\nYou are a COMPLETE AI assistant. You can do everything Claude can do: write emails, draft proposals, create content, analyze data, brainstorm ideas, explain concepts, write code, give advice, and more. You happen to ALSO have full access to the live Midwest business database below, so you can weave in real company data when relevant.\n\nIf someone asks you to write an email -- write a great email, using Midwest context if relevant. If they ask for a marketing idea -- give one. If they ask to explain a concept -- explain it. You are not limited to just answering data questions.\n\nBUSINESS CONTEXT:\nSTATS: " + jobs.length + " jobs | Rev $" + Math.round(totalRev) + " | Cost $" + Math.round(totalCost) + " | Margin " + (totalRev>0?Math.round((totalRev-totalCost)/totalRev*100):0) + "% | " + lineItems.length + " line items | " + vendors.length + " vendors | " + customers.length + " customers\n\nALL JOBS:\n" + jobSummaries + lineItemDetail + "\n\nVENDORS: " + vendorSummaries + vendorDetail + "\n\nCUSTOMERS: " + custSummaries + "\n\nREPS: " + repSummaries + sopSection + (taskText?"\n\nTASKS:\n"+taskText:"") + "\n\nRULES:\n1. You are a FULL AI assistant. You can write emails, draft documents, create proposals, brainstorm, explain anything, give business advice, and do everything Claude can normally do.\n2. When the question relates to Midwest business data, use the real numbers above. NEVER say you don't have the data.\n3. When writing emails or documents, use Midwest context naturally: 'Midwest Educational Furnishings', Maureen Welter, Kildeer IL, the customer/vendor names from the database.\n4. For 'how do I' questions about business processes: check the RELEVANT SOP DETAILS section. If an SOP covers it, answer FROM the SOP.\n5. For general knowledge questions, advice, brainstorming, writing help: answer like a world-class AI assistant would. You are not limited to business data.\n6. When asked about a job, use its LINE ITEM DETAILS for specific products, vendors, quantities, and costs.\n7. Show your math when doing financial calculations.\n8. Think like a CFO+COO+executive assistant combined.\n9. Keep answers concise but complete. Match the tone to what's being asked -- formal for emails, casual for brainstorming, detailed for analysis.\n10. At the end of business-related answers, suggest 2-3 follow-up questions:\n>> [question 1]\n>> [question 2]\n>> [question 3]\n11. NEVER use emoji. Text only.\n12. When the user asks you to DO something (update, create, mark, change, set, navigate), USE THE TOOLS. Don't just describe what would happen -- call the tool. You will see a confirmation before the action executes.\n13. For job references: match by job ID or by name keywords. If ambiguous, ask which job.\n14. When using tools, briefly explain what you are about to do BEFORE the tool call.";
   };
 
   const handleQuery = async () => {
@@ -3855,25 +4187,52 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     setBrainQuery("");
     setHistory(p => [...p, { role: "user", content: q }]);
     setBrainLoading(true);
+    setPendingActions([]);
     try {
       const ctx = buildContext(q);
-      const msgs = [...history.filter(h=>h.role==="user"||h.role==="assistant").slice(-8).map(h=>({role:h.role,content:h.content})),{role:"user",content:q}];
-      let data;
-      try {
-        const response = await fetch("/api/brain", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({system:ctx,messages:msgs})});
-        data = await response.json();
-      } catch(err) {data = {error:{message:"Network error: " + err.message}}}
-      if (data.content && data.content[0]) {
-        const newIdx=history.length+1;
-        setHistory(p => [...p, { role: "assistant", content: data.content[0].text }]);
-        setAnimatingIdx(newIdx);
-        setTimeout(()=>setAnimatingIdx(-1),800);
-      } else if (data.error) {
-        const msg = data.error.message || JSON.stringify(data.error);
-        const isRateLimit = msg.includes("rate limit") || msg.includes("rate_limit");
-        setHistory(p => [...p, { role: "assistant", content: isRateLimit ? "I need a moment to cool down -- the API has a limit of requests per minute. Please wait about 30 seconds and try again." : "API Error: " + msg }]);
+      const msgs = [...history.filter(h=>h.role==="user"||h.role==="assistant").slice(-8).map(h=>({role:h.role,content:typeof h.content==="string"?h.content:JSON.stringify(h.content)})),{role:"user",content:q}];
+      const response = await fetch("/api/brain", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({system:ctx,messages:msgs,tools:brainTools})});
+      const data = await response.json();
+      if(data.error){
+        const msg=data.error.message||JSON.stringify(data.error);
+        setHistory(p=>[...p,{role:"assistant",content:msg.includes("rate limit")?"I need a moment -- rate limit hit. Try again in 30 seconds.":"API Error: "+msg}]);
+        setBrainLoading(false);return;
+      }
+      // Process response content blocks
+      const textBlocks=(data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("\n");
+      const toolBlocks=(data.content||[]).filter(b=>b.type==="tool_use");
+      if(toolBlocks.length>0){
+        // Claude wants to take actions -- show confirmation
+        const actions=toolBlocks.map(tb=>({id:tb.id,name:tb.name,input:tb.input,status:"pending"}));
+        setPendingActions(actions);
+        const actionSummary=actions.map(a=>{
+          if(a.name==="update_job")return "Update "+((a.input.job_id||"job")+": "+Object.entries(a.input.updates||{}).map(([k,v])=>"**"+k+"** to **"+v+"**").join(", "));
+          if(a.name==="create_job")return "Create new job: **"+(a.input.name||"")+"**"+(a.input.customer_name?" for "+a.input.customer_name:"");
+          if(a.name==="mark_items_received")return "Mark all items on **"+(a.input.job_id||"job")+"** as received";
+          if(a.name==="log_delivery")return "Log **"+a.input.quantity+"** received for '"+a.input.item_description+"' on **"+(a.input.job_id||"job")+"**";
+          if(a.name==="bulk_update_jobs")return "Bulk update jobs matching "+JSON.stringify(a.input.filter)+" >> "+Object.entries(a.input.updates||{}).map(([k,v])=>"**"+k+"**=**"+v+"**").join(", ");
+          if(a.name==="create_task")return "Create task: **"+(a.input.text||"")+"**"+(a.input.assignees?.length?" for "+a.input.assignees.join(", "):"");
+          if(a.name==="add_note")return "Save note: **"+(a.input.title||a.input.content?.slice(0,40)||"")+"**";
+          if(a.name==="update_payment_status")return "Set **"+(a.input.job_id||"job")+"** payment to **"+(a.input.status||"")+"**";
+          if(a.name==="create_payment_link")return "Create Stripe payment link for **"+(a.input.job_id||"job")+"**";
+          if(a.name==="add_vendor")return "Add vendor: **"+(a.input.name||"")+"**"+(a.input.category?" ("+a.input.category+")":"");
+          if(a.name==="update_vendor")return "Update vendor **"+(a.input.vendor_name||"")+"**: "+Object.entries(a.input.updates||{}).map(([k,v])=>"**"+k+"**=**"+v+"**").join(", ");
+          if(a.name==="add_customer")return "Add customer: **"+(a.input.name||"")+"**"+(a.input.type?" ("+a.input.type+")":"");
+          if(a.name==="update_customer")return "Update customer **"+(a.input.customer_name||"")+"**: "+Object.entries(a.input.updates||{}).map(([k,v])=>"**"+k+"**=**"+v+"**").join(", ");
+          if(a.name==="create_sop")return "Create SOP: **"+(a.input.title||"")+"** ["+(a.input.category||"Custom")+"]";
+          if(a.name==="conditional_update")return "Conditional update: **"+(a.input.condition_description||"")+"** >> "+Object.entries(a.input.updates||{}).map(([k,v])=>"**"+k+"**=**"+v+"**").join(", ");
+          if(a.name==="generate_document")return "Generate **"+(a.input.doc_type||"document")+"** for **"+(a.input.job_id||"job")+"**";
+          if(a.name==="navigate_to_page")return "Navigate to **"+(a.input.page||"")+"**";
+          if(a.name==="update_line_item")return "Update line item **"+(a.input.item_id||"")+"**";
+          return a.name+"("+JSON.stringify(a.input).slice(0,60)+")";
+        }).join("\n");
+        setHistory(p=>[...p,{role:"assistant",content:(textBlocks?textBlocks+"\n\n":"")+"I'd like to take these actions:\n"+actionSummary,actions}]);
+        setAnimatingIdx(history.length+1);setTimeout(()=>setAnimatingIdx(-1),800);
+      } else if(textBlocks){
+        setHistory(p=>[...p,{role:"assistant",content:textBlocks}]);
+        setAnimatingIdx(history.length+1);setTimeout(()=>setAnimatingIdx(-1),800);
       } else {
-        setHistory(p => [...p, { role: "assistant", content: "Unexpected response: " + JSON.stringify(data).slice(0, 200) }]);
+        setHistory(p=>[...p,{role:"assistant",content:"Unexpected response: "+JSON.stringify(data).slice(0,200)}]);
       }
     } catch (err) {
       setHistory(p => [...p, { role: "assistant", content: "Connection error: " + err.message }]);
@@ -3881,14 +4240,50 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     setBrainLoading(false);
   };
 
-  const renderMsg = (text) => {
-    return text.split("\n").map((line,i) => {
-      const bold = line.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-      if (line.startsWith(">> ")) return <div key={i} onClick={()=>{setBrainQuery(line.slice(3));setTimeout(handleQuery,50)}} style={{padding:"6px 12px",margin:"3px 0",borderRadius:8,border:"1px solid rgba(45,212,191,0.12)",background:"rgba(45,212,191,0.03)",color:"#2dd4bf",fontSize:12,cursor:"pointer",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(45,212,191,0.08)"}} onMouseLeave={e=>{e.currentTarget.style.background="rgba(45,212,191,0.03)"}}>{line.slice(3)}</div>;
-      if (line.startsWith("- ") || line.startsWith("* ")) return <div key={i} style={{display:"flex",gap:8,padding:"2px 0"}}><div style={{width:4,height:4,borderRadius:"50%",background:"#2dd4bf",marginTop:8,flexShrink:0}}/><span dangerouslySetInnerHTML={{__html:bold.slice(2)}}/></div>;
-      if (bold !== line) return <div key={i} style={{padding:"2px 0"}} dangerouslySetInnerHTML={{__html:bold}}/>;
-      return <div key={i} style={{padding:"2px 0",minHeight:line?"auto":8}}>{line}</div>;
-    });
+  // Execute pending actions after user confirms
+  const executeActions=async()=>{
+    setBrainLoading(true);
+    const results=[];
+    for(const action of pendingActions){
+      const result=await executeTool(action.name,action.input);
+      results.push({...action,result});
+    }
+    const summary=results.map(r=>r.result.success?"Done: "+r.result.message:"Failed: "+(r.result.error||"Unknown error")).join("\n");
+    setHistory(p=>[...p,{role:"assistant",content:summary,actionResults:results}]);
+    setPendingActions([]);
+    notify(results.filter(r=>r.result.success).length+" action"+(results.length!==1?"s":"")+" completed");
+    setAnimatingIdx(history.length+1);setTimeout(()=>setAnimatingIdx(-1),800);
+    setBrainLoading(false);
+  };
+  const cancelActions=()=>{setPendingActions([]);setHistory(p=>[...p,{role:"assistant",content:"Actions cancelled. No changes were made."}])};
+
+  const renderMsg = (msg) => {
+    const text=typeof msg.content==="string"?msg.content:JSON.stringify(msg.content);
+    const hasActions=msg.actions&&msg.actions.length>0;
+    const hasResults=msg.actionResults&&msg.actionResults.length>0;
+    return <div>
+      {text.split("\n").map((line,i) => {
+        const bold = line.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+        if (line.startsWith(">> ")) return <div key={i} onClick={()=>{setBrainQuery(line.slice(3));setTimeout(handleQuery,50)}} style={{padding:"6px 12px",margin:"3px 0",borderRadius:8,border:"1px solid rgba(45,212,191,0.12)",background:"rgba(45,212,191,0.03)",color:"#2dd4bf",fontSize:12,cursor:"pointer",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(45,212,191,0.08)"}} onMouseLeave={e=>{e.currentTarget.style.background="rgba(45,212,191,0.03)"}}>{line.slice(3)}</div>;
+        if (line.startsWith("- ") || line.startsWith("* ")) return <div key={i} style={{display:"flex",gap:8,padding:"2px 0"}}><div style={{width:4,height:4,borderRadius:"50%",background:"#2dd4bf",marginTop:8,flexShrink:0}}/><span dangerouslySetInnerHTML={{__html:bold.slice(2)}}/></div>;
+        if (bold !== line) return <div key={i} style={{padding:"2px 0"}} dangerouslySetInnerHTML={{__html:bold}}/>;
+        return <div key={i} style={{padding:"2px 0",minHeight:line?"auto":8}}>{line}</div>;
+      })}
+      {hasActions&&pendingActions.length>0&&<div style={{marginTop:12,padding:"12px 16px",background:"linear-gradient(135deg,rgba(167,139,250,0.06),rgba(45,212,191,0.04))",border:"1px solid rgba(167,139,250,0.15)",borderRadius:12}}>
+        <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:10}}><div style={{width:8,height:8,borderRadius:"50%",background:"#a78bfa",animation:"pulse 1.5s infinite"}}/><span style={{fontSize:12,fontWeight:700,color:"#a78bfa",letterSpacing:0.5}}>ACTIONS READY</span></div>
+        {pendingActions.map((a,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",fontSize:12,color:"#d4d4d4"}}><div style={{width:6,height:6,borderRadius:2,background:"#a78bfa",flexShrink:0}}/><span>{a.name.replace(/_/g," ")}: <strong>{a.name==="update_job"?(a.input.job_id||"")+" >> "+Object.entries(a.input.updates||{}).map(([k,v])=>k+"="+v).join(", "):a.name==="create_job"?a.input.name:a.name==="create_task"?a.input.text:a.name==="mark_items_received"?a.input.job_id:a.name==="navigate_to_page"?a.input.page:JSON.stringify(a.input).slice(0,60)}</strong></span></div>)}
+        <div style={{display:"flex",gap:8,marginTop:12}}>
+          <button onClick={executeActions} style={{padding:"8px 20px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#2dd4bf,#14b8a6)",color:"#000",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 16px rgba(45,212,191,0.3)",transition:"all 0.2s"}} onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-1px)"}} onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)"}}>Confirm</button>
+          <button onClick={cancelActions} style={{padding:"8px 16px",borderRadius:10,border:"1px solid #333",background:"transparent",color:"#737373",fontSize:13,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.color="#f87171"}} onMouseLeave={e=>{e.currentTarget.style.color="#737373"}}>Cancel</button>
+        </div>
+      </div>}
+      {hasResults&&<div style={{marginTop:10}}>
+        {msg.actionResults.map((r,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",marginBottom:4,borderRadius:8,background:r.result.success?"rgba(52,211,153,0.06)":"rgba(248,113,113,0.06)",border:"1px solid "+(r.result.success?"rgba(52,211,153,0.12)":"rgba(248,113,113,0.12)"),fontSize:12}}>
+          <div style={{width:18,height:18,borderRadius:"50%",background:r.result.success?"#34d399":"#f87171",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><span style={{color:"#000",fontSize:11,fontWeight:700}}>{r.result.success?"✓":"!"}</span></div>
+          <span style={{color:r.result.success?"#34d399":"#f87171"}}>{r.result.message||r.result.error}</span>
+        </div>)}
+      </div>}
+    </div>;
   };
 
   return <div style={{display:"flex",flexDirection:"column",height:"calc(100vh - 80px)",background:"#000"}}>
@@ -3906,7 +4301,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         :msg.role==="system"?
           <div style={{maxWidth:"85%",padding:"10px 0",color:"#525252",fontSize:13,lineHeight:1.6,fontStyle:"italic"}}>{msg.content}</div>
         :
-          <div style={{maxWidth:"85%",padding:"2px 0",color:"#d4d4d4",fontSize:13,lineHeight:1.7,animation:i===animatingIdx?"fadeUp 0.5s ease-out":"none"}}>{renderMsg(msg.content)}</div>
+          <div style={{maxWidth:"85%",padding:"2px 0",color:"#d4d4d4",fontSize:13,lineHeight:1.7,animation:i===animatingIdx?"fadeUp 0.5s ease-out":"none"}}>{renderMsg(msg)}</div>
         }
       </div>)}
       {brainLoading&&<div style={{display:"flex",gap:4,padding:"8px 0"}}><div style={{width:6,height:6,borderRadius:"50%",background:"#2dd4bf",animation:"pulse 1s infinite"}}/>
@@ -4507,62 +4902,113 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   </div>;
 }
 
-function UserMgmtPage({notify,reps}){
+function UserMgmtPage({notify,reps,customSops,addSop,deleteSop}){
   const [users,setUsers]=useState([]);
   const [loading,setLoading]=useState(true);
   const [showAdd,setShowAdd]=useState(false);
   const [changingPw,setChangingPw]=useState(null);
+  const [editingUser,setEditingUser]=useState(null);
   const [newUser,setNewUser]=useState({name:"",username:"",password:"",role:"sales",rep_id:""});
 
   useEffect(()=>{(async()=>{const data=await db.fetchUsers();if(data)setUsers(data);setLoading(false)})()},[]);
+
+  // Load Clerk user roles from SOPs settings
+  const clerkRolesRaw=(customSops||[]).find(s=>s.id==="CLERK_USER_ROLES"&&s.cat==="Settings");
+  const clerkRoles=clerkRolesRaw?JSON.parse(clerkRolesRaw.content||"{}"):{}; 
+  // clerkRoles = { "clerk-id-xxx": { role: "admin", pages: [...], name: "...", email: "..." } }
+
+  const saveClerkRole=(clerkId,roleData)=>{
+    const updated={...clerkRoles,[clerkId]:roleData};
+    addSop({id:"CLERK_USER_ROLES",title:"Clerk User Roles",cat:"Settings",icon:"shield",content:JSON.stringify(updated),custom:true});
+    notify("Updated role for "+roleData.name);
+  };
+
+  // Get all Clerk users from the clerkRoles store
+  const clerkUsers=Object.entries(clerkRoles).map(([id,data])=>({id,clerkId:id,...data}));
 
   const addUser=async()=>{if(!newUser.name||!newUser.username||!newUser.password){notify("All fields required");return}const user={id:"USR-"+Math.random().toString(36).slice(2,8).toUpperCase(),username:newUser.username.trim().toLowerCase(),password:newUser.password,role:newUser.role,rep_id:newUser.role==="sales"?newUser.rep_id:"",name:newUser.name.trim()};const res=await db.saveUser(user);if(res?.ok){setUsers(p=>[...p,user]);setNewUser({name:"",username:"",password:"",role:"sales",rep_id:""});setShowAdd(false);notify("User created: "+user.name)}else{notify("Error creating user -- username may exist")}};
 
   const deleteUser=async(id)=>{if(!confirm("Delete this user?"))return;await db.deleteUser(id);setUsers(p=>p.filter(u=>u.id!==id));notify("User deleted")};
 
   const roleColor={admin:"#2dd4bf",office:"#a78bfa",sales:"#fbbf24"};
+  const allPages=["dashboard","jobs","dataimport","deliveries","documents","commissions","financials","salesportal","playbook","tasks","notes","brain","exitreadiness","qbsetup","usermgmt"];
+  const pageLabels={dashboard:"Command Center",jobs:"Job Records",dataimport:"Data Import",deliveries:"Delivery Tracker",documents:"Documents",commissions:"Commissions",financials:"Financials",salesportal:"Sales Portal",playbook:"Playbook & SOPs",tasks:"Tasks",notes:"Notes",brain:"Midwest Brain",exitreadiness:"Exit Readiness",qbsetup:"QuickBooks",usermgmt:"Users & Permissions"};
+  const roleDefaults={admin:allPages,office:["dashboard","jobs","dataimport","deliveries","documents","salesportal","playbook","tasks","notes","brain"],sales:["dashboard","jobs","deliveries","documents","tasks","notes","brain","salesportal"]};
+
+  const allUsersList=[
+    ...users.map(u=>({...u,source:"password",pages:roleDefaults[u.role]||roleDefaults.sales})),
+    ...clerkUsers.map(u=>({...u,source:"clerk",username:u.email||"Google/Apple",pages:u.pages||roleDefaults[u.role||"admin"]}))
+  ];
 
   return <div style={{animation:"fadeUp 0.4s"}}>
     <Header title="Users & Permissions" sub="Manage team access"/>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
-      <div style={{fontSize:13,color:"#a3a3a3"}}>{users.length} user{users.length!==1?"s":""} configured</div>
+      <div style={{fontSize:13,color:"#a3a3a3"}}>{allUsersList.length} user{allUsersList.length!==1?"s":""} ({users.length} password, {clerkUsers.length} Google/Apple)</div>
       <Btn onClick={()=>setShowAdd(!showAdd)}>{showAdd?"Cancel":"+ Add User"}</Btn>
     </div>
 
     {showAdd&&<Card style={{padding:20,marginBottom:16,border:"1px solid rgba(45,212,191,0.15)"}}>
-      <div style={{fontSize:15,fontWeight:700,color:"#2dd4bf",marginBottom:14}}>New User</div>
+      <div style={{fontSize:15,fontWeight:700,color:"#2dd4bf",marginBottom:14}}>New User (Username/Password)</div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:10,marginBottom:12}}>
         <div><label style={{fontSize:13,color:"#c4c4c4",display:"block",marginBottom:4}}>Full Name</label><input value={newUser.name} onChange={e=>setNewUser({...newUser,name:e.target.value})} style={{width:"100%",padding:"10px 14px",background:"#000",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,color:"#f0f0f0",fontSize:14,fontFamily:"inherit",outline:"none",boxSizing:"border-box"}} placeholder="Full name"/></div>
         <div><label style={{fontSize:13,color:"#c4c4c4",display:"block",marginBottom:4}}>Username</label><input value={newUser.username} onChange={e=>setNewUser({...newUser,username:e.target.value})} style={{width:"100%",padding:"10px 14px",background:"#000",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,color:"#f0f0f0",fontSize:14,fontFamily:"inherit",outline:"none",boxSizing:"border-box"}} placeholder="Username"/></div>
         <div><label style={{fontSize:13,color:"#c4c4c4",display:"block",marginBottom:4}}>Password</label><input value={newUser.password} onChange={e=>setNewUser({...newUser,password:e.target.value})} type="password" style={{width:"100%",padding:"10px 14px",background:"#000",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,color:"#f0f0f0",fontSize:14,fontFamily:"inherit",outline:"none",boxSizing:"border-box"}} placeholder="Password"/></div>
       </div>
-      <div style={{marginBottom:12}}><label style={{fontSize:13,color:"#c4c4c4",display:"block",marginBottom:6}}>Role</label><div style={{display:"flex",gap:6}}>{[{v:"admin",l:"Admin",d:"Full access to everything"},{v:"office",l:"Office Manager",d:"All except financials & commissions"},{v:"sales",l:"Sales Rep",d:"Own jobs only"}].map(r=><button key={r.v} onClick={()=>setNewUser({...newUser,role:r.v})} style={{flex:1,padding:"10px",borderRadius:10,border:"1px solid "+(newUser.role===r.v?roleColor[r.v]+"60":"#222"),background:newUser.role===r.v?roleColor[r.v]+"12":"transparent",color:newUser.role===r.v?roleColor[r.v]:"#737373",fontSize:13,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s",textAlign:"center"}}><div style={{fontWeight:600,marginBottom:2}}>{r.l}</div><div style={{fontSize:11,opacity:0.7}}>{r.d}</div></button>)}</div></div>
+      <div style={{marginBottom:12}}><label style={{fontSize:13,color:"#c4c4c4",display:"block",marginBottom:6}}>Role</label><div style={{display:"flex",gap:6}}>{[{v:"admin",l:"Admin",d:"Full access"},{v:"office",l:"Office",d:"Operations access"},{v:"sales",l:"Sales",d:"Own jobs only"}].map(r=><button key={r.v} onClick={()=>setNewUser({...newUser,role:r.v})} style={{flex:1,padding:"10px",borderRadius:10,border:"1px solid "+(newUser.role===r.v?roleColor[r.v]+"60":"#222"),background:newUser.role===r.v?roleColor[r.v]+"12":"transparent",color:newUser.role===r.v?roleColor[r.v]:"#737373",fontSize:13,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s",textAlign:"center"}}><div style={{fontWeight:600,marginBottom:2}}>{r.l}</div><div style={{fontSize:11,opacity:0.7}}>{r.d}</div></button>)}</div></div>
       {newUser.role==="sales"&&<div style={{marginBottom:12}}><label style={{fontSize:13,color:"#c4c4c4",display:"block",marginBottom:4}}>Link to Sales Rep</label><select value={newUser.rep_id} onChange={e=>setNewUser({...newUser,rep_id:e.target.value})} style={{width:"100%",padding:"10px 14px",background:"#000",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,color:"#f0f0f0",fontSize:14,fontFamily:"inherit",outline:"none",boxSizing:"border-box"}}><option value="">Select rep...</option>{reps.filter(r=>!r.id.includes("SEED_FLAG")).map(r=><option key={r.id} value={r.id}>{r.name} -- {r.territory}</option>)}</select></div>}
       <Btn onClick={addUser}>Create User</Btn>
     </Card>}
 
     {loading?<div style={{textAlign:"center",padding:40,color:"#737373"}}>Loading users...</div>:
     <div style={{display:"grid",gap:10}}>
-      {users.map(u=><Card key={u.id} style={{padding:16}} hover>
+      {allUsersList.map(u=><Card key={u.id} style={{padding:16,border:editingUser===u.id?"1px solid #a78bfa30":"1px solid rgba(255,255,255,0.04)"}} hover>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
           <div style={{display:"flex",alignItems:"center",gap:12}}>
-            <div style={{width:40,height:40,borderRadius:12,background:(roleColor[u.role]||"#525252")+"15",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:800,color:roleColor[u.role]||"#525252",fontFamily:"'JetBrains Mono',monospace"}}>{(u.name||"?")[0]}</div>
+            {u.avatar?<img src={u.avatar} style={{width:40,height:40,borderRadius:12,objectFit:"cover"}}/>:
+            <div style={{width:40,height:40,borderRadius:12,background:(roleColor[u.role]||"#525252")+"15",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:800,color:roleColor[u.role]||"#525252",fontFamily:"'JetBrains Mono',monospace"}}>{(u.name||"?")[0]}</div>}
             <div>
               <div style={{fontSize:15,fontWeight:600,color:"#f0f0f0"}}>{u.name}</div>
-              <div style={{fontSize:13,color:"#a3a3a3",fontFamily:"'JetBrains Mono',monospace"}}>{u.username}</div>
+              <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:12,color:"#a3a3a3",fontFamily:"'JetBrains Mono',monospace"}}>{u.username||u.email||""}</span>{u.source==="clerk"&&<span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:"#a78bfa15",color:"#a78bfa",fontWeight:600}}>{u.email?.includes("google")?"GOOGLE":"SSO"}</span>}</div>
             </div>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
-            <Badge label={u.role} color={roleColor[u.role]||"#525252"}/>
-            {u.rep_id&&<span style={{fontSize:12,color:"#737373"}}>{reps.find(r=>r.id===u.rep_id)?.name||u.rep_id}</span>}
-            {u.id!=="USR-000"&&<button onClick={()=>deleteUser(u.id)} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #333",background:"transparent",color:"#737373",fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.color="#f87171";e.currentTarget.style.borderColor="#f87171"}} onMouseLeave={e=>{e.currentTarget.style.color="#737373";e.currentTarget.style.borderColor="#333"}}>Remove</button>}
+            <Badge label={u.role||"admin"} color={roleColor[u.role||"admin"]||"#525252"}/>
+            {u.rep_id&&<span style={{fontSize:12,color:"#737373"}}>{reps.find(r=>r.id===u.rep_id)?.name||""}</span>}
+            <button onClick={()=>setEditingUser(editingUser===u.id?null:u.id)} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #333",background:"transparent",color:"#a3a3a3",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.color="#a78bfa";e.currentTarget.style.borderColor="#a78bfa"}} onMouseLeave={e=>{e.currentTarget.style.color="#a3a3a3";e.currentTarget.style.borderColor="#333"}}>{editingUser===u.id?"Close":"Edit"}</button>
+            {u.id!=="USR-000"&&u.source!=="clerk"&&<button onClick={()=>deleteUser(u.id)} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #333",background:"transparent",color:"#737373",fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.color="#f87171";e.currentTarget.style.borderColor="#f87171"}} onMouseLeave={e=>{e.currentTarget.style.color="#737373";e.currentTarget.style.borderColor="#333"}}>Remove</button>}
           </div>
         </div>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:10}}>
-          <div style={{fontSize:12,color:"#525252"}}>{u.role==="admin"?"Full access: all jobs, financials, commissions, settings":u.role==="office"?"All except: financials, commissions, exit readiness":"Sees only assigned jobs, no financial details"}</div>
-          <button onClick={()=>setChangingPw(changingPw===u.id?null:u.id)} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #333",background:"transparent",color:"#a3a3a3",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Change Password</button>
-        </div>
-        {changingPw===u.id&&<div style={{marginTop:10,display:"flex",gap:8,alignItems:"center"}}><input id={"pw-"+u.id} type="password" placeholder="New password" style={{flex:1,padding:"8px 12px",background:"#000",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"#f0f0f0",fontSize:13,fontFamily:"inherit",outline:"none"}}/><Btn onClick={async()=>{const pw=document.getElementById("pw-"+u.id)?.value;if(!pw||pw.length<4){notify("Password must be at least 4 characters");return}const res=await db.saveUser({...u,password:pw});if(res?.ok){notify("Password updated for "+u.name);setChangingPw(null)}else{notify("Error updating password")}}}>Save</Btn><button onClick={()=>setChangingPw(null)} style={{padding:"6px 10px",borderRadius:6,border:"1px solid #333",background:"transparent",color:"#737373",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button></div>}
+
+        {editingUser===u.id&&<div style={{marginTop:14,padding:16,background:"#0a0a0a",borderRadius:12,border:"1px solid #222"}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#a78bfa",marginBottom:12}}>Edit Permissions -- {u.name}</div>
+          {/* Role selector */}
+          <div style={{marginBottom:14}}><label style={{fontSize:12,color:"#737373",display:"block",marginBottom:6}}>Role</label>
+          <div style={{display:"flex",gap:6}}>{[{v:"admin",l:"Admin"},{v:"office",l:"Office"},{v:"sales",l:"Sales"}].map(r=><button key={r.v} onClick={()=>{
+            if(u.source==="clerk"){saveClerkRole(u.clerkId,{...clerkRoles[u.clerkId],role:r.v,name:u.name,email:u.email||"",pages:roleDefaults[r.v]})}
+            else{db.saveUser({...u,role:r.v}).then(()=>{setUsers(prev=>prev.map(x=>x.id===u.id?{...x,role:r.v}:x));notify("Role updated to "+r.v)})}
+          }} style={{padding:"8px 16px",borderRadius:8,border:"1px solid "+((u.role||"admin")===r.v?(roleColor[r.v]||"#525252")+"60":"#222"),background:(u.role||"admin")===r.v?(roleColor[r.v]||"#525252")+"12":"transparent",color:(u.role||"admin")===r.v?roleColor[r.v]:"#737373",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>{r.l}</button>)}</div></div>
+
+          {/* Page-level permissions */}
+          <div><label style={{fontSize:12,color:"#737373",display:"block",marginBottom:8}}>Visible Pages</label>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+            {allPages.map(p=>{
+              const pages=u.source==="clerk"?(clerkRoles[u.clerkId]?.pages||roleDefaults[u.role||"admin"]):u.pages||roleDefaults[u.role||"admin"];
+              const isOn=pages.includes(p);
+              return <button key={p} onClick={()=>{
+                const newPages=isOn?pages.filter(x=>x!==p):[...pages,p];
+                if(u.source==="clerk"){saveClerkRole(u.clerkId,{...clerkRoles[u.clerkId],role:u.role||"admin",name:u.name,email:u.email||"",pages:newPages})}
+                else{notify("Page permissions for password users are controlled by role")}
+              }} style={{padding:"5px 10px",borderRadius:6,border:"1px solid "+(isOn?"#2dd4bf30":"#222"),background:isOn?"#2dd4bf08":"transparent",color:isOn?"#2dd4bf":"#525252",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>{pageLabels[p]||p}</button>
+            })}
+          </div></div>
+
+          {/* Password change for password users */}
+          {u.source!=="clerk"&&<div style={{marginTop:12}}><button onClick={()=>setChangingPw(changingPw===u.id?null:u.id)} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #333",background:"transparent",color:"#a3a3a3",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Change Password</button>
+          {changingPw===u.id&&<div style={{marginTop:8,display:"flex",gap:8,alignItems:"center"}}><input id={"pw-"+u.id} type="password" placeholder="New password" style={{flex:1,padding:"8px 12px",background:"#000",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"#f0f0f0",fontSize:13,fontFamily:"inherit",outline:"none"}}/><Btn onClick={async()=>{const pw=document.getElementById("pw-"+u.id)?.value;if(!pw||pw.length<4){notify("Password must be at least 4 characters");return}const res=await db.saveUser({...u,password:pw});if(res?.ok){notify("Password updated for "+u.name);setChangingPw(null)}else{notify("Error updating password")}}}>Save</Btn></div>}</div>}
+
+          {/* Clerk user info */}
+          {u.source==="clerk"&&<div style={{marginTop:12,fontSize:11,color:"#525252"}}>Signed in via Google/Apple. Role and page access managed here.</div>}
+        </div>}
       </Card>)}
     </div>}
 
@@ -4592,7 +5038,7 @@ const [tab,setTab]=useState("vendors");
   const [bulkAction,setBulkAction]=useState(null);
   const [custDetail,setCustDetail]=useState(null);
 
-  const startEdit=(item)=>{setEditId(item.id);setForm({...item});setAdding(false);setSelected(new Set())};
+  const startEdit=(item)=>{if(editId===item.id){setEditId(null);setForm({});return}setEditId(item.id);setForm({...item});setAdding(false);setSelected(new Set())};
   const startAdd=()=>{setAdding(true);setEditId(null);setSelected(new Set());
     if(tab==="vendors") setForm({name:"",contact:"",email:"",phone:"",category:"",address:""});
     if(tab==="customers") setForm({name:"",contact:"",email:"",phone:"",type:"K-12 District",address:""});
@@ -4701,11 +5147,11 @@ const [tab,setTab]=useState("vendors");
       {bulkAction==="category"&&<div style={{display:"flex",gap:8,alignItems:"center"}}><select onChange={e=>{if(e.target.value)handleBulkEdit("category",e.target.value)}} style={{...inputStyle,width:180,padding:"5px 10px"}}><option value="">Choose category...</option><option>Classroom Furniture</option><option>Collaborative Tables</option><option>Seating</option><option>Science Lab</option><option>Early Childhood</option><option>AV Equipment</option><option>Storage</option><option>Library</option><option>Cafeteria</option><option>Office</option></select></div>}
     </div>}
 
-    {(adding||editId)&&<Card style={{marginBottom:16,border:"1px solid #2dd4bf30"}}><div style={{fontSize:14,fontWeight:700,marginBottom:12,color:"#2dd4bf"}}>{adding?"Add New":"Edit"} {tab==="vendors"?"Vendor":tab==="customers"?"Customer":"Sales Rep"}</div>
+    {adding&&<Card style={{marginBottom:16,border:"1px solid #2dd4bf30"}}><div style={{fontSize:14,fontWeight:700,marginBottom:12,color:"#2dd4bf"}}>Add New {tab==="vendors"?"Vendor":tab==="customers"?"Customer":"Sales Rep"}</div>
       {tab==="vendors"&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:12}}>{field("name","Company Name")}{field("contact","Contact Person")}{field("email","Email")}{field("phone","Phone")}{field("category","Category")}{field("address","Address")}<div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Discount Rate (%)</label><input type="number" step="1" value={((form.discountRate||0)*100).toFixed(0)} onChange={e=>setForm(prev=>({...prev,discountRate:parseFloat(e.target.value)/100||0}))} style={inputStyle}/></div>{field("discountType","Discount Type")}<div style={{gridColumn:"span 1"}}><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Discount Notes</label><textarea value={form.discountNotes||""} onChange={e=>setForm(prev=>({...prev,discountNotes:e.target.value}))} placeholder="Volume thresholds, freight terms..." rows={3} style={{...inputStyle,resize:"vertical",minHeight:60}}/></div></div>}
       {tab==="customers"&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:12}}>{field("name","Organization Name")}{field("contact","Contact Person")}{field("email","Email")}{field("phone","Phone")}{field("type","Type")}{field("address","Address")}</div>}
       {tab==="reps"&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:12}}>{field("name","Name")}{field("email","Email")}{field("territory","Territory")}{field("tier","Tier","select-tier")}<div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Commission Rate (%)</label><input type="number" step="0.5" value={((form.commissionRate||0)*100).toFixed(1)} onChange={e=>setForm(prev=>({...prev,commissionRate:parseFloat(e.target.value)/100||0}))} style={inputStyle}/></div></div>}
-      <div style={{display:"flex",gap:8}}><Btn onClick={save}>{adding?"Add":"Save Changes"}</Btn><Btn v="secondary" onClick={cancel}>Cancel</Btn>{editId&&<Btn v="danger" onClick={()=>del(editId)}>Delete</Btn>}</div>
+      <div style={{display:"flex",gap:8}}><Btn onClick={save}>Add</Btn><Btn v="secondary" onClick={cancel}>Cancel</Btn></div>
     </Card>}
 
     {/* Customer analytics panel */}
@@ -4719,11 +5165,32 @@ const [tab,setTab]=useState("vendors");
       {(tab==="vendors"?["name","category","contact"]:tab==="customers"?["name","type","contact"]:["name","territory","tier"]).map(s=><button key={s} onClick={()=>setSort(s)} style={{fontSize:12,padding:"3px 10px",borderRadius:6,border:"none",cursor:"pointer",background:sort===s?"#2dd4bf22":"transparent",color:sort===s?"#2dd4bf":"#525252",fontFamily:"inherit"}}>{s}</button>)}
     </div>
 
-    {tab==="vendors"&&<Tbl columns={[{header:"",render:r=><Check checked={selected.has(r.id)} onChange={()=>toggleSelect(r.id)} onClick={e=>e.stopPropagation()}/>},{header:"Name",render:r=><span style={{fontWeight:600,color:"#e5e5e5"}}>{r.name}</span>},{header:"Contact",render:r=>r.contact},{header:"Email",render:r=><span style={{color:"#2dd4bf"}}>{r.email}</span>},{header:"Phone",render:r=>r.phone},{header:"Category",render:r=>r.category},{header:"Discount",render:r=><span style={{fontFamily:"'JetBrains Mono',monospace",color:"#34d399",fontWeight:600}}>{r.discountRate?(r.discountRate*100).toFixed(0)+"%":"--"}</span>},{header:"",render:r=><Btn v="ghost" style={{fontSize:12,padding:"3px 8px"}} onClick={e=>{e.stopPropagation();startEdit(r)}}>Edit</Btn>}]} data={filteredList}/>}
+    {/* Inline edit form renderer */}
+    {(()=>{
+      const inlineForm=<tr><td colSpan={99} style={{padding:0,border:"none"}}><div style={{padding:"16px 12px",background:"#0a0a0a",borderTop:"1px solid #2dd4bf30",borderBottom:"1px solid #2dd4bf30",animation:"fadeUp 0.25s ease-out"}}>
+        <div style={{fontSize:13,fontWeight:700,color:"#2dd4bf",marginBottom:10}}>Edit {tab==="vendors"?"Vendor":tab==="customers"?"Customer":"Sales Rep"}</div>
+        {tab==="vendors"&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10,marginBottom:10}}>{field("name","Company Name")}{field("contact","Contact Person")}{field("email","Email")}{field("phone","Phone")}{field("category","Category")}{field("address","Address")}<div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Discount Rate (%)</label><input type="number" step="1" value={((form.discountRate||0)*100).toFixed(0)} onChange={e=>setForm(prev=>({...prev,discountRate:parseFloat(e.target.value)/100||0}))} style={inputStyle}/></div>{field("discountType","Discount Type")}<div style={{gridColumn:"span 1"}}><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Discount Notes</label><textarea value={form.discountNotes||""} onChange={e=>setForm(prev=>({...prev,discountNotes:e.target.value}))} placeholder="Volume thresholds, freight terms..." rows={2} style={{...inputStyle,resize:"vertical",minHeight:40}}/></div></div>}
+        {tab==="customers"&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10,marginBottom:10}}>{field("name","Organization Name")}{field("contact","Contact Person")}{field("email","Email")}{field("phone","Phone")}{field("type","Type")}{field("address","Address")}</div>}
+        {tab==="reps"&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10,marginBottom:10}}>{field("name","Name")}{field("email","Email")}{field("territory","Territory")}{field("tier","Tier","select-tier")}<div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Commission Rate (%)</label><input type="number" step="0.5" value={((form.commissionRate||0)*100).toFixed(1)} onChange={e=>setForm(prev=>({...prev,commissionRate:parseFloat(e.target.value)/100||0}))} style={inputStyle}/></div></div>}
+        <div style={{display:"flex",gap:8}}><Btn onClick={save}>Save Changes</Btn><Btn v="secondary" onClick={cancel}>Cancel</Btn><Btn v="danger" onClick={()=>del(editId)}>Delete</Btn></div>
+      </div></td></tr>;
 
-    {tab==="customers"&&<Tbl columns={[{header:"",render:r=><Check checked={selected.has(r.id)} onChange={()=>toggleSelect(r.id)} onClick={e=>e.stopPropagation()}/>},{header:"Name",render:r=><span onClick={e=>{e.stopPropagation();setCustDetail(custDetail?.id===r.id?null:r)}} style={{fontWeight:600,color:"#2dd4bf",cursor:"pointer"}}>{r.name}</span>},{header:"Contact",render:r=>r.contact},{header:"Email",render:r=><span style={{color:"#2dd4bf"}}>{r.email}</span>},{header:"Phone",render:r=>r.phone},{header:"Type",render:r=><Badge label={r.type||"--"} color="#a78bfa"/>},{header:"Address",render:r=><span style={{fontSize:12,color:"#c4c4c4"}}>{r.address||"--"}</span>},{header:"",render:r=><Btn v="ghost" style={{fontSize:12,padding:"3px 8px"}} onClick={e=>{e.stopPropagation();startEdit(r)}}>Edit</Btn>}]} data={filteredList}/>}
+      const vCols=["","Name","Contact","Email","Phone","Category","Discount",""];
+      const cCols=["","Name","Contact","Email","Phone","Type","Address",""];
+      const rCols=["","Name","Email","Territory","Tier","Rate",""];
+      const headers=tab==="vendors"?vCols:tab==="customers"?cCols:rCols;
 
-    {tab==="reps"&&<Tbl columns={[{header:"",render:r=><Check checked={selected.has(r.id)} onChange={()=>toggleSelect(r.id)} onClick={e=>e.stopPropagation()}/>},{header:"Name",render:r=><span style={{fontWeight:600,color:"#e5e5e5"}}>{r.name}</span>},{header:"Email",render:r=><span style={{color:"#2dd4bf"}}>{r.email}</span>},{header:"Territory",render:r=>r.territory},{header:"Tier",render:r=><Badge label={r.tier} color="#8b5cf6"/>},{header:"Rate",render:r=><span style={{fontFamily:"'JetBrains Mono',monospace",color:"#2dd4bf"}}>{(r.commissionRate*100).toFixed(1)}%</span>},{header:"",render:r=><Btn v="ghost" style={{fontSize:12,padding:"3px 8px"}} onClick={e=>{e.stopPropagation();startEdit(r)}}>Edit</Btn>}]} data={filteredList}/>}
+      return <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}><thead><tr>{headers.map((h,i)=><th key={i} style={{padding:"10px 8px",textAlign:"left",fontSize:11,fontWeight:600,color:"#737373",borderBottom:"1px solid #222",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead><tbody>
+        {filteredList.map(r=><React.Fragment key={r.id}>
+          <tr style={{transition:"background 0.15s",background:editId===r.id?"#0a0a0a":"transparent"}} onMouseEnter={e=>{if(editId!==r.id)e.currentTarget.style.background="#0a0a0a"}} onMouseLeave={e=>{if(editId!==r.id)e.currentTarget.style.background="transparent"}}>
+            {tab==="vendors"&&<><td style={{padding:"10px 8px",borderBottom:"1px solid #111"}}><Check checked={selected.has(r.id)} onChange={()=>toggleSelect(r.id)}/></td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",fontWeight:600,color:"#e5e5e5"}}>{r.name}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}}>{r.contact}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#2dd4bf"}}>{r.email}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}}>{r.phone}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}}>{r.category}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",fontFamily:"'JetBrains Mono',monospace",color:"#34d399",fontWeight:600}}>{r.discountRate?(r.discountRate*100).toFixed(0)+"%":"--"}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111"}}><Btn v="ghost" style={{fontSize:12,padding:"3px 8px"}} onClick={e=>{e.stopPropagation();startEdit(r)}}>{editId===r.id?"Close":"Edit"}</Btn></td></>}
+            {tab==="customers"&&<><td style={{padding:"10px 8px",borderBottom:"1px solid #111"}}><Check checked={selected.has(r.id)} onChange={()=>toggleSelect(r.id)}/></td><td style={{padding:"10px 8px",borderBottom:"1px solid #111"}}><span onClick={e=>{e.stopPropagation();setCustDetail(custDetail?.id===r.id?null:r)}} style={{fontWeight:600,color:"#2dd4bf",cursor:"pointer"}}>{r.name}</span></td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}}>{r.contact}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#2dd4bf"}}>{r.email}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}}>{r.phone}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111"}}><Badge label={r.type||"--"} color="#a78bfa"/></td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",fontSize:12,color:"#c4c4c4"}}>{r.address||"--"}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111"}}><Btn v="ghost" style={{fontSize:12,padding:"3px 8px"}} onClick={e=>{e.stopPropagation();startEdit(r)}}>{editId===r.id?"Close":"Edit"}</Btn></td></>}
+            {tab==="reps"&&<><td style={{padding:"10px 8px",borderBottom:"1px solid #111"}}><Check checked={selected.has(r.id)} onChange={()=>toggleSelect(r.id)}/></td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",fontWeight:600,color:"#e5e5e5"}}>{r.name}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#2dd4bf"}}>{r.email}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}}>{r.territory}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111"}}><Badge label={r.tier} color="#8b5cf6"/></td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",fontFamily:"'JetBrains Mono',monospace",color:"#2dd4bf"}}>{(r.commissionRate*100).toFixed(1)}%</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111"}}><Btn v="ghost" style={{fontSize:12,padding:"3px 8px"}} onClick={e=>{e.stopPropagation();startEdit(r)}}>{editId===r.id?"Close":"Edit"}</Btn></td></>}
+          </tr>
+          {editId===r.id&&inlineForm}
+        </React.Fragment>)}
+      </tbody></table></div>;
+    })()}
   </div>;
 }
 
