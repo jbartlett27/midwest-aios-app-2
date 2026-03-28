@@ -3124,63 +3124,143 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
       const totalInvAmt=custInvs.reduce((s,h)=>s+(parseFloat(h.amount)||0),0);
       const docsWithFiles=allHist.filter(h=>(h.files||[]).length>0).length;
 
-      const handleHistFile=(e)=>{const fileList=e.target?.files||e.dataTransfer?.files;if(!fileList||!fileList.length)return;
-        Array.from(fileList).forEach(file=>{
-          if(file.size>4*1024*1024){notify('File too large (max 4MB): '+file.name,'error');return}
+      const handleHistFile=async(e)=>{const fileList=e.target?.files||e.dataTransfer?.files;if(!fileList||!fileList.length)return;
+        for(const file of Array.from(fileList)){
+          if(file.size>10*1024*1024){notify('File too large (max 10MB): '+file.name,'error');continue}
           const reader=new FileReader();
-          reader.onload=(ev)=>{setHistForm(prev=>({...prev,files:[...(prev.files||[]),{name:file.name,size:file.size,type:file.type,data:ev.target.result,uploadedAt:new Date().toISOString()}]}))};
-          reader.readAsDataURL(file);
-        });if(histFileRef.current)histFileRef.current.value='';
+          const fileData=await new Promise(res=>{reader.onload=(ev)=>res(ev.target.result);reader.readAsDataURL(file)});
+          // Upload to Supabase Storage
+          let storageUrl='';
+          try{
+            const ext=file.name.split('.').pop()||'pdf';
+            const path='history/doc_'+Date.now()+'_'+Math.random().toString(36).slice(2,6)+'.'+ext;
+            const blob=await fetch(fileData).then(r=>r.blob());
+            storageUrl=await window._supabase.uploadFile('vendor-invoices',path,blob)||'';
+          }catch(e2){console.error('Storage upload:',e2)}
+          setHistForm(prev=>({...prev,files:[...(prev.files||[]),{name:file.name,size:file.size,type:file.type,data:storageUrl||fileData,uploadedAt:new Date().toISOString(),storageUrl}]}));
+          // AI scan to auto-fill form fields
+          if(!histForm.docNumber&&!histForm.vendor&&!histForm.customer){
+            notify('AI scanning '+file.name+'...');
+            try{
+              const base64=fileData.split(',')[1];
+              const mediaType=file.type||'application/pdf';
+              const isVendor=histForm.type==='vendor_po';
+              const prompt=isVendor?
+                'Extract from this vendor document: 1) vendor/company name, 2) PO or invoice number, 3) date (YYYY-MM-DD), 4) total amount (number only), 5) job/project name. Return ONLY JSON: {"vendor":"","docNumber":"","date":"","amount":"","job":"","description":""}':
+                'Extract from this customer document: 1) customer/school/org name, 2) invoice number, 3) date (YYYY-MM-DD), 4) total amount (number only), 5) job/project name. Return ONLY JSON: {"customer":"","docNumber":"","date":"","amount":"","job":"","description":""}';
+              const resp=await fetch('/api/ai-scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:base64,mediaType,prompt})});
+              if(resp.ok){
+                const data=await resp.json();
+                const text=(data.text||'').trim().replace(/```json\s*/g,'').replace(/```/g,'').trim();
+                try{
+                  const parsed=JSON.parse(text);
+                  setHistForm(prev=>({...prev,
+                    vendor:parsed.vendor||prev.vendor||'',
+                    customer:parsed.customer||prev.customer||'',
+                    docNumber:parsed.docNumber||prev.docNumber||'',
+                    date:parsed.date||prev.date||'',
+                    amount:parsed.amount||prev.amount||'',
+                    job:parsed.job||prev.job||'',
+                    description:parsed.description||prev.description||''
+                  }));
+                  notify('AI extracted: '+(parsed.vendor||parsed.customer||'')+(parsed.docNumber?' #'+parsed.docNumber:'')+(parsed.amount?' $'+parsed.amount:''));
+                }catch{}
+              }
+            }catch(err){console.error('AI scan:',err)}
+          }
+        }
+        if(histFileRef.current)histFileRef.current.value='';
       };
       const removeHistFile=(idx)=>{setHistForm(prev=>({...prev,files:(prev.files||[]).filter((_,i)=>i!==idx)}))};
 
-      // Bulk upload: each file becomes its own record
-      const handleBulkUpload=(e,bulkType)=>{
+      // Bulk upload: each file becomes its own record with AI scanning + Supabase storage
+      const handleBulkUpload=async(e,bulkType)=>{
         const fileList=e.target?.files||e.dataTransfer?.files;if(!fileList||!fileList.length)return;
         const today=new Date().toISOString().split('T')[0];
         let processed=0;const total=fileList.length;
         setHistBulkCount(total);
-        Array.from(fileList).forEach(file=>{
-          if(file.size>4*1024*1024){notify('Skipped (too large): '+file.name,'error');processed++;if(processed>=total)setHistBulkCount(0);return}
+        notify('Processing '+total+' file'+(total!==1?'s':'')+' with AI...');
+        for(const file of Array.from(fileList)){
+          if(file.size>10*1024*1024){notify('Skipped (too large): '+file.name,'error');processed++;if(processed>=total)setHistBulkCount(0);continue}
           const reader=new FileReader();
-          reader.onload=(ev)=>{
-            const docName=file.name.replace(/\.[^.]+$/,'').replace(/[_-]/g,' ');
-            const id='HIST-'+Date.now()+'-'+Math.random().toString(36).slice(2,6);
-            addSop({id,title:(bulkType==='vendor_po'?'PO':'INV')+' '+docName,cat:'HistoricalDoc',icon:'file',content:JSON.stringify({
-              type:bulkType,vendor:bulkType==='vendor_po'?docName.split(' ')[0]:'',customer:bulkType==='customer_invoice'?docName.split(' ')[0]:'',
-              docNumber:'',date:today,amount:'',job:'',description:docName,notes:'Bulk uploaded',
-              files:[{name:file.name,size:file.size,type:file.type,data:ev.target.result,uploadedAt:new Date().toISOString()}]
-            }),custom:true});
-            processed++;
-            if(processed>=total){setHistBulkCount(0);notify(total+' file'+(total!==1?'s':'')+' uploaded as '+( bulkType==='vendor_po'?'Vendor POs':'Customer Invoices'))}
-          };reader.readAsDataURL(file);
-        });if(histBulkRef.current)histBulkRef.current.value='';
+          const fileData=await new Promise(res=>{reader.onload=(ev)=>res(ev.target.result);reader.readAsDataURL(file)});
+          const docName=file.name.replace(/\.[^.]+$/,'').replace(/[_-]/g,' ');
+          // Upload to Supabase Storage for persistence
+          let storageUrl='';
+          try{
+            const ext=file.name.split('.').pop()||'pdf';
+            const path='history/'+(bulkType==='vendor_po'?'po':'inv')+'_'+Date.now()+'_'+Math.random().toString(36).slice(2,6)+'.'+ext;
+            const blob=await fetch(fileData).then(r=>r.blob());
+            storageUrl=await window._supabase.uploadFile('vendor-invoices',path,blob)||'';
+          }catch(e2){console.error('Storage upload:',e2)}
+          // AI scan the document to extract info
+          let aiData={vendor:'',customer:'',docNumber:'',date:today,amount:'',job:'',description:docName};
+          try{
+            const base64=fileData.split(',')[1];
+            const mediaType=file.type||'application/pdf';
+            const prompt=bulkType==='vendor_po'?
+              'Extract from this vendor purchase order/invoice: 1) vendor/company name, 2) PO or invoice number, 3) date (YYYY-MM-DD), 4) total amount (number only), 5) any job/project name referenced. Return ONLY JSON: {"vendor":"","docNumber":"","date":"","amount":"","job":"","description":""}':
+              'Extract from this customer invoice: 1) customer/school/organization name, 2) invoice number, 3) date (YYYY-MM-DD), 4) total amount (number only), 5) any job/project name referenced. Return ONLY JSON: {"customer":"","docNumber":"","date":"","amount":"","job":"","description":""}';
+            const resp=await fetch('/api/ai-scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:base64,mediaType,prompt})});
+            if(resp.ok){
+              const data=await resp.json();
+              const text=(data.text||'').trim().replace(/```json\s*/g,'').replace(/```/g,'').trim();
+              try{const parsed=JSON.parse(text);aiData={...aiData,...parsed}}catch{}
+            }
+          }catch(aiErr){console.error('AI scan:',aiErr)}
+          const id='HIST-'+Date.now()+'-'+Math.random().toString(36).slice(2,6);
+          const record={type:bulkType,vendor:aiData.vendor||'',customer:aiData.customer||'',docNumber:aiData.docNumber||'',date:aiData.date||today,amount:aiData.amount||'',job:aiData.job||'',description:aiData.description||docName,notes:'AI-scanned upload',storageUrl,files:[{name:file.name,size:file.size,type:file.type,data:storageUrl||fileData,uploadedAt:new Date().toISOString(),storageUrl}]};
+          addSop({id,title:(bulkType==='vendor_po'?'PO':'INV')+' '+(aiData.docNumber||docName)+' - '+(aiData.vendor||aiData.customer||''),cat:'HistoricalDoc',icon:'file',content:JSON.stringify(record),custom:true});
+          processed++;
+          if(processed>=total){setHistBulkCount(0);notify(total+' file'+(total!==1?'s':'')+' scanned and uploaded as '+(bulkType==='vendor_po'?'Vendor POs':'Customer Invoices'))}
+        }
+        if(histBulkRef.current)histBulkRef.current.value='';
       };
 
-      // Import Excel -- handles single or multiple files, all sheets in each workbook
+      // Import Excel -- handles single or multiple files, all sheets in each workbook, with AI fallback and storage
       const parseOneExcel=async(file,XLSX)=>{
         const data=await file.arrayBuffer();
         const wb=XLSX.read(data,{type:'array',cellDates:true});
         let totalImported=0;
+        // Upload Excel file to Supabase Storage for persistence
+        let storageUrl='';
+        try{
+          const ext=file.name.split('.').pop()||'xlsx';
+          const path='history/excel_'+Date.now()+'_'+Math.random().toString(36).slice(2,6)+'.'+ext;
+          storageUrl=await window._supabase.uploadFile('vendor-invoices',path,new Blob([data]))||'';
+        }catch(e2){console.error('Storage upload:',e2)}
         for(const sheetName of wb.SheetNames){
           const ws=wb.Sheets[sheetName];
           const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:false});
           if(rows.length<2)continue;
-          // Smart header detection: scan first 15 rows for header-like row
+          // Super-smart header detection: scan first 20 rows for header-like row
           let headerIdx=-1;let colMap={};
-          for(let r=0;r<Math.min(rows.length,15);r++){
+          for(let r=0;r<Math.min(rows.length,20);r++){
             const row=rows[r];if(!row||!Array.isArray(row))continue;
             const h={};
             for(let c=0;c<row.length;c++){
-              const v=String(row[c]||'').toLowerCase().trim().replace(/[*#]/g,'');
-              if(/^date$|^trans.*date$|^inv.*date$|^po.*date$/.test(v))h.date=c;
-              else if(/^type$|^trans.*type$|^doc.*type$/.test(v))h.type=c;
-              else if(/^no\.?$|^num\.?$|^number$|^ref\.?$|^doc.*no|^invoice.*no|^po.*no|^check.*no/.test(v))h.docNumber=c;
-              else if(/^from|^to$|^from.*to$|^vendor$|^payee$|^name$|^company$|^customer$|^supplier$/.test(v))h.vendor=c;
-              else if(/^memo$|^desc|^notes$|^detail$|^item$|^particulars$/.test(v))h.memo=c;
-              else if(/^amount$|^total$|^balance$|^debit$|^credit$|^sum$|^net$|^amt$/.test(v))h.amount=c;
-              else if(/^status$|^state$/.test(v))h.status=c;
-              else if(/^class$|^category$|^dept$|^account$/.test(v))h.category=c;
+              const v=String(row[c]||'').toLowerCase().trim().replace(/[*#\s]+/g,' ').trim();
+              if(!v)continue;
+              // Date columns
+              if(/^date$|^trans.?date$|^inv.?date$|^po.?date$|^order.?date$|^payment.?date$|^billing.?date$|^due.?date$|^ship.?date$/.test(v)&&h.date===undefined)h.date=c;
+              // Type/class columns
+              else if(/^type$|^trans.?type$|^doc.?type$|^transaction.?type$|^entry.?type$/.test(v)&&h.type===undefined)h.type=c;
+              // Document number columns
+              else if(/^no\.?$|^num\.?$|^number$|^ref\.?$|^reference$|^doc.?no|^invoice.?no|^inv.?no|^po.?no|^po.?number|^check.?no|^bill.?no|^order.?no|^confirmation|^trans.?no|^receipt.?no/.test(v)&&h.docNumber===undefined)h.docNumber=c;
+              // Vendor/customer/name columns
+              else if(/^from|^to$|^from.?to$|^vendor$|^payee$|^name$|^company$|^customer$|^supplier$|^manufacturer$|^ship.?from$|^bill.?from$|^sold.?to$|^bill.?to$|^ship.?to$|^organization$|^school$|^district$|^client$|^contact$/.test(v)&&h.vendor===undefined)h.vendor=c;
+              // Description/memo columns
+              else if(/^memo$|^desc|^notes$|^detail$|^item$|^particulars$|^line.?desc|^product$|^service$|^comment$/.test(v)&&h.memo===undefined)h.memo=c;
+              // Amount columns
+              else if(/^amount$|^total$|^balance$|^debit$|^credit$|^sum$|^net$|^amt$|^gross$|^price$|^cost$|^subtotal$|^sub.?total$|^extended$|^ext.?price$|^line.?total$/.test(v)&&h.amount===undefined)h.amount=c;
+              // Status columns
+              else if(/^status$|^state$|^condition$|^paid$|^payment.?status$/.test(v)&&h.status===undefined)h.status=c;
+              // Category columns
+              else if(/^class$|^category$|^dept$|^department$|^account$|^gl.?account$|^expense.?type$|^budget.?code$|^cost.?center$|^job$|^project$/.test(v)&&h.category===undefined)h.category=c;
+              // Quantity columns
+              else if(/^qty$|^quantity$|^units$|^count$|^ordered$/.test(v)&&h.qty===undefined)h.qty=c;
+              // Unit price columns
+              else if(/^unit.?price$|^each$|^rate$|^unit.?cost$|^price.?each$/.test(v)&&h.unitPrice===undefined)h.unitPrice=c;
             }
             if(Object.keys(h).length>=2&&(h.date!==undefined||h.amount!==undefined||h.vendor!==undefined)){headerIdx=r;colMap=h;break}
           }
@@ -3191,8 +3271,28 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
             for(let c=0;c<row0.length;c++){
               const v=String(row0[c]||'').toLowerCase().trim();
               if(!colMap.date&&/date/i.test(v))colMap.date=c;
-              else if(!colMap.amount&&/\$|amount|total|balance/i.test(v))colMap.amount=c;
-              else if(!colMap.vendor&&v.length>0&&!colMap.memo)colMap.vendor=c;
+              else if(!colMap.amount&&/\$|amount|total|balance|price|cost/i.test(v))colMap.amount=c;
+              else if(!colMap.docNumber&&/no|num|ref|inv|po/i.test(v))colMap.docNumber=c;
+              else if(!colMap.vendor&&/vendor|name|company|payee|customer|school|from|to/i.test(v))colMap.vendor=c;
+              else if(!colMap.memo&&/memo|desc|note|item|detail/i.test(v))colMap.memo=c;
+            }
+            if(Object.keys(colMap).length<2){headerIdx=-1;colMap={}}
+          }
+          // Second fallback: guess columns by content analysis if headers don't match patterns
+          if(headerIdx<0&&rows.length>3){
+            // Analyze first data rows to guess column types
+            headerIdx=0;
+            const sampleRows=rows.slice(1,Math.min(10,rows.length));
+            for(let c=0;c<(rows[0]?.length||0);c++){
+              const vals=sampleRows.map(r=>String(r?.[c]||'').trim()).filter(Boolean);
+              if(vals.length===0)continue;
+              const dateCount=vals.filter(v=>/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}$|^\d{4}-\d{2}-\d{2}$/.test(v)).length;
+              const numCount=vals.filter(v=>/^[\$\-\(\d][\d,.\$\(\)\- ]*$/.test(v)&&parseFloat(v.replace(/[$,()]/g,''))).length;
+              const textCount=vals.filter(v=>/^[A-Za-z]/.test(v)&&v.length>3).length;
+              if(dateCount>=vals.length*0.5&&colMap.date===undefined)colMap.date=c;
+              else if(numCount>=vals.length*0.6&&colMap.amount===undefined)colMap.amount=c;
+              else if(textCount>=vals.length*0.5&&colMap.vendor===undefined)colMap.vendor=c;
+              else if(textCount>=vals.length*0.4&&colMap.memo===undefined)colMap.memo=c;
             }
             if(Object.keys(colMap).length<2){headerIdx=-1;colMap={}}
           }
@@ -3200,14 +3300,18 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
           for(let r=headerIdx+1;r<rows.length;r++){
             const row=rows[r];if(!row||row.length<2)continue;
             const g=(k)=>colMap[k]!==undefined?String(row[colMap[k]]||'').trim():'';
-            // Smart date parsing
+            // Smart date parsing -- handles many formats
             let dateStr='';const rawDate=colMap.date!==undefined?row[colMap.date]:'';
             if(rawDate instanceof Date&&!isNaN(rawDate.getTime())){dateStr=rawDate.toISOString().split('T')[0]}
             else if(typeof rawDate==='number'){const d=new Date((rawDate-25569)*86400000);if(!isNaN(d.getTime()))dateStr=d.toISOString().split('T')[0]}
             else{const ds=String(rawDate||'').trim();if(ds){
-              // Try multiple date formats
               let d2=new Date(ds);
-              if(isNaN(d2.getTime())){const parts=ds.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);if(parts){const yr=parts[3].length===2?'20'+parts[3]:parts[3];d2=new Date(yr+'-'+parts[1].padStart(2,'0')+'-'+parts[2].padStart(2,'0'))}}
+              if(isNaN(d2.getTime())){
+                // Try MM/DD/YYYY, DD/MM/YYYY, M-D-YY, etc.
+                const parts=ds.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+                if(parts){const yr=parts[3].length===2?'20'+parts[3]:parts[3];d2=new Date(yr+'-'+parts[1].padStart(2,'0')+'-'+parts[2].padStart(2,'0'))}
+                if(isNaN(d2.getTime())){const iso=ds.match(/(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/);if(iso)d2=new Date(iso[1]+'-'+iso[2].padStart(2,'0')+'-'+iso[3].padStart(2,'0'))}
+              }
               if(!isNaN(d2.getTime()))dateStr=d2.toISOString().split('T')[0];
             }}
             const typeStr=g('type').toLowerCase();
@@ -3219,17 +3323,27 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
             const amount=typeof rawAmt==='number'?rawAmt:parseFloat(String(rawAmt||'').replace(/[$,()]/g,'').replace(/^\((.+)\)$/,'-$1'))||0;
             const status=g('status');
             if(!vendor&&!docNum&&!amount&&!memo&&!dateStr)continue;
-            // Smarter type detection
+            // Smarter type detection with more keywords
             let recType='vendor_po';
-            if(/sale|income|deposit|customer.*pay|revenue|receivable/i.test(typeStr)||/sale|income|deposit/i.test(cat))recType='customer_invoice';
-            else if(/bill|purchase|expense|vendor|check|payment|credit|charge|freight|refund/i.test(typeStr))recType='vendor_po';
+            if(/sale|income|deposit|customer.*pay|revenue|receivable|receipt|payment.?received/i.test(typeStr)||/sale|income|deposit|revenue/i.test(cat))recType='customer_invoice';
+            else if(/bill|purchase|expense|vendor|check|payment|credit|charge|freight|refund|wire|ach|transfer|debit/i.test(typeStr))recType='vendor_po';
             else if(amount<0&&vendor)recType='vendor_po';
+            // Smart vendor matching -- try to match to existing vendors/customers
+            let matchedVendor=vendor;let matchedCustomer='';
+            if(vendor){
+              const vMatch=vendors.find(v=>v.name.toLowerCase()===vendor.toLowerCase()||v.name.toLowerCase().includes(vendor.toLowerCase())||vendor.toLowerCase().includes(v.name.toLowerCase()));
+              const cMatch=customers.find(c=>c.name.toLowerCase()===vendor.toLowerCase()||c.name.toLowerCase().includes(vendor.toLowerCase())||vendor.toLowerCase().includes(c.name.toLowerCase()));
+              if(cMatch&&!vMatch){recType='customer_invoice';matchedCustomer=cMatch.name;matchedVendor=''}
+              else if(vMatch){matchedVendor=vMatch.name}
+              if(recType==='customer_invoice'){matchedCustomer=matchedCustomer||vendor;matchedVendor=''}
+            }
             const id='HIST-'+Date.now()+'-'+Math.random().toString(36).slice(2,6)+'-'+r+'-'+sheetName.slice(0,4);
-            addSop({id,title:(recType==='vendor_po'?'PO':'INV')+' '+(docNum||id)+' - '+(vendor||''),cat:'HistoricalDoc',icon:'file',
-              content:JSON.stringify({type:recType,vendor:recType==='vendor_po'?vendor:'',customer:recType==='customer_invoice'?vendor:'',
+            addSop({id,title:(recType==='vendor_po'?'PO':'INV')+' '+(docNum||id)+' - '+(matchedVendor||matchedCustomer||vendor||''),cat:'HistoricalDoc',icon:'file',
+              content:JSON.stringify({type:recType,vendor:recType==='vendor_po'?(matchedVendor||vendor):'',customer:recType==='customer_invoice'?(matchedCustomer||vendor):'',
                 docNumber:docNum,date:dateStr,amount:String(Math.abs(amount)),job:cat||'',
                 description:(typeStr?typeStr.charAt(0).toUpperCase()+typeStr.slice(1)+' -- ':'')+memo,
-                notes:'Status: '+(status||'imported')+(amount<0?' (credit)':'')+(wb.SheetNames.length>1?' [Sheet: '+sheetName+']':''),files:[]}),custom:true});
+                notes:'Status: '+(status||'imported')+(amount<0?' (credit)':'')+(wb.SheetNames.length>1?' [Sheet: '+sheetName+']':''),
+                storageUrl,files:storageUrl?[{name:file.name,size:file.size,type:file.type,data:storageUrl,uploadedAt:new Date().toISOString(),storageUrl}]:[]}),custom:true});
             totalImported++;
           }
         }
@@ -3307,7 +3421,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
             <div style={{display:"flex",flexDirection:"column",gap:8}}>{(h.files||[]).map((f,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:"#0a0a0a",borderRadius:8,border:"1px solid #222"}}>
               <div style={{width:36,height:36,borderRadius:8,background:f.type?.includes('pdf')?"#f8717112":f.type?.includes('image')?"#2dd4bf12":"#a78bfa12",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><I n={f.type?.includes('pdf')?"file":f.type?.includes('image')?"image":"file"} s={16} color={f.type?.includes('pdf')?"#f87171":f.type?.includes('image')?"#2dd4bf":"#a78bfa"}/></div>
               <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,color:"#e5e5e5",fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.name}</div><div style={{fontSize:11,color:"#737373"}}>{(f.size/1024).toFixed(0)} KB{f.uploadedAt?' -- '+new Date(f.uploadedAt).toLocaleDateString():''}</div></div>
-              <button onClick={()=>{if(f.data){const w=window.open('','_blank');w.document.write(f.type?.includes('pdf')?'<embed src="'+f.data+'" width="100%" height="100%" type="application/pdf"/>':'<img src="'+f.data+'" style="max-width:100%"/>');w.document.title=f.name}}} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #2dd4bf30",background:"transparent",color:"#2dd4bf",fontSize:11,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>View</button>
+              <button onClick={()=>{const url=f.storageUrl||f.data;if(url){if(f.storageUrl){window.open(f.storageUrl,'_blank')}else{const w=window.open('','_blank');w.document.write(f.type?.includes('pdf')?'<embed src="'+f.data+'" width="100%" height="100%" type="application/pdf"/>':'<img src="'+f.data+'" style="max-width:100%"/>');w.document.title=f.name}}}} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #2dd4bf30",background:"transparent",color:"#2dd4bf",fontSize:11,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>View</button>
             </div>)}</div>}
           </Card>
         </div>
