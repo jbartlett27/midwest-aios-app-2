@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { db } from "./supabase.js";
+window._supabase=db;
 import { useUser, useClerk, SignIn, UserButton, useAuth } from "@clerk/clerk-react";
 
 const DEFAULT_SOPS=[
@@ -2718,6 +2719,63 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
               <Btn v="secondary" onClick={()=>printCheck(bill)}><I n="file" s={12}/> Print Check</Btn>
               <Btn v="secondary" onClick={()=>setBillDetail(null)}>Cancel</Btn>
             </div>
+          </Card>
+          <Card style={{padding:16,marginBottom:16}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}>
+              <div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>Vendor Invoice Document</div>
+              {billData.invoiceFileUrl&&<a href={billData.invoiceFileUrl} target="_blank" rel="noopener noreferrer" style={{fontSize:12,color:"#a78bfa",textDecoration:"none",display:"flex",alignItems:"center",gap:4}}><I n="external-link" s={12} color="#a78bfa"/> Open Saved Invoice</a>}
+            </div>
+            {billData.invoiceFileUrl?<div style={{display:"flex",alignItems:"center",gap:12,padding:12,background:"#a78bfa08",border:"1px solid #a78bfa20",borderRadius:8}}>
+              <div style={{width:40,height:40,borderRadius:8,background:"#a78bfa15",display:"flex",alignItems:"center",justifyContent:"center"}}><I n="file" s={18} color="#a78bfa"/></div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:13,fontWeight:600,color:"#e5e5e5"}}>{billData.invoiceFileName||'Vendor Invoice'}</div>
+                <div style={{fontSize:11,color:"#737373"}}>{billData.invoiceUploadDate?'Uploaded '+new Date(billData.invoiceUploadDate).toLocaleDateString():''}</div>
+              </div>
+              <a href={billData.invoiceFileUrl} target="_blank" rel="noopener noreferrer" style={{padding:"6px 14px",borderRadius:6,border:"1px solid #a78bfa30",background:"#a78bfa15",color:"#a78bfa",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",textDecoration:"none"}}>View</a>
+              <button onClick={()=>{const existing=typeof docStatuses[bill.billDocNum]==='object'?docStatuses[bill.billDocNum]:{};setDocStatus(bill.billDocNum,{...existing,invoiceFileUrl:'',invoiceFileName:'',invoiceUploadDate:''});notify('Invoice removed')}} style={{padding:"6px 10px",borderRadius:6,border:"1px solid #52525230",background:"transparent",color:"#737373",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Remove</button>
+            </div>:<div>
+              <input type="file" id="vendorInvoiceUpload" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.tiff" style={{display:"none"}} onChange={async e=>{
+                const file=e.target.files?.[0];if(!file)return;
+                const uploadBtn=document.getElementById('uploadInvBtn');
+                if(uploadBtn){uploadBtn.textContent='Uploading...';uploadBtn.disabled=true}
+                try{
+                  // Upload to Supabase Storage
+                  const ext=file.name.split('.').pop()||'pdf';
+                  const path='invoices/'+bill.billDocNum.replace(/[^a-zA-Z0-9-_]/g,'_')+'_'+Date.now()+'.'+ext;
+                  const url=await window._supabase.uploadFile('vendor-invoices',path,file);
+                  if(url){
+                    // Save file reference to docStatuses
+                    const existing=typeof docStatuses[bill.billDocNum]==='object'?docStatuses[bill.billDocNum]:{};
+                    setDocStatus(bill.billDocNum,{...existing,invoiceFileUrl:url,invoiceFileName:file.name,invoiceUploadDate:new Date().toISOString()});
+                    notify('Invoice uploaded: '+file.name);
+                    // Send to AI to extract invoice number
+                    try{
+                      const reader=new FileReader();
+                      reader.onload=async()=>{
+                        const base64=reader.result.split(',')[1];
+                        const mediaType=file.type||'application/pdf';
+                        const resp=await fetch('/api/ai-scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:base64,mediaType,prompt:'Extract the invoice number from this vendor invoice document. Return ONLY the invoice number/reference number, nothing else. If you cannot find one, return "NOT FOUND".'})});
+                        if(resp.ok){
+                          const data=await resp.json();
+                          const invNum=(data.text||'').trim();
+                          if(invNum&&invNum!=='NOT FOUND'&&invNum.length<50){
+                            setBillInvNum(invNum);
+                            const existing2=typeof docStatuses[bill.billDocNum]==='object'?docStatuses[bill.billDocNum]:{};
+                            setDocStatus(bill.billDocNum,{...existing2,vendorInvNum:invNum});
+                            notify('AI extracted invoice #: '+invNum);
+                          }
+                        }
+                      };
+                      reader.readAsDataURL(file);
+                    }catch(aiErr){console.error('AI scan error:',aiErr)}
+                  }else{notify('Upload failed -- check Supabase Storage bucket')}
+                }catch(err){console.error('Upload error:',err);notify('Upload error: '+err.message)}
+                if(uploadBtn){uploadBtn.textContent='Upload Vendor Invoice';uploadBtn.disabled=false}
+                e.target.value='';
+              }}/>
+              <button id="uploadInvBtn" onClick={()=>document.getElementById('vendorInvoiceUpload')?.click()} style={{padding:"10px 20px",borderRadius:8,border:"2px dashed #a78bfa40",background:"#a78bfa08",color:"#a78bfa",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",width:"100%",transition:"all 0.15s",display:"flex",alignItems:"center",justifyContent:"center",gap:8}} onMouseEnter={e=>{e.currentTarget.style.background="#a78bfa15";e.currentTarget.style.borderColor="#a78bfa60"}} onMouseLeave={e=>{e.currentTarget.style.background="#a78bfa08";e.currentTarget.style.borderColor="#a78bfa40"}}><I n="upload" s={14} color="#a78bfa"/> Upload Vendor Invoice (PDF, Image, Screenshot)</button>
+              <div style={{fontSize:11,color:"#525252",marginTop:6,textAlign:"center"}}>AI will auto-extract the invoice number from the uploaded document</div>
+            </div>}
           </Card>
           <Card style={{padding:16,marginBottom:16}}>
             <div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:12,fontFamily:"'JetBrains Mono',monospace"}}>Line Items on This PO</div>
