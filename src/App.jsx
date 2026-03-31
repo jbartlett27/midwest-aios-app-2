@@ -2600,7 +2600,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
   <div class="stub-footer"><div class="stub-bank">Cornerstone Bank Ch</div><div class="stub-amount">${amtFmt}</div></div>
 </div>
 </body></html>`;
-        const w=window.open('','_blank');w.document.write(html);w.document.close();w.print();
+        const w=window.open('','_blank');w.document.write(html);w.document.close();if(w.document.fonts){w.document.fonts.ready.then(()=>w.print())}else{setTimeout(()=>w.print(),800)}
         // Save check number to all included bills
         selectedBills.forEach(b=>{const existing=typeof docStatuses[b.billDocNum]==='object'?docStatuses[b.billDocNum]:{};setDocStatus(b.billDocNum,{...existing,checkNum:checkNo,checkPrinted:new Date().toISOString(),status:'check_sent',memo:existing.memo||'Batch check #'+checkNo})});
         notify('Batch Check #'+checkNo+' printed for '+vendorName+' -- '+fmt(totalCost)+' ('+selectedBills.length+' POs)');
@@ -2773,7 +2773,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
 </div>
 
 </body></html>`;
-          const w=window.open('','_blank');w.document.write(html);w.document.close();w.print();
+          const w=window.open('','_blank');w.document.write(html);w.document.close();if(w.document.fonts){w.document.fonts.ready.then(()=>w.print())}else{setTimeout(()=>w.print(),800)}
           const existing2=typeof docStatuses[bill2.billDocNum]==='object'?docStatuses[bill2.billDocNum]:{};
           setDocStatus(bill2.billDocNum,{...existing2,checkNum:checkNo,checkPrinted:new Date().toISOString(),vendorInvNum:billInvNum||existing2.vendorInvNum||'',payDate:billPayDate||existing2.payDate||'',memo:billMemo||existing2.memo||''});
           notify('Check #'+checkNo+' printed for '+bill2.vendorName+' -- '+fmt(bill2.cost));
@@ -5032,7 +5032,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       html+='</tbody></table>';
     }
     html+='</div>';
-    const w=window.open("","_blank");w.document.write(html);w.document.close();w.print();
+    const w=window.open("","_blank");w.document.write(html);w.document.close();if(w.document.fonts){w.document.fonts.ready.then(()=>w.print())}else{setTimeout(()=>w.print(),800)}
   };
 
   const kpi=(label,value,sub,color)=><Card style={{padding:16,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:6}}>{label}</div><div style={{fontSize:"clamp(18px,4vw,28px)",fontWeight:800,color:color||"#f0f0f0",fontFamily:"'JetBrains Mono',monospace",lineHeight:1}}><AnimNum value={value}/></div>{sub&&<div style={{fontSize:12,color:"#a3a3a3",marginTop:6}}>{sub}</div>}</Card>;
