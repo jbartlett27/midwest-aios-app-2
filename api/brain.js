@@ -5,7 +5,6 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  // Collect all available API keys for rotation
   const keys = [process.env.ANTHROPIC_API_KEY, process.env.ANTHROPIC_API_KEY_2].filter(Boolean);
   if (keys.length === 0) return res.status(500).json({ error: { message: 'No ANTHROPIC_API_KEY set in Vercel environment variables' } });
 
@@ -20,11 +19,15 @@ export default async function handler(req, res) {
       system: system || '',
       messages,
     };
-    if (tools && Array.isArray(tools) && tools.length > 0) {
-      body.tools = tools;
-    }
 
-    // Try each key in order -- if one hits rate limit or error, try the next
+    // Build tools: custom tools + web search (always on, Claude decides when to use)
+    const allTools = [];
+    if (tools && Array.isArray(tools) && tools.length > 0) {
+      allTools.push(...tools);
+    }
+    allTools.push({ type: 'web_search_20250305', name: 'web_search', max_uses: 3 });
+    body.tools = allTools;
+
     for (let i = 0; i < keys.length; i++) {
       const key = keys[i];
       try {
@@ -39,12 +42,8 @@ export default async function handler(req, res) {
         });
         const data = await response.json();
 
-        // If rate limited or overloaded and we have another key, try next
-        if ((response.status === 429 || response.status === 529) && i < keys.length - 1) {
-          continue;
-        }
+        if ((response.status === 429 || response.status === 529) && i < keys.length - 1) continue;
 
-        // If model not found, try fallback model with same key
         if (data.error && data.error.type === 'not_found_error') {
           const r2 = await fetch('https://api.anthropic.com/v1/messages', {
             method: 'POST',
@@ -56,19 +55,13 @@ export default async function handler(req, res) {
           return res.status(r2.status).json(d2);
         }
 
-        // If auth error (invalid key) and we have another key, try next
-        if (response.status === 401 && i < keys.length - 1) {
-          continue;
-        }
-
+        if (response.status === 401 && i < keys.length - 1) continue;
         return res.status(response.status).json(data);
       } catch (err) {
-        // Network error on this key -- try next if available
         if (i < keys.length - 1) continue;
         return res.status(500).json({ error: { message: 'All API keys failed: ' + err.message } });
       }
     }
-
     return res.status(500).json({ error: { message: 'All API keys exhausted' } });
   } catch (error) {
     return res.status(500).json({ error: { message: 'Server error: ' + error.message } });
