@@ -1428,10 +1428,11 @@ const sharedScreen = sharedQuote ? <ShareQuotePortal quoteData={sharedQuote} onA
           .doc-tabs>button>span:last-child{font-size:13px!important}
           .doc-card-row{flex-wrap:wrap!important;gap:8px!important}
           .cal-grid{grid-template-columns:repeat(7,1fr)!important;font-size:10px!important}
+          .cal-grid>div{min-width:0!important;overflow:hidden!important}
           .cust-detail{padding:12px!important}
           .cust-detail>div{gap:8px!important}
-          .brain-page{height:calc(100dvh - 90px - 16px)!important;margin:-16px -12px -90px -12px!important;padding:0!important;position:relative!important}
-          .cash-val{font-size:14px!important}
+          .brain-page{position:fixed!important;top:0!important;left:0!important;right:0!important;bottom:72px!important;height:auto!important;margin:0!important;padding:0!important;z-index:100!important;background:#000!important}
+          .cash-val{font-size:13px!important;overflow:visible!important;white-space:nowrap!important}
           .cash-pos-grid{gap:4px!important}
           .fin-tabs{overflow-x:auto!important;-webkit-overflow-scrolling:touch!important;flex-wrap:nowrap!important}
           th,td{font-size:11px!important}
@@ -1442,7 +1443,7 @@ const sharedScreen = sharedQuote ? <ShareQuotePortal quoteData={sharedQuote} onA
           h2{font-size:16px!important}
           .resp-grid-4{grid-template-columns:1fr!important;gap:8px!important}
           .resp-grid-3{grid-template-columns:1fr!important;gap:8px!important}
-          .brain-page{margin:-12px -10px -90px -10px!important}
+          .brain-page{bottom:72px!important}
         }
       `}</style>
     </div>
@@ -4344,7 +4345,34 @@ function NotesPage({customSops,addSop,deleteSop,jobs,reps,notify,triggerPrint}){
 
 function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJobItems,brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory,updateJob,addJob,updateLineItem,addLineItem,deleteLineItem,updateRep,addRep,addCustomer,updateCustomer,addVendor,updateVendor,notify,setPage,deleteJob}){
   const history=brainHistory;const setHistory=setBrainHistory;
-  const suggestedQueries=["What is our total pipeline revenue?","Which vendor do we spend the most with?","Show me all jobs that are In Progress","What is our average margin?","Which reps have the highest revenue?","List all overdue deliveries","Summarize our commission obligations","What SOPs do we have documented?"];
+  // === BRAIN MEMORY SYSTEM ===
+  const [brainMemory, setBrainMemory] = useState([]);
+  const memoryLoaded = useRef(false);
+  useEffect(() => {
+    if (memoryLoaded.current) return;
+    memoryLoaded.current = true;
+    const existing = (customSops || []).filter(s => s.cat === "BrainMemory");
+    if (existing.length > 0) setBrainMemory(existing);
+  }, [customSops]);
+  const saveMemory = (category, content, metadata) => {
+    const id = "MEM-" + category.replace(/\s+/g, "-").toLowerCase() + "-" + Date.now();
+    const mem = { id, title: category, cat: "BrainMemory", icon: "brain", content: JSON.stringify({ text: content, metadata: metadata || {}, updatedAt: new Date().toISOString() }), custom: true };
+    addSop(mem); setBrainMemory(p => [...p.filter(m => m.title !== category), mem]); return mem;
+  };
+  const updateMemory = (category, content, metadata) => {
+    const existing = brainMemory.find(m => m.title === category);
+    if (existing) {
+      let parsed = {}; try { parsed = JSON.parse(existing.content); } catch {}
+      const updated = { ...existing, content: JSON.stringify({ ...parsed, text: content, metadata: { ...parsed.metadata, ...metadata }, updatedAt: new Date().toISOString() }) };
+      addSop(updated); setBrainMemory(p => p.map(m => m.title === category ? updated : m)); return updated;
+    }
+    return saveMemory(category, content, metadata);
+  };
+  const getMemoryText = () => {
+    if (brainMemory.length === 0) return "";
+    return brainMemory.map(m => { try { const d = JSON.parse(m.content); return "## " + m.title + " (updated: " + (d.updatedAt || "unknown") + ")\n" + d.text; } catch { return "## " + m.title + "\n" + m.content; } }).join("\n\n");
+  };
+  const suggestedQueries=["What is our total pipeline revenue?","Which vendor do we spend the most with?","Show me all jobs that are In Progress","What is our average margin?","Which reps have the highest revenue?","List all overdue deliveries","Run a health check on the business","Draft a collection email for overdue invoices","What anomalies should I know about?","What are our top trends this quarter?","Summarize our commission obligations","What SOPs do we have documented?"];
   const chatRef=useRef(null);
   const [animatingIdx,setAnimatingIdx]=useState(-1);
   const [pendingActions,setPendingActions]=useState([]);
@@ -4378,7 +4406,17 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     {name:"duplicate_job",description:"Duplicate a job with all its line items, customer, and rep. Resets phase to Quoting and payment to unpaid. Use when user says 'duplicate this job', 'copy the job for next year', 'clone this project'.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name keywords to duplicate"},new_name:{type:"string",description:"Optional new name for the duplicated job. If not provided, appends ' (Copy)' to the original name."}},required:["job_id"]}},
     {name:"search_and_report",description:"Search and filter jobs, vendors, customers, or line items by complex criteria and return a formatted report. Use for 'list all jobs over $50K', 'show me vendors with spend over $10K', 'find all unpaid jobs for College of DuPage', 'which jobs have the lowest margin'.",input_schema:{type:"object",properties:{entity:{type:"string",description:"What to search: jobs, vendors, customers, or items"},filters:{type:"object",description:"Filter criteria",properties:{min_revenue:{type:"number"},max_revenue:{type:"number"},min_margin:{type:"number"},max_margin:{type:"number"},phase:{type:"string"},paymentStatus:{type:"string"},customer_name:{type:"string"},vendor_name:{type:"string"},rep_name:{type:"string"},min_spend:{type:"number",description:"For vendors: minimum total spend across all jobs"}}},sort_by:{type:"string",description:"Sort field: revenue, cost, margin, name, spend"},limit:{type:"number",description:"Max results to return (default 20)"}},required:["entity"]}},
     {name:"add_line_items",description:"Add one or more line items to a job. Use when user says 'add 20 desks to the Lincoln job at $297 each', 'add a line item for chairs', etc.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name keywords"},items:{type:"array",description:"Array of items to add",items:{type:"object",properties:{description:{type:"string"},manufacturer:{type:"string"},model_number:{type:"string"},color:{type:"string"},quantity:{type:"number"},unit_price:{type:"number",description:"Customer price per unit"},unit_cost:{type:"number",description:"Dealer cost per unit"},vendor_name:{type:"string",description:"Vendor/manufacturer name"}}}}},required:["job_id","items"]}},
-    {name:"navigate_to_page",description:"Navigate to a page in the app.",input_schema:{type:"object",properties:{page:{type:"string"}},required:["page"]}}
+    {name:"navigate_to_page",description:"Navigate to a page in the app.",input_schema:{type:"object",properties:{page:{type:"string"}},required:["page"]}},
+    {name:"save_memory",description:"Save or update a persistent memory that the Brain remembers across all future conversations. Use PROACTIVELY to remember user preferences, business patterns, vendor quirks, customer preferences, seasonal patterns, key decisions, frequently asked questions. Categories: UserPreferences, BusinessPatterns, VendorIntel, CustomerIntel, Decisions, FrequentQueries, SeasonalNotes, ProcessNotes, FinancialPatterns.",input_schema:{type:"object",properties:{category:{type:"string"},content:{type:"string"},metadata:{type:"object"}},required:["category","content"]}},
+    {name:"recall_memory",description:"Search saved memories. Check what you already know before answering recurring questions.",input_schema:{type:"object",properties:{query:{type:"string"}},required:["query"]}},
+    {name:"draft_email",description:"Draft a professional email with Midwest branding (Midwest Educational Furnishings, Kildeer IL, Maureen Welter). Handles collection notices, vendor followups, customer updates, delivery notices, quote followups.",input_schema:{type:"object",properties:{to:{type:"string"},subject:{type:"string"},body:{type:"string"},tone:{type:"string",description:"professional, friendly, firm, urgent"},job_id:{type:"string"},type:{type:"string",description:"collection, vendor_followup, customer_update, delivery_notice, quote_followup, general"}},required:["to","subject","body"]}},
+    {name:"detect_anomalies",description:"Scan all business data for anomalies: overdue payments, stalled jobs, price mismatches, missing deliveries, margin outliers, vendor concentration risk. Returns prioritized findings.",input_schema:{type:"object",properties:{focus:{type:"string",description:"payments, deliveries, margins, vendors, all"}},required:[]}},
+    {name:"analyze_trends",description:"Analyze business trends: revenue by month, vendor spend patterns, margin trends, rep performance, seasonal cycles.",input_schema:{type:"object",properties:{metric:{type:"string",description:"revenue, margins, vendor_spend, rep_performance, customer_growth"},period:{type:"string",description:"monthly, quarterly, ytd, all_time"}},required:["metric"]}},
+    {name:"workflow_trigger",description:"Execute multi-step workflow automations. Examples: flag all overdue invoices and draft collection emails, find all received-but-not-invoiced items, check jobs past due and create tasks.",input_schema:{type:"object",properties:{workflow:{type:"string"},dry_run:{type:"boolean",description:"If true, preview without executing"}},required:["workflow"]}},
+    {name:"summarize_context",description:"Generate a comprehensive briefing on any job, vendor, customer, or the entire business. Use for 'brief me on X', 'what do I need to know about Y'.",input_schema:{type:"object",properties:{entity_type:{type:"string",description:"job, vendor, customer, rep, or business"},entity_name:{type:"string",description:"Name or ID. Use 'all' for full business briefing."}},required:["entity_type"]}},
+    {name:"predictive_flag",description:"Surface jobs/customers/vendors at risk. Predicts payment delays, delivery misses, margin erosion. Uses historical patterns and current data.",input_schema:{type:"object",properties:{focus:{type:"string",description:"payment_risk, delivery_risk, margin_risk, cash_flow, all"}},required:["focus"]}},
+    {name:"database_query",description:"Run a structured query against the live database. Query jobs, line_items, vendors, customers, reps tables with filters. Use for complex lookups like 'how many jobs created in March' or 'total cost of all items from Virco'.",input_schema:{type:"object",properties:{table:{type:"string",description:"jobs, line_items, vendors, customers, reps, sops"},filters:{type:"object",description:"Key:value filter pairs. Keys are field names."},order_by:{type:"string"},limit:{type:"number",description:"Max rows (default 50)"}},required:["table"]}},
+    {name:"parse_uploaded_file",description:"Parse and extract data from an uploaded file (PDF, image, CSV, Excel) using Claude Vision or structured parsing. Returns structured JSON.",input_schema:{type:"object",properties:{file_url:{type:"string",description:"Public URL of the uploaded file"},file_type:{type:"string",description:"pdf, image, csv, excel, json"},scan_type:{type:"string",description:"vendor_invoice, delivery_receipt, quote_document, customer_list, vendor_list, general"},extra_context:{type:"string"}},required:["file_url","file_type"]}}
   ];
 
   // Execute a tool call locally
@@ -4606,12 +4644,157 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         if(p&&setPage)setPage(p);
         return{success:true,message:"Navigated to "+p};
       }
+      if(toolName==="save_memory"){
+        const mem=updateMemory(input.category,input.content,input.metadata);
+        return{success:true,message:"Memory saved: ["+input.category+"] "+input.content.slice(0,100)+(input.content.length>100?"...":"")};
+      }
+      if(toolName==="recall_memory"){
+        const q2=(input.query||"").toLowerCase();
+        const matches=brainMemory.filter(m=>{const title=(m.title||"").toLowerCase();let text="";try{text=JSON.parse(m.content).text||""}catch{text=m.content||""}text=text.toLowerCase();return q2.split(/\s+/).filter(w=>w.length>2).some(w=>title.includes(w)||text.includes(w))});
+        if(matches.length===0)return{success:true,message:"No memories found matching '"+input.query+"'. "+brainMemory.length+" total memories stored."};
+        const results=matches.map(m=>{try{const d=JSON.parse(m.content);return"["+m.title+"] "+d.text}catch{return"["+m.title+"] "+m.content}}).join("\n\n");
+        return{success:true,message:"Found "+matches.length+" memories:\n\n"+results};
+      }
+      if(toolName==="draft_email"){
+        const job=input.job_id?findJob(input.job_id):null;
+        const jobCtx=job?" (Job: "+job.name+")":"";
+        return{success:true,message:"**EMAIL DRAFT**\n\n**To:** "+input.to+"\n**Subject:** "+input.subject+"\n\n"+input.body+"\n\n---\nMidwest Educational Furnishings"+jobCtx+"\nKildeer, IL | (847) 847-1865"};
+      }
+      if(toolName==="detect_anomalies"){
+        const findings=[];const focus=(input.focus||"all").toLowerCase();
+        if(focus==="all"||focus==="payments"){
+          const unpaid=jobs.filter(j=>{if(j.paymentStatus==="paid")return false;const items=getJobItems(j.id);return items.some(i=>i.qtyInvoiced>0)});
+          const overdue=unpaid.filter(j=>{const days=j.terms?.includes("15")?15:j.terms?.includes("Receipt")?0:30;const due=new Date(j.createdDate);due.setDate(due.getDate()+days);return new Date()>due});
+          if(overdue.length>0)findings.push({severity:"HIGH",area:"Payments",detail:overdue.length+" overdue invoices totaling $"+Math.round(overdue.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0)).toLocaleString()});
+        }
+        if(focus==="all"||focus==="deliveries"){
+          const stalled=jobs.filter(j=>{const items=getJobItems(j.id);return j.phase==="Ordered"&&items.length>0&&items.every(i=>i.qtyReceived===0)&&new Date()-new Date(j.createdDate)>14*86400000});
+          if(stalled.length>0)findings.push({severity:"MEDIUM",area:"Deliveries",detail:stalled.length+" jobs ordered 14+ days ago with zero deliveries"});
+        }
+        if(focus==="all"||focus==="margins"){
+          const lowMargin=jobs.filter(j=>{const f=getJobFinancials(j.id);return f.totalRevenue>1000&&f.margin<15});
+          if(lowMargin.length>0)findings.push({severity:"HIGH",area:"Margins",detail:lowMargin.length+" jobs below 15% margin: "+lowMargin.map(j=>j.name+" ("+getJobFinancials(j.id).margin.toFixed(1)+"%)").join(", ")});
+        }
+        if(focus==="all"||focus==="vendors"){
+          const vs={};lineItems.forEach(i=>{const v=vendors.find(v2=>v2.id===i.vendor);if(v){vs[v.name]=(vs[v.name]||0)+i.unitCost*i.qtyOrdered}});
+          const tot=Object.values(vs).reduce((s,v)=>s+v,0);const top=Object.entries(vs).sort((a,b)=>b[1]-a[1])[0];
+          if(top&&tot>0&&top[1]/tot>0.4)findings.push({severity:"MEDIUM",area:"Vendors",detail:"Concentration risk: "+top[0]+" = "+Math.round(top[1]/tot*100)+"% of spend"});
+        }
+        if(findings.length===0)return{success:true,message:"No anomalies detected. Business looks healthy."};
+        return{success:true,message:"Found "+findings.length+" items:\n\n"+findings.sort((a,b)=>(a.severity==="HIGH"?0:1)-(b.severity==="HIGH"?0:1)).map(f=>"**["+f.severity+"] "+f.area+":** "+f.detail).join("\n\n")};
+      }
+      if(toolName==="analyze_trends"){
+        const metric=(input.metric||"revenue").toLowerCase();
+        if(metric.includes("revenue")){
+          const monthly={};jobs.forEach(j=>{const d=new Date(j.createdDate);const key=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");monthly[key]=(monthly[key]||0)+getJobFinancials(j.id).totalRevenue});
+          const sorted=Object.entries(monthly).sort((a,b)=>a[0].localeCompare(b[0]));
+          return{success:true,message:"**Revenue by Month:**\n\n"+sorted.map(([m,v])=>m+": $"+Math.round(v).toLocaleString()).join("\n")+"\n\nTotal: $"+Math.round(sorted.reduce((s,e)=>s+e[1],0)).toLocaleString()};
+        }
+        if(metric.includes("margin")){
+          const jm=jobs.map(j=>({name:j.name,margin:getJobFinancials(j.id).margin,rev:getJobFinancials(j.id).totalRevenue})).filter(j=>j.rev>0).sort((a,b)=>a.margin-b.margin);
+          const avg=jm.reduce((s,j)=>s+j.margin,0)/jm.length;
+          return{success:true,message:"**Margin Analysis:**\nAvg: "+avg.toFixed(1)+"%\nLowest: "+jm.slice(0,3).map(j=>j.name+" ("+j.margin.toFixed(1)+"%)").join(", ")+"\nHighest: "+jm.slice(-3).reverse().map(j=>j.name+" ("+j.margin.toFixed(1)+"%)").join(", ")};
+        }
+        if(metric.includes("vendor")){
+          const vs={};lineItems.forEach(i=>{const v=vendors.find(v2=>v2.id===i.vendor);if(v){vs[v.name]=(vs[v.name]||0)+i.unitCost*i.qtyOrdered}});
+          return{success:true,message:"**Top Vendor Spend:**\n\n"+Object.entries(vs).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([n,s],i)=>(i+1)+". "+n+": $"+Math.round(s).toLocaleString()).join("\n")};
+        }
+        if(metric.includes("rep")){
+          const rd=reps.filter(r=>!r.id.includes("SEED_FLAG")).map(r=>{const rj=jobs.filter(j=>j.salesRep===r.id);return{name:r.name,jobs:rj.length,rev:rj.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0)}}).sort((a,b)=>b.rev-a.rev);
+          return{success:true,message:"**Rep Performance:**\n\n"+rd.map((r,i)=>(i+1)+". "+r.name+": "+r.jobs+" jobs, $"+Math.round(r.rev).toLocaleString()).join("\n")};
+        }
+        return{success:true,message:"Available metrics: revenue, margins, vendor_spend, rep_performance"};
+      }
+      if(toolName==="workflow_trigger"){
+        const w=(input.workflow||"").toLowerCase();const results=[];
+        if(w.includes("overdue")&&(w.includes("email")||w.includes("remind")||w.includes("collect"))){
+          const oj=jobs.filter(j=>{if(j.paymentStatus==="paid")return false;const items=getJobItems(j.id);if(!items.some(i=>i.qtyInvoiced>0))return false;const days=j.terms?.includes("15")?15:j.terms?.includes("Receipt")?0:30;const due=new Date(j.createdDate);due.setDate(due.getDate()+days);return new Date()>due});
+          results.push("Found "+oj.length+" overdue jobs:");
+          oj.forEach(j=>{const c=customers.find(c2=>c2.id===j.customer);results.push("- "+j.name+" ("+(c?.name||"")+": $"+Math.round(getJobFinancials(j.id).totalRevenue).toLocaleString()+")")});
+        } else if(w.includes("uninvoiced")||w.includes("not yet invoiced")||(w.includes("received")&&w.includes("invoice"))){
+          const ui=lineItems.filter(i=>i.qtyReceived>i.qtyInvoiced);const byJob={};
+          ui.forEach(i=>{const j=jobs.find(j2=>j2.id===i.jobId);byJob[j?.name||i.jobId]=(byJob[j?.name||i.jobId]||[]);byJob[j?.name||i.jobId].push(i)});
+          results.push("Found "+ui.length+" items received but not invoiced:");
+          Object.entries(byJob).forEach(([n,items])=>{results.push("- "+n+": "+items.length+" items, $"+Math.round(items.reduce((s,i)=>s+i.unitPrice*(i.qtyReceived-i.qtyInvoiced),0)).toLocaleString())});
+        } else {results.push("Available workflows: overdue collection emails, uninvoiced items flagging, past-due task creation")}
+        if(input.dry_run!==false)results.push("\n**DRY RUN** -- no actions taken.");
+        return{success:true,message:results.join("\n")};
+      }
+      if(toolName==="summarize_context"){
+        const type=(input.entity_type||"").toLowerCase();
+        if(type==="business"||input.entity_name==="all"){
+          const tr=jobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const tc=jobs.reduce((s,j)=>s+getJobFinancials(j.id).totalCost,0);
+          const phases={};jobs.forEach(j=>{phases[j.phase]=(phases[j.phase]||0)+1});
+          return{success:true,message:"**BUSINESS BRIEFING**\n\nPipeline: "+jobs.length+" jobs | $"+Math.round(tr).toLocaleString()+" revenue | "+(tr>0?((tr-tc)/tr*100).toFixed(1):0)+"% margin\nBy Phase: "+Object.entries(phases).map(([p,c])=>p+": "+c).join(", ")+"\nVendors: "+vendors.length+" | Customers: "+customers.length+" | Reps: "+reps.filter(r=>!r.id.includes("SEED_FLAG")).length+"\nItems: "+lineItems.length+" total, "+lineItems.filter(i=>i.qtyOrdered>i.qtyReceived).length+" pending delivery"};
+        }
+        if(type==="job"){const job=findJob(input.entity_name);if(!job)return{error:"Job not found"};const f=getJobFinancials(job.id);const items=getJobItems(job.id);const c=customers.find(c2=>c2.id===job.customer);const r=reps.find(r2=>r2.id===job.salesRep);return{success:true,message:"**JOB: "+job.name+"**\n"+job.phase+" | "+(job.paymentStatus||"unpaid")+"\nCustomer: "+(c?.name||"--")+" | Rep: "+(r?.name||"--")+"\nRev: $"+Math.round(f.totalRevenue).toLocaleString()+" | Cost: $"+Math.round(f.totalCost).toLocaleString()+" | Margin: "+f.margin.toFixed(1)+"%\nItems: "+items.length+", "+f.totalReceived+"/"+f.totalOrdered+" received"+(job.notes?"\nNotes: "+job.notes:"")};}
+        if(type==="vendor"){const v=findVendor(input.entity_name);if(!v)return{error:"Vendor not found"};const vi=lineItems.filter(i=>i.vendor===v.id);const spend=vi.reduce((s,i)=>s+i.unitCost*i.qtyOrdered,0);return{success:true,message:"**VENDOR: "+v.name+"**\n"+v.category+" | Discount: "+(v.discountRate*100).toFixed(0)+"%\nContact: "+(v.contact||"--")+" | "+(v.email||"--")+"\nSpend: $"+Math.round(spend).toLocaleString()+" across "+[...new Set(vi.map(i=>i.jobId))].length+" jobs"};}
+        if(type==="customer"){const c2=findCustomer(input.entity_name);if(!c2)return{error:"Customer not found"};const cj=jobs.filter(j=>j.customer===c2.id);return{success:true,message:"**CUSTOMER: "+c2.name+"**\n"+c2.type+" | "+(c2.email||"--")+" | "+(c2.phone||"--")+"\nJobs: "+cj.length+" | Revenue: $"+Math.round(cj.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0)).toLocaleString()};}
+        return{error:"Use entity_type: job, vendor, customer, or business"};
+      }
+      if(toolName==="predictive_flag"){
+        const flags=[];const f2=(input.focus||"all").toLowerCase();
+        if(f2.includes("payment")||f2==="all"){
+          jobs.filter(j=>j.paymentStatus!=="paid"&&getJobItems(j.id).some(i=>i.qtyInvoiced>0)).forEach(j=>{
+            const days=Math.round((new Date()-new Date(j.createdDate))/86400000);
+            if(days>45)flags.push({risk:"HIGH",type:"Payment",detail:j.name+": $"+Math.round(getJobFinancials(j.id).totalRevenue).toLocaleString()+" unpaid "+days+" days"});
+            else if(days>30)flags.push({risk:"MEDIUM",type:"Payment",detail:j.name+": approaching overdue at "+days+" days"});
+          });
+        }
+        if(f2.includes("delivery")||f2==="all"){
+          jobs.filter(j=>["Ordered","In Production"].includes(j.phase)).forEach(j=>{
+            const pending=getJobItems(j.id).filter(i=>i.qtyOrdered>i.qtyReceived);
+            if(pending.length>0&&j.dueDate){const dt=Math.round((new Date(j.dueDate)-new Date())/86400000);
+              if(dt<0)flags.push({risk:"HIGH",type:"Delivery",detail:j.name+": PAST DUE "+Math.abs(dt)+" days, "+pending.length+" items pending"});
+              else if(dt<7)flags.push({risk:"HIGH",type:"Delivery",detail:j.name+": due in "+dt+" days, "+pending.length+" items pending"});
+            }
+          });
+        }
+        if(f2.includes("margin")||f2==="all"){
+          jobs.forEach(j=>{const ff=getJobFinancials(j.id);if(ff.totalRevenue>5000&&ff.margin<10)flags.push({risk:"HIGH",type:"Margin",detail:j.name+": "+ff.margin.toFixed(1)+"% on $"+Math.round(ff.totalRevenue).toLocaleString()})});
+        }
+        if(flags.length===0)return{success:true,message:"No significant risks detected."};
+        return{success:true,message:"**RISK FLAGS** ("+flags.length+"):\n\n"+flags.sort((a,b)=>(a.risk==="HIGH"?0:1)-(b.risk==="HIGH"?0:1)).map(f=>"**["+f.risk+"] "+f.type+":** "+f.detail).join("\n\n")};
+      }
+      if(toolName==="database_query"){
+        try{
+          const table=input.table||"jobs";let data2;
+          if(table==="jobs")data2=jobs;else if(table==="line_items")data2=lineItems;else if(table==="vendors")data2=vendors;else if(table==="customers")data2=customers;else if(table==="reps")data2=reps.filter(r=>!r.id.includes("SEED_FLAG"));else return{error:"Invalid table"};
+          if(input.filters){Object.entries(input.filters).forEach(([k,v])=>{data2=data2.filter(row=>{const rv=row[k]||row[k.replace(/_([a-z])/g,(_,c)=>c.toUpperCase())]||"";if(typeof v==="string")return String(rv).toLowerCase().includes(v.toLowerCase());return rv===v})});}
+          data2=data2.slice(0,input.limit||50);
+          if(data2.length===0)return{success:true,message:"No results in "+table+"."};
+          if(table==="jobs")return{success:true,message:"Found "+data2.length+" jobs:\n"+data2.map(j=>{const f=getJobFinancials(j.id);return j.name+" ["+j.phase+"] $"+Math.round(f.totalRevenue).toLocaleString()+" "+f.margin.toFixed(1)+"% "+j.paymentStatus}).join("\n")};
+          if(table==="line_items")return{success:true,message:"Found "+data2.length+" items:\n"+data2.map(i=>i.description+" qty:"+i.qtyOrdered+" $"+i.unitPrice).join("\n")};
+          if(table==="vendors")return{success:true,message:"Found "+data2.length+" vendors:\n"+data2.map(v=>v.name+" ["+v.category+"] "+(v.discountRate*100).toFixed(0)+"%").join("\n")};
+          return{success:true,message:"Found "+data2.length+" records:\n"+JSON.stringify(data2.slice(0,10),null,2).slice(0,2000)};
+        }catch(e){return{error:"Query error: "+e.message}}
+      }
+      if(toolName==="parse_uploaded_file"){
+        try{
+          if(!input.file_url)return{error:"file_url required"};
+          const ft=(input.file_type||"").toLowerCase();
+          if(ft==="csv"||ft==="json"){
+            const resp=await fetch(input.file_url);if(!resp.ok)return{error:"Could not fetch file"};
+            const text=await resp.text();
+            if(ft==="json"){try{return{success:true,message:"Parsed JSON:\n"+JSON.stringify(JSON.parse(text),null,2).slice(0,3000)}}catch(e2){return{error:"Invalid JSON"}}}
+            const rows=text.split("\n").filter(r=>r.trim());
+            return{success:true,message:"CSV: "+rows.length+" rows. Header: "+rows[0]+"\nFirst 20:\n"+rows.slice(0,21).join("\n").slice(0,3000)};
+          }
+          const resp=await fetch(input.file_url);if(!resp.ok)return{error:"Could not fetch file"};
+          const blob=await resp.blob();const reader=new FileReader();
+          const base64=await new Promise((res,rej)=>{reader.onload=()=>res(reader.result.split(",")[1]);reader.onerror=rej;reader.readAsDataURL(blob)});
+          const sr=await fetch("/api/ai-scan",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({image_data:base64,media_type:blob.type||"application/pdf",scan_type:input.scan_type||"general",extra_context:input.extra_context||""})});
+          const sd=await sr.json();if(sd.error)return{error:"Scan error: "+(sd.error.message||JSON.stringify(sd.error))};
+          return{success:true,message:"Parsed:\n"+(sd.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("\n").slice(0,4000)};
+        }catch(e3){return{error:"Parse error: "+e3.message}}
+      }
       return{error:"Unknown tool: "+toolName};
     }catch(err){return{error:"Execution error: "+err.message}}
   };
 
   const buildContext = (query) => {
     const q = (query || "").toLowerCase();
+    const memoryText = getMemoryText();
     const wantsSops = /sop|playbook|process|procedure|how.?to|training|workflow|step|guide|protocol|policy|onboard/i.test(q);
     const wantsItems = /item|line.?item|deliver|ship|receive|product|furniture|chair|desk|table|model|vendor.*order|what.*order|what.*deliver|po |purchase.?order|detail|breakdown|specific/i.test(q);
     const wantsFinancials = /financ|revenue|cost|margin|profit|loss|p&l|balance|expense|money|dollar|budget|invoice|payment|commission|paid|unpaid|overdue|ar |ap |receivable|payable/i.test(q);
@@ -4726,7 +4909,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     // Only include tasks when relevant
     const taskText = /task|todo|assign|follow.?up/i.test(q) ? (customSops||[]).filter(s=>s.cat==="Task").map(s=>{try{const d=JSON.parse(s.content);return d.text+" ["+d.status+"]"+(d.assignees?.length?" -> "+d.assignees.join(","):"")+(d.due?" due:"+d.due:"")}catch{return s.title}}).join("\n") : "";
 
-    return "You are the Midwest Brain -- a full-capability AI assistant powered by Claude, built into the operating system for Midwest Educational Furnishings (Kildeer, IL). Owner: Maureen Welter. Today: " + today + ".\n\nYou are a COMPLETE AI assistant. You can do everything Claude can do: write emails, draft proposals, create content, analyze data, brainstorm ideas, explain concepts, write code, give advice, and more. You happen to ALSO have full access to the live Midwest business database below, so you can weave in real company data when relevant.\n\nIf someone asks you to write an email -- write a great email, using Midwest context if relevant. If they ask for a marketing idea -- give one. If they ask to explain a concept -- explain it. You are not limited to just answering data questions.\n\nBUSINESS CONTEXT:\nSTATS: " + jobs.length + " jobs | Rev $" + Math.round(totalRev) + " | Cost $" + Math.round(totalCost) + " | Margin " + (totalRev>0?Math.round((totalRev-totalCost)/totalRev*100):0) + "% | " + lineItems.length + " line items | " + vendors.length + " vendors | " + customers.length + " customers\n\nALL JOBS:\n" + jobSummaries + lineItemDetail + "\n\nVENDORS: " + vendorSummaries + vendorDetail + "\n\nCUSTOMERS: " + custSummaries + "\n\nREPS: " + repSummaries + sopSection + (taskText?"\n\nTASKS:\n"+taskText:"") + "\n\nRULES:\n1. You are a FULL AI assistant. You can write emails, draft documents, create proposals, brainstorm, explain anything, give business advice, and do everything Claude can normally do.\n2. When the question relates to Midwest business data, use the real numbers above. NEVER say you don't have the data.\n3. When writing emails or documents, use Midwest context naturally: 'Midwest Educational Furnishings', Maureen Welter, Kildeer IL, the customer/vendor names from the database.\n4. For 'how do I' questions about business processes: check the RELEVANT SOP DETAILS section. If an SOP covers it, answer FROM the SOP.\n5. For general knowledge questions, advice, brainstorming, writing help: answer like a world-class AI assistant would. You are not limited to business data.\n6. When asked about a job, use its LINE ITEM DETAILS for specific products, vendors, quantities, and costs.\n7. Show your math when doing financial calculations.\n8. Think like a CFO+COO+executive assistant combined.\n9. Keep answers concise but complete. Match the tone to what's being asked -- formal for emails, casual for brainstorming, detailed for analysis.\n10. At the end of business-related answers, suggest 2-3 follow-up questions:\n>> [question 1]\n>> [question 2]\n>> [question 3]\n11. NEVER use emoji. Text only.\n12. When the user asks you to DO something (update, create, mark, change, set, navigate), USE THE TOOLS. Don't just describe what would happen -- call the tool. You will see a confirmation before the action executes.\n13. For job references: match by job ID or by name keywords. If ambiguous, ask which job.\n14. When using tools, briefly explain what you are about to do BEFORE the tool call.";
+    return "You are the Midwest Brain -- a full-capability AI assistant powered by Claude, built into the operating system for Midwest Educational Furnishings (Kildeer, IL). Owner: Maureen Welter. Today: " + today + ".\n\nYou are a COMPLETE AI assistant. You can do everything Claude can do: write emails, draft proposals, create content, analyze data, brainstorm ideas, explain concepts, write code, give advice, and more. You happen to ALSO have full access to the live Midwest business database below, so you can weave in real company data when relevant.\n\nIf someone asks you to write an email -- write a great email, using Midwest context if relevant. If they ask for a marketing idea -- give one. If they ask to explain a concept -- explain it. You are not limited to just answering data questions.\n\nBUSINESS CONTEXT:\nSTATS: " + jobs.length + " jobs | Rev $" + Math.round(totalRev) + " | Cost $" + Math.round(totalCost) + " | Margin " + (totalRev>0?Math.round((totalRev-totalCost)/totalRev*100):0) + "% | " + lineItems.length + " line items | " + vendors.length + " vendors | " + customers.length + " customers\n\nALL JOBS:\n" + jobSummaries + lineItemDetail + "\n\nVENDORS: " + vendorSummaries + vendorDetail + "\n\nCUSTOMERS: " + custSummaries + "\n\nREPS: " + repSummaries + sopSection + (taskText?"\n\nTASKS:\n"+taskText:"") + "\n\nRULES:\n1. You are a FULL AI assistant. You can write emails, draft documents, create proposals, brainstorm, explain anything, give business advice, and do everything Claude can normally do.\n2. When the question relates to Midwest business data, use the real numbers above. NEVER say you don't have the data.\n3. When writing emails or documents, use Midwest context naturally: 'Midwest Educational Furnishings', Maureen Welter, Kildeer IL, the customer/vendor names from the database.\n4. For 'how do I' questions about business processes: check the RELEVANT SOP DETAILS section. If an SOP covers it, answer FROM the SOP.\n5. For general knowledge questions, advice, brainstorming, writing help: answer like a world-class AI assistant would. You are not limited to business data.\n6. When asked about a job, use its LINE ITEM DETAILS for specific products, vendors, quantities, and costs.\n7. Show your math when doing financial calculations.\n8. Think like a CFO+COO+executive assistant combined.\n9. Keep answers concise but complete. Match the tone to what's being asked -- formal for emails, casual for brainstorming, detailed for analysis.\n10. At the end of business-related answers, suggest 2-3 follow-up questions:\n>> [question 1]\n>> [question 2]\n>> [question 3]\n11. NEVER use emoji. Text only.\n12. When the user asks you to DO something (update, create, mark, change, set, navigate), USE THE TOOLS. Don't just describe what would happen -- call the tool. You will see a confirmation before the action executes.\n13. For job references: match by job ID or by name keywords. If ambiguous, ask which job.\n14. When using tools, briefly explain what you are about to do BEFORE the tool call.\n15. PROACTIVELY USE save_memory to remember important patterns, preferences, decisions, and insights from conversations. Your memory persists forever and makes you smarter over time.\n16. Use detect_anomalies for health checks. Use analyze_trends for patterns. Use summarize_context for briefings. Use predictive_flag for risk assessment.\n17. Use draft_email for professional emails with Midwest branding.\n18. Use database_query for complex data lookups. Use parse_uploaded_file to read documents.\n19. You have WEB SEARCH capability. When asked about current events, market prices, competitor info, or anything needing real-time data, the web_search tool is always available and Claude uses it automatically.\n20. After substantive interactions, consider what should be saved to memory." + (memoryText ? "\n\nBRAIN MEMORY (persistent knowledge):\n" + memoryText : "");
   };
 
   const handleQuery = async () => {
@@ -4747,8 +4930,12 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         setBrainLoading(false);return;
       }
       // Process response content blocks
+      // Handle web search + regular tool responses
       const textBlocks=(data.content||[]).filter(b=>b.type==="text").map(b=>b.text).join("\n");
       const toolBlocks=(data.content||[]).filter(b=>b.type==="tool_use");
+      // Extract web search citations
+      const webCitations=[];
+      (data.content||[]).filter(b=>b.type==="web_search_tool_result").forEach(b=>{(b.content||[]).filter(r=>r.type==="web_search_result").forEach(r=>{if(r.url&&r.title)webCitations.push({url:r.url,title:r.title})})});
       if(toolBlocks.length>0){
         // Claude wants to take actions -- show confirmation
         const actions=toolBlocks.map(tb=>({id:tb.id,name:tb.name,input:tb.input,status:"pending"}));
@@ -4785,7 +4972,8 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         setHistory(p=>[...p,{role:"assistant",content:(textBlocks?textBlocks+"\n\n":"")+"I'd like to take these actions:\n"+actionSummary,actions}]);
         setAnimatingIdx(history.length+1);setTimeout(()=>setAnimatingIdx(-1),800);
       } else if(textBlocks){
-        setHistory(p=>[...p,{role:"assistant",content:textBlocks}]);
+        const citeText=webCitations.length>0?"\n\n**Sources:**\n"+webCitations.slice(0,5).map(c=>"- ["+c.title+"]("+c.url+")").join("\n"):"";
+        setHistory(p=>[...p,{role:"assistant",content:textBlocks+citeText}]);
         setAnimatingIdx(history.length+1);setTimeout(()=>setAnimatingIdx(-1),800);
       } else {
         setHistory(p=>[...p,{role:"assistant",content:"Unexpected response: "+JSON.stringify(data).slice(0,200)}]);
@@ -4794,6 +4982,8 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
       setHistory(p => [...p, { role: "assistant", content: "Connection error: " + err.message }]);
     }
     setBrainLoading(false);
+    // Auto-log interaction to memory
+    try{const el=brainMemory.find(m=>m.title==="InteractionLog");let log=[];if(el){try{log=JSON.parse(JSON.parse(el.content).text||"[]")}catch{}}log.push({q:q.slice(0,80),t:new Date().toISOString().split("T")[0]});if(log.length>50)log=log.slice(-50);updateMemory("InteractionLog",JSON.stringify(log),{type:"auto"})}catch(e){}
   };
 
   // Execute pending actions after user confirms
