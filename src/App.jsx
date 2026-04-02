@@ -995,6 +995,9 @@ function MidwestAIOSInner() {
   ].slice(0, 12);
   const [notification, setNotification] = useState(null);
   const [brainQuery, setBrainQuery] = useState("");
+  const [brainFile, setBrainFile] = useState(null);
+  const [brainFilePreview, setBrainFilePreview] = useState(null);
+  const brainFileRef = React.useRef(null);
   const [brainLoading, setBrainLoading] = useState(false);
   const [brainHistory, setBrainHistory] = useState([{role:"system",content:"Welcome to the Midwest Brain. I'm connected to Claude Sonnet 4.6 and have access to all your live data -- jobs, vendors, customers, deliveries, financials, SOPs, notes, and tasks. Ask me anything."}]);
   const [qbConfig, setQbConfig] = useState({connected:false, clientId:"", clientSecret:"", realmId:"", accessToken:"", refreshToken:""});
@@ -4998,16 +5001,79 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     return "You are the Midwest Brain -- a full-capability AI assistant powered by Claude, built into the operating system for Midwest Educational Furnishings (Kildeer, IL). Owner: Maureen Welter. Today: " + today + ".\n\nYou are a COMPLETE AI assistant. You can do everything Claude can do: write emails, draft proposals, create content, analyze data, brainstorm ideas, explain concepts, write code, give advice, and more. You happen to ALSO have full access to the live Midwest business database below, so you can weave in real company data when relevant.\n\nIf someone asks you to write an email -- write a great email, using Midwest context if relevant. If they ask for a marketing idea -- give one. If they ask to explain a concept -- explain it. You are not limited to just answering data questions.\n\nBUSINESS CONTEXT:\nSTATS: " + jobs.length + " jobs | Rev $" + Math.round(totalRev) + " | Cost $" + Math.round(totalCost) + " | Margin " + (totalRev>0?Math.round((totalRev-totalCost)/totalRev*100):0) + "% | " + lineItems.length + " line items | " + vendors.length + " vendors | " + customers.length + " customers\n\nALL JOBS:\n" + jobSummaries + lineItemDetail + "\n\nVENDORS: " + vendorSummaries + vendorDetail + "\n\nCUSTOMERS: " + custSummaries + "\n\nREPS: " + repSummaries + sopSection + (taskText?"\n\nTASKS:\n"+taskText:"") + "\n\nRULES:\n1. You are a FULL AI assistant. You can write emails, draft documents, create proposals, brainstorm, explain anything, give business advice, and do everything Claude can normally do.\n2. When the question relates to Midwest business data, use the real numbers above. NEVER say you don't have the data.\n3. When writing emails or documents, use Midwest context naturally: 'Midwest Educational Furnishings', Maureen Welter, Kildeer IL, the customer/vendor names from the database.\n4. For 'how do I' questions about business processes: check the RELEVANT SOP DETAILS section. If an SOP covers it, answer FROM the SOP.\n5. For general knowledge questions, advice, brainstorming, writing help: answer like a world-class AI assistant would. You are not limited to business data.\n6. When asked about a job, use its LINE ITEM DETAILS for specific products, vendors, quantities, and costs.\n7. Show your math when doing financial calculations.\n8. Think like a CFO+COO+executive assistant combined.\n9. Keep answers concise but complete. Match the tone to what's being asked -- formal for emails, casual for brainstorming, detailed for analysis.\n10. At the end of business-related answers, suggest 2-3 follow-up questions:\n>> [question 1]\n>> [question 2]\n>> [question 3]\n11. NEVER use emoji. Text only.\n12. When the user asks you to DO something (update, create, mark, change, set, navigate), USE THE TOOLS. Don't just describe what would happen -- call the tool. You will see a confirmation before the action executes.\n13. For job references: match by job ID or by name keywords. If ambiguous, ask which job.\n14. When using tools, briefly explain what you are about to do BEFORE the tool call.\n15. PROACTIVELY USE save_memory to remember important patterns, preferences, decisions, and insights from conversations. Your memory persists forever and makes you smarter over time.\n16. Use detect_anomalies for health checks. Use analyze_trends for patterns. Use summarize_context for briefings. Use predictive_flag for risk assessment.\n17. Use draft_email for professional emails with Midwest branding.\n18. Use database_query for complex data lookups. Use parse_uploaded_file to read documents.\n19. You have WEB SEARCH capability. When asked about current events, market prices, competitor info, or anything needing real-time data, the web_search tool is always available and Claude uses it automatically.\n20. After substantive interactions, consider what should be saved to memory." + (memoryText ? "\n\nBRAIN MEMORY (persistent knowledge):\n" + memoryText : "");
   };
 
+  // Convert attached file to Anthropic API content blocks
+  const processFileForBrain = async (file) => {
+    const ext = file.name.split('.').pop().toLowerCase();
+    const isImage = ['jpg','jpeg','png','gif','webp'].includes(ext);
+    const isPdf = ext === 'pdf';
+    const isExcel = ['xls','xlsx'].includes(ext);
+    const isCsv = ['csv','tsv'].includes(ext);
+    
+    if (isExcel) {
+      // Convert Excel to structured text using SheetJS (already loaded in the app)
+      const XLSX = await import('xlsx');
+      const data = await file.arrayBuffer();
+      const wb = XLSX.read(data, {type:'array'});
+      let textContent = 'FILE: ' + file.name + '\n\n';
+      for (const sn of wb.SheetNames) {
+        const ws = wb.Sheets[sn];
+        const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
+        textContent += '=== Sheet: ' + sn + ' (' + rows.length + ' rows) ===\n';
+        rows.forEach((row, ri) => {
+          const cells = row.map(c => String(c||'').trim()).filter(Boolean);
+          if (cells.length >= 1) textContent += 'R' + ri + ': ' + cells.join(' | ') + '\n';
+        });
+        textContent += '\n';
+      }
+      return [{type:'text', text:'[Attached Excel file: ' + file.name + ']\n\n' + textContent}];
+    }
+    
+    if (isCsv) {
+      const text = await file.text();
+      return [{type:'text', text:'[Attached CSV file: ' + file.name + ']\n\n' + text.slice(0, 50000)}];
+    }
+    
+    // For images and PDFs, convert to base64
+    const base64 = await new Promise((res, rej) => {
+      const reader = new FileReader();
+      reader.onload = () => res(reader.result.split(',')[1]);
+      reader.onerror = rej;
+      reader.readAsDataURL(file);
+    });
+    
+    if (isPdf) {
+      return [{type:'document', source:{type:'base64', media_type:'application/pdf', data:base64}}, {type:'text', text:'[Attached PDF: ' + file.name + '] Analyze this document thoroughly.'}];
+    }
+    
+    if (isImage) {
+      const mimeMap = {jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',gif:'image/gif',webp:'image/webp'};
+      return [{type:'image', source:{type:'base64', media_type:mimeMap[ext]||'image/png', data:base64}}, {type:'text', text:'[Attached image: ' + file.name + '] Describe and analyze what you see.'}];
+    }
+    
+    // Text files
+    const text = await file.text();
+    return [{type:'text', text:'[Attached file: ' + file.name + ']\n\n' + text.slice(0, 50000)}];
+  };
+
   const handleQuery = async () => {
-    if (!brainQuery.trim()) return;
+    if (!brainQuery.trim() && !brainFile) return;
     const q = brainQuery.trim();
     setBrainQuery("");
-    setHistory(p => [...p, { role: "user", content: q }]);
+    setHistory(p => [...p, { role: "user", content: (brainFile ? "[📎 " + brainFile.name + "] " : "") + q }]);
     setBrainLoading(true);
     setPendingActions([]);
     try {
       const ctx = buildContext(q);
-      const msgs = [...history.filter(h=>h.role==="user"||h.role==="assistant").slice(-8).map(h=>({role:h.role,content:typeof h.content==="string"?h.content:JSON.stringify(h.content)})),{role:"user",content:q}];
+      // Build message content - include attached file if present
+      let userContent = q;
+      if (brainFile) {
+        try {
+          const fileBlocks = await processFileForBrain(brainFile);
+          userContent = [...fileBlocks, {type:'text', text:q || 'Analyze this file.'}];
+        } catch(e) { notify('Error reading file: ' + e.message, 'error'); }
+        setBrainFile(null); setBrainFilePreview(null);
+      }
+      const msgs = [...history.filter(h=>h.role==="user"||h.role==="assistant").slice(-8).map(h=>({role:h.role,content:typeof h.content==="string"?h.content:JSON.stringify(h.content)})),{role:"user",content:userContent}];
       const response = await fetch("/api/brain", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({system:ctx,messages:msgs,tools:brainTools})});
       const data = await response.json();
       if(data.error){
@@ -5142,7 +5208,10 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     </div>
     {history.length<=1&&<div style={{display:"flex",flexWrap:"wrap",gap:6,padding:"8px 16px",flexShrink:0,maxHeight:"40vh",overflowY:"auto"}}>{suggestedQueries.map(q=><button key={q} onClick={()=>{setBrainQuery(q);setTimeout(handleQuery,50)}} style={{padding:"6px 12px",borderRadius:8,border:"1px solid #1a1a1a",background:"transparent",color:"#525252",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.2s"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="#2dd4bf30";e.currentTarget.style.color="#2dd4bf"}} onMouseLeave={e=>{e.currentTarget.style.borderColor="#1a1a1a";e.currentTarget.style.color="#525252"}}>{q}</button>)}</div>}
     <div style={{display:"flex",gap:8,padding:"12px 16px",background:"#000",flexShrink:0,borderTop:"1px solid #111",alignItems:"center"}}>
-      <input value={brainQuery} onChange={e=>setBrainQuery(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")handleQuery()}} placeholder={isListening?"Listening...":"Ask the Brain anything..."} style={{flex:1,padding:"10px 16px",background:"#0a0a0a",border:isListening?"1px solid rgba(248,113,113,0.4)":"1px solid #1a1a1a",borderRadius:24,color:"#f0f0f0",fontSize:13,outline:"none",fontFamily:"inherit",transition:"border-color 0.3s"}} onFocus={e=>{if(!isListening)e.currentTarget.style.borderColor="#2dd4bf30"}} onBlur={e=>{if(!isListening)e.currentTarget.style.borderColor="#1a1a1a"}}/>
+      <input ref={brainFileRef} type="file" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.xls,.xlsx,.csv,.tsv,.txt,.json,.doc,.docx" onChange={e=>{const f=e.target.files[0];if(f){setBrainFile(f);setBrainFilePreview(f.name);notify("File attached: "+f.name)}e.target.value=""}} style={{display:"none"}}/>
+      {brainFilePreview&&<div style={{display:"flex",alignItems:"center",gap:4,padding:"3px 8px",background:"rgba(45,212,191,0.08)",borderRadius:12,fontSize:11,color:"#2dd4bf",maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flexShrink:0}}><span style={{fontSize:14}}>📎</span>{brainFilePreview}<span onClick={()=>{setBrainFile(null);setBrainFilePreview(null)}} style={{cursor:"pointer",marginLeft:2,color:"#737373",fontSize:14}}>×</span></div>}
+      <button onClick={()=>brainFileRef.current?.click()} title="Attach a file (PDF, image, Excel, CSV)" style={{background:"transparent",border:"none",cursor:"pointer",color:brainFile?"#2dd4bf":"#525252",fontSize:18,padding:"4px 6px",borderRadius:8,transition:"color 0.15s",flexShrink:0,display:"flex",alignItems:"center"}} onMouseEnter={e=>{e.currentTarget.style.color="#2dd4bf"}} onMouseLeave={e=>{if(!brainFile)e.currentTarget.style.color="#525252"}}>📎</button>
+      <input value={brainQuery} onChange={e=>setBrainQuery(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")handleQuery()}} placeholder={isListening?"Listening...":brainFile?"Ask about "+brainFile.name+"...":"Ask the Brain anything..."} style={{flex:1,padding:"10px 16px",background:"#0a0a0a",border:isListening?"1px solid rgba(248,113,113,0.4)":brainFile?"1px solid rgba(45,212,191,0.2)":"1px solid #1a1a1a",borderRadius:24,color:"#f0f0f0",fontSize:13,outline:"none",fontFamily:"inherit",transition:"border-color 0.3s"}} onFocus={e=>{if(!isListening)e.currentTarget.style.borderColor="#2dd4bf30"}} onBlur={e=>{if(!isListening&&!brainFile)e.currentTarget.style.borderColor="#1a1a1a"}}/>
       <button onClick={startListening} title={isListening?"Stop listening":"Voice input"} style={{width:40,height:40,borderRadius:20,border:"none",background:isListening?"rgba(248,113,113,0.15)":"#0a0a0a",color:isListening?"#f87171":"#525252",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.2s",flexShrink:0,position:"relative"}} onMouseEnter={e=>{if(!isListening)e.currentTarget.style.color="#2dd4bf"}} onMouseLeave={e=>{if(!isListening)e.currentTarget.style.color="#525252"}}>{isListening&&<div style={{position:"absolute",inset:-2,borderRadius:22,border:"2px solid #f87171",animation:"pulse 1.5s infinite",opacity:0.6}}/>}<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg></button>
       <button onClick={handleQuery} disabled={brainLoading} style={{width:40,height:40,borderRadius:20,border:"none",background:brainQuery.trim()?"#2dd4bf":"#1a1a1a",color:brainQuery.trim()?"#000":"#333",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.2s",flexShrink:0}} onMouseEnter={e=>{if(brainQuery.trim())e.currentTarget.style.background="#34d399"}} onMouseLeave={e=>{e.currentTarget.style.background=brainQuery.trim()?"#2dd4bf":"#1a1a1a"}}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
     </div>
