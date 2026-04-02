@@ -28,7 +28,7 @@ class ErrorBoundary extends React.Component {
 import{BarChart,Bar as RBar,XAxis,YAxis,Tooltip,ResponsiveContainer,LineChart,Line,PieChart,Pie,Cell}from"recharts";
 
 const Bar = ({value,max,color,height=6,style={}})=><div style={{width:"100%",background:"#222",borderRadius:height/2,overflow:"hidden",height,...style}}><div style={{width:max>0?(value/max*100)+"%":"0%",height:"100%",background:color||"#2dd4bf",borderRadius:height/2,transition:"width 0.4s ease"}}/></div>;
-const fmtShipJsx=(raw)=>{if(!raw)return '';if(raw.includes('\n'))return raw.split('\n').map((l,i)=><React.Fragment key={i}>{i>0&&<br/>}{l}</React.Fragment>);const parts=raw.split(',').map(s=>s.trim());if(parts.length>=2&&/\d{5}/.test(parts[parts.length-1]))return parts.map((p,i)=><React.Fragment key={i}>{i>0&&<br/>}{p}</React.Fragment>);return raw};
+const fmtShipJsx=(raw)=>{if(!raw)return '';if(raw.includes('\n'))return raw.split('\n').map((l,i)=><React.Fragment key={i}>{i>0&&<br/>}{l}</React.Fragment>);const parts=raw.split(',').map(s=>s.trim());if(parts.length>=3)return parts.map((p,i)=><React.Fragment key={i}>{i>0&&<br/>}{p}</React.Fragment>);if(parts.length===2&&/[A-Z]{2}\s+\d{5}/.test(parts[1]))return parts.map((p,i)=><React.Fragment key={i}>{i>0&&<br/>}{p}</React.Fragment>);return raw};
 
 const Btn = ({children,onClick,v,style={},...props})=>{const base={padding:"8px 16px",borderRadius:10,border:"none",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Satoshi',sans-serif",transition:"all 0.15s",display:"inline-flex",alignItems:"center",gap:6};const variants={primary:{...base,background:"#2dd4bf",color:"#000"},secondary:{...base,background:"transparent",border:"1px solid #333",color:"#c4c4c4"},ghost:{...base,background:"transparent",color:"#a3a3a3",padding:"6px 12px"},danger:{...base,background:"rgba(248,113,113,0.1)",color:"#f87171",border:"1px solid rgba(248,113,113,0.2)"}};const s=variants[v]||variants.primary;return <button onClick={onClick} style={{...s,...style}} {...props}>{children}</button>};
 
@@ -2578,22 +2578,20 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
   const fmtAddrHtml=(name,address,contact)=>{let lines=[];if(name)lines.push(name);if(address){const a=(address||'').replace(/\n/g,'<br>');lines.push(a)}if(contact&&!lines.some(l=>l.toLowerCase().includes('attn')))lines.push('Attn: '+contact);return lines.join('<br>')};
   const fmtShipHtml=(shipTo,custName,custAddr,custContact)=>{
     if(shipTo){
-      // If shipTo contains newlines, it's already formatted
       if(shipTo.includes('\n'))return shipTo.replace(/\n/g,'<br>');
-      // If shipTo contains comma-separated city/state/zip pattern, format it
+      // Only split if we have a proper multi-part address: "Street, City, State Zip" (3+ commas)
       const parts=shipTo.split(',').map(s=>s.trim());
-      if(parts.length>=2){
-        // Try to detect: "Street, City, State Zip" or "Name, Street, City State Zip"
-        const last=parts[parts.length-1];
-        const hasZip=/\d{5}/.test(last);
-        if(hasZip&&parts.length>=3){
-          // "Street, City, State Zip" or "Name, Street, City, State Zip"
-          return parts.map(p=>p.trim()).join('<br>');
-        }
-        if(hasZip&&parts.length===2){
-          // "Street, City State Zip" -- keep as two lines
-          return parts.join('<br>');
-        }
+      if(parts.length>=3){
+        // Rejoin as: each part on its own line
+        return parts.join('<br>');
+      }
+      // For 2 parts: only split if the second part has both a state abbreviation AND a zip
+      // e.g. "425 Fawell Blvd, Glen Ellyn IL 60137" -> two lines
+      // But "84 Columbia ave Hopewell NJ, 08525" -> the zip is alone, keep as one line
+      if(parts.length===2){
+        const second=parts[1];
+        const hasStateAndZip=/[A-Z]{2}\s+\d{5}/.test(second);
+        if(hasStateAndZip) return parts.join('<br>');
       }
       return shipTo;
     }
