@@ -592,7 +592,7 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
 
     {step==="config"&&parsed&&<div style={{display:"flex",flexDirection:"column",gap:16}}>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12}} className="resp-grid-4">
-        {[["Line Items",parsed.items.filter(i=>selectedSheets[i.sheet]&&(i.unitPrice>0||i.priceExtended>0||i.unitCost>0)).length,"#2dd4bf"],["Total Rows",selCount,"#737373"],["Vendors",parsed.vendors.size,"#a78bfa"],["Cost","$"+Math.round(selCost).toLocaleString(),"#fbbf24"],["Revenue","$"+Math.round(selRev).toLocaleString(),"#34d399"]].map(([l,v,c])=>
+        {[["Line Items",parsed.items.filter(i=>selectedSheets[i.sheet]&&(i.unitPrice>0||i.priceExtended>0)).length,"#2dd4bf"],["Vendors",parsed.vendors.size,"#a78bfa"],["Cost","$"+Math.round(selCost).toLocaleString(),"#fbbf24"],["Revenue","$"+Math.round(selRev).toLocaleString(),"#34d399"]].map(([l,v,c])=>
           <Card key={l} style={{padding:14,textAlign:"center"}}><div style={{fontSize:10,color:"#737373",fontWeight:600,textTransform:"uppercase",letterSpacing:2,marginBottom:4}}>{l}</div><div style={{fontSize:22,fontWeight:700,color:c,fontFamily:"'JetBrains Mono',monospace"}}>{v}</div></Card>
         )}
       </div>
@@ -1960,7 +1960,7 @@ function JobsPage(ctx){
     setUploading(false);
   };
   const uploadSelCount=uploadData?uploadData.items.filter(i=>uploadSheets[i.sheet]).length:0;
-  const uploadSelPricedCount=uploadData?uploadData.items.filter(i=>uploadSheets[i.sheet]&&(i.unitPrice>0||i.priceExtended>0||i.unitCost>0)).length:0;
+  const uploadSelPricedCount=uploadData?uploadData.items.filter(i=>uploadSheets[i.sheet]&&(i.unitPrice>0||i.priceExtended>0)).length:0;
   const uploadSelCost=uploadData?uploadData.items.filter(i=>uploadSheets[i.sheet]).reduce((s,i)=>s+(i.unitCost*(i.qtyOrdered||1)),0):0;
   const uploadSelRev=uploadData?uploadData.items.filter(i=>uploadSheets[i.sheet]).reduce((s,i)=>s+(i.priceExtended&&i.priceExtended>0?i.priceExtended:(i.unitPrice||0)*(i.qtyOrdered||1)),0):0;
   const handleCreateJob=()=>{if(!newJob.name)return;const maxNum=jobs.reduce((mx,j)=>{const m=j.id.match(/JOB-\d+-(\d+)/);return m?Math.max(mx,parseInt(m[1])):mx},0);const id=`JOB-2026-${String(maxNum+1).padStart(3,"0")}`;addJob({id,...newJob,phase:newJob.phase||"Quoting",createdDate:new Date().toISOString().split("T")[0],startDate:newJob.startDate||"",endDate:"",paymentStatus:"unpaid",terms:newJob.terms||"Net 30",poNumber:newJob.poNumber||"",shipTo:newJob.shipTo||"",shipVia:newJob.shipVia||"",billTo:newJob.billTo||"",orderNotes:""});setShowNewJob(false);setNewJob({name:"",customer:"",salesRep:reps[0]?.id||"",phase:"Quoting",dueDate:"",startDate:"",notes:"",terms:"Net 30",poNumber:"",shipTo:"",shipVia:""});notify(`Job ${id} created -- saved to database`)};
@@ -2001,7 +2001,7 @@ function JobsPage(ctx){
         <Btn v="secondary" style={{fontSize:12,padding:"4px 10px"}} onClick={()=>{setUploadData(null);setUploadAiChat([]);setUploadAiStatus(null);if(uploadRef.current)uploadRef.current.value=''}}>Cancel</Btn>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(110px,1fr))",gap:10,marginBottom:16}}>
-        <div style={{padding:12,background:"#0a0a0a",borderRadius:10,textAlign:"center"}}><div style={{fontSize:10,color:"#737373",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Line Items</div><div style={{fontSize:22,fontWeight:700,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{uploadSelPricedCount}</div><div style={{fontSize:10,color:"#525252"}}>{uploadSelCount} total rows</div></div>
+        <div style={{padding:12,background:"#0a0a0a",borderRadius:10,textAlign:"center"}}><div style={{fontSize:10,color:"#737373",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Line Items</div><div style={{fontSize:22,fontWeight:700,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{uploadSelCount}</div></div>
         <div style={{padding:12,background:"#0a0a0a",borderRadius:10,textAlign:"center"}}><div style={{fontSize:10,color:"#737373",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Vendors</div><div style={{fontSize:22,fontWeight:700,color:"#a78bfa",fontFamily:"'JetBrains Mono',monospace"}}>{uploadData.vendors.size}</div></div>
         <div style={{padding:12,background:"#0a0a0a",borderRadius:10,textAlign:"center"}}><div style={{fontSize:10,color:"#737373",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Total Cost</div><div style={{fontSize:22,fontWeight:700,color:"#fbbf24",fontFamily:"'JetBrains Mono',monospace"}}>${Math.round(uploadSelCost).toLocaleString()}</div></div>
         <div style={{padding:12,background:"#0a0a0a",borderRadius:10,textAlign:"center"}}><div style={{fontSize:10,color:"#737373",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Revenue</div><div style={{fontSize:22,fontWeight:700,color:"#34d399",fontFamily:"'JetBrains Mono',monospace"}}>${Math.round(uploadSelRev).toLocaleString()}</div></div>
@@ -2045,7 +2045,7 @@ function JobsPage(ctx){
         </div>
       </div>
       <Btn onClick={handleUploadImport} style={{width:"100%",justifyContent:"center",padding:"12px",fontSize:14}}>
-        {uploading?'Importing...':'Import '+uploadSelCount+' Items as New Quoting Job'}
+        {uploading?'Importing...':'Import '+uploadSelCount+' Line Items as New Quoting Job'}
       </Btn>
     </Card>}
     {newCust&&<Card style={{marginBottom:20,border:"1px solid #2563eb30"}}><div style={{fontSize:14,fontWeight:700,marginBottom:16,color:"#a78bfa"}}>Add New Customer</div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12,marginBottom:12}}>{[["name","Name"],["contact","Contact"],["email","Email"],["phone","Phone"]].map(([k,l])=><div key={k}><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>{l}</label><input value={custForm[k]} onChange={e=>setCustForm({...custForm,[k]:e.target.value})} style={inputStyle}/></div>)}</div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12,marginBottom:12}}><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Type</label><select value={custForm.type||"K-12 District"} onChange={e=>setCustForm({...custForm,type:e.target.value})} style={inputStyle}><option>K-12 District</option><option>Private School</option><option>University</option><option>Government</option><option>Corporate</option><option>Other</option></select></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Address</label><input value={custForm.address||""} onChange={e=>setCustForm({...custForm,address:e.target.value})} placeholder="Full address (street, city, state, zip)" style={inputStyle}/></div></div><div style={{display:"flex",gap:8}}><Btn onClick={()=>{if(custForm.name){addCustomer(custForm);setNewCust(false);setCustForm({name:"",contact:"",email:"",phone:"",type:"K-12 District",address:""});notify("Customer added")}}}>Add Customer</Btn><Btn v="secondary" onClick={()=>setNewCust(false)}>Cancel</Btn></div></Card>}
