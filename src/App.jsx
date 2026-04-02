@@ -1051,7 +1051,7 @@ function MidwestAIOSInner() {
   const [brainQuery, setBrainQuery] = useState("");
   const [brainLoading, setBrainLoading] = useState(false);
   const [brainHistory, setBrainHistory] = useState([{role:"system",content:"Welcome to the Midwest Brain. I'm connected to Claude Sonnet 4.6 and have access to all your live data -- jobs, vendors, customers, deliveries, financials, SOPs, notes, and tasks. Ask me anything."}]);
-  const [qbConfig, setQbConfig] = useState({connected:false, clientId:"", clientSecret:"", realmId:"", accessToken:"", refreshToken:""});
+
   const [dbStatus, setDbStatus] = useState("connecting");
   const [appReady, setAppReady] = useState(false);
   const { triggerPrint, PrintOverlay } = usePrintOverlay();
@@ -1096,7 +1096,7 @@ function MidwestAIOSInner() {
           if (fresh.lineItems) setLineItems(fresh.lineItems);
           if (fresh.sops) setCustomSops(fresh.sops);
         }
-        try { const qb = localStorage.getItem('mw_qbConfig'); if (qb) setQbConfig(JSON.parse(qb)); } catch {}
+
         setDbStatus("connected");
         setAppReady(true);
       } catch (e) {
@@ -1118,8 +1118,7 @@ function MidwestAIOSInner() {
     }catch(e){notify("Sync error: "+e.message,"error")}
   };
 
-  // Save QB config to localStorage (not DB -- contains secrets)
-  useEffect(() => { try { localStorage.setItem('mw_qbConfig', JSON.stringify(qbConfig)); } catch {} }, [qbConfig]);
+
 
   // --- REALTIME COLLABORATION ---
   const [onlineUsers, setOnlineUsers] = useState([]);
@@ -1304,7 +1303,7 @@ function MidwestAIOSInner() {
     {id:"notes",label:"Notes",icon:"file"},
     {id:"brain",label:"Midwest Brain",icon:"brain"},
     {id:"exitready",label:"Exit Readiness",icon:"shield"},
-    {id:"qbsetup",label:"QuickBooks",icon:"settings"},
+
     {id:"usermgmt",label:"Users & Permissions",icon:"shield"},
   ].filter(item => {
     // Check for custom page-level permissions (set in Users & Permissions for Clerk users)
@@ -1321,7 +1320,7 @@ function MidwestAIOSInner() {
 
   
   const visibleJobs = userRole === "sales" && userRepId ? jobs.filter(j => j.salesRep === userRepId) : jobs;
-  const ctx = {jobs:visibleJobs,allJobs:jobs,setJobs,jobNum,currentUser,userRole,userRepId,logout,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,forceDeleteVendor,forceDeleteLineItem,forceDeleteCustomer,forceDeleteRep,setPage:p=>{setPage(p);setMobileMenuOpen(false);window.scrollTo(0,0);const mc=document.querySelector('.main-content');if(mc)mc.scrollTop=0},viewCustomer:id=>{setPage("customer360");window._viewCustId=id;window.scrollTo(0,0)},brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory,qbConfig,setQbConfig,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter,pendingCommPreview,setPendingCommPreview};
+  const ctx = {jobs:visibleJobs,allJobs:jobs,setJobs,jobNum,currentUser,userRole,userRepId,logout,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,forceDeleteVendor,forceDeleteLineItem,forceDeleteCustomer,forceDeleteRep,setPage:p=>{setPage(p);setMobileMenuOpen(false);window.scrollTo(0,0);const mc=document.querySelector('.main-content');if(mc)mc.scrollTop=0},viewCustomer:id=>{setPage("customer360");window._viewCustId=id;window.scrollTo(0,0)},brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter,pendingCommPreview,setPendingCommPreview};
 
   const loadingScreen = (
 <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",width:"100vw",background:"#0a0a0a",fontFamily:"'Satoshi',sans-serif"}}>
@@ -1448,7 +1447,7 @@ const sharedScreen = sharedQuote ? <ShareQuotePortal quoteData={sharedQuote} onA
           {page==="notes"&&<NotesPage {...ctx}/>}
           {page==="brain"&&<BrainPage {...ctx}/>}
           {page==="exitready"&&<ExitReadinessPage {...ctx}/>}
-          {page==="qbsetup"&&<QBSetupPage {...ctx}/>}
+
           {page==="usermgmt"&&<UserMgmtPage {...ctx}/>}
         </div>
       </div>
@@ -2438,7 +2437,7 @@ function DeliveryPage({jobs,lineItems,vendors,customers,getItemStatus,getJobItem
 // ===============================================================
 // DOCUMENTS -- Quotes, POs, Invoices, Commission Statements
 // ===============================================================
-function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItems,getJobFinancials,updateJob,updateLineItem,notify,qbConfig,setPage,triggerPrint,pendingCommPreview,setPendingCommPreview,customSops,addSop,deleteSop,...ctx}){
+function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItems,getJobFinancials,updateJob,updateLineItem,notify,setPage,triggerPrint,pendingCommPreview,setPendingCommPreview,customSops,addSop,deleteSop,...ctx}){
   const [tab,setTab]=useState("quotes");
   const [hiddenCols,setHiddenCols]=useState({shippingEach:true,shippingTotal:true,installEach:true,installTotal:true});
   const [previewDoc,setPreviewDoc]=useState(null);
@@ -2458,7 +2457,7 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
       else if(t.docType==="po"||t.docType==="pos")setTab("pos");
     }
   },[]);
-  const [pushing,setPushing]=useState(false);
+
   const [billDetail,setBillDetail]=useState(null);
   const [billInvNum,setBillInvNum]=useState('');
   const [billCheckNum,setBillCheckNum]=useState('');
@@ -2639,32 +2638,7 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
     if(doc.data.docNum && !docStatuses[doc.data.docNum]) setDocStatus(doc.data.docNum,'drafted');
   };
 
-  const pushToQB = async (doc) => {
-    if(!qbConfig.connected||!qbConfig.accessToken||!qbConfig.realmId){notify("Connect QuickBooks first","error");return}
-    setPushing(true);
-    try {
-      const isPO = doc.type==="po";
-      const path = isPO ? 'purchaseorder?minorversion=73' : 'invoice?minorversion=73';
-      const lines = doc.data.items.map((item,idx) => {
-        const qty = isPO ? item.qtyOrdered : (item.qtyReceived - item.qtyInvoiced);
-        const price = isPO ? item.unitCost : item.unitPrice;
-        return isPO
-          ? { Id: String(idx+1), Amount: qty * price, DetailType: "ItemBasedExpenseLineDetail", ItemBasedExpenseLineDetail: { ItemRef: { value: "1", name: item.description.slice(0,100) }, Qty: qty, UnitPrice: price }, Description: item.description }
-          : { Id: String(idx+1), Amount: qty * price, DetailType: "SalesItemLineDetail", SalesItemLineDetail: { ItemRef: { value: "1", name: item.description.slice(0,100) }, Qty: qty, UnitPrice: price }, Description: item.description };
-      });
-      const payload = isPO
-        ? { VendorRef: { value: "1", name: doc.data.vendor?.name || "Vendor" }, Line: lines }
-        : { CustomerRef: { value: "1", name: doc.data.customer?.name || "Customer" }, Line: lines };
-      const resp = await fetch('/api/qb-proxy?path=' + encodeURIComponent(path), {
-        method: "POST", headers: { "Authorization": "Bearer " + qbConfig.accessToken, "Content-Type": "application/json", "x-qb-realmid": qbConfig.realmId },
-        body: JSON.stringify(payload),
-      });
-      const data = await resp.json();
-      if(resp.ok) { notify("Pushed to QuickBooks"); if(doc.data.docNum) setDocStatus(doc.data.docNum,'sent'); }
-      else { notify("QB Error: " + (data.Fault?.Error?.[0]?.Message || data.error || resp.status),"error"); }
-    } catch(e) { notify("Network error: " + e.message,"error"); }
-    setPushing(false);
-  };
+;
 
   const StatusBadge=({docNum})=>{const s=docStatuses[docNum];if(!s)return <Badge label="new" color="#525252"/>;if(s==="drafted")return <Badge label="drafted" color="#fbbf24"/>;if(s==="sent")return <Badge label="sent" color="#34d399"/>;if(s==="approved")return <Badge label="approved" color="#a78bfa"/>;return <Badge label={s} color="#525252"/>};
 
@@ -3748,7 +3722,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
           <input type="date" value={docStatuses[previewDoc.data.docNum+'__due']||''} onChange={e=>setDocStatus(previewDoc.data.docNum+'__due',e.target.value)} style={{...inputStyle,width:130,fontSize:11,padding:"3px 6px"}}/>
         </div>}
         {(docStatuses[previewDoc.data.docNum+'__date']||docStatuses[previewDoc.data.docNum+'__due'])&&<button onClick={()=>{setDocStatus(previewDoc.data.docNum+'__date','');setDocStatus(previewDoc.data.docNum+'__due','');notify('Dates reset to today')}} style={{fontSize:9,color:"#f87171",background:"transparent",border:"1px solid #f8717130",borderRadius:4,padding:"2px 6px",cursor:"pointer",fontFamily:"inherit"}}>Reset</button>}
-      </div>}{previewDoc.type==="quote"&&<Btn v="ghost" onClick={()=>{const data=btoa(JSON.stringify({hiddenCols,projectNum:previewDoc.data.projectNum,job:{name:previewDoc.job.name,terms:previewDoc.job.terms,shipTo:previewDoc.job.shipTo,shipVia:previewDoc.job.shipVia||"",poNumber:previewDoc.job.poNumber||"",billTo:previewDoc.job.billTo||""},customer:{name:previewDoc.data.customer?.name||"",contact:previewDoc.data.customer?.contact||"",address:previewDoc.data.customer?.address||"",email:previewDoc.data.customer?.email||""},items:previewDoc.data.items.map(it=>({description:it.description||"",tag:it.tag||"",manufacturer:it.manufacturer||"",modelNumber:it.modelNumber||"",color:it.color||"",qtyOrdered:it.qtyOrdered||0,unitPrice:it.unitPrice||0,shippingPerUnit:it.shippingPerUnit||0,installPerUnit:it.installPerUnit||0})),total:previewDoc.data.total,docNum:previewDoc.data.docNum}));const url=window.location.origin+window.location.pathname+"#quote="+data;window.open(url,"_blank");navigator.clipboard.writeText(url).catch(()=>{})}}><I n="send" s={14}/> Share Link</Btn>}<Btn v="ghost" onClick={()=>{const doc=previewDoc;const isQuote=doc.type==="quote";const isPO=doc.type==="po";const isComm=doc.type==="commission";const recipient=isQuote?doc.data.customer?.email:isPO?doc.data.vendor?.email:isComm?doc.data.rep?.email:doc.data.customer?.email;setEmailTo(recipient||"");setEmailSubject((isQuote?"Project Quote":isPO?"Purchase Order":isComm?"Commission Statement":"Invoice")+" - "+doc.job.name+" - "+(doc.data.docNum||""));setEmailModal(doc)}}><I n="send" s={14}/> Email</Btn>{previewDoc.type!=="quote"&&previewDoc.type!=="commission"&&<Btn v={qbConfig.connected?"primary":"secondary"} onClick={()=>qbConfig.connected?pushToQB(previewDoc):setPage("qbsetup")} style={pushing?{opacity:0.6,pointerEvents:"none"}:{}}><I n="send" s={14}/> {pushing?"Pushing...":qbConfig.connected?"Push to QB":"Connect QB"}</Btn>}<Btn v="secondary" onClick={()=>setTab(previewDoc.type==="commission"?"commissions":previewDoc.type==="quote"?"quotes":previewDoc.type==="po"?"pos":"invoices")}>&larr; Back</Btn>{previewDoc.type==="invoice"&&previewDoc.data.items.length>0&&<Btn v="ghost" style={{fontSize:12,color:"#34d399",border:"1px solid #05966930"}} onClick={()=>{previewDoc.data.items.forEach(item=>{if(item.qtyReceived>item.qtyInvoiced){ctx.updateLineItem(item.id,{qtyInvoiced:item.qtyReceived,invoiceDate:new Date().toISOString().split("T")[0]})}});notify("All "+previewDoc.data.items.length+" items marked as invoiced")}}>Mark All Invoiced</Btn>}{previewDoc.type==="invoice"&&previewDoc.data.total>0&&!stripePayUrl&&<Btn v="ghost" style={{fontSize:12,color:"#a78bfa",border:"1px solid #a78bfa30"}} onClick={async()=>{
+      </div>}{previewDoc.type==="quote"&&<Btn v="ghost" onClick={()=>{const data=btoa(JSON.stringify({hiddenCols,projectNum:previewDoc.data.projectNum,job:{name:previewDoc.job.name,terms:previewDoc.job.terms,shipTo:previewDoc.job.shipTo,shipVia:previewDoc.job.shipVia||"",poNumber:previewDoc.job.poNumber||"",billTo:previewDoc.job.billTo||""},customer:{name:previewDoc.data.customer?.name||"",contact:previewDoc.data.customer?.contact||"",address:previewDoc.data.customer?.address||"",email:previewDoc.data.customer?.email||""},items:previewDoc.data.items.map(it=>({description:it.description||"",tag:it.tag||"",manufacturer:it.manufacturer||"",modelNumber:it.modelNumber||"",color:it.color||"",qtyOrdered:it.qtyOrdered||0,unitPrice:it.unitPrice||0,shippingPerUnit:it.shippingPerUnit||0,installPerUnit:it.installPerUnit||0})),total:previewDoc.data.total,docNum:previewDoc.data.docNum}));const url=window.location.origin+window.location.pathname+"#quote="+data;window.open(url,"_blank");navigator.clipboard.writeText(url).catch(()=>{})}}><I n="send" s={14}/> Share Link</Btn>}<Btn v="ghost" onClick={()=>{const doc=previewDoc;const isQuote=doc.type==="quote";const isPO=doc.type==="po";const isComm=doc.type==="commission";const recipient=isQuote?doc.data.customer?.email:isPO?doc.data.vendor?.email:isComm?doc.data.rep?.email:doc.data.customer?.email;setEmailTo(recipient||"");setEmailSubject((isQuote?"Project Quote":isPO?"Purchase Order":isComm?"Commission Statement":"Invoice")+" - "+doc.job.name+" - "+(doc.data.docNum||""));setEmailModal(doc)}}><I n="send" s={14}/> Email</Btn><Btn v="secondary" onClick={()=>setTab(previewDoc.type==="commission"?"commissions":previewDoc.type==="quote"?"quotes":previewDoc.type==="po"?"pos":"invoices")}>&larr; Back</Btn>{previewDoc.type==="invoice"&&previewDoc.data.items.length>0&&<Btn v="ghost" style={{fontSize:12,color:"#34d399",border:"1px solid #05966930"}} onClick={()=>{previewDoc.data.items.forEach(item=>{if(item.qtyReceived>item.qtyInvoiced){ctx.updateLineItem(item.id,{qtyInvoiced:item.qtyReceived,invoiceDate:new Date().toISOString().split("T")[0]})}});notify("All "+previewDoc.data.items.length+" items marked as invoiced")}}>Mark All Invoiced</Btn>}{previewDoc.type==="invoice"&&previewDoc.data.total>0&&!stripePayUrl&&<Btn v="ghost" style={{fontSize:12,color:"#a78bfa",border:"1px solid #a78bfa30"}} onClick={async()=>{
               setStripeLoading(true);const doc=previewDoc;const cust=doc.data.customer;
               try{const r=await fetch("/api/stripe-pay",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"create_checkout",job_name:doc.job.name,customer_name:cust?.name||"",customer_email:cust?.email||"",amount_cents:Math.round(doc.data.total*100),job_id:doc.job.id,invoice_id:doc.data.docNum})});
                 const data=await r.json();if(data.url){
@@ -6016,8 +5990,8 @@ function UserMgmtPage({notify,reps,customSops,addSop,deleteSop}){
   const deleteUser=async(id)=>{if(!confirm("Delete this user?"))return;await db.deleteUser(id);setUsers(p=>p.filter(u=>u.id!==id));notify("User deleted")};
 
   const roleColor={admin:"#2dd4bf",office:"#a78bfa",sales:"#fbbf24"};
-  const allPages=["dashboard","jobs","dataimport","deliveries","documents","commissions","financials","salesportal","playbook","tasks","notes","brain","exitreadiness","qbsetup","usermgmt"];
-  const pageLabels={dashboard:"Command Center",jobs:"Job Records",dataimport:"Data Import",deliveries:"Delivery Tracker",documents:"Documents",commissions:"Commissions",financials:"Financials",salesportal:"Sales Portal",playbook:"Playbook & SOPs",tasks:"Tasks",notes:"Notes",brain:"Midwest Brain",exitreadiness:"Exit Readiness",qbsetup:"QuickBooks",usermgmt:"Users & Permissions"};
+  const allPages=["dashboard","jobs","dataimport","deliveries","documents","commissions","financials","salesportal","playbook","tasks","notes","brain","exitreadiness","usermgmt"];
+  const pageLabels={dashboard:"Command Center",jobs:"Job Records",dataimport:"Data Import",deliveries:"Delivery Tracker",documents:"Documents",commissions:"Commissions",financials:"Financials",salesportal:"Sales Portal",playbook:"Playbook & SOPs",tasks:"Tasks",notes:"Notes",brain:"Midwest Brain",exitreadiness:"Exit Readiness",usermgmt:"Users & Permissions"};
   const roleDefaults={admin:allPages,office:["dashboard","jobs","dataimport","deliveries","documents","salesportal","playbook","tasks","notes","brain"],sales:["dashboard","jobs","deliveries","documents","tasks","notes","brain","salesportal"]};
 
   const allUsersList=[
@@ -6100,7 +6074,7 @@ function UserMgmtPage({notify,reps,customSops,addSop,deleteSop}){
     <Card style={{marginTop:20,padding:16,border:"1px solid rgba(167,139,250,0.1)"}}>
       <div style={{fontSize:14,fontWeight:700,color:"#a78bfa",marginBottom:8}}>Permission Levels</div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(250px,1fr))",gap:12}} className="resp-grid-3">
-        <div style={{padding:12,background:"#000",borderRadius:10}}><div style={{fontSize:13,fontWeight:600,color:"#2dd4bf",marginBottom:6}}>Admin</div><div style={{fontSize:12,color:"#a3a3a3",lineHeight:1.6}}>Full access to all pages including Command Center, Job Records, Documents, Financials, Commissions, Exit Readiness, Brain, Data Import, QuickBooks, and Users & Permissions.</div></div>
+        <div style={{padding:12,background:"#000",borderRadius:10}}><div style={{fontSize:13,fontWeight:600,color:"#2dd4bf",marginBottom:6}}>Admin</div><div style={{fontSize:12,color:"#a3a3a3",lineHeight:1.6}}>Full access to all pages including Command Center, Job Records, Documents, Financials, Commissions, Exit Readiness, Brain, Data Import, and Users & Permissions.</div></div>
         <div style={{padding:12,background:"#000",borderRadius:10}}><div style={{fontSize:13,fontWeight:600,color:"#a78bfa",marginBottom:6}}>Office Manager</div><div style={{fontSize:12,color:"#a3a3a3",lineHeight:1.6}}>Access to all operational pages: Jobs, Documents, Deliveries, Directory, Tasks, Notes, Sales Portal, Playbook, and Brain. Cannot see Financials, Commissions, or Exit Readiness.</div></div>
         <div style={{padding:12,background:"#000",borderRadius:10}}><div style={{fontSize:13,fontWeight:600,color:"#fbbf24",marginBottom:6}}>Sales Rep</div><div style={{fontSize:12,color:"#a3a3a3",lineHeight:1.6}}>Sees only their own assigned jobs. Access to Dashboard (own data), Job Records, Documents, Deliveries, Tasks, Notes, Brain, and Sales Portal. Cannot see other reps' data.</div></div>
       </div>
@@ -6284,125 +6258,13 @@ const [tab,setTab]=useState("vendors");
 // EXIT READINESS
 // ===============================================================
 function ExitReadinessPage({jobs,vendors,customers,lineItems}){
-  const criteria=[{category:"Operational Documentation",items:[{name:"Job Record Hub",status:true,note:`${jobs.length} jobs in system`},{name:"Vendor database",status:true,note:`${vendors.length} vendors`},{name:"Customer database",status:true,note:`${customers.length} customers`},{name:"Pricing templates",status:true,note:"30-35% district margin"},{name:"Naming conventions",status:true,note:"JOB-YYYY-NNN format"}]},{category:"Automated Workflows",items:[{name:"Quote -> PO generation",status:true,note:"One-click"},{name:"Quote -> Invoice generation",status:true,note:"Partial support"},{name:"Partial shipment tracking",status:true,note:"Quantity-specific"},{name:"Commission auto-calculation",status:true,note:"Real-time"},{name:"QuickBooks integration",status:"partial",note:"Setup guide ready"}]},{category:"Reporting & Visibility",items:[{name:"Real-time dashboard",status:true,note:"Command Center"},{name:"Financial reporting",status:true,note:"Per-job + aggregate"},{name:"Commission statements",status:true,note:"PDF export"},{name:"Sales portal",status:true,note:"Per-rep filtered"},{name:"Vendor performance",status:"partial",note:"Distribution tracked"}]},{category:"Knowledge Transfer",items:[{name:"Midwest Brain AI",status:true,note:"Queryable"},{name:"Operational playbooks",status:"partial",note:"In progress"},{name:"Workflow diagrams",status:true,note:"Before/after"},{name:"System architecture",status:true,note:"Full stack"},{name:"KPI reporting",status:true,note:"Margins, delivery, commission"}]}];
+  const criteria=[{category:"Operational Documentation",items:[{name:"Job Record Hub",status:true,note:`${jobs.length} jobs in system`},{name:"Vendor database",status:true,note:`${vendors.length} vendors`},{name:"Customer database",status:true,note:`${customers.length} customers`},{name:"Pricing templates",status:true,note:"30-35% district margin"},{name:"Naming conventions",status:true,note:"JOB-YYYY-NNN format"}]},{category:"Automated Workflows",items:[{name:"Quote -> PO generation",status:true,note:"One-click"},{name:"Quote -> Invoice generation",status:true,note:"Partial support"},{name:"Partial shipment tracking",status:true,note:"Quantity-specific"},{name:"Commission auto-calculation",status:true,note:"Real-time"},{name:"Email integration",status:"partial",note:"Resend setup pending"}]},{category:"Reporting & Visibility",items:[{name:"Real-time dashboard",status:true,note:"Command Center"},{name:"Financial reporting",status:true,note:"Per-job + aggregate"},{name:"Commission statements",status:true,note:"PDF export"},{name:"Sales portal",status:true,note:"Per-rep filtered"},{name:"Vendor performance",status:"partial",note:"Distribution tracked"}]},{category:"Knowledge Transfer",items:[{name:"Midwest Brain AI",status:true,note:"Queryable"},{name:"Operational playbooks",status:"partial",note:"In progress"},{name:"Workflow diagrams",status:true,note:"Before/after"},{name:"System architecture",status:true,note:"Full stack"},{name:"KPI reporting",status:true,note:"Margins, delivery, commission"}]}];
   const all=criteria.flatMap(c=>c.items);const done=all.filter(i=>i.status===true).length;const partial=all.filter(i=>i.status==="partial").length;const score=(done+partial*0.5)/all.length*100;
 
   return <div style={{animation:"fadeUp 0.4s"}}><Header title="Exit Readiness Score" sub="Buyer due diligence -- systemized, transferable, auditable"/>
     <Card style={{marginBottom:24,background:"linear-gradient(135deg,#0a0a0a,#111111)",border:"1px solid #2dd4bf30"}}><div style={{display:"flex",alignItems:"center",gap:32}}><div style={{width:120,height:120,borderRadius:"50%",border:"4px solid #2dd4bf",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}><div style={{fontSize:28,fontWeight:800,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{Math.round(score)}</div><div style={{fontSize:12,color:"#a3a3a3"}}>/ 100</div></div><div style={{flex:1}}><div style={{fontSize:20,fontWeight:800,color:"#e5e5e5",marginBottom:4}}>Exit Readiness Assessment</div><div style={{fontSize:13,color:"#a3a3a3",marginBottom:12}}>{done} complete - {partial} in progress</div><Bar value={score} max={100} color="#2dd4bf" height={8}/><div style={{marginTop:8,fontSize:12,color:"#2dd4bf"}}>{score>=90?"Excellent -- buyer-ready":score>=70?"Strong -- minor items remaining":"In Progress"}</div></div><div style={{textAlign:"center",padding:"0 24px"}}><div style={{fontSize:12,color:"#a3a3a3",marginBottom:4}}>Valuation Impact</div><div style={{fontSize:13,fontWeight:600,color:"#34d399"}}>+1.5-2x multiple uplift</div></div></div></Card>
     <div className="resp-grid-2" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:16}}>{criteria.map((s,si)=><Card key={si}><div style={{fontSize:14,fontWeight:700,color:"#e5e5e5",marginBottom:14}}>{s.category}</div>{s.items.map((item,ii)=><div key={ii} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:ii<s.items.length-1?"1px solid #1e213044":"none"}}><div style={{width:20,height:20,borderRadius:6,flexShrink:0,background:item.status===true?"#34d399":item.status==="partial"?"#fbbf24":"#333333",display:"flex",alignItems:"center",justifyContent:"center"}}>{item.status===true&&<I n="check" s={12}/>}{item.status==="partial"&&<span style={{fontSize:12,fontWeight:700,color:"#fff"}}>~</span>}</div><div style={{flex:1}}><div style={{fontSize:13,color:item.status?"#d4d4d4":"#525252",fontWeight:500}}>{item.name}</div><div style={{fontSize:12,color:"#8a8a8a",marginTop:1}}>{item.note}</div></div></div>)}</Card>)}</div>
     <Card style={{marginTop:20,textAlign:"center",borderTop:"2px solid #2dd4bf"}}><div style={{fontSize:12,color:"#a3a3a3",textTransform:"uppercase",letterSpacing:2,marginBottom:4}}>Powered by</div><div style={{fontSize:20,fontWeight:800,color:"#2dd4bf",letterSpacing:1}}>DYFRENT</div></Card>
-  </div>;
-}
-
-// ===============================================================
-// QUICKBOOKS SETUP -- Integration Guide + OAuth Flow Docs
-// ===============================================================
-function QBSetupPage({notify,qbConfig,setQbConfig}){
-  const [showSecret,setShowSecret]=useState(false);
-  const [testing,setTesting]=useState(false);
-
-  const testConnection = async () => {
-    if(!qbConfig.accessToken||!qbConfig.realmId){notify("Enter Access Token and Realm ID first","error");return}
-    setTesting(true);
-    try {
-      const resp = await fetch('/api/qb-proxy?path=' + encodeURIComponent('companyinfo/' + qbConfig.realmId + '?minorversion=73'), {
-        headers: { "Authorization": "Bearer " + qbConfig.accessToken, "x-qb-realmid": qbConfig.realmId, "Accept": "application/json" }
-      });
-      if(resp.ok){
-        const data = await resp.json();
-        const name = data?.CompanyInfo?.CompanyName || "Connected";
-        setQbConfig(p=>({...p,connected:true}));
-        notify(`Connected to QuickBooks: ${name}`);
-      } else {
-        const data = await resp.json().catch(()=>({}));
-        notify(`Connection failed (${resp.status}): ${data?.Fault?.Error?.[0]?.Message || data?.error || 'Check credentials'}`,"error");
-      }
-    } catch(e) {
-      notify(`Network error: ${e.message}`,"error");
-    }
-    setTesting(false);
-  };
-
-  const updateField = (field, value) => setQbConfig(p=>({...p,[field]:value}));
-
-  return <div style={{animation:"fadeUp 0.4s"}}><Header title="QuickBooks Integration" sub="Enter your API credentials to connect -- invoices and POs push directly"/>
-
-    {/* Connection Status */}
-    <Card style={{marginBottom:20,border:qbConfig.connected?"1px solid #05966944":"1px solid #2563eb44"}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <div style={{display:"flex",alignItems:"center",gap:12}}>
-          <div style={{width:12,height:12,borderRadius:"50%",background:qbConfig.connected?"#34d399":"#525252",boxShadow:qbConfig.connected?"0 0 8px #05966966":"none"}}/>
-          <div>
-            <div style={{fontSize:16,fontWeight:700,color:qbConfig.connected?"#34d399":"#c4b5fd"}}>{qbConfig.connected?"Connected to QuickBooks Online":"Not Connected"}</div>
-            <div style={{fontSize:13,color:"#a3a3a3",marginTop:2}}>{qbConfig.connected?"Push POs and Invoices from the Documents page":"Enter your credentials below to connect"}</div>
-          </div>
-        </div>
-        {qbConfig.connected&&<Btn v="danger" onClick={()=>{setQbConfig(p=>({...p,connected:false,accessToken:"",refreshToken:""}));notify("Disconnected from QuickBooks")}}>Disconnect</Btn>}
-      </div>
-    </Card>
-
-    {/* Credentials Form */}
-    <Card style={{marginBottom:20}}>
-      <div style={{fontSize:16,fontWeight:700,color:"#e5e5e5",marginBottom:16}}>API Credentials</div>
-      <div className="resp-grid-2" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:16,marginBottom:16}}>
-        <div>
-          <label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:6,fontWeight:500}}>Client ID</label>
-          <input value={qbConfig.clientId} onChange={e=>updateField("clientId",e.target.value)} placeholder="ABcDeFgHiJkLmNoPqRsTuVw..." style={inputStyle}/>
-          <div style={{fontSize:12,color:"#8a8a8a",marginTop:4}}>From developer.intuit.com &rarr; My Apps &rarr; Keys &amp; credentials</div>
-        </div>
-        <div>
-          <label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:6,fontWeight:500}}>Client Secret</label>
-          <div style={{display:"flex",gap:8}}>
-            <input type={showSecret?"text":"password"} value={qbConfig.clientSecret} onChange={e=>updateField("clientSecret",e.target.value)} placeholder="aBcDeFgHiJkLm..." style={{...inputStyle,flex:1}}/>
-            <Btn v="secondary" style={{padding:"8px 12px",fontSize:11}} onClick={()=>setShowSecret(!showSecret)}>{showSecret?"Hide":"Show"}</Btn>
-          </div>
-        </div>
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:16,marginBottom:16}}>
-        <div>
-          <label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:6,fontWeight:500}}>Realm ID (Company ID)</label>
-          <input value={qbConfig.realmId} onChange={e=>updateField("realmId",e.target.value)} placeholder="1234567890" style={inputStyle}/>
-          <div style={{fontSize:12,color:"#8a8a8a",marginTop:4}}>Found in the URL when logged into QBO</div>
-        </div>
-        <div>
-          <label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:6,fontWeight:500}}>Access Token</label>
-          <input type="password" value={qbConfig.accessToken} onChange={e=>updateField("accessToken",e.target.value)} placeholder="eyJhbGciOiJSUzI1NiIsInR5..." style={inputStyle}/>
-          <div style={{fontSize:12,color:"#8a8a8a",marginTop:4}}>OAuth 2.0 bearer token (expires in 1hr)</div>
-        </div>
-        <div>
-          <label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:6,fontWeight:500}}>Refresh Token</label>
-          <input type="password" value={qbConfig.refreshToken} onChange={e=>updateField("refreshToken",e.target.value)} placeholder="AB11..." style={inputStyle}/>
-          <div style={{fontSize:12,color:"#8a8a8a",marginTop:4}}>Used to get new access tokens (expires in 100 days)</div>
-        </div>
-      </div>
-      <div style={{display:"flex",gap:8,alignItems:"center"}}>
-        <Btn onClick={testConnection} style={testing?{opacity:0.6,pointerEvents:"none"}:{}}>{testing?"Testing Connection...":"Test Connection & Connect"}</Btn>
-        <Btn v="secondary" onClick={()=>{setQbConfig({connected:false,clientId:"",clientSecret:"",realmId:"",accessToken:"",refreshToken:""});notify("Credentials cleared")}}>Clear All</Btn>
-        {qbConfig.connected&&<span style={{fontSize:13,color:"#34d399",fontWeight:600,marginLeft:8}}>Connected</span>}
-      </div>
-    </Card>
-
-    {/* How to get tokens */}
-    <Card style={{marginBottom:16}}><div style={{fontSize:16,fontWeight:700,color:"#e5e5e5",marginBottom:12}}>How to Get Your Credentials</div>
-      <div style={{display:"flex",flexDirection:"column",gap:16}}>
-        <div><div style={{fontSize:13,fontWeight:700,color:"#2dd4bf",marginBottom:4}}>Step 1: Create a QuickBooks Developer App</div><div style={{fontSize:13,color:"#a3a3a3",lineHeight:1.7}}>Go to <span style={{color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>developer.intuit.com</span> and sign up. Create a new app, choose "QuickBooks Online and Payments." Your Client ID and Client Secret are on the Keys &amp; credentials page.</div></div>
-        <div><div style={{fontSize:13,fontWeight:700,color:"#2dd4bf",marginBottom:4}}>Step 2: Get Your Realm ID</div><div style={{fontSize:13,color:"#a3a3a3",lineHeight:1.7}}>Log into QuickBooks Online. Look at the URL -- it contains your Realm ID (Company ID) as a number like <span style={{fontFamily:"'JetBrains Mono',monospace",color:"#2dd4bf"}}>https://app.qbo.intuit.com/app/homepage?companyId=<strong>1234567890</strong></span></div></div>
-        <div><div style={{fontSize:13,fontWeight:700,color:"#2dd4bf",marginBottom:4}}>Step 3: Generate Access Token</div><div style={{fontSize:13,color:"#a3a3a3",lineHeight:1.7}}>In the Intuit Developer portal, go to your app's OAuth 2.0 Playground (under Test section). Select scopes <span style={{fontFamily:"'JetBrains Mono',monospace",color:"#2dd4bf"}}>com.intuit.quickbooks.accounting</span>, authorize, and copy both the Access Token and Refresh Token.</div></div>
-        <div><div style={{fontSize:13,fontWeight:700,color:"#2dd4bf",marginBottom:4}}>Step 4: Paste & Connect</div><div style={{fontSize:13,color:"#a3a3a3",lineHeight:1.7}}>Paste all credentials above and click "Test Connection." If successful, you can push POs and Invoices directly from the Documents page. Access tokens expire in 1 hour -- refresh in the OAuth Playground when needed.</div></div>
-      </div>
-    </Card>
-
-    {/* API Reference */}
-    <Card><div style={{fontSize:14,fontWeight:700,color:"#e5e5e5",marginBottom:12}}>API Endpoints Used</div><div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:"#a3a3a3",background:"#000000",padding:16,borderRadius:8,lineHeight:2}}>
-      <div><span style={{color:"#34d399"}}>POST</span> <span style={{color:"#2dd4bf"}}>/v3/company/{"{realmId}"}/invoice</span> -- Create invoice</div>
-      <div><span style={{color:"#34d399"}}>POST</span> <span style={{color:"#2dd4bf"}}>/v3/company/{"{realmId}"}/purchaseorder</span> -- Create PO</div>
-      <div><span style={{color:"#a78bfa"}}>GET</span>  <span style={{color:"#2dd4bf"}}>/v3/company/{"{realmId}"}/companyinfo/{"{realmId}"}</span> -- Test connection</div>
-      <div><span style={{color:"#fbbf24"}}>POST</span> <span style={{color:"#2dd4bf"}}>/oauth2/v1/tokens/bearer</span> -- Token refresh</div>
-    </div></Card>
-
-    <Card style={{marginTop:16,borderLeft:"3px solid #2dd4bf"}}><div style={{fontSize:13,color:"#a3a3a3",lineHeight:1.7}}>
-      <strong style={{color:"#2dd4bf"}}>How it works:</strong> When you push a PO or Invoice from the Documents page, the system sends the document data to the QuickBooks API using your access token. QuickBooks creates the record and returns a confirmation. The Job Record stays the source of truth -- QB receives the finalized document. One entry, one record, everything flows.
-    </div></Card>
   </div>;
 }
 
