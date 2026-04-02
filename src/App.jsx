@@ -4411,6 +4411,7 @@ function NotesPage({customSops,addSop,deleteSop,jobs,reps,notify,triggerPrint}){
 function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJobItems,brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory,updateJob,addJob,updateLineItem,addLineItem,deleteLineItem,updateRep,addRep,addCustomer,updateCustomer,addVendor,updateVendor,notify,setPage,deleteJob}){
   const [brainFile, setBrainFile] = useState(null);
   const [brainFilePreview, setBrainFilePreview] = useState(null);
+  const [brainFileContext, setBrainFileContext] = useState(null);
   const brainFileRef = React.useRef(null);
   const history=brainHistory;const setHistory=setBrainHistory;
   // === BRAIN MEMORY SYSTEM ===
@@ -4450,34 +4451,37 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
   const startListening = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { notify("Voice input not supported on this browser"); return; }
-    if (isListening) { if (recognitionRef.current) recognitionRef.current.stop(); setIsListening(false); return; }
+    if (isListening) { setIsListening(false); if (recognitionRef.current) { try { recognitionRef.current.stop(); } catch(e2) {} } recognitionRef.current = null; return; }
     const recognition = new SR();
     recognition.lang = "en-US";
     recognition.interimResults = true;
-    recognition.continuous = false;
+    recognition.continuous = true;
     recognition.maxAlternatives = 1;
-    let finalTranscript = "";
+    let finalTranscript = brainQuery || "";
     let interimTranscript = "";
     recognition.onstart = () => { setIsListening(true); };
     recognition.onresult = (event) => {
       interimTranscript = "";
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const t = event.results[i][0].transcript;
-        if (event.results[i].isFinal) { finalTranscript += t; } else { interimTranscript = t; }
+        if (event.results[i].isFinal) { finalTranscript += t + " "; } else { interimTranscript = t; }
       }
       setBrainQuery(finalTranscript + interimTranscript);
     };
     recognition.onend = () => {
+      // Only stop if user manually clicked stop
+      if (recognitionRef.current && isListening) { try { recognitionRef.current.start(); } catch(e2) {} return; }
       setIsListening(false);
       recognitionRef.current = null;
       if (finalTranscript.trim()) { setBrainQuery(finalTranscript.trim()); }
     };
     recognition.onerror = (e) => {
+      if (e.error === "no-speech" && recognitionRef.current) { try { recognitionRef.current.start(); } catch(e2) {} return; }
       setIsListening(false);
       recognitionRef.current = null;
-      if (e.error !== "aborted" && e.error !== "no-speech") notify("Voice error: " + e.error);
+      if (e.error !== "aborted") notify("Voice error: " + e.error);
     };
-    finalTranscript = "";
+    finalTranscript = brainQuery || "";
     recognitionRef.current = recognition;
     recognition.start();
   };
@@ -5075,7 +5079,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     if (!brainQuery.trim() && !brainFile) return;
     const q = brainQuery.trim();
     setBrainQuery("");
-    setHistory(p => [...p, { role: "user", content: (brainFile ? "[📎 " + brainFile.name + "] " : "") + q }]);
+    setHistory(p => [...p, { role: "user", content: (brainFile ? "[Attached: " + brainFile.name + "] " : "") + q }]);
     setBrainLoading(true);
     setPendingActions([]);
     try {
@@ -5085,9 +5089,15 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
       if (brainFile) {
         try {
           const fileBlocks = await processFileForBrain(brainFile);
-          userContent = [...fileBlocks, {type:'text', text:q || 'Analyze this file.'}];
+          userContent = [...fileBlocks, {type:'text', text:q || 'Analyze this file thoroughly. Extract all data.'}];
+          // Save file content to context so it persists across follow-up messages
+          const textBlock = fileBlocks.find(b => b.type === 'text');
+          if (textBlock) setBrainFileContext({name: brainFile.name, content: textBlock.text, blocks: fileBlocks});
         } catch(e) { notify('Error reading file: ' + e.message, 'error'); }
         setBrainFile(null); setBrainFilePreview(null);
+      } else if (brainFileContext) {
+        // Include file context in follow-up messages so the AI remembers the file
+        userContent = [{type:'text', text:'[Context: Previously uploaded file "' + brainFileContext.name + '"]\n' + (brainFileContext.content || '').slice(0, 30000) + '\n\n' + q}];
       }
       const msgs = [...history.filter(h=>h.role==="user"||h.role==="assistant").slice(-8).map(h=>({role:h.role,content:typeof h.content==="string"?h.content:JSON.stringify(h.content)})),{role:"user",content:userContent}];
       const response = await fetch("/api/brain", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({system:ctx,messages:msgs,tools:brainTools})});
@@ -5225,10 +5235,11 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     {history.length<=1&&<div style={{display:"flex",flexWrap:"wrap",gap:6,padding:"8px 16px",flexShrink:0,maxHeight:"40vh",overflowY:"auto"}}>{suggestedQueries.map(q=><button key={q} onClick={()=>{setBrainQuery(q);setTimeout(handleQuery,50)}} style={{padding:"6px 12px",borderRadius:8,border:"1px solid #1a1a1a",background:"transparent",color:"#525252",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.2s"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="#2dd4bf30";e.currentTarget.style.color="#2dd4bf"}} onMouseLeave={e=>{e.currentTarget.style.borderColor="#1a1a1a";e.currentTarget.style.color="#525252"}}>{q}</button>)}</div>}
     <div style={{display:"flex",gap:8,padding:"12px 16px",background:"#000",flexShrink:0,borderTop:"1px solid #111",alignItems:"center"}}>
       <input ref={brainFileRef} type="file" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.xls,.xlsx,.csv,.tsv,.txt,.json,.doc,.docx" onChange={e=>{const f=e.target.files[0];if(f){setBrainFile(f);setBrainFilePreview(f.name);notify("File attached: "+f.name)}e.target.value=""}} style={{display:"none"}}/>
-      {brainFilePreview&&<div style={{display:"flex",alignItems:"center",gap:4,padding:"3px 8px",background:"rgba(45,212,191,0.08)",borderRadius:12,fontSize:11,color:"#2dd4bf",maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flexShrink:0}}><span style={{fontSize:14}}>📎</span>{brainFilePreview}<span onClick={()=>{setBrainFile(null);setBrainFilePreview(null)}} style={{cursor:"pointer",marginLeft:2,color:"#737373",fontSize:14}}>×</span></div>}
-      <button onClick={()=>brainFileRef.current?.click()} title="Attach a file (PDF, image, Excel, CSV)" style={{background:"transparent",border:"none",cursor:"pointer",color:brainFile?"#2dd4bf":"#525252",fontSize:18,padding:"4px 6px",borderRadius:8,transition:"color 0.15s",flexShrink:0,display:"flex",alignItems:"center"}} onMouseEnter={e=>{e.currentTarget.style.color="#2dd4bf"}} onMouseLeave={e=>{if(!brainFile)e.currentTarget.style.color="#525252"}}>📎</button>
-      <input value={brainQuery} onChange={e=>setBrainQuery(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")handleQuery()}} placeholder={isListening?"Listening...":brainFile?"Ask about "+brainFile.name+"...":"Ask the Brain anything..."} style={{flex:1,padding:"10px 16px",background:"#0a0a0a",border:isListening?"1px solid rgba(248,113,113,0.4)":brainFile?"1px solid rgba(45,212,191,0.2)":"1px solid #1a1a1a",borderRadius:24,color:"#f0f0f0",fontSize:13,outline:"none",fontFamily:"inherit",transition:"border-color 0.3s"}} onFocus={e=>{if(!isListening)e.currentTarget.style.borderColor="#2dd4bf30"}} onBlur={e=>{if(!isListening&&!brainFile)e.currentTarget.style.borderColor="#1a1a1a"}}/>
-      <button onClick={startListening} title={isListening?"Stop listening":"Voice input"} style={{width:40,height:40,borderRadius:20,border:"none",background:isListening?"rgba(248,113,113,0.15)":"#0a0a0a",color:isListening?"#f87171":"#525252",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.2s",flexShrink:0,position:"relative"}} onMouseEnter={e=>{if(!isListening)e.currentTarget.style.color="#2dd4bf"}} onMouseLeave={e=>{if(!isListening)e.currentTarget.style.color="#525252"}}>{isListening&&<div style={{position:"absolute",inset:-2,borderRadius:22,border:"2px solid #f87171",animation:"pulse 1.5s infinite",opacity:0.6}}/>}<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg></button>
+      {brainFileContext&&!brainFile&&!brainFilePreview&&<div style={{display:"flex",alignItems:"center",gap:4,padding:"3px 8px",background:"rgba(45,212,191,0.05)",borderRadius:12,fontSize:10,color:"#525252",maxWidth:110,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flexShrink:0}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>{brainFileContext.name}<span onClick={()=>setBrainFileContext(null)} style={{cursor:"pointer",marginLeft:2,color:"#444",fontSize:12}}>x</span></div>}
+      {brainFilePreview&&<div style={{display:"flex",alignItems:"center",gap:4,padding:"3px 8px",background:"rgba(45,212,191,0.08)",borderRadius:12,fontSize:11,color:"#2dd4bf",maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flexShrink:0}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>{brainFilePreview}<span onClick={()=>{setBrainFile(null);setBrainFilePreview(null)}} style={{cursor:"pointer",marginLeft:2,color:"#737373",fontSize:14}}>×</span></div>}
+      <button onClick={()=>brainFileRef.current?.click()} title="Attach a file (PDF, image, Excel, CSV)" style={{background:"transparent",border:"none",cursor:"pointer",color:brainFile?"#2dd4bf":"#525252",fontSize:18,padding:"4px 6px",borderRadius:8,transition:"color 0.15s",flexShrink:0,display:"flex",alignItems:"center"}} onMouseEnter={e=>{e.currentTarget.style.color="#2dd4bf"}} onMouseLeave={e=>{if(!brainFile)e.currentTarget.style.color="#525252"}}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg></button>
+      <input value={brainQuery} onChange={e=>setBrainQuery(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")handleQuery()}} placeholder={isListening?"Listening... click DONE when finished":brainFile?"Ask about "+brainFile.name+"...":brainFileContext?"Ask about "+brainFileContext.name+"...":"Ask the Brain anything..."} style={{flex:1,padding:"10px 16px",background:"#0a0a0a",border:isListening?"1px solid rgba(248,113,113,0.4)":brainFile?"1px solid rgba(45,212,191,0.2)":"1px solid #1a1a1a",borderRadius:24,color:"#f0f0f0",fontSize:13,outline:"none",fontFamily:"inherit",transition:"border-color 0.3s"}} onFocus={e=>{if(!isListening)e.currentTarget.style.borderColor="#2dd4bf30"}} onBlur={e=>{if(!isListening&&!brainFile)e.currentTarget.style.borderColor="#1a1a1a"}}/>
+      <button onClick={startListening} title={isListening?"Click to stop dictation":"Voice input (continuous)"} style={{width:40,height:40,borderRadius:20,border:"none",background:isListening?"rgba(248,113,113,0.15)":"#0a0a0a",color:isListening?"#f87171":"#525252",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.2s",flexShrink:0,position:"relative"}} onMouseEnter={e=>{if(!isListening)e.currentTarget.style.color="#2dd4bf"}} onMouseLeave={e=>{if(!isListening)e.currentTarget.style.color="#525252"}}>{isListening&&<div style={{position:"absolute",inset:-2,borderRadius:22,border:"2px solid #f87171",animation:"pulse 1.5s infinite",opacity:0.6}}/>}{isListening?<span style={{fontSize:10,fontWeight:700,letterSpacing:0.5}}>DONE</span>:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>}</button>
       <button onClick={handleQuery} disabled={brainLoading} style={{width:40,height:40,borderRadius:20,border:"none",background:brainQuery.trim()?"#2dd4bf":"#1a1a1a",color:brainQuery.trim()?"#000":"#333",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.2s",flexShrink:0}} onMouseEnter={e=>{if(brainQuery.trim())e.currentTarget.style.background="#34d399"}} onMouseLeave={e=>{e.currentTarget.style.background=brainQuery.trim()?"#2dd4bf":"#1a1a1a"}}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
     </div>
   </div>;
