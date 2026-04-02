@@ -28,6 +28,7 @@ class ErrorBoundary extends React.Component {
 import{BarChart,Bar as RBar,XAxis,YAxis,Tooltip,ResponsiveContainer,LineChart,Line,PieChart,Pie,Cell}from"recharts";
 
 const Bar = ({value,max,color,height=6,style={}})=><div style={{width:"100%",background:"#222",borderRadius:height/2,overflow:"hidden",height,...style}}><div style={{width:max>0?(value/max*100)+"%":"0%",height:"100%",background:color||"#2dd4bf",borderRadius:height/2,transition:"width 0.4s ease"}}/></div>;
+const fmtShipJsx=(raw)=>{if(!raw)return '';if(raw.includes('\n'))return raw.split('\n').map((l,i)=><React.Fragment key={i}>{i>0&&<br/>}{l}</React.Fragment>);const parts=raw.split(',').map(s=>s.trim());if(parts.length>=2&&/\d{5}/.test(parts[parts.length-1]))return parts.map((p,i)=><React.Fragment key={i}>{i>0&&<br/>}{p}</React.Fragment>);return raw};
 
 const Btn = ({children,onClick,v,style={},...props})=>{const base={padding:"8px 16px",borderRadius:10,border:"none",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Satoshi',sans-serif",transition:"all 0.15s",display:"inline-flex",alignItems:"center",gap:6};const variants={primary:{...base,background:"#2dd4bf",color:"#000"},secondary:{...base,background:"transparent",border:"1px solid #333",color:"#c4c4c4"},ghost:{...base,background:"transparent",color:"#a3a3a3",padding:"6px 12px"},danger:{...base,background:"rgba(248,113,113,0.1)",color:"#f87171",border:"1px solid rgba(248,113,113,0.2)"}};const s=variants[v]||variants.primary;return <button onClick={onClick} style={{...s,...style}} {...props}>{children}</button>};
 
@@ -1696,6 +1697,10 @@ function JobsPage(ctx){
   const [uploadJobName,setUploadJobName]=useState('');
   const [uploadSheets,setUploadSheets]=useState({});
   const [uploading,setUploading]=useState(false);
+  const [uploadAiChat,setUploadAiChat]=useState([]);
+  const [uploadAiQuery,setUploadAiQuery]=useState('');
+  const [uploadAiLoading,setUploadAiLoading]=useState(false);
+  const [uploadAiStatus,setUploadAiStatus]=useState(null);
   const uploadRef=useRef();
 
   
@@ -1797,6 +1802,8 @@ function JobsPage(ctx){
       const sel={};sheets.forEach(s=>{sel[s.name]=true});setUploadSheets(sel);
       setUploadData({items,vendors:vendorSet,groups,sheets});
       notify(items.length+' items found'+(items.length>0?' -- AI verifying in background...':'. AI scanning...'));
+      setUploadAiChat([{role:'assistant',content:'Parser found '+items.length+' items across '+sheets.length+' sheet(s). AI is verifying in the background. You can ask me questions about the data while we wait.'}]);
+      setUploadAiStatus(null);
       // AI runs in parallel on Job Records uploads too
       try{
         let aiText='FILE: '+file.name+'\n\n';
@@ -1810,11 +1817,63 @@ function JobsPage(ctx){
         })}).then(r=>r.json()).then(resp=>{
           const t=(resp.content||[])[0]?.text||'';try{const ai=JSON.parse(t.replace(/\`\`\`json\s*/g,'').replace(/\`\`\`\s*/g,'').trim());
           if(ai.items?.length>0){const diff=Math.abs((ai.items?.length||0)-items.length);
-            if(diff>5)notify('AI found '+(ai.items?.length||0)+' items vs parser '+items.length+'. Review recommended.');
-            else notify('AI verified: '+items.length+' items confirmed.')}}catch{}
+            if(diff>5){notify('AI found '+(ai.items?.length||0)+' items vs parser '+items.length+'. Review recommended.');setUploadAiStatus('mismatch');setUploadAiChat(p=>[...p,{role:'assistant',content:'I found '+(ai.items?.length||0)+' items vs the parser\'s '+items.length+'. There may be missing or extra items. Ask me to investigate.'}])}
+            else{notify('AI verified: '+items.length+' items confirmed.');setUploadAiStatus('verified');setUploadAiChat(p=>[...p,{role:'assistant',content:'Verified: '+items.length+' items confirmed. The parser output looks correct. Ask me if anything seems off.'}])}}}catch{}
         }).catch(()=>{});
       }catch{}
     }catch(err){notify('Error reading file: '+err.message,'error')}
+  };
+  const handleUploadAiChat = async (query) => {
+    if (!query.trim() || !uploadData) return;
+    setUploadAiQuery('');
+    setUploadAiChat(p => [...p, {role:'user', content:query}]);
+    setUploadAiLoading(true);
+    try {
+      const items = uploadData.items.filter(i => uploadSheets[i.sheet]);
+      const itemSummary = items.slice(0, 100).map((it, idx) =>
+        'Item ' + idx + ': tag=' + (it.tag||'') + ' manuf=' + (it.manufacturer||'') + ' model=' + (it.modelNumber||'') + ' desc=' + (it.description||'').slice(0,50) + ' qty=' + it.qtyOrdered + ' cost=$' + (it.unitCost||0).toFixed(2) + ' price=$' + (it.unitPrice||0).toFixed(2) + ' priceExt=$' + (it.priceExtended||0).toFixed(2)
+      ).join('\n');
+      const system = 'You are an AI assistant reviewing parsed Excel quote data for Midwest Educational Furnishings. The user uploaded a quote spreadsheet and the parser extracted ' + items.length + ' items. The user may ask you to verify items, find issues, fix things, or modify data. Respond concisely. If the user asks to change an item, respond with JSON in this format: {"actions":[{"index":0,"field":"unitPrice","value":100}]} where index is the item number. Multiple actions allowed. If no changes needed, just respond with text. Never use emoji.';
+      const msgs = [...uploadAiChat.slice(-6).map(m => ({role:m.role, content:m.content})), {role:'user', content:query + '\n\nPARSED ITEMS (' + items.length + ' total):\n' + itemSummary + (items.length > 100 ? '\n... and ' + (items.length - 100) + ' more items' : '')}];
+      const resp = await fetch('/api/brain', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({system, messages:msgs, tools:[]})});
+      const data = await resp.json();
+      const text = (data.content||[]).filter(b => b.type === 'text').map(b => b.text).join('\n');
+      // Check for action JSON in the response
+      try {
+        const jsonMatch = text.match(/\{\s*"actions"\s*:\s*\[/);
+        if (jsonMatch) {
+          const jsonStr = text.slice(text.indexOf('{'));
+          const parsed2 = JSON.parse(jsonStr.slice(0, jsonStr.lastIndexOf('}') + 1));
+          if (parsed2.actions && parsed2.actions.length > 0) {
+            const newItems = [...uploadData.items];
+            const filtered = newItems.filter(i => uploadSheets[i.sheet]);
+            let changeCount = 0;
+            parsed2.actions.forEach(a => {
+              if (a.index >= 0 && a.index < filtered.length && a.field) {
+                const item = filtered[a.index];
+                const globalIdx = newItems.indexOf(item);
+                if (globalIdx >= 0) { newItems[globalIdx] = {...item, [a.field]: a.value}; changeCount++; }
+              }
+            });
+            if (changeCount > 0) {
+              setUploadData({...uploadData, items: newItems});
+              setUploadAiChat(p => [...p, {role:'assistant', content:text + '\n\nApplied ' + changeCount + ' change(s) to the parsed data.'}]);
+            } else {
+              setUploadAiChat(p => [...p, {role:'assistant', content:text}]);
+            }
+          } else {
+            setUploadAiChat(p => [...p, {role:'assistant', content:text}]);
+          }
+        } else {
+          setUploadAiChat(p => [...p, {role:'assistant', content:text}]);
+        }
+      } catch(e2) {
+        setUploadAiChat(p => [...p, {role:'assistant', content:text}]);
+      }
+    } catch(e) {
+      setUploadAiChat(p => [...p, {role:'assistant', content:'Error: ' + e.message}]);
+    }
+    setUploadAiLoading(false);
   };
   const handleUploadImport=()=>{
     if(!uploadData||uploading)return;setUploading(true);
@@ -1845,7 +1904,7 @@ function JobsPage(ctx){
       notify('Imported '+ct+' items into "'+uploadJobName+'" -- click the job to view');
       // Force re-fetch line items after batch import to ensure consistency across sessions
       setTimeout(async()=>{try{const d=await db.loadAll();if(d.lineItems)setLineItems(d.lineItems);if(d.jobs)setJobs(d.jobs)}catch{}},3000);
-      setUploadData(null);setUploadJobName('');setSelectedJob(jid);
+      setUploadData(null);setUploadJobName('');setUploadAiChat([]);setUploadAiStatus(null);setSelectedJob(jid);
     }catch(err){notify('Import error: '+err.message,'error')}
     setUploading(false);
   };
@@ -1886,7 +1945,7 @@ function JobsPage(ctx){
     {uploadData&&<Card style={{marginBottom:24,border:"1px solid rgba(45,212,191,0.2)"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
         <div style={{fontSize:15,fontWeight:700,color:"#2dd4bf"}}>Quote Import Preview</div>
-        <Btn v="secondary" style={{fontSize:12,padding:"4px 10px"}} onClick={()=>{setUploadData(null);if(uploadRef.current)uploadRef.current.value=''}}>Cancel</Btn>
+        <Btn v="secondary" style={{fontSize:12,padding:"4px 10px"}} onClick={()=>{setUploadData(null);setUploadAiChat([]);setUploadAiStatus(null);if(uploadRef.current)uploadRef.current.value=''}}>Cancel</Btn>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12,marginBottom:16}}>
         <div style={{padding:12,background:"#0a0a0a",borderRadius:10,textAlign:"center"}}><div style={{fontSize:11,color:"#737373",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Sheets</div><div style={{fontSize:22,fontWeight:700,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>{uploadData.sheets.length}</div></div>
@@ -1916,6 +1975,21 @@ function JobsPage(ctx){
           </tr></React.Fragment>})})()}</tbody>
         </table>
         {uploadSelCount>30&&<div style={{padding:8,textAlign:"center",color:"#333",fontSize:11}}>Showing 30 of {uploadSelCount}</div>}
+      </div>
+      {/* AI Chat Assistant */}
+      <div style={{borderTop:'1px solid #222',paddingTop:16,marginTop:8}}>
+        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
+          <div style={{width:8,height:8,borderRadius:'50%',background:uploadAiStatus==='verified'?'#34d399':uploadAiStatus==='mismatch'?'#f87171':uploadAiLoading?'#fbbf24':'#525252',animation:(!uploadAiStatus&&!uploadAiLoading)?'none':'pulse 1.5s infinite'}}/>
+          <span style={{fontSize:13,fontWeight:600,color:uploadAiStatus==='verified'?'#34d399':uploadAiStatus==='mismatch'?'#f87171':'#a3a3a3'}}>{uploadAiStatus==='verified'?'AI Verified':uploadAiStatus==='mismatch'?'AI Found Discrepancy':uploadAiLoading?'AI Thinking...':'AI Reviewing...'}</span>
+        </div>
+        {uploadAiChat.length>0&&<div style={{maxHeight:200,overflowY:'auto',marginBottom:10,padding:'8px 0',display:'flex',flexDirection:'column',gap:6}}>
+          {uploadAiChat.map((m,i)=><div key={i} style={{padding:'8px 12px',borderRadius:10,fontSize:12,lineHeight:1.5,maxWidth:'90%',alignSelf:m.role==='user'?'flex-end':'flex-start',background:m.role==='user'?'rgba(45,212,191,0.1)':'rgba(255,255,255,0.04)',color:m.role==='user'?'#2dd4bf':'#c4c4c4',border:m.role==='user'?'1px solid rgba(45,212,191,0.15)':'1px solid rgba(255,255,255,0.06)',whiteSpace:'pre-wrap'}}>{m.content}</div>)}
+          {uploadAiLoading&&<div style={{padding:'8px 12px',borderRadius:10,fontSize:12,background:'rgba(251,191,36,0.05)',color:'#fbbf24',border:'1px solid rgba(251,191,36,0.1)',alignSelf:'flex-start',display:'flex',gap:4}}><span style={{animation:'pulse 1s infinite'}}>Thinking</span>...</div>}
+        </div>}
+        <div style={{display:'flex',gap:8,marginBottom:16}}>
+          <input value={uploadAiQuery} onChange={e=>setUploadAiQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')handleUploadAiChat(uploadAiQuery)}} placeholder="Ask AI about the parsed data... (e.g. 'are any items missing?')" style={{flex:1,padding:'8px 14px',background:'#0a0a0a',border:'1px solid #222',borderRadius:20,color:'#f0f0f0',fontSize:12,outline:'none',fontFamily:'inherit'}} disabled={uploadAiLoading}/>
+          <Btn v="secondary" style={{fontSize:11,padding:'6px 14px',flexShrink:0}} onClick={()=>handleUploadAiChat(uploadAiQuery)} disabled={uploadAiLoading||!uploadAiQuery.trim()}>Ask AI</Btn>
+        </div>
       </div>
       <Btn onClick={handleUploadImport} style={{width:"100%",justifyContent:"center",padding:"12px",fontSize:14}}>
         {uploading?'Importing...':'Import '+uploadSelCount+' Items as New Quoting Job'}
@@ -2461,7 +2535,6 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
     }
     return fmtAddrHtml(custName,custAddr,custContact);
   };
-  const fmtShipJsx=(raw)=>{if(!raw)return '';if(raw.includes('\n'))return raw.split('\n').map((l,i)=><React.Fragment key={i}>{i>0&&<br/>}{l}</React.Fragment>);const parts=raw.split(',').map(s=>s.trim());if(parts.length>=2&&/\d{5}/.test(parts[parts.length-1]))return parts.map((p,i)=><React.Fragment key={i}>{i>0&&<br/>}{p}</React.Fragment>);return raw};
   const genQuote=job=>{const items=getJobItems(job.id);const customer=customers.find(c=>c.id===job.customer);const qvc=((job.docStatuses||{}).__qcv||{});return {customer,items:items.map(i=>({...i,displayQty:i.qtyOrdered,displayPrice:i.unitPrice})),total:items.reduce((s,i)=>s+(i.priceExtended&&i.priceExtended>0?i.priceExtended:(i.unitPrice||0)*i.qtyOrdered),0),job,docNum:stableNum('QT-',job.id,job.customer),projectNum:projectNum(job.id),hiddenCols:qvc}};
 
   const handleExportPDF=(doc)=>{
