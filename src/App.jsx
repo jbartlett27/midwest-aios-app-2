@@ -146,10 +146,11 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
           if(rowHasTotal)continue;
           const desc=s("desc");const tag=s("tag");const manuf=s("manuf");const model=s("model");
           if(!desc&&!tag&&!manuf)continue;
+          const priceExt=n("priceExt");
           if(/^(freight|frt|surcharge|tariff|shipping|handling|delivery|install|installation|address|disclaimer|terms|conditions)/i.test(desc)&&!tag&&!model&&!manuf&&!priceExt)continue;
           const qty=n("qty")||0;if(qty<=0&&!tag)continue;
           const list=n("list");const net=n("net");
-          const priceExt=n("priceExt");const price=n("price")||(priceExt&&qty>0?priceExt/qty:0);
+          const price=n("price")||(priceExt&&qty>0?priceExt/qty:0);
           // Shipping: if shipTotal column exists, use ship as per-unit; otherwise check if ship value > net (likely extended)
           let shipPerUnit=n("ship");
           const shipTotalVal=n("shipTotal");
@@ -317,7 +318,7 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
       setDone({type:"quote",items:ct,vendors:newVendors,jobName,jobId:jid});
       notify("Imported "+ct+" items into \""+jobName+"\"");
       // Force re-fetch line items after batch import to ensure consistency across sessions
-      setTimeout(async()=>{try{const{data}=await supabase.from("line_items").select("*").order("id");if(data)setLineItems(data)}catch{}},3000);
+      setTimeout(async()=>{try{const{data}=await db.from("line_items").select("*").order("id");if(data)setLineItems(data)}catch{}},3000);
     }catch(err){notify("Import error: "+err.message,"error")}
     setImporting(false);
   };
@@ -1850,7 +1851,7 @@ function JobsPage(ctx){
           qtyOrdered:item.qtyOrdered,qtyReceived:0,qtyInvoiced:0,poDate:'',deliveryDate:'',invoiceDate:''});ct++}
       notify('Imported '+ct+' items into "'+uploadJobName+'" -- click the job to view');
       // Force re-fetch line items after batch import to ensure consistency across sessions
-      setTimeout(async()=>{try{const{data}=await supabase.from('line_items').select('*').order('id');if(data)setLineItems(data)}catch{}},3000);
+      setTimeout(async()=>{try{const{data}=await db.from('line_items').select('*').order('id');if(data)setLineItems(data)}catch{}},3000);
       setUploadData(null);setUploadJobName('');setSelectedJob(jid);
     }catch(err){notify('Import error: '+err.message,'error')}
     setUploading(false);
