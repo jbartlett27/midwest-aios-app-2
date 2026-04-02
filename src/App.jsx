@@ -194,16 +194,19 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
         const ws=wb.Sheets[sn];
         const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:""});
         const hiddenRows=ws["!rows"]||[];
-        textContent+="=== Sheet: "+sn+" ===\n";
-        rows.slice(0,150).forEach((row,ri)=>{
-          const isHidden=hiddenRows[ri]&&hiddenRows[ri].hidden;
-          textContent+=(isHidden?"[HIDDEN] ":"")+"Row "+ri+": "+row.map(c=>String(c||"").trim()).filter(Boolean).join(" | ")+"\n";
+        textContent+="=== Sheet: "+sn+" ("+rows.length+" rows) ===\n";
+        // Send header + ALL data rows (no limit) for complete AI analysis
+        rows.forEach((row,ri)=>{
+          if(hiddenRows[ri]&&hiddenRows[ri].hidden)return;
+          const cells=row.map(c=>String(c||"").trim()).filter(Boolean);
+          if(cells.length<2)return;
+          textContent+="R"+ri+": "+cells.join(" | ")+"\n";
         });
         textContent+="\n";
       }
       const r=await fetch("/api/ai-scan",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
         image_data:btoa(unescape(encodeURIComponent(textContent))),media_type:"text/plain",scan_type:"quote_document",
-        extra_context:"This is a furniture dealer quote spreadsheet. Extract EVERY furniture line item. Include tag number, manufacturer, model number, full description, color/finish, quantity, list price, net/dealer cost, and sell/customer price. Skip freight, surcharges, totals, subtotals, headers, addresses, and disclaimers. Rows marked [HIDDEN] should be SKIPPED. Be thorough."
+        extra_context:"This is a furniture dealer quote spreadsheet for Midwest Educational Furnishings. Extract EVERY furniture line item with precision. For EACH item include: tag (room number like 100A, 100C), manufacturer abbreviation (DK, POPP, WB, Fomcore, NSL, etc), model number, full description (first line only -- do NOT include Item Specifics or Room Number details), color/finish, quantity (integer), list price per unit, net/dealer cost per unit, shipping per unit (NOT the extended total), install per unit (NOT the extended total), and customer sell price per unit (the Your Price column, NOT Your Price Extended). CRITICAL: When two columns share the same name like Shipping/Shipping or Install/Install, the FIRST is per-unit and the SECOND is extended total -- use the FIRST. Skip freight line items, surcharges, tariffs, totals, subtotals, headers, room-name-only rows, addresses, and disclaimers. Return the total item count and verify the Your Price Extended grand total."
       })});
       const resp=await r.json();
       if(!r.ok||resp.error){setAiScanning(false);return}
@@ -311,6 +314,8 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
           qtyOrdered:item.qtyOrdered,qtyReceived:0,qtyInvoiced:0,poDate:"",deliveryDate:"",invoiceDate:""});ct++}
       setDone({type:"quote",items:ct,vendors:newVendors,jobName,jobId:jid});
       notify("Imported "+ct+" items into \""+jobName+"\"");
+      // Force re-fetch line items after batch import to ensure consistency across sessions
+      setTimeout(async()=>{try{const{data}=await supabase.from("line_items").select("*").order("id");if(data)setLineItems(data)}catch{}},3000);
     }catch(err){notify("Import error: "+err.message,"error")}
     setImporting(false);
   };
@@ -1047,6 +1052,23 @@ function MidwestAIOSInner() {
     loadFromDb();
   }, []);
 
+  // Force re-fetch ALL data from Supabase (ensures consistency between users)
+  const syncAll=async()=>{
+    try{
+      const[j,v,c,r,li,s]=await Promise.all([
+        supabase.from("jobs").select("*").order("id"),
+        supabase.from("vendors").select("*").order("name"),
+        supabase.from("customers").select("*").order("name"),
+        supabase.from("reps").select("*").order("name"),
+        supabase.from("line_items").select("*").order("id"),
+        supabase.from("sops").select("*").order("id")
+      ]);
+      if(j.data)setJobs(j.data);if(v.data)setVendors(v.data);if(c.data)setCustomers(c.data);
+      if(r.data)setReps(r.data);if(li.data)setLineItems(li.data);if(s.data)setCustomSops(s.data);
+      notify("Data synced -- "+((li.data||[]).length)+" line items, "+((j.data||[]).length)+" jobs");
+    }catch(e){notify("Sync error: "+e.message,"error")}
+  };
+
   // Save QB config to localStorage (not DB -- contains secrets)
   useEffect(() => { try { localStorage.setItem('mw_qbConfig', JSON.stringify(qbConfig)); } catch {} }, [qbConfig]);
 
@@ -1340,7 +1362,7 @@ const sharedScreen = sharedQuote ? <ShareQuotePortal quoteData={sharedQuote} onA
 
         {/* Footer */}
         <div style={{padding:sidebarCollapsed?"10px 8px":"10px 16px",borderTop:"1px solid rgba(255,255,255,0.04)"}}>
-          {!sidebarCollapsed?<div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:6,height:6,borderRadius:"50%",background:realtimeStatus==="connected"?"#34d399":dbStatus==="connected"?"#2dd4bf":dbStatus==="connecting"?"#fbbf24":"#f87171",flexShrink:0,boxShadow:realtimeStatus==="connected"?"0 0 6px rgba(52,211,153,0.4)":"none"}}/><span style={{fontSize:11,color:"#444"}}>{realtimeStatus==="connected"?"Live":dbStatus==="connected"?"Connected":"Connecting..."}</span>{onlineUsers.length>1&&<span style={{fontSize:10,color:"#34d399"}}>{onlineUsers.length} online</span>}<span style={{marginLeft:"auto",fontSize:9,color:"#333",letterSpacing:1}}>DYFRENT</span></div>:<div style={{display:"flex",justifyContent:"center"}}><div style={{width:6,height:6,borderRadius:"50%",background:realtimeStatus==="connected"?"#34d399":"#fbbf24",boxShadow:realtimeStatus==="connected"?"0 0 6px rgba(52,211,153,0.4)":"none"}}/></div>}
+          {!sidebarCollapsed?<div style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}} onClick={syncAll} title="Click to force-sync all data"><div style={{width:6,height:6,borderRadius:"50%",background:realtimeStatus==="connected"?"#34d399":dbStatus==="connected"?"#2dd4bf":dbStatus==="connecting"?"#fbbf24":"#f87171",flexShrink:0,boxShadow:realtimeStatus==="connected"?"0 0 6px rgba(52,211,153,0.4)":"none"}}/><span style={{fontSize:11,color:"#444"}}>{realtimeStatus==="connected"?"Live":dbStatus==="connected"?"Connected":"Connecting..."}</span>{onlineUsers.length>1&&<span style={{fontSize:10,color:"#34d399"}}>{onlineUsers.length} online</span>}<span style={{marginLeft:"auto",fontSize:9,color:"#333",letterSpacing:1}}>DYFRENT</span></div>:<div style={{display:"flex",justifyContent:"center"}}><div style={{width:6,height:6,borderRadius:"50%",background:realtimeStatus==="connected"?"#34d399":"#fbbf24",boxShadow:realtimeStatus==="connected"?"0 0 6px rgba(52,211,153,0.4)":"none"}}/></div>}
         </div>
       </div>
 
@@ -1712,9 +1734,9 @@ function JobsPage(ctx){
             else if(v==='net ext'||v==='net extended')h.netExt=c;
             else if(v==='your price'||v==='sell'||v==='sell price'||v==='unit price'||v==='price each'||v==='sell each'||v==='each')h.price=c;
             else if(v==='your price extended'||v==='sell ext'||v==='sell extended'||v==='price ext'||v==='extended'||v==='ext price'||v==='line total'||v==='ext.')h.priceExt=c;
-            else if(v==='shipping'||v==='ship'||v==='shipping each'||v==='freight')h.ship=c;
+            else if(v==='shipping'||v==='ship'||v==='shipping each'||v==='freight'){if(h.ship!==undefined)h.shipTotal=c;else h.ship=c}
             else if(v==='shipping total'||v==='ship total'||v==='freight total')h.shipTotal=c;
-            else if(v==='install'||v==='install each'||v==='installation')h.install=c;
+            else if(v==='install'||v==='install each'||v==='installation'){if(h.install!==undefined)h.installTotal=c;else h.install=c}
             else if(v==='install total'||v==='installation total')h.installTotal=c;
           }
           return Object.keys(h).length>=3?h:null;
@@ -1754,11 +1776,18 @@ function JobsPage(ctx){
           // Accept row if it has ANY numeric data
           if(qty<=0&&list<=0&&net<=0&&price<=0&&priceExt<=0)continue;
           const mfr=manuf||lastManuf;if(manuf)lastManuf=manuf;if(mfr)vendorSet.add(mfr);
+          // Smart shipping per-unit: detect if column has extended total instead of per-unit
+          let shipPU=n('ship');const shipTot=n('shipTotal');
+          if(!shipPU&&shipTot&&qty>0)shipPU=shipTot/qty;
+          else if(shipPU&&!shipTot&&qty>1&&net>0&&shipPU>net)shipPU=shipPU/qty;
+          let instPU=n('install');const instTot=n('installTotal');
+          if(!instPU&&instTot&&qty>0)instPU=instTot/qty;
+          else if(instPU&&!instTot&&qty>1&&net>0&&instPU>net)instPU=instPU/qty;
           items.push({tag:tag.replace(/\.0$/,''),manufacturer:mfr||sn,
             modelNumber:model.replace(/\.0$/,''),description:cleanDesc,
             color:s('color'),qtyOrdered:qty||1,listPrice:list,
-            unitCost:net||0,shippingPerUnit:n('ship'),
-            installPerUnit:n('install'),unitPrice:price||(priceExt&&qty>0?priceExt/qty:0)||0,
+            unitCost:net||0,shippingPerUnit:shipPU||0,
+            installPerUnit:instPU||0,unitPrice:price||(priceExt&&qty>0?priceExt/qty:0)||0,
             group:grp||tag||'',sheet:sn});ct++
         }
         sheets.push({name:sn,count:ct})
@@ -1798,6 +1827,8 @@ function JobsPage(ctx){
           unitPrice:item.unitPrice,shippingPerUnit:item.shippingPerUnit,installPerUnit:item.installPerUnit,
           qtyOrdered:item.qtyOrdered,qtyReceived:0,qtyInvoiced:0,poDate:'',deliveryDate:'',invoiceDate:''});ct++}
       notify('Imported '+ct+' items into "'+uploadJobName+'" -- click the job to view');
+      // Force re-fetch line items after batch import to ensure consistency across sessions
+      setTimeout(async()=>{try{const{data}=await supabase.from('line_items').select('*').order('id');if(data)setLineItems(data)}catch{}},3000);
       setUploadData(null);setUploadJobName('');setSelectedJob(jid);
     }catch(err){notify('Import error: '+err.message,'error')}
     setUploading(false);
