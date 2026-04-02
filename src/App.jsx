@@ -82,6 +82,10 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
   const fileRef=useRef(null);
   const aiFileRef=useRef(null);
   const [aiScanning,setAiScanning]=useState(false);
+  const [diAiChat,setDiAiChat]=useState([]);
+  const [diAiQuery,setDiAiQuery]=useState('');
+  const [diAiLoading,setDiAiLoading]=useState(false);
+  const [diAiStatus,setDiAiStatus]=useState(null);
   const [aiResult,setAiResult]=useState(null);
   const [aiScanType,setAiScanType]=useState("general");
   const [aiFile,setAiFile]=useState(null);
@@ -220,9 +224,9 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
         if(aiData.items&&aiData.items.length>0){
           setAiResult(aiData);
           const stdCount=standardItems.length;const aiCount=aiData.items.length;
-          if(stdCount===0)notify("AI found "+aiCount+" items the standard parser missed. Click 'Use AI Results' to review.");
-          else if(aiCount>stdCount)notify("AI found "+(aiCount-stdCount)+" extra items vs parser ("+aiCount+" total). Click 'Use AI Results' to compare.");
-          else notify("AI verified "+aiCount+" items. Parser results confirmed.");
+          if(stdCount===0){notify("AI found "+aiCount+" items the standard parser missed. Click 'Use AI Results' to review.");setDiAiStatus('mismatch');setDiAiChat(p=>[...p,{role:'assistant',content:'AI found '+aiCount+' items that the parser missed. Click "Use AI Results" to review, or ask me about the discrepancy.'}])}
+          else if(aiCount>stdCount){notify("AI found "+(aiCount-stdCount)+" extra items vs parser ("+aiCount+" total). Click 'Use AI Results' to compare.");setDiAiStatus('mismatch');setDiAiChat(p=>[...p,{role:'assistant',content:'AI found '+aiCount+' items vs parser '+stdCount+'. There may be missing items. Ask me to investigate.'}])}
+          else{notify("AI verified "+aiCount+" items. Parser results confirmed.");setDiAiStatus('verified');setDiAiChat(p=>[...p,{role:'assistant',content:'Verified: '+stdCount+' items confirmed. The parser output looks correct. Ask me if anything seems off.'}])}
         }
       }catch{}
     }catch{}
@@ -289,6 +293,39 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
     else{parseCSV(f)}
   };
 
+  const handleDiAiChat = async (query) => {
+    if (!query.trim() || !parsed) return;
+    setDiAiQuery('');
+    setDiAiChat(p => [...p, {role:'user', content:query}]);
+    setDiAiLoading(true);
+    try {
+      const items = parsed.items.filter(i => selectedSheets[i.sheet]);
+      const itemSummary = items.slice(0, 100).map((it, idx) =>
+        'Item ' + idx + ': tag=' + (it.tag||'') + ' manuf=' + (it.manufacturer||'') + ' model=' + (it.modelNumber||'') + ' desc=' + (it.description||'').slice(0,50) + ' qty=' + it.qtyOrdered + ' cost=$' + (it.unitCost||0).toFixed(2) + ' price=$' + (it.unitPrice||0).toFixed(2) + ' priceExt=$' + (it.priceExtended||0).toFixed(2)
+      ).join('\n');
+      const system = 'You are an AI assistant reviewing parsed Excel quote data for Midwest Educational Furnishings. The parser extracted ' + items.length + ' items. Help verify, fix, or modify data. If the user asks to change an item, respond with JSON: {"actions":[{"index":0,"field":"unitPrice","value":100}]}. Never use emoji.';
+      const msgs = [...diAiChat.slice(-6).map(m => ({role:m.role, content:m.content})), {role:'user', content:query + '\n\nPARSED ITEMS (' + items.length + ' total):\n' + itemSummary + (items.length > 100 ? '\n... and ' + (items.length - 100) + ' more' : '')}];
+      const resp = await fetch('/api/brain', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({system, messages:msgs, tools:[]})});
+      const data = await resp.json();
+      const text = (data.content||[]).filter(b => b.type === 'text').map(b => b.text).join('\n');
+      try {
+        const jsonMatch = text.match(/\{\s*"actions"\s*:\s*\[/);
+        if (jsonMatch) {
+          const jsonStr = text.slice(text.indexOf('{'));
+          const p2 = JSON.parse(jsonStr.slice(0, jsonStr.lastIndexOf('}') + 1));
+          if (p2.actions?.length > 0) {
+            const newItems = [...parsed.items];
+            const filtered = newItems.filter(i => selectedSheets[i.sheet]);
+            let cc = 0;
+            p2.actions.forEach(a => { if (a.index >= 0 && a.index < filtered.length && a.field) { const gi = newItems.indexOf(filtered[a.index]); if (gi >= 0) { newItems[gi] = {...newItems[gi], [a.field]: a.value}; cc++; } } });
+            if (cc > 0) { setParsed({...parsed, items: newItems}); setDiAiChat(p => [...p, {role:'assistant', content:text + '\n\nApplied ' + cc + ' change(s).'}]); }
+            else setDiAiChat(p => [...p, {role:'assistant', content:text}]);
+          } else setDiAiChat(p => [...p, {role:'assistant', content:text}]);
+        } else setDiAiChat(p => [...p, {role:'assistant', content:text}]);
+      } catch(e2) { setDiAiChat(p => [...p, {role:'assistant', content:text}]); }
+    } catch(e) { setDiAiChat(p => [...p, {role:'assistant', content:'Error: ' + e.message}]); }
+    setDiAiLoading(false);
+  };
   const importQuote=async()=>{
     if(!parsed||importing)return;setImporting(true);setErrors([]);
     try{
@@ -357,7 +394,7 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
     setImporting(false);
   };
 
-  const reset=()=>{setMode(null);setStep("upload");setFile(null);setParsed(null);setCsvData(null);setColMap({});setDone(null);setErrors([]);setJobName("");setAiResult(null);setAiFile(null);if(fileRef.current)fileRef.current.value="";if(aiFileRef.current)aiFileRef.current.value=""};
+  const reset=()=>{setDiAiChat([]);setDiAiStatus(null);setMode(null);setStep("upload");setFile(null);setParsed(null);setCsvData(null);setColMap({});setDone(null);setErrors([]);setJobName("");setAiResult(null);setAiFile(null);if(fileRef.current)fileRef.current.value="";if(aiFileRef.current)aiFileRef.current.value=""};
 
   // AI Document Scanning
   const handleAiScan=async(f,scanType)=>{
@@ -600,10 +637,24 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
           {selCount>40&&<div style={{padding:10,textAlign:"center",color:"#525252",fontSize:12}}>Showing 40 of {selCount}</div>}
         </div>
       </Card>
-      <div style={{display:"flex",gap:10,justifyContent:"flex-end",alignItems:"center"}}>
+      {/* AI Chat Assistant */}
+      <Card style={{border:'1px solid #1a1a1a',padding:16}}>
+        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+          <div style={{width:7,height:7,borderRadius:'50%',background:diAiStatus==='verified'?'#34d399':diAiStatus==='mismatch'?'#f87171':aiScanning?'#fbbf24':'#333',animation:aiScanning?'pulse 1.5s infinite':'none'}}/>
+          <span style={{fontSize:12,fontWeight:600,color:diAiStatus==='verified'?'#34d399':diAiStatus==='mismatch'?'#f87171':'#737373'}}>{diAiStatus==='verified'?'AI Verified':diAiStatus==='mismatch'?'AI Found Discrepancy':aiScanning?'AI Verifying...':'AI Assistant'}</span>
+        </div>
+        {diAiChat.length>0&&<div style={{maxHeight:180,overflowY:'auto',marginBottom:8,display:'flex',flexDirection:'column',gap:4}}>
+          {diAiChat.map((m,i)=><div key={i} style={{padding:'6px 10px',borderRadius:8,fontSize:12,lineHeight:1.5,maxWidth:'88%',alignSelf:m.role==='user'?'flex-end':'flex-start',background:m.role==='user'?'rgba(45,212,191,0.08)':'#0a0a0a',color:m.role==='user'?'#2dd4bf':'#a3a3a3',border:'1px solid '+(m.role==='user'?'rgba(45,212,191,0.12)':'#1a1a1a'),whiteSpace:'pre-wrap'}}>{m.content}</div>)}
+          {diAiLoading&&<div style={{padding:'6px 10px',borderRadius:8,fontSize:11,color:'#fbbf24',alignSelf:'flex-start'}}>Thinking...</div>}
+        </div>}
+        <div style={{display:'flex',gap:6}}>
+          <input value={diAiQuery} onChange={e=>setDiAiQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!diAiLoading)handleDiAiChat(diAiQuery)}} placeholder="Ask about the parsed data..." style={{flex:1,padding:'7px 12px',background:'#0a0a0a',border:'1px solid #1a1a1a',borderRadius:16,color:'#f0f0f0',fontSize:12,outline:'none',fontFamily:'inherit'}} disabled={diAiLoading}/>
+          <button onClick={()=>handleDiAiChat(diAiQuery)} disabled={diAiLoading||!diAiQuery.trim()} style={{padding:'6px 14px',borderRadius:16,border:'none',background:diAiQuery.trim()?'#2dd4bf':'#222',color:diAiQuery.trim()?'#000':'#555',fontSize:11,fontWeight:600,cursor:diAiQuery.trim()?'pointer':'default',fontFamily:'inherit',transition:'all 0.15s'}}>Send</button>
+        </div>
+      </Card>
+      <div style={{display:"flex",gap:10,justifyContent:"flex-end",alignItems:"center",marginTop:8}}>
         {parsed&&parsed.items.length===0&&<span style={{fontSize:12,color:"#f87171",marginRight:"auto"}}>Standard parser found 0 items</span>}
         <Btn v="secondary" onClick={reset}>Cancel</Btn>
-        {aiScanning&&<span style={{fontSize:12,color:"#fbbf24",display:"flex",alignItems:"center",gap:6}}><div style={{width:6,height:6,borderRadius:"50%",background:"#fbbf24",animation:"pulse 1s infinite"}}/>AI verifying...</span>}
         {aiResult&&aiResult.items&&!aiScanning&&<Btn v="secondary" onClick={()=>setStep("ai_review")} style={{border:"1px solid #fbbf2430",color:"#fbbf24"}}>Use AI Results ({aiResult.items.length} items)</Btn>}
         {selCount>0&&<Btn onClick={importQuote} style={{padding:"12px 28px",fontSize:15,...(importing?{opacity:0.6,pointerEvents:"none"}:{})}}>{importing?"Importing...":"Import "+selCount+" Items"}</Btn>}
       </div>
@@ -1977,18 +2028,18 @@ function JobsPage(ctx){
         {uploadSelCount>30&&<div style={{padding:8,textAlign:"center",color:"#333",fontSize:11}}>Showing 30 of {uploadSelCount}</div>}
       </div>
       {/* AI Chat Assistant */}
-      <div style={{borderTop:'1px solid #222',paddingTop:16,marginTop:8}}>
-        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
-          <div style={{width:8,height:8,borderRadius:'50%',background:uploadAiStatus==='verified'?'#34d399':uploadAiStatus==='mismatch'?'#f87171':uploadAiLoading?'#fbbf24':'#525252',animation:(!uploadAiStatus&&!uploadAiLoading)?'none':'pulse 1.5s infinite'}}/>
-          <span style={{fontSize:13,fontWeight:600,color:uploadAiStatus==='verified'?'#34d399':uploadAiStatus==='mismatch'?'#f87171':'#a3a3a3'}}>{uploadAiStatus==='verified'?'AI Verified':uploadAiStatus==='mismatch'?'AI Found Discrepancy':uploadAiLoading?'AI Thinking...':'AI Reviewing...'}</span>
+      <div style={{borderTop:'1px solid #1a1a1a',paddingTop:14,marginTop:8}}>
+        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+          <div style={{width:7,height:7,borderRadius:'50%',background:uploadAiStatus==='verified'?'#34d399':uploadAiStatus==='mismatch'?'#f87171':uploadAiLoading?'#fbbf24':'#333',animation:uploadAiLoading?'pulse 1.5s infinite':'none'}}/>
+          <span style={{fontSize:12,fontWeight:600,color:uploadAiStatus==='verified'?'#34d399':uploadAiStatus==='mismatch'?'#f87171':'#737373'}}>{uploadAiStatus==='verified'?'AI Verified':uploadAiStatus==='mismatch'?'AI Found Discrepancy':uploadAiLoading?'AI Verifying...':'AI Assistant'}</span>
         </div>
-        {uploadAiChat.length>0&&<div style={{maxHeight:200,overflowY:'auto',marginBottom:10,padding:'8px 0',display:'flex',flexDirection:'column',gap:6}}>
-          {uploadAiChat.map((m,i)=><div key={i} style={{padding:'8px 12px',borderRadius:10,fontSize:12,lineHeight:1.5,maxWidth:'90%',alignSelf:m.role==='user'?'flex-end':'flex-start',background:m.role==='user'?'rgba(45,212,191,0.1)':'rgba(255,255,255,0.04)',color:m.role==='user'?'#2dd4bf':'#c4c4c4',border:m.role==='user'?'1px solid rgba(45,212,191,0.15)':'1px solid rgba(255,255,255,0.06)',whiteSpace:'pre-wrap'}}>{m.content}</div>)}
-          {uploadAiLoading&&<div style={{padding:'8px 12px',borderRadius:10,fontSize:12,background:'rgba(251,191,36,0.05)',color:'#fbbf24',border:'1px solid rgba(251,191,36,0.1)',alignSelf:'flex-start',display:'flex',gap:4}}><span style={{animation:'pulse 1s infinite'}}>Thinking</span>...</div>}
+        {uploadAiChat.length>0&&<div style={{maxHeight:180,overflowY:'auto',marginBottom:8,display:'flex',flexDirection:'column',gap:4}}>
+          {uploadAiChat.map((m,i)=><div key={i} style={{padding:'6px 10px',borderRadius:8,fontSize:12,lineHeight:1.5,maxWidth:'88%',alignSelf:m.role==='user'?'flex-end':'flex-start',background:m.role==='user'?'rgba(45,212,191,0.08)':'#0a0a0a',color:m.role==='user'?'#2dd4bf':'#a3a3a3',border:'1px solid '+(m.role==='user'?'rgba(45,212,191,0.12)':'#1a1a1a'),whiteSpace:'pre-wrap'}}>{m.content}</div>)}
+          {uploadAiLoading&&<div style={{padding:'6px 10px',borderRadius:8,fontSize:11,color:'#fbbf24',alignSelf:'flex-start'}}>Thinking...</div>}
         </div>}
-        <div style={{display:'flex',gap:8,marginBottom:16}}>
-          <input value={uploadAiQuery} onChange={e=>setUploadAiQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')handleUploadAiChat(uploadAiQuery)}} placeholder="Ask AI about the parsed data... (e.g. 'are any items missing?')" style={{flex:1,padding:'8px 14px',background:'#0a0a0a',border:'1px solid #222',borderRadius:20,color:'#f0f0f0',fontSize:12,outline:'none',fontFamily:'inherit'}} disabled={uploadAiLoading}/>
-          <Btn v="secondary" style={{fontSize:11,padding:'6px 14px',flexShrink:0}} onClick={()=>handleUploadAiChat(uploadAiQuery)} disabled={uploadAiLoading||!uploadAiQuery.trim()}>Ask AI</Btn>
+        <div style={{display:'flex',gap:6,marginBottom:14}}>
+          <input value={uploadAiQuery} onChange={e=>setUploadAiQuery(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!uploadAiLoading)handleUploadAiChat(uploadAiQuery)}} placeholder="Ask about the parsed data..." style={{flex:1,padding:'7px 12px',background:'#0a0a0a',border:'1px solid #1a1a1a',borderRadius:16,color:'#f0f0f0',fontSize:12,outline:'none',fontFamily:'inherit'}} disabled={uploadAiLoading}/>
+          <button onClick={()=>handleUploadAiChat(uploadAiQuery)} disabled={uploadAiLoading||!uploadAiQuery.trim()} style={{padding:'6px 14px',borderRadius:16,border:'none',background:uploadAiQuery.trim()?'#2dd4bf':'#222',color:uploadAiQuery.trim()?'#000':'#555',fontSize:11,fontWeight:600,cursor:uploadAiQuery.trim()?'pointer':'default',fontFamily:'inherit',transition:'all 0.15s'}}>Send</button>
         </div>
       </div>
       <Btn onClick={handleUploadImport} style={{width:"100%",justifyContent:"center",padding:"12px",fontSize:14}}>
