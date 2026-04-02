@@ -142,11 +142,11 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
           const g=v=>cm[v]!==undefined?row[cm[v]]:"";
           const n=v=>safeNum(g(v));
           const s=v=>String(g(v)||"").trim();
-          const rowHasTotal=row.some(cell=>/^(total|subtotal|grand total)$/i.test(String(cell||"").trim()));
+          const rowHasTotal=row.some(cell=>{const cv=String(cell||"").trim().toLowerCase();return cv==="total"||cv==="subtotal"||cv==="grand total"});
           if(rowHasTotal)continue;
           const desc=s("desc");const tag=s("tag");const manuf=s("manuf");const model=s("model");
           if(!desc&&!tag&&!manuf)continue;
-          if(/^(freight|frt|surcharge|tariff|shipping|handling|delivery|install|installation|address|disclaimer|terms|conditions)/i.test(desc)&&!tag&&!model)continue;
+          if(/^(freight|frt|surcharge|tariff|shipping|handling|delivery|install|installation|address|disclaimer|terms|conditions)/i.test(desc)&&!tag&&!model&&!manuf)continue;
           const qty=n("qty")||0;if(qty<=0&&!tag)continue;
           const list=n("list");const net=n("net");
           const priceExt=n("priceExt");const price=n("price")||(priceExt&&qty>0?priceExt/qty:0);
@@ -1757,7 +1757,7 @@ function JobsPage(ctx){
           const n=v=>safeNum(g(v));
           const s=v=>String(g(v)||'').trim();
           // Check if any cell in the row contains "Total"/"Subtotal"/"Grand Total" (catches totals in ANY column)
-          const rowHasTotal=row.some(cell=>/^(total|subtotal|grand total)$/i.test(String(cell||'').trim()));
+          const rowHasTotal=row.some(cell=>{const cv=String(cell||'').trim().toLowerCase();return cv==='total'||cv==='subtotal'||cv==='grand total'});
           if(rowHasTotal)continue;
           const desc=s('desc');const tag=s('tag');const manuf=s('manuf');const model=s('model');
           // Group header: has description but no tag, no manuf, no qty, no prices
