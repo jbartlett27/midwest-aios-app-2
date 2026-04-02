@@ -995,9 +995,6 @@ function MidwestAIOSInner() {
   ].slice(0, 12);
   const [notification, setNotification] = useState(null);
   const [brainQuery, setBrainQuery] = useState("");
-  const [brainFile, setBrainFile] = useState(null);
-  const [brainFilePreview, setBrainFilePreview] = useState(null);
-  const brainFileRef = React.useRef(null);
   const [brainLoading, setBrainLoading] = useState(false);
   const [brainHistory, setBrainHistory] = useState([{role:"system",content:"Welcome to the Midwest Brain. I'm connected to Claude Sonnet 4.6 and have access to all your live data -- jobs, vendors, customers, deliveries, financials, SOPs, notes, and tasks. Ask me anything."}]);
   const [qbConfig, setQbConfig] = useState({connected:false, clientId:"", clientSecret:"", realmId:"", accessToken:"", refreshToken:""});
@@ -4412,6 +4409,9 @@ function NotesPage({customSops,addSop,deleteSop,jobs,reps,notify,triggerPrint}){
 }
 
 function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJobItems,brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory,updateJob,addJob,updateLineItem,addLineItem,deleteLineItem,updateRep,addRep,addCustomer,updateCustomer,addVendor,updateVendor,notify,setPage,deleteJob}){
+  const [brainFile, setBrainFile] = useState(null);
+  const [brainFilePreview, setBrainFilePreview] = useState(null);
+  const brainFileRef = React.useRef(null);
   const history=brainHistory;const setHistory=setBrainHistory;
   // === BRAIN MEMORY SYSTEM ===
   const [brainMemory, setBrainMemory] = useState([]);
