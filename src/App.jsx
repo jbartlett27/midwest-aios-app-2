@@ -116,9 +116,9 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
           else if(v==="net ext"||v==="net extended")h.netExt=c;
           else if(v==="your price"||v==="sell"||v==="sell price"||v==="unit price"||v==="price each"||v==="sell each"||v==="each")h.price=c;
           else if(v==="your price extended"||v==="sell ext"||v==="sell extended"||v==="price ext"||v==="extended"||v==="ext price"||v==="line total"||v==="ext.")h.priceExt=c;
-          else if(v==="shipping"||v==="ship"||v==="shipping each"||v==="freight")h.ship=c;
+          else if(v==="shipping"||v==="ship"||v==="shipping each"||v==="freight"){if(h.ship!==undefined)h.shipTotal=c;else h.ship=c}
           else if(v==="shipping total"||v==="ship total"||v==="freight total")h.shipTotal=c;
-          else if(v==="install"||v==="install each"||v==="installation")h.install=c;
+          else if(v==="install"||v==="install each"||v==="installation"){if(h.install!==undefined)h.installTotal=c;else h.install=c}
           else if(v==="install total"||v==="installation total")h.installTotal=c;
         }
         return Object.keys(h).length>=3?h:null;
@@ -150,13 +150,23 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
           const qty=n("qty")||0;if(qty<=0&&!tag)continue;
           const list=n("list");const net=n("net");
           const priceExt=n("priceExt");const price=n("price")||(priceExt&&qty>0?priceExt/qty:0);
+          // Shipping: if shipTotal column exists, use ship as per-unit; otherwise check if ship value > net (likely extended)
+          let shipPerUnit=n("ship");
+          const shipTotalVal=n("shipTotal");
+          if(!shipPerUnit&&shipTotalVal&&qty>0)shipPerUnit=shipTotalVal/qty;
+          else if(shipPerUnit&&!shipTotalVal&&qty>1&&net>0&&shipPerUnit>net)shipPerUnit=shipPerUnit/qty;
+          // Install: same logic
+          let installPerUnit=n("install");
+          const installTotalVal=n("installTotal");
+          if(!installPerUnit&&installTotalVal&&qty>0)installPerUnit=installTotalVal/qty;
+          else if(installPerUnit&&!installTotalVal&&qty>1&&net>0&&installPerUnit>net)installPerUnit=installPerUnit/qty;
           if(manuf)lastManuf=manuf;
           const mfr=manuf||lastManuf||"";
           if(mfr)vendorSet.add(mfr);if(tag)groups.add(tag);
           items.push({tag,manufacturer:mfr,modelNumber:model,description:desc||("Quote for "+mfr),
             color:s("color"),qtyOrdered:qty||1,listPrice:list,
-            unitCost:net||0,shippingPerUnit:n("ship"),
-            installPerUnit:n("install"),unitPrice:price||(priceExt&&qty>0?priceExt/qty:0)||0,
+            unitCost:net||0,shippingPerUnit:shipPerUnit||0,
+            installPerUnit:installPerUnit||0,unitPrice:price||(priceExt&&qty>0?priceExt/qty:0)||0,
             group:grp||tag||"",sheet:sn});ct++
         }
         sheets.push({name:sn,count:ct})
@@ -1397,6 +1407,7 @@ const sharedScreen = sharedQuote ? <ShareQuotePortal quoteData={sharedQuote} onA
         select option{background:#111111!important;color:#e5e5e5!important;padding:8px!important}
         select::-ms-expand{display:none!important}
         button{-webkit-tap-highlight-color:transparent}
+        html,body{background:#000000!important}
         .sales-hide{display:none!important}
           @media(max-width:768px){
           .sidebar{position:fixed!important;left:-240px!important;top:0!important;bottom:0!important;width:220px!important;min-width:220px!important;z-index:10000!important;transition:left 0.3s cubic-bezier(0.4,0,0.2,1)!important;background:#000000!important}
@@ -1404,7 +1415,8 @@ const sharedScreen = sharedQuote ? <ShareQuotePortal quoteData={sharedQuote} onA
           .mobile-menu-btn{display:flex!important}
           .mobile-close-btn{display:flex!important}
           .main-content{padding:16px 12px 90px 12px!important;overflow-x:hidden!important;max-width:100vw!important}
-          body{overflow-x:hidden!important}
+          body{overflow-x:hidden!important;background:#000000!important}
+          html{background:#000000!important}
           h1{font-size:20px!important}
           h2{font-size:18px!important}
           table{font-size:11px!important;display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%}
@@ -2249,7 +2261,7 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
   const [isProforma,setIsProforma]=useState(false);
   const [isCreditMemo,setIsCreditMemo]=useState(false);
   const toggleCol=(col)=>{const next={...hiddenCols,[col]:!hiddenCols[col]};setHiddenCols(next);if(previewDoc?.job?.id){updateJob(previewDoc.job.id,{docStatuses:{...(previewDoc.job.docStatuses||{}),__qcv:next}})}};
-  const allQuoteCols=[{key:"tag",label:"Tag"},{key:"manuf",label:"Manuf."},{key:"model",label:"Model #"},{key:"description",label:"Description"},{key:"color",label:"Color"},{key:"qty",label:"Qty"},{key:"shippingEach",label:"Shipping Each"},{key:"shippingTotal",label:"Shipping Total"},{key:"installEach",label:"Install Each"},{key:"installTotal",label:"Install Total"},{key:"unitPrice",label:"Your Price"},{key:"lineTotal",label:"Line Total"}];
+  const allQuoteCols=[{key:"tag",label:"Tag"},{key:"manuf",label:"Manuf."},{key:"model",label:"Model #"},{key:"description",label:"Description"},{key:"color",label:"Color"},{key:"qty",label:"Qty"},{key:"netCost",label:"Net Cost"},{key:"netTotal",label:"Net Total"},{key:"shippingEach",label:"Shipping Each"},{key:"shippingTotal",label:"Shipping Total"},{key:"installEach",label:"Install Each"},{key:"installTotal",label:"Install Total"},{key:"unitPrice",label:"Your Price"},{key:"lineTotal",label:"Line Total"}];
   const projectNum=(jobId)=>{const sorted=[...jobs].sort((a,b)=>(a.createdDate||'').localeCompare(b.createdDate||'')||a.id.localeCompare(b.id));const idx=sorted.findIndex(j=>j.id===jobId);return 'MW-'+String(idx+1).padStart(4,'0')};
   useEffect(()=>{if(pendingCommPreview){setPreviewDoc(pendingCommPreview);setTab("preview");setPendingCommPreview(null)}},[pendingCommPreview]);
   // Pick up Brain's generate_document request
@@ -3614,7 +3626,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
         <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
           <thead><tr>{(previewDoc.type==="quote"?visibleCols.map(c=>c.label):previewDoc.type==="commission"?["Job","Customer","Revenue","Status","Commission"]:["Description","Qty","Rate","Amount"]).map((h,i)=><th key={i} style={{padding:"8px 6px",textAlign:i<5&&previewDoc.type==="quote"?"left":"right",fontSize:10,fontWeight:600,color:"#888",textTransform:"uppercase",letterSpacing:0.5,borderBottom:"2px solid #e5e5e5"}}>{h}</th>)}</tr></thead>
           <tbody>{previewDoc.data.items.map((item,i)=>{const qty=item.displayQty!==undefined?item.displayQty:item.qtyOrdered;const price=item.displayPrice!==undefined?item.displayPrice:item.unitPrice;const ship=item.shippingPerUnit||0;const inst=item.installPerUnit||0;const allIn=(price||0)+ship+inst;
-            return previewDoc.type==="quote"?<tr key={i} style={{borderBottom:"1px solid #f0f0f0"}}>{visibleCols.map(c=>{const vals={tag:item.tag||"",manuf:item.manufacturer||vendors.find(v=>v.id===item.vendor)?.name||"",model:item.modelNumber||"",description:item.description,color:item.color||"",qty:qty,shippingEach:ship>0?fmt(ship):"",shippingTotal:ship>0?fmt(ship*qty):"",installEach:inst>0?fmt(inst):"",installTotal:inst>0?fmt(inst*qty):"",unitPrice:fmt(allIn),lineTotal:fmt(allIn*qty)};const isLeft=["tag","manuf","model","description","color"].includes(c.key);return <td key={c.key} style={{padding:"8px 6px",textAlign:isLeft?"left":"right",color:isLeft?"#666":"inherit",fontWeight:c.key==="lineTotal"?700:c.key==="unitPrice"?600:400,maxWidth:c.key==="description"?220:undefined,whiteSpace:c.key==="description"?"pre-line":undefined}}>{vals[c.key]}</td>})}</tr>:previewDoc.type==="commission"?<tr key={i} style={{borderBottom:"1px solid #f0f0f0"}}>
+            return previewDoc.type==="quote"?<tr key={i} style={{borderBottom:"1px solid #f0f0f0"}}>{visibleCols.map(c=>{const vals={tag:item.tag||"",manuf:item.manufacturer||vendors.find(v=>v.id===item.vendor)?.name||"",model:item.modelNumber||"",description:item.description,color:item.color||"",qty:qty,netCost:fmt(item.unitCost||0),netTotal:fmt((item.unitCost||0)*qty),shippingEach:ship>0?fmt(ship):"",shippingTotal:ship>0?fmt(ship*qty):"",installEach:inst>0?fmt(inst):"",installTotal:inst>0?fmt(inst*qty):"",unitPrice:fmt(allIn),lineTotal:fmt(allIn*qty)};const isLeft=["tag","manuf","model","description","color"].includes(c.key);return <td key={c.key} style={{padding:"8px 6px",textAlign:isLeft?"left":"right",color:isLeft?"#666":"inherit",fontWeight:c.key==="lineTotal"?700:c.key==="unitPrice"?600:400,maxWidth:c.key==="description"?220:undefined,whiteSpace:c.key==="description"?"pre-line":undefined}}>{vals[c.key]}</td>})}</tr>:previewDoc.type==="commission"?<tr key={i} style={{borderBottom:"1px solid #f0f0f0"}}>
               <td style={{padding:"8px 6px",color:"#333"}}>{(item.description||"").split(" -- ")[0]}</td>
               <td style={{padding:"8px 6px",color:"#666"}}>{(item.description||"").split(" -- ")[1]||""}</td>
               <td style={{padding:"8px 6px",textAlign:"right"}}>{fmt(price)}</td>
@@ -4376,6 +4388,43 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
   const chatRef=useRef(null);
   const [animatingIdx,setAnimatingIdx]=useState(-1);
   const [pendingActions,setPendingActions]=useState([]);
+  // === VOICE INPUT ===
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef(null);
+  const startListening = () => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { notify("Voice input not supported on this browser"); return; }
+    if (isListening) { if (recognitionRef.current) recognitionRef.current.stop(); setIsListening(false); return; }
+    const recognition = new SR();
+    recognition.lang = "en-US";
+    recognition.interimResults = true;
+    recognition.continuous = false;
+    recognition.maxAlternatives = 1;
+    let finalTranscript = "";
+    let interimTranscript = "";
+    recognition.onstart = () => { setIsListening(true); };
+    recognition.onresult = (event) => {
+      interimTranscript = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const t = event.results[i][0].transcript;
+        if (event.results[i].isFinal) { finalTranscript += t; } else { interimTranscript = t; }
+      }
+      setBrainQuery(finalTranscript + interimTranscript);
+    };
+    recognition.onend = () => {
+      setIsListening(false);
+      recognitionRef.current = null;
+      if (finalTranscript.trim()) { setBrainQuery(finalTranscript.trim()); }
+    };
+    recognition.onerror = (e) => {
+      setIsListening(false);
+      recognitionRef.current = null;
+      if (e.error !== "aborted" && e.error !== "no-speech") notify("Voice error: " + e.error);
+    };
+    finalTranscript = "";
+    recognitionRef.current = recognition;
+    recognition.start();
+  };
   useEffect(()=>{if(chatRef.current)chatRef.current.scrollTop=chatRef.current.scrollHeight},[history,animatingIdx,pendingActions]);
 
   // Tool definitions for Claude function calling
@@ -5055,8 +5104,9 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         <div style={{width:6,height:6,borderRadius:"50%",background:"#2dd4bf",animation:"pulse 1s infinite 0.4s"}}/></div>}
     </div>
     {history.length<=1&&<div style={{display:"flex",flexWrap:"wrap",gap:6,padding:"8px 16px",flexShrink:0,maxHeight:"40vh",overflowY:"auto"}}>{suggestedQueries.map(q=><button key={q} onClick={()=>{setBrainQuery(q);setTimeout(handleQuery,50)}} style={{padding:"6px 12px",borderRadius:8,border:"1px solid #1a1a1a",background:"transparent",color:"#525252",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.2s"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="#2dd4bf30";e.currentTarget.style.color="#2dd4bf"}} onMouseLeave={e=>{e.currentTarget.style.borderColor="#1a1a1a";e.currentTarget.style.color="#525252"}}>{q}</button>)}</div>}
-    <div style={{display:"flex",gap:8,padding:"12px 16px",background:"#000",flexShrink:0,borderTop:"1px solid #111"}}>
-      <input value={brainQuery} onChange={e=>setBrainQuery(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")handleQuery()}} placeholder="Ask the Brain anything..." style={{flex:1,padding:"10px 16px",background:"#0a0a0a",border:"1px solid #1a1a1a",borderRadius:24,color:"#f0f0f0",fontSize:13,outline:"none",fontFamily:"inherit"}} onFocus={e=>{e.currentTarget.style.borderColor="#2dd4bf30"}} onBlur={e=>{e.currentTarget.style.borderColor="#1a1a1a"}}/>
+    <div style={{display:"flex",gap:8,padding:"12px 16px",background:"#000",flexShrink:0,borderTop:"1px solid #111",alignItems:"center"}}>
+      <input value={brainQuery} onChange={e=>setBrainQuery(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")handleQuery()}} placeholder={isListening?"Listening...":"Ask the Brain anything..."} style={{flex:1,padding:"10px 16px",background:"#0a0a0a",border:isListening?"1px solid rgba(248,113,113,0.4)":"1px solid #1a1a1a",borderRadius:24,color:"#f0f0f0",fontSize:13,outline:"none",fontFamily:"inherit",transition:"border-color 0.3s"}} onFocus={e=>{if(!isListening)e.currentTarget.style.borderColor="#2dd4bf30"}} onBlur={e=>{if(!isListening)e.currentTarget.style.borderColor="#1a1a1a"}}/>
+      <button onClick={startListening} title={isListening?"Stop listening":"Voice input"} style={{width:40,height:40,borderRadius:20,border:"none",background:isListening?"rgba(248,113,113,0.15)":"#0a0a0a",color:isListening?"#f87171":"#525252",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.2s",flexShrink:0,position:"relative"}} onMouseEnter={e=>{if(!isListening)e.currentTarget.style.color="#2dd4bf"}} onMouseLeave={e=>{if(!isListening)e.currentTarget.style.color="#525252"}}>{isListening&&<div style={{position:"absolute",inset:-2,borderRadius:22,border:"2px solid #f87171",animation:"pulse 1.5s infinite",opacity:0.6}}/>}<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg></button>
       <button onClick={handleQuery} disabled={brainLoading} style={{width:40,height:40,borderRadius:20,border:"none",background:brainQuery.trim()?"#2dd4bf":"#1a1a1a",color:brainQuery.trim()?"#000":"#333",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.2s",flexShrink:0}} onMouseEnter={e=>{if(brainQuery.trim())e.currentTarget.style.background="#34d399"}} onMouseLeave={e=>{e.currentTarget.style.background=brainQuery.trim()?"#2dd4bf":"#1a1a1a"}}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
     </div>
   </div>;
