@@ -1058,12 +1058,12 @@ function MidwestAIOSInner() {
   const syncAll=async()=>{
     try{
       const[j,v,c,r,li,s]=await Promise.all([
-        supabase.from("jobs").select("*").order("id"),
-        supabase.from("vendors").select("*").order("name"),
-        supabase.from("customers").select("*").order("name"),
-        supabase.from("reps").select("*").order("name"),
-        supabase.from("line_items").select("*").order("id"),
-        supabase.from("sops").select("*").order("id")
+        db.from("jobs").select("*").order("id"),
+        db.from("vendors").select("*").order("name"),
+        db.from("customers").select("*").order("name"),
+        db.from("reps").select("*").order("name"),
+        db.from("line_items").select("*").order("id"),
+        db.from("sops").select("*").order("id")
       ]);
       if(j.data)setJobs(j.data);if(v.data)setVendors(v.data);if(c.data)setCustomers(c.data);
       if(r.data)setReps(r.data);if(li.data)setLineItems(li.data);if(s.data)setCustomSops(s.data);
