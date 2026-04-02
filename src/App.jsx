@@ -1198,7 +1198,18 @@ function MidwestAIOSInner() {
   }, [appReady, currentUser?.id]);
 
   // --- DERIVED COMPUTATIONS ----------------------------------
-  const getJobItems = jobId => lineItems.filter(li => li.jobId === jobId);
+  const getJobItems = jobId => lineItems.filter(li => li.jobId === jobId).sort((a,b) => {
+    // Sort by: group, then tag (numeric), then manufacturer, then id (insertion order)
+    const ga = (a.group||'').toLowerCase(), gb = (b.group||'').toLowerCase();
+    if (ga !== gb) return ga.localeCompare(gb);
+    const ta = parseFloat(a.tag) || 0, tb = parseFloat(b.tag) || 0;
+    if (ta !== tb) return ta - tb;
+    const tsa = (a.tag||''), tsb = (b.tag||'');
+    if (tsa !== tsb) return tsa.localeCompare(tsb);
+    const ma = (a.manufacturer||'').toLowerCase(), mb = (b.manufacturer||'').toLowerCase();
+    if (ma !== mb) return ma.localeCompare(mb);
+    return (a.id||'').localeCompare(b.id||'');
+  });
   const getJobFinancials = jobId => {
     const items = getJobItems(jobId);
     const totalCost = items.reduce((s,i)=>s+i.unitCost*i.qtyOrdered,0);
