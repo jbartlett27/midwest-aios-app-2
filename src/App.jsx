@@ -28,8 +28,8 @@ class ErrorBoundary extends React.Component {
 import{BarChart,Bar as RBar,XAxis,YAxis,Tooltip,ResponsiveContainer,LineChart,Line,PieChart,Pie,Cell}from"recharts";
 
 const Bar = ({value,max,color,height=6,style={}})=><div style={{width:"100%",background:"#222",borderRadius:height/2,overflow:"hidden",height,...style}}><div style={{width:max>0?(value/max*100)+"%":"0%",height:"100%",background:color||"#2dd4bf",borderRadius:height/2,transition:"width 0.4s ease"}}/></div>;
-const fmtShipJsx=(raw)=>{if(!raw)return '';if(raw.includes('\n'))return raw.split('\n').map((l,i)=><React.Fragment key={i}>{i>0&&<br/>}{l}</React.Fragment>);const parts=raw.split(',').map(s=>s.trim());if(parts.length>=3)return parts.map((p,i)=><React.Fragment key={i}>{i>0&&<br/>}{p}</React.Fragment>);if(parts.length===2&&/[A-Z]{2}\s+\d{5}/.test(parts[1]))return parts.map((p,i)=><React.Fragment key={i}>{i>0&&<br/>}{p}</React.Fragment>);return raw};
-const fmtAddrJsx=(addr)=>{if(!addr)return null;if(addr.includes('\n'))return addr.split('\n').map((l,i)=><React.Fragment key={i}>{i>0&&<br/>}{l}</React.Fragment>);const parts=addr.split(',').map(s=>s.trim());if(parts.length>=2){const last=parts[parts.length-1];if(/[A-Z]{2}\s+\d{5}/.test(last))return <>{parts.slice(0,-1).join(', ')}<br/>{last}</>; if(parts.length>=3)return parts.map((p,i)=><React.Fragment key={i}>{i>0&&<br/>}{p}</React.Fragment>)}return addr};
+const fmtShipJsx=(raw)=>{if(!raw)return '';if(raw.includes('\n'))return raw.split('\n').map((l,i)=><React.Fragment key={i}>{i>0&&<br/>}{l}</React.Fragment>);const parts=raw.split(',').map(s=>s.trim());if(parts.length>=3){const last=parts[parts.length-1];if(/[A-Z]{2}\s+\d{5}/.test(last))return <>{parts.slice(0,-2).join(', ')}<br/>{parts[parts.length-2]+', '+last}</>;return parts.map((p,i)=><React.Fragment key={i}>{i>0&&<br/>}{p}</React.Fragment>)}if(parts.length===2&&/[A-Z]{2}\s+\d{5}/.test(parts[1]))return <>{parts[0]}<br/>{parts[1]}</>;return raw};
+const fmtAddrJsx=(addr)=>{if(!addr)return null;if(addr.includes('\n'))return addr.split('\n').map((l,i)=><React.Fragment key={i}>{i>0&&<br/>}{l}</React.Fragment>);const parts=addr.split(',').map(s=>s.trim());if(parts.length>=3){const last=parts[parts.length-1];if(/[A-Z]{2}\s+\d{5}/.test(last))return <>{parts.slice(0,-2).join(', ')}<br/>{parts[parts.length-2]+', '+last}</>; return parts.map((p,i)=><React.Fragment key={i}>{i>0&&<br/>}{p}</React.Fragment>)}if(parts.length===2&&/[A-Z]{2}\s+\d{5}/.test(parts[1]))return <>{parts[0]}<br/>{parts[1]}</>;return addr};
 
 const Btn = ({children,onClick,v,style={},...props})=>{const base={padding:"8px 16px",borderRadius:10,border:"none",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Satoshi',sans-serif",transition:"all 0.15s",display:"inline-flex",alignItems:"center",gap:6};const variants={primary:{...base,background:"#2dd4bf",color:"#000"},secondary:{...base,background:"transparent",border:"1px solid #333",color:"#c4c4c4"},ghost:{...base,background:"transparent",color:"#a3a3a3",padding:"6px 12px"},danger:{...base,background:"rgba(248,113,113,0.1)",color:"#f87171",border:"1px solid rgba(248,113,113,0.2)"}};const s=variants[v]||variants.primary;return <button onClick={onClick} style={{...s,...style}} {...props}>{children}</button>};
 
@@ -2576,24 +2576,13 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
 
   const genPOs=job=>{const items=getJobItems(job.id);const groups={};items.forEach(i=>{if(!groups[i.vendor])groups[i.vendor]=[];groups[i.vendor].push(i)});return Object.entries(groups).map(([vid,vitems])=>({vendor:vendors.find(v=>v.id===vid),items:vitems.map(i=>({...i,displayQty:i.qtyOrdered,displayPrice:i.unitCost})),total:vitems.reduce((s,i)=>s+i.unitCost*i.qtyOrdered,0),job,docNum:stableNum('PO-',job.id,vid)}))};
   const genInvoice=(job,full)=>{const allItems=getJobItems(job.id);const items=full?allItems.filter(i=>i.qtyOrdered>0):allItems.filter(i=>i.qtyReceived>i.qtyInvoiced);const isPartial=!full&&allItems.some(i=>i.qtyOrdered>i.qtyReceived);const jobPONums=genPOs(job).map(po=>po.docNum);return {customer:customers.find(c=>c.id===job.customer),items:items.map(i=>({...i,displayQty:full?i.qtyOrdered:(i.qtyReceived-i.qtyInvoiced),displayPrice:i.unitPrice})),total:items.reduce((s,i)=>s+i.unitPrice*(full?i.qtyOrdered:(i.qtyReceived-i.qtyInvoiced)),0),job,docNum:stableNum('INV-',job.id,job.customer),isPartial,isFull:!!full,poNumbers:jobPONums}};
-  const fmtAddrHtml=(name,address,contact)=>{let lines=[];if(name)lines.push(name);if(address){let a=address||'';if(a.includes('\n')){a=a.replace(/\n/g,'<br>')}else{const parts=a.split(',').map(s=>s.trim());if(parts.length>=2){const last=parts[parts.length-1];const hasStateZip=/[A-Z]{2}\s+\d{5}/.test(last);if(hasStateZip&&parts.length>=2){a=parts.slice(0,-1).join(', ')+'<br>'+last}else if(parts.length>=3){a=parts.join('<br>')}}}lines.push(a)}if(contact&&!lines.some(l=>l.toLowerCase().includes('attn')))lines.push('Attn: '+contact);return lines.join('<br>')};
+  const fmtAddrHtml=(name,address,contact)=>{let lines=[];if(name)lines.push(name);if(address){let a=address||'';if(a.includes('\n')){a=a.replace(/\n/g,'<br>')}else{const parts=a.split(',').map(s=>s.trim());if(parts.length>=3){const last=parts[parts.length-1];if(/[A-Z]{2}\s+\d{5}/.test(last)){a=parts.slice(0,-2).join(', ')+'<br>'+parts[parts.length-2]+', '+last}else{a=parts.join('<br>')}}else if(parts.length===2&&/[A-Z]{2}\s+\d{5}/.test(parts[1])){a=parts[0]+'<br>'+parts[1]}}lines.push(a)}if(contact&&!lines.some(l=>l.toLowerCase().includes('attn')))lines.push('Attn: '+contact);return lines.join('<br>')};
   const fmtShipHtml=(shipTo,custName,custAddr,custContact)=>{
     if(shipTo){
       if(shipTo.includes('\n'))return shipTo.replace(/\n/g,'<br>');
-      // Only split if we have a proper multi-part address: "Street, City, State Zip" (3+ commas)
       const parts=shipTo.split(',').map(s=>s.trim());
-      if(parts.length>=3){
-        // Rejoin as: each part on its own line
-        return parts.join('<br>');
-      }
-      // For 2 parts: only split if the second part has both a state abbreviation AND a zip
-      // e.g. "425 Fawell Blvd, Glen Ellyn IL 60137" -> two lines
-      // But "84 Columbia ave Hopewell NJ, 08525" -> the zip is alone, keep as one line
-      if(parts.length===2){
-        const second=parts[1];
-        const hasStateAndZip=/[A-Z]{2}\s+\d{5}/.test(second);
-        if(hasStateAndZip) return parts.join('<br>');
-      }
+      if(parts.length>=3){const last=parts[parts.length-1];if(/[A-Z]{2}\s+\d{5}/.test(last))return parts.slice(0,-2).join(', ')+'<br>'+parts[parts.length-2]+', '+last;return parts.join('<br>')}
+      if(parts.length===2&&/[A-Z]{2}\s+\d{5}/.test(parts[1]))return parts[0]+'<br>'+parts[1];
       return shipTo;
     }
     return fmtAddrHtml(custName,custAddr,custContact);
