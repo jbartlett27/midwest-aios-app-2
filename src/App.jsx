@@ -318,7 +318,7 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
       setDone({type:"quote",items:ct,vendors:newVendors,jobName,jobId:jid});
       notify("Imported "+ct+" items into \""+jobName+"\"");
       // Force re-fetch line items after batch import to ensure consistency across sessions
-      setTimeout(async()=>{try{const{data}=await db.from("line_items").select("*").order("id");if(data)setLineItems(data)}catch{}},3000);
+      setTimeout(async()=>{try{const d=await db.loadAll();if(d.lineItems)setLineItems(d.lineItems);if(d.jobs)setJobs(d.jobs)}catch{}},3000);
     }catch(err){notify("Import error: "+err.message,"error")}
     setImporting(false);
   };
@@ -1058,17 +1058,10 @@ function MidwestAIOSInner() {
   // Force re-fetch ALL data from Supabase (ensures consistency between users)
   const syncAll=async()=>{
     try{
-      const[j,v,c,r,li,s]=await Promise.all([
-        db.from("jobs").select("*").order("id"),
-        db.from("vendors").select("*").order("name"),
-        db.from("customers").select("*").order("name"),
-        db.from("reps").select("*").order("name"),
-        db.from("line_items").select("*").order("id"),
-        db.from("sops").select("*").order("id")
-      ]);
-      if(j.data)setJobs(j.data);if(v.data)setVendors(v.data);if(c.data)setCustomers(c.data);
-      if(r.data)setReps(r.data);if(li.data)setLineItems(li.data);if(s.data)setCustomSops(s.data);
-      notify("Data synced -- "+((li.data||[]).length)+" line items, "+((j.data||[]).length)+" jobs");
+      const d=await db.loadAll();
+      if(d.jobs)setJobs(d.jobs);if(d.vendors)setVendors(d.vendors);if(d.customers)setCustomers(d.customers);
+      if(d.reps)setReps(d.reps);if(d.lineItems)setLineItems(d.lineItems);if(d.sops)setCustomSops(d.sops);
+      notify("Data synced -- "+(d.lineItems||[]).length+" line items, "+(d.jobs||[]).length+" jobs");
     }catch(e){notify("Sync error: "+e.message,"error")}
   };
 
@@ -1851,7 +1844,7 @@ function JobsPage(ctx){
           qtyOrdered:item.qtyOrdered,qtyReceived:0,qtyInvoiced:0,poDate:'',deliveryDate:'',invoiceDate:''});ct++}
       notify('Imported '+ct+' items into "'+uploadJobName+'" -- click the job to view');
       // Force re-fetch line items after batch import to ensure consistency across sessions
-      setTimeout(async()=>{try{const{data}=await db.from('line_items').select('*').order('id');if(data)setLineItems(data)}catch{}},3000);
+      setTimeout(async()=>{try{const d=await db.loadAll();if(d.lineItems)setLineItems(d.lineItems);if(d.jobs)setJobs(d.jobs)}catch{}},3000);
       setUploadData(null);setUploadJobName('');setSelectedJob(jid);
     }catch(err){notify('Import error: '+err.message,'error')}
     setUploading(false);
