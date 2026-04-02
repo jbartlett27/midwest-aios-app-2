@@ -905,7 +905,7 @@ function ShareQuotePortal({quoteData,onApprove}){
       {/* Prepared For / Ship To */}
       <div style={{display:"flex",gap:24,marginBottom:16,flexWrap:"wrap"}}>
         <div style={{flex:1,minWidth:180}}><div style={{fontSize:10,fontWeight:700,color:"#888",textTransform:"uppercase",letterSpacing:1.5,marginBottom:4}}>PREPARED FOR</div><div style={{fontSize:13,lineHeight:1.6}}>{job?.billTo||customer?.name||""}{customer?.address?<><br/>{customer.address}</>:null}{customer?.contact?<><br/>{"Attn: "+customer.contact}</>:null}</div></div>
-        <div style={{flex:1,minWidth:180}}><div style={{fontSize:10,fontWeight:700,color:"#888",textTransform:"uppercase",letterSpacing:1.5,marginBottom:4}}>SHIP TO</div><div style={{fontSize:13,lineHeight:1.6}}>{job?.shipTo||customer?.name||""}</div></div>
+        <div style={{flex:1,minWidth:180}}><div style={{fontSize:10,fontWeight:700,color:"#888",textTransform:"uppercase",letterSpacing:1.5,marginBottom:4}}>SHIP TO</div><div style={{fontSize:13,lineHeight:1.6}}>{job?.shipTo?fmtShipJsx(job.shipTo):<>{customer?.name||""}{customer?.address&&<><br/>{customer.address}</>}{customer?.contact&&<><br/>{"Attn: "+customer.contact}</>}</>}</div></div>
         <div style={{textAlign:"right",minWidth:160}}><div style={{fontSize:12,color:"#888"}}>Project: {job?.name||""}</div>{job?.poNumber&&<div style={{fontSize:12,color:"#888"}}>PO#: {job.poNumber}</div>}<div style={{fontSize:12,color:"#888"}}>Terms: {t}</div></div>
       </div>
       {/* Table - exact same columns as PDF export */}
@@ -2444,8 +2444,31 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
 
   const genPOs=job=>{const items=getJobItems(job.id);const groups={};items.forEach(i=>{if(!groups[i.vendor])groups[i.vendor]=[];groups[i.vendor].push(i)});return Object.entries(groups).map(([vid,vitems])=>({vendor:vendors.find(v=>v.id===vid),items:vitems.map(i=>({...i,displayQty:i.qtyOrdered,displayPrice:i.unitCost})),total:vitems.reduce((s,i)=>s+i.unitCost*i.qtyOrdered,0),job,docNum:stableNum('PO-',job.id,vid)}))};
   const genInvoice=(job,full)=>{const allItems=getJobItems(job.id);const items=full?allItems.filter(i=>i.qtyOrdered>0):allItems.filter(i=>i.qtyReceived>i.qtyInvoiced);const isPartial=!full&&allItems.some(i=>i.qtyOrdered>i.qtyReceived);const jobPONums=genPOs(job).map(po=>po.docNum);return {customer:customers.find(c=>c.id===job.customer),items:items.map(i=>({...i,displayQty:full?i.qtyOrdered:(i.qtyReceived-i.qtyInvoiced),displayPrice:i.unitPrice})),total:items.reduce((s,i)=>s+i.unitPrice*(full?i.qtyOrdered:(i.qtyReceived-i.qtyInvoiced)),0),job,docNum:stableNum('INV-',job.id,job.customer),isPartial,isFull:!!full,poNumbers:jobPONums}};
-  const fmtAddrHtml=(name,address,contact)=>{let lines=[];if(name)lines.push(name);if(address){const a=(address||'').replace(/\n/g,'<br>');lines.push(a)}if(contact)lines.push('Attn: '+contact);return lines.join('<br>')};
-  const fmtShipHtml=(shipTo,custName,custAddr,custContact)=>{if(shipTo)return fmtAddrHtml(shipTo,'','');return fmtAddrHtml(custName,custAddr,custContact)};
+  const fmtAddrHtml=(name,address,contact)=>{let lines=[];if(name)lines.push(name);if(address){const a=(address||'').replace(/\n/g,'<br>');lines.push(a)}if(contact&&!lines.some(l=>l.toLowerCase().includes('attn')))lines.push('Attn: '+contact);return lines.join('<br>')};
+  const fmtShipHtml=(shipTo,custName,custAddr,custContact)=>{
+    if(shipTo){
+      // If shipTo contains newlines, it's already formatted
+      if(shipTo.includes('\n'))return shipTo.replace(/\n/g,'<br>');
+      // If shipTo contains comma-separated city/state/zip pattern, format it
+      const parts=shipTo.split(',').map(s=>s.trim());
+      if(parts.length>=2){
+        // Try to detect: "Street, City, State Zip" or "Name, Street, City State Zip"
+        const last=parts[parts.length-1];
+        const hasZip=/\d{5}/.test(last);
+        if(hasZip&&parts.length>=3){
+          // "Street, City, State Zip" or "Name, Street, City, State Zip"
+          return parts.map(p=>p.trim()).join('<br>');
+        }
+        if(hasZip&&parts.length===2){
+          // "Street, City State Zip" -- keep as two lines
+          return parts.join('<br>');
+        }
+      }
+      return shipTo;
+    }
+    return fmtAddrHtml(custName,custAddr,custContact);
+  };
+  const fmtShipJsx=(raw)=>{if(!raw)return '';if(raw.includes('\n'))return raw.split('\n').map((l,i)=><React.Fragment key={i}>{i>0&&<br/>}{l}</React.Fragment>);const parts=raw.split(',').map(s=>s.trim());if(parts.length>=2&&/\d{5}/.test(parts[parts.length-1]))return parts.map((p,i)=><React.Fragment key={i}>{i>0&&<br/>}{p}</React.Fragment>);return raw};
   const genQuote=job=>{const items=getJobItems(job.id);const customer=customers.find(c=>c.id===job.customer);const qvc=((job.docStatuses||{}).__qcv||{});return {customer,items:items.map(i=>({...i,displayQty:i.qtyOrdered,displayPrice:i.unitPrice})),total:items.reduce((s,i)=>s+(i.priceExtended&&i.priceExtended>0?i.priceExtended:(i.unitPrice||0)*i.qtyOrdered),0),job,docNum:stableNum('QT-',job.id,job.customer),projectNum:projectNum(job.id),hiddenCols:qvc}};
 
   const handleExportPDF=(doc)=>{
@@ -3641,7 +3664,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
         {previewDoc.type==="po"&&<>
           <div style={{display:"flex",gap:40,marginBottom:20}}>
             <div style={{flex:1}}><div style={{fontSize:10,fontWeight:700,color:"#888",textTransform:"uppercase",letterSpacing:1.5,marginBottom:6}}>VENDOR</div><div style={{fontSize:13,color:"#333",lineHeight:1.6}}>{previewDoc.data.vendor?.name||""}{previewDoc.data.vendor?.address&&<><br/>{previewDoc.data.vendor.address}</>}{previewDoc.data.vendor?.phone&&<><br/>{previewDoc.data.vendor.phone}</>}</div></div>
-            <div style={{flex:1}}><div style={{fontSize:10,fontWeight:700,color:"#888",textTransform:"uppercase",letterSpacing:1.5,marginBottom:6}}>SHIP TO</div><div style={{fontSize:13,color:"#333",lineHeight:1.6}}>{previewDoc.job.shipTo||previewDoc.data.customer?.name||""}{!previewDoc.job.shipTo&&previewDoc.data.customer?.address&&<><br/>{previewDoc.data.customer.address}</>}{!previewDoc.job.shipTo&&previewDoc.data.customer?.contact&&<><br/>{"Attn: "+previewDoc.data.customer.contact}</>}</div></div>
+            <div style={{flex:1}}><div style={{fontSize:10,fontWeight:700,color:"#888",textTransform:"uppercase",letterSpacing:1.5,marginBottom:6}}>SHIP TO</div><div style={{fontSize:13,color:"#333",lineHeight:1.6}}>{previewDoc.job.shipTo?fmtShipJsx(previewDoc.job.shipTo):<>{previewDoc.data.customer?.name||""}{previewDoc.data.customer?.address&&<><br/>{previewDoc.data.customer.address}</>}{previewDoc.data.customer?.contact&&<><br/>{"Attn: "+previewDoc.data.customer.contact}</>}</>}</div></div>
             <div style={{minWidth:160}}><div style={{fontSize:10,fontWeight:700,color:"#888",textTransform:"uppercase",letterSpacing:1.5,marginBottom:6}}>P.O. NO.</div><div style={{fontSize:18,fontWeight:700}}>{previewDoc.data.docNum||""}</div></div>
           </div>
           {previewDoc.job.shipVia&&<div style={{marginBottom:16,padding:"10px 14px",background:"#fafafa",borderRadius:6}}><div style={{fontSize:10,fontWeight:700,color:"#888",textTransform:"uppercase",letterSpacing:1.5,marginBottom:4}}>SHIP VIA</div><div style={{fontSize:13}}>{previewDoc.job.shipVia}</div></div>}
@@ -3651,7 +3674,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
         {previewDoc.type==="invoice"&&<>
           <div style={{display:"flex",gap:40,marginBottom:20}}>
             <div style={{flex:1}}><div style={{fontSize:10,fontWeight:700,color:"#888",textTransform:"uppercase",letterSpacing:1.5,marginBottom:6}}>BILL TO</div><div style={{fontSize:13,color:"#333",lineHeight:1.6}}>{previewDoc.job.billTo||previewDoc.data.customer?.name||""}{previewDoc.data.customer?.address&&<><br/>{previewDoc.data.customer.address}</>}{previewDoc.data.customer?.contact&&<><br/>{"Attn: "+previewDoc.data.customer.contact}</>}</div></div>
-            <div style={{flex:1}}><div style={{fontSize:10,fontWeight:700,color:"#888",textTransform:"uppercase",letterSpacing:1.5,marginBottom:6}}>SHIP TO</div><div style={{fontSize:13,color:"#333",lineHeight:1.6}}>{previewDoc.job.shipTo||previewDoc.data.customer?.name||""}{!previewDoc.job.shipTo&&previewDoc.data.customer?.address&&<><br/>{previewDoc.data.customer.address}</>}{!previewDoc.job.shipTo&&previewDoc.data.customer?.contact&&<><br/>{"Attn: "+previewDoc.data.customer.contact}</>}</div></div>
+            <div style={{flex:1}}><div style={{fontSize:10,fontWeight:700,color:"#888",textTransform:"uppercase",letterSpacing:1.5,marginBottom:6}}>SHIP TO</div><div style={{fontSize:13,color:"#333",lineHeight:1.6}}>{previewDoc.job.shipTo?fmtShipJsx(previewDoc.job.shipTo):<>{previewDoc.data.customer?.name||""}{previewDoc.data.customer?.address&&<><br/>{previewDoc.data.customer.address}</>}{previewDoc.data.customer?.contact&&<><br/>{"Attn: "+previewDoc.data.customer.contact}</>}</>}</div></div>
             <div style={{minWidth:180,textAlign:"right"}}><div style={{fontSize:12,color:"#888"}}>Terms: {previewDoc.job.terms||"Net 30"}</div><div style={{fontSize:12,color:"#2dd4bf",fontWeight:600}}>Due: {(()=>{const d=new Date();d.setDate(d.getDate()+((previewDoc.job.terms||"").includes("15")?15:(previewDoc.job.terms||"").includes("Receipt")?0:30));return d.toLocaleDateString()})()}</div></div>
           </div>
           {previewDoc.job.poNumber&&<div style={{marginBottom:16}}><div style={{fontSize:10,fontWeight:700,color:"#888",textTransform:"uppercase",letterSpacing:1.5,marginBottom:4}}>P.O. NUMBER</div><div style={{fontSize:14,fontWeight:600}}>{previewDoc.job.poNumber}</div></div>}
@@ -3662,7 +3685,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
           <div style={{textAlign:"center",marginBottom:16}}><div style={{fontSize:12,color:"#888"}}>Designing Spaces | Building Futures | WBE Certified Enterprise</div></div>
           <div style={{display:"flex",gap:40,marginBottom:20}}>
             <div style={{flex:1}}><div style={{fontSize:10,fontWeight:700,color:"#888",textTransform:"uppercase",letterSpacing:1.5,marginBottom:6}}>PREPARED FOR</div><div style={{fontSize:13,color:"#333",lineHeight:1.6}}>{previewDoc.job.billTo||previewDoc.data.customer?.name||""}{previewDoc.data.customer?.address&&<><br/>{previewDoc.data.customer.address}</>}{previewDoc.data.customer?.contact&&<><br/>{"Attn: "+previewDoc.data.customer.contact}</>}</div></div>
-            <div style={{flex:1}}><div style={{fontSize:10,fontWeight:700,color:"#888",textTransform:"uppercase",letterSpacing:1.5,marginBottom:6}}>SHIP TO</div><div style={{fontSize:13,color:"#333",lineHeight:1.6}}>{previewDoc.job.shipTo||previewDoc.data.customer?.name||""}{!previewDoc.job.shipTo&&previewDoc.data.customer?.address&&<><br/>{previewDoc.data.customer.address}</>}{!previewDoc.job.shipTo&&previewDoc.data.customer?.contact&&<><br/>{"Attn: "+previewDoc.data.customer.contact}</>}</div></div>
+            <div style={{flex:1}}><div style={{fontSize:10,fontWeight:700,color:"#888",textTransform:"uppercase",letterSpacing:1.5,marginBottom:6}}>SHIP TO</div><div style={{fontSize:13,color:"#333",lineHeight:1.6}}>{previewDoc.job.shipTo?fmtShipJsx(previewDoc.job.shipTo):<>{previewDoc.data.customer?.name||""}{previewDoc.data.customer?.address&&<><br/>{previewDoc.data.customer.address}</>}{previewDoc.data.customer?.contact&&<><br/>{"Attn: "+previewDoc.data.customer.contact}</>}</>}</div></div>
             <div style={{textAlign:"right"}}><div style={{fontSize:13}}>Project: {projectNum(previewDoc.job.id)} {previewDoc.job.name}</div>{previewDoc.job.poNumber&&<div style={{fontSize:12,color:"#888",marginTop:4}}>PO#: {previewDoc.job.poNumber}</div>}<div style={{fontSize:12,color:"#888",marginTop:2}}>Terms: {previewDoc.job.terms||"Net 30"}</div></div>
           </div>
         </>}
