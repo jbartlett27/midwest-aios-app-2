@@ -1874,6 +1874,7 @@ function JobsPage(ctx){
       }catch{}
     }catch(err){notify('Error reading file: '+err.message,'error')}
   };
+  const [uploadAiChangedRows, setUploadAiChangedRows] = useState(new Set());
   const handleUploadAiChat = async (query) => {
     if (!query.trim() || !uploadData) return;
     setUploadAiQuery('');
@@ -1881,44 +1882,61 @@ function JobsPage(ctx){
     setUploadAiLoading(true);
     try {
       const items = uploadData.items.filter(i => uploadSheets[i.sheet]);
-      const itemSummary = items.slice(0, 100).map((it, idx) =>
-        'Item ' + idx + ': tag=' + (it.tag||'') + ' manuf=' + (it.manufacturer||'') + ' model=' + (it.modelNumber||'') + ' desc=' + (it.description||'').slice(0,50) + ' qty=' + it.qtyOrdered + ' cost=$' + (it.unitCost||0).toFixed(2) + ' price=$' + (it.unitPrice||0).toFixed(2) + ' priceExt=$' + (it.priceExtended||0).toFixed(2)
+      const itemSummary = items.slice(0, 150).map((it, idx) =>
+        '[' + idx + '] tag=' + (it.tag||'') + ' | manuf=' + (it.manufacturer||'') + ' | model=' + (it.modelNumber||'') + ' | desc=' + (it.description||'').slice(0,60) + ' | color=' + (it.color||'') + ' | qty=' + it.qtyOrdered + ' | cost=' + (it.unitCost||0).toFixed(2) + ' | price=' + (it.unitPrice||0).toFixed(2)
       ).join('\n');
-      const system = 'You are an AI assistant reviewing parsed Excel quote data for Midwest Educational Furnishings. The user uploaded a quote spreadsheet and the parser extracted ' + items.length + ' items. The user may ask you to verify items, find issues, fix things, or modify data. Respond concisely. If the user asks to change an item, respond with JSON in this format: {"actions":[{"index":0,"field":"unitPrice","value":100}]} where index is the item number. Multiple actions allowed. If no changes needed, just respond with text. Never use emoji.';
-      const msgs = [...uploadAiChat.slice(-6).map(m => ({role:m.role, content:m.content})), {role:'user', content:query + '\n\nPARSED ITEMS (' + items.length + ' total):\n' + itemSummary + (items.length > 100 ? '\n... and ' + (items.length - 100) + ' more items' : '')}];
+      const system = `You are an AI assistant reviewing parsed Excel quote data for Midwest Educational Furnishings. There are ${items.length} parsed line items.
+
+CAPABILITIES:
+- Answer questions about the parsed data (totals, missing items, vendors, etc.)
+- MODIFY line items when the user asks to change, fix, update, or correct something
+
+TO MODIFY ITEMS, you MUST respond with a JSON block. Put your explanation text BEFORE the JSON. The JSON must be on its own line:
+{"actions":[{"index":0,"field":"unitPrice","value":500},{"index":3,"field":"qtyOrdered","value":10}]}
+
+Valid fields: tag, manufacturer, modelNumber, description, color, qtyOrdered, unitCost, unitPrice, shippingPerUnit, installPerUnit, listPrice
+Index is the row number shown in [brackets] in the item list below.
+
+IMPORTANT: Always include the JSON block when the user asks you to change something. Do not just describe what you would change. Actually output the JSON to make the change happen.
+
+Never use emoji. Be concise.`;
+      const msgs = [...uploadAiChat.slice(-6).map(m => ({role:m.role, content:m.content})), {role:'user', content:query + '\n\nPARSED ITEMS (' + items.length + ' total, showing first 150):\n' + itemSummary + (items.length > 150 ? '\n... and ' + (items.length - 150) + ' more items' : '')}];
       const resp = await fetch('/api/brain', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({system, messages:msgs, tools:[]})});
       const data = await resp.json();
       const text = (data.content||[]).filter(b => b.type === 'text').map(b => b.text).join('\n');
-      // Check for action JSON in the response
+      // Parse action JSON from response
+      let applied = 0;
       try {
-        const jsonMatch = text.match(/\{\s*"actions"\s*:\s*\[/);
+        const jsonRegex = /\{"actions"\s*:\s*\[[\s\S]*?\]\s*\}/;
+        const jsonMatch = text.match(jsonRegex);
         if (jsonMatch) {
-          const jsonStr = text.slice(text.indexOf('{'));
-          const parsed2 = JSON.parse(jsonStr.slice(0, jsonStr.lastIndexOf('}') + 1));
+          const parsed2 = JSON.parse(jsonMatch[0]);
           if (parsed2.actions && parsed2.actions.length > 0) {
             const newItems = [...uploadData.items];
             const filtered = newItems.filter(i => uploadSheets[i.sheet]);
-            let changeCount = 0;
+            const changedIdxs = new Set();
             parsed2.actions.forEach(a => {
               if (a.index >= 0 && a.index < filtered.length && a.field) {
                 const item = filtered[a.index];
                 const globalIdx = newItems.indexOf(item);
-                if (globalIdx >= 0) { newItems[globalIdx] = {...item, [a.field]: a.value}; changeCount++; }
+                if (globalIdx >= 0) {
+                  newItems[globalIdx] = {...item, [a.field]: a.value};
+                  changedIdxs.add(a.index);
+                  applied++;
+                }
               }
             });
-            if (changeCount > 0) {
+            if (applied > 0) {
               setUploadData({...uploadData, items: newItems});
-              setUploadAiChat(p => [...p, {role:'assistant', content:text + '\n\nApplied ' + changeCount + ' change(s) to the parsed data.'}]);
-            } else {
-              setUploadAiChat(p => [...p, {role:'assistant', content:text}]);
+              setUploadAiChangedRows(changedIdxs);
+              setTimeout(() => setUploadAiChangedRows(new Set()), 3000);
+              const cleanText = text.replace(jsonRegex, '').trim();
+              setUploadAiChat(p => [...p, {role:'assistant', content:(cleanText || 'Done.') + '\n\nUpdated ' + applied + ' item(s). Changes highlighted in the table above.'}]);
             }
-          } else {
-            setUploadAiChat(p => [...p, {role:'assistant', content:text}]);
           }
-        } else {
-          setUploadAiChat(p => [...p, {role:'assistant', content:text}]);
         }
-      } catch(e2) {
+      } catch(e2) { /* JSON parse failed, treat as text */ }
+      if (applied === 0) {
         setUploadAiChat(p => [...p, {role:'assistant', content:text}]);
       }
     } catch(e) {
@@ -1955,7 +1973,7 @@ function JobsPage(ctx){
       notify('Imported '+ct+' items into "'+uploadJobName+'" -- click the job to view');
       // Force re-fetch line items after batch import to ensure consistency across sessions
       setTimeout(async()=>{try{const d=await db.loadAll();if(d.lineItems)setLineItems(d.lineItems);if(d.jobs)setJobs(d.jobs)}catch{}},3000);
-      setUploadData(null);setUploadJobName('');setUploadAiChat([]);setUploadAiStatus(null);setSelectedJob(jid);
+      setUploadData(null);setUploadJobName('');setUploadAiChat([]);setUploadAiStatus(null);setUploadAiChangedRows(new Set());setSelectedJob(jid);
     }catch(err){notify('Import error: '+err.message,'error')}
     setUploading(false);
   };
@@ -1998,7 +2016,7 @@ function JobsPage(ctx){
     {uploadData&&<Card style={{marginBottom:24,border:"1px solid rgba(45,212,191,0.2)"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
         <div style={{fontSize:15,fontWeight:700,color:"#2dd4bf"}}>Quote Import Preview</div>
-        <Btn v="secondary" style={{fontSize:12,padding:"4px 10px"}} onClick={()=>{setUploadData(null);setUploadAiChat([]);setUploadAiStatus(null);if(uploadRef.current)uploadRef.current.value=''}}>Cancel</Btn>
+        <Btn v="secondary" style={{fontSize:12,padding:"4px 10px"}} onClick={()=>{setUploadData(null);setUploadAiChat([]);setUploadAiStatus(null);setUploadAiChangedRows(new Set());if(uploadRef.current)uploadRef.current.value=''}}>Cancel</Btn>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(110px,1fr))",gap:10,marginBottom:16}}>
         <div style={{padding:12,background:"#0a0a0a",borderRadius:10,textAlign:"center"}}><div style={{fontSize:10,color:"#737373",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Line Items</div><div style={{fontSize:22,fontWeight:700,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{uploadSelCount}</div></div>
@@ -2015,7 +2033,7 @@ function JobsPage(ctx){
       <div style={{overflowX:"auto",maxHeight:240,borderRadius:8,border:"1px solid rgba(255,255,255,0.04)",marginBottom:16}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,minWidth:800}}>
           <thead><tr style={{background:"#0a0a0a",position:"sticky",top:0}}>{["Tag","Manuf","Model","Description","Qty","List","Net","Ship","Your Price"].map(h=><th key={h} style={{padding:"5px 6px",textAlign:"left",fontWeight:600,color:"#525252",fontSize:10,textTransform:"uppercase",letterSpacing:0.5}}>{h}</th>)}</tr></thead>
-          <tbody>{(()=>{let lastV='';return uploadData.items.filter(i=>uploadSheets[i.sheet]).slice(0,30).map((it,idx)=>{const showSep=it.manufacturer&&it.manufacturer!==lastV;if(it.manufacturer)lastV=it.manufacturer;return <React.Fragment key={idx}>{showSep&&idx>0&&<tr><td colSpan={9} style={{padding:"6px 6px 2px",borderTop:"1px solid rgba(45,212,191,0.12)"}}><span style={{fontSize:10,fontWeight:700,color:"#a78bfa",textTransform:"uppercase",letterSpacing:1}}>{it.manufacturer}</span></td></tr>}<tr style={{borderBottom:"1px solid rgba(255,255,255,0.02)"}}>
+          <tbody>{(()=>{let lastV='';return uploadData.items.filter(i=>uploadSheets[i.sheet]).slice(0,30).map((it,idx)=>{const showSep=it.manufacturer&&it.manufacturer!==lastV;if(it.manufacturer)lastV=it.manufacturer;const isChanged=uploadAiChangedRows.has(idx);return <React.Fragment key={idx}>{showSep&&idx>0&&<tr><td colSpan={9} style={{padding:"6px 6px 2px",borderTop:"1px solid rgba(45,212,191,0.12)"}}><span style={{fontSize:10,fontWeight:700,color:"#a78bfa",textTransform:"uppercase",letterSpacing:1}}>{it.manufacturer}</span></td></tr>}<tr style={{borderBottom:"1px solid rgba(255,255,255,0.02)",background:isChanged?"rgba(45,212,191,0.12)":"transparent",transition:"background 0.5s ease"}}>
             <td style={{padding:"4px 6px",color:"#a78bfa"}}>{it.tag}</td>
             <td style={{padding:"4px 6px",color:"#9a9a9a"}}>{it.manufacturer}</td>
             <td style={{padding:"4px 6px",color:"#9a9a9a",fontFamily:"'JetBrains Mono',monospace",fontSize:10}}>{it.modelNumber}</td>
