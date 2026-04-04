@@ -2413,20 +2413,22 @@ function DeliveryPage({jobs,lineItems,vendors,customers,getItemStatus,getJobItem
       const toggleExpand=()=>setExpandedJobs(prev=>{const next=new Set(prev);if(next.has(job.id))next.delete(job.id);else next.add(job.id);return next});
       return <Card key={job.id} style={{marginBottom:16}}>
         <div onClick={toggleExpand} style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",cursor:"pointer",flexWrap:"wrap",gap:8}}>
-          <div style={{display:"flex",alignItems:"flex-start",gap:10,minWidth:0,flex:1}}>
-            <div style={{fontSize:16,color:"#525252",transition:"transform 0.2s",transform:isExpanded?"rotate(90deg)":"rotate(0deg)",marginTop:2,flexShrink:0}}>&#9654;</div>
-            <div>
-              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}><span style={{fontSize:15,fontWeight:700,color:"#e5e5e5"}}><span style={{fontFamily:"'JetBrains Mono',monospace",color:"#525252",fontSize:11,marginRight:6}}>{jobNum?.(job.id)}</span>{job.name}</span><Badge label={job.phase} color={statusColor(job.phase)}/></div>
-              <div style={{fontSize:12,color:"#a3a3a3",marginTop:2}}>{job.id} - {items.length} items pending - {fmtN(totalOut)} units outstanding</div>
+          <div style={{display:"flex",alignItems:"flex-start",gap:8,minWidth:0,flex:1}}>
+            <div style={{fontSize:14,color:"#525252",transition:"transform 0.2s",transform:isExpanded?"rotate(90deg)":"rotate(0deg)",marginTop:3,flexShrink:0}}>&#9654;</div>
+            <div style={{minWidth:0}}>
+              <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}><span style={{fontSize:14,fontWeight:700,color:"#e5e5e5",wordBreak:"break-word"}}><span style={{fontFamily:"'JetBrains Mono',monospace",color:"#525252",fontSize:10,marginRight:4}}>{jobNum?.(job.id)}</span>{job.name}</span><Badge label={job.phase} color={statusColor(job.phase)}/></div>
+              <div style={{fontSize:11,color:"#a3a3a3",marginTop:2}}>{items.length} items - {fmtN(totalOut)} outstanding</div>
             </div>
           </div>
-          <div style={{display:"flex",gap:8,alignItems:"center",flexShrink:0}}>
-            <div style={{textAlign:"right",marginRight:8}}><div style={{fontSize:12,color:"#a3a3a3"}}>Received</div><div style={{fontSize:14,fontWeight:600,color:"#fbbf24",fontFamily:"'JetBrains Mono',monospace"}}>{fmtN(totalRcv)}/{fmtN(totalOrd)}</div></div>
-            <Btn v="secondary" style={{fontSize:11}} onClick={e=>{e.stopPropagation();completeAll(items)}}>Complete All</Btn>
+          <div style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
+            <div style={{textAlign:"right"}}><div style={{fontSize:11,color:"#a3a3a3"}}>Received</div><div style={{fontSize:13,fontWeight:600,color:"#fbbf24",fontFamily:"'JetBrains Mono',monospace"}}>{fmtN(totalRcv)}/{fmtN(totalOrd)}</div></div>
+            <Btn v="secondary" style={{fontSize:11,padding:"4px 10px"}} onClick={e=>{e.stopPropagation();completeAll(items)}}>Complete All</Btn>
           </div>
         </div>
         <Bar value={totalRcv} max={totalOrd} color="#fbbf24" height={4} style={{marginTop:10}}/>
-        {isExpanded&&<div style={{overflowX:"auto",marginTop:12,borderRadius:8,border:"1px solid #222222"}}>
+        {isExpanded&&<div style={{marginTop:12}}>
+          {/* Desktop table */}
+          <div className="hide-mobile" style={{overflowX:"auto",borderRadius:8,border:"1px solid #222222"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:600}}>
             <thead><tr style={{background:"#111111"}}><th style={{padding:"8px 10px",textAlign:"left",color:"#a3a3a3",fontSize:12,textTransform:"uppercase",letterSpacing:0.5,minWidth:150}}>Item</th><th style={{padding:"8px 10px",textAlign:"left",color:"#a3a3a3",fontSize:12,textTransform:"uppercase"}}>Vendor</th><th style={{padding:"8px 10px",textAlign:"right",color:"#a3a3a3",fontSize:12,textTransform:"uppercase"}}>Ordered</th><th style={{padding:"8px 10px",textAlign:"right",color:"#a3a3a3",fontSize:12,textTransform:"uppercase"}}>Received</th><th style={{padding:"8px 10px",textAlign:"right",color:"#a3a3a3",fontSize:12,textTransform:"uppercase"}}>Outstanding</th><th style={{padding:"8px 10px",textAlign:"center",color:"#a3a3a3",fontSize:12,textTransform:"uppercase"}}>Progress</th><th style={{padding:"8px 10px"}}></th></tr></thead>
             <tbody>{items.map(item=>{
@@ -2442,9 +2444,33 @@ function DeliveryPage({jobs,lineItems,vendors,customers,getItemStatus,getJobItem
               <td style={{padding:"8px 10px"}}><div style={{width:80,margin:"0 auto"}}><Bar value={item.qtyReceived} max={item.qtyOrdered} color={item.qtyReceived>0?"#fbbf24":"#333333"} height={4}/></div></td>
               <td style={{padding:"8px 10px"}}>{outstanding>0?<div style={{display:"flex",gap:4,justifyContent:"flex-end"}}>{isEditing?<Btn v="ghost" style={{fontSize:12,padding:"3px 8px",color:"#737373"}} onClick={e=>{e.stopPropagation();setReceiveModal(null);setReceiveQty("")}}>Cancel</Btn>:<Btn v="ghost" style={{fontSize:12,padding:"3px 8px"}} onClick={e=>{e.stopPropagation();setReceiveModal(item);setReceiveQty(String(outstanding))}}>Receive</Btn>}<Btn v="secondary" style={{fontSize:12,padding:"3px 6px"}} onClick={e=>{e.stopPropagation();updateLineItem(item.id,{qtyReceived:item.qtyOrdered,deliveryDate:new Date().toISOString().split("T")[0]});notify("Complete")}}>Done</Btn></div>:<Badge label="complete" color="#34d399"/>}</td>
             </tr>
-            {isEditing&&<tr style={{borderBottom:"1px solid rgba(255,255,255,0.04)20"}}><td colSpan={7} style={{padding:"8px 10px 12px"}}><div style={{display:"flex",gap:8,alignItems:"center",background:"#111",padding:"10px 12px",borderRadius:8,border:"1px solid #d9770630"}}><span style={{fontSize:12,color:"#fbbf24",fontWeight:600,whiteSpace:"nowrap"}}>Receive:</span><span style={{fontSize:12,color:"#a3a3a3",whiteSpace:"nowrap"}}>{item.description}</span><span style={{fontSize:11,color:"#737373",whiteSpace:"nowrap"}}>({fmtN(outstanding)} outstanding)</span><input type="number" value={receiveQty} onChange={e=>setReceiveQty(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')handleReceive(item)}} placeholder="Qty" min="1" max={outstanding} autoFocus style={{...inputStyle,width:80,padding:"4px 8px",textAlign:"center",fontFamily:"'JetBrains Mono',monospace"}}/><Btn onClick={()=>handleReceive(item)} style={{fontSize:12,padding:"4px 12px"}}>Log</Btn><Btn v="secondary" style={{fontSize:12,padding:"4px 8px"}} onClick={()=>{setReceiveModal(null);setReceiveQty("")}}>Cancel</Btn></div></td></tr>}
+            {isEditing&&<tr style={{borderBottom:"1px solid rgba(255,255,255,0.04)20"}}><td colSpan={7} style={{padding:"8px 10px 12px"}}><div style={{display:"flex",gap:8,alignItems:"center",background:"#111",padding:"10px 12px",borderRadius:8,border:"1px solid #d9770630",flexWrap:"wrap"}}><span style={{fontSize:12,color:"#fbbf24",fontWeight:600,whiteSpace:"nowrap"}}>Receive:</span><span style={{fontSize:12,color:"#a3a3a3",whiteSpace:"nowrap"}}>{item.description?.slice(0,30)}</span><input type="number" value={receiveQty} onChange={e=>setReceiveQty(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')handleReceive(item)}} placeholder="Qty" min="1" max={outstanding} autoFocus style={{...inputStyle,width:70,padding:"4px 8px",textAlign:"center",fontFamily:"'JetBrains Mono',monospace"}}/><Btn onClick={()=>handleReceive(item)} style={{fontSize:12,padding:"4px 12px"}}>Log</Btn><Btn v="secondary" style={{fontSize:12,padding:"4px 8px"}} onClick={()=>{setReceiveModal(null);setReceiveQty("")}}>Cancel</Btn></div></td></tr>}
             </React.Fragment>})}</tbody>
           </table>
+          </div>
+          {/* Mobile card layout */}
+          <div className="show-mobile" style={{display:"flex",flexDirection:"column",gap:8}}>
+            {items.map(item=>{
+              const isEditing=receiveModal?.id===item.id;
+              const outstanding=item.qtyOrdered-item.qtyReceived;
+              const vendorName=vendors.find(v=>v.id===item.vendor)?.name||"";
+              return <div key={item.id} style={{padding:"10px 12px",background:"#0a0a0a",borderRadius:8,border:"1px solid #1a1a1a"}}>
+                <div style={{fontSize:12,color:"#e5e5e5",fontWeight:500,marginBottom:4,lineHeight:1.4}}>{item.description?.slice(0,80)}{item.description?.length>80?"...":""}</div>
+                {vendorName&&<div style={{fontSize:11,color:"#737373",marginBottom:6}}>{vendorName}</div>}
+                <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:6}}>
+                  <div style={{flex:1}}><Bar value={item.qtyReceived} max={item.qtyOrdered} color={item.qtyReceived>0?"#fbbf24":"#333"} height={4}/></div>
+                  <span style={{fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:outstanding>0?"#f87171":"#34d399",fontWeight:600,whiteSpace:"nowrap"}}>{fmtN(item.qtyReceived)}/{fmtN(item.qtyOrdered)}</span>
+                </div>
+                {isEditing?<div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginTop:4}}>
+                  <input type="number" value={receiveQty} onChange={e=>setReceiveQty(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')handleReceive(item)}} placeholder="Qty" min="1" max={outstanding} autoFocus style={{...inputStyle,width:60,padding:"6px 8px",textAlign:"center",fontSize:13,fontFamily:"'JetBrains Mono',monospace"}}/>
+                  <Btn onClick={()=>handleReceive(item)} style={{fontSize:12,padding:"6px 14px"}}>Log</Btn>
+                  <Btn v="secondary" style={{fontSize:12,padding:"6px 10px"}} onClick={()=>{setReceiveModal(null);setReceiveQty("")}}>Cancel</Btn>
+                </div>:outstanding>0?<div style={{display:"flex",gap:6,marginTop:4}}>
+                  <Btn v="ghost" style={{fontSize:12,padding:"5px 12px",flex:1}} onClick={e=>{e.stopPropagation();setReceiveModal(item);setReceiveQty(String(outstanding))}}>Receive</Btn>
+                  <Btn v="secondary" style={{fontSize:12,padding:"5px 10px"}} onClick={e=>{e.stopPropagation();updateLineItem(item.id,{qtyReceived:item.qtyOrdered,deliveryDate:new Date().toISOString().split("T")[0]});notify("Complete")}}>Done</Btn>
+                </div>:<Badge label="complete" color="#34d399"/>}
+              </div>})}
+          </div>
         </div>}
       </Card>})}
     </>}
