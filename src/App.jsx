@@ -348,7 +348,7 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
           vMap[k]=vid;existNames.add(k);newVendors++}}
       let ct=0;
       for(const item of items){const vk=(item.manufacturer||"").toLowerCase().trim();
-        addLineItem({id:"LI-"+Math.random().toString(36).slice(2,8),jobId:jid,description:item.description,
+        addLineItem({id:"LI-"+Date.now()+"-"+Math.random().toString(36).slice(2,6),jobId:jid,description:item.description,
           vendor:vMap[vk]||"",tag:item.tag,group:item.group,manufacturer:item.manufacturer,
           modelNumber:item.modelNumber,color:item.color,listPrice:item.listPrice,unitCost:item.unitCost,
           unitPrice:item.unitPrice,shippingPerUnit:item.shippingPerUnit,installPerUnit:item.installPerUnit,
@@ -1236,7 +1236,7 @@ function MidwestAIOSInner() {
     setLineItems(p => { const old=p.find(li=>li.id===id);const updated = p.map(li => li.id===id ? {...li,...u} : li); const item = updated.find(li=>li.id===id); if(item){db.saveLineItem(item);const changes=Object.keys(u).filter(k=>String(old?.[k])!==String(u[k]));if(changes.length>0){const log={time:new Date().toISOString(),type:"edit",entity:"lineItem",entityId:id,desc:(old?.description||"item"),fields:changes.map(k=>({field:k,from:old?.[k],to:u[k]}))};setTimeout(()=>{setJobs(jp=>{const jobId=item.jobId;return jp.map(j=>{if(j.id!==jobId)return j;const trail=[log,...(j.auditTrail||[])].slice(0,200);const nj={...j,auditTrail:trail};db.saveJob(nj);return nj})})},0)}} return updated; });
   };
   const addLineItem = item => {
-    const newItem = {...item, id: "LI-"+uid()};
+    const newItem = {...item, id: "LI-"+Date.now()+"-"+Math.random().toString(36).slice(2,6)};
     setLineItems(p => [...p, newItem]);
     db.saveLineItem(newItem);
   };
@@ -2240,7 +2240,7 @@ function JobDetail({job,ctx}){
         <td style={{padding:"6px 8px",textAlign:"right",minWidth:85}}><span style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:600,color:"#2dd4bf"}}>{fmt((item.unitPrice||0)*(item.qtyOrdered||0))}</span></td>
         <td style={{padding:"6px 8px",textAlign:"right",minWidth:55}}>{isE?<input type="number" value={item.qtyReceived} onChange={e=>updateLineItem(item.id,{qtyReceived:parseInt(e.target.value)||0})} style={{...eS,width:55,textAlign:"right"}}/>:<span style={{color:item.qtyReceived===item.qtyOrdered?"#34d399":item.qtyReceived>0?"#fbbf24":"#555"}}>{fmtN(item.qtyReceived)}/{fmtN(item.qtyOrdered)}</span>}</td>
         <td style={{padding:"6px 8px"}}><Badge label={getItemStatus(item)} color={statusColor(getItemStatus(item))}/></td>
-        <td style={{padding:"6px 8px",position:"sticky",right:0,background:isE?"#0a0a0a":"#0a0a0a",zIndex:2}} onClick={e=>e.stopPropagation()}><div style={{display:"flex",gap:3}}><Btn v={isE?"primary":"ghost"} style={{fontSize:11,padding:"2px 6px"}} onClick={e=>{e.stopPropagation();setEditingItem(isE?null:item.id)}}>{isE?"Done":"Edit"}</Btn><Btn v="secondary" style={{fontSize:11,padding:"2px 6px"}} onClick={e=>{e.stopPropagation();addLineItem({...item,id:"LI-"+Math.random().toString(36).slice(2,8),qtyReceived:0,qtyInvoiced:0});notify("Line item duplicated")}}>Dup</Btn><Btn v="danger" style={{fontSize:11,padding:"2px 6px"}} onClick={e=>{e.stopPropagation();deleteLineItem(item.id);if(editingItem===item.id)setEditingItem(null);notify("Line item deleted")}}>Del</Btn></div></td>
+        <td style={{padding:"6px 8px",position:"sticky",right:0,background:isE?"#0a0a0a":"#0a0a0a",zIndex:2}} onClick={e=>e.stopPropagation()}><div style={{display:"flex",gap:3}}><Btn v={isE?"primary":"ghost"} style={{fontSize:11,padding:"2px 6px"}} onClick={e=>{e.stopPropagation();setEditingItem(isE?null:item.id)}}>{isE?"Done":"Edit"}</Btn><Btn v="secondary" style={{fontSize:11,padding:"2px 6px"}} onClick={e=>{e.stopPropagation();addLineItem({...item,id:"LI-"+Date.now()+"-"+Math.random().toString(36).slice(2,6),qtyReceived:0,qtyInvoiced:0});notify("Line item duplicated")}}>Dup</Btn><Btn v="danger" style={{fontSize:11,padding:"2px 6px"}} onClick={e=>{e.stopPropagation();deleteLineItem(item.id);if(editingItem===item.id)setEditingItem(null);notify("Line item deleted")}}>Del</Btn></div></td>
       </tr>})}{grp&&<tr style={{borderTop:"1px solid #a78bfa30"}}><td colSpan={13} style={{padding:"6px 8px",textAlign:"right",fontSize:12,color:"#a78bfa",fontWeight:600}}>{grp} Subtotal: {fmt(grpTotal)}</td><td></td><td></td></tr>}</React.Fragment>})})()}</tbody></table></div>
     <datalist id="vendor-list-tbl">{vendors.map(v=><option key={v.id} value={v.name}/>)}</datalist>
 
