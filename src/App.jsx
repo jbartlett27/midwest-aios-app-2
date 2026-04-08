@@ -2155,7 +2155,86 @@ function JobDetail({job,ctx}){
   const auditEntries = (job.auditTrail || []).map(a=>({id:a.time+a.type,text:a.type==="edit"?"Edited: "+a.fields.map(f=>f.field+" changed"+(f.from?" from "+String(f.from).slice(0,20):"")+" to "+String(f.to).slice(0,30)).join(", "):a.type==="create"?"Job created":a.type,time:a.time,user:a.user||"",source:"auto"}));
   const activities = [...manualActivities,...auditEntries].sort((a,b)=>new Date(b.time)-new Date(a.time));
   const addActivity=(text)=>{const entry={text,time:new Date().toISOString(),id:Math.random().toString(36).slice(2),user:ctx.currentUser?.name||"System"};const next=[entry,...activities];updateJob(job.id,{activities:next})};
-  const duplicateJob=()=>{const newId='JOB-'+new Date().getFullYear()+'-'+String(Math.floor(Math.random()*900)+100);const newJob={...job,id:newId,name:job.name+' (Copy)',phase:'Quoting',paymentStatus:'unpaid',createdDate:new Date().toISOString().split('T')[0],startDate:'',endDate:''};addJob(newJob);items.forEach(item=>{addLineItem({...item,id:'LI-'+Math.random().toString(36).slice(2,8),jobId:newId,qtyReceived:0,qtyInvoiced:0,deliveryDate:'',invoiceDate:''})});setSelectedJob(newId);notify('Job duplicated -- '+newId+' created with all line items')};
+  const duplicateJob=()=>{const newId='JOB-'+new Date().getFullYear()+'-'+String(Math.floor(Math.random()*900)+100);const newJob={...job,id:newId,name:job.name+' (Copy)',phase:'Quoting',paymentStatus:'unpaid',createdDate:new Date().toISOString().split('T')[0],startDate:'',endDate:''};addJob(newJob);items.forEach(item=>{addLineItem({...item,id:'LI-'+Date.now()+'-'+Math.random().toString(36).slice(2,6),jobId:newId,qtyReceived:0,qtyInvoiced:0,deliveryDate:'',invoiceDate:''})});setSelectedJob(newId);notify('Job duplicated -- '+newId+' created with all line items')};
+  const jobQuoteRef=React.useRef(null);
+  const [uploadingToJob,setUploadingToJob]=useState(false);
+  const parseQuoteIntoJob=async(file)=>{
+    if(!file||uploadingToJob)return;setUploadingToJob(true);
+    try{
+      const XLSX=await import('xlsx');
+      const data=await file.arrayBuffer();
+      const wb=XLSX.read(data,{type:'array'});
+      const safeNum=(raw)=>{if(typeof raw==='number'&&isFinite(raw))return raw;const s=String(raw||'').replace(/[$,]/g,'').trim();if(!s||/[a-zA-Z]/.test(s))return 0;const v=parseFloat(s);return isFinite(v)?v:0};
+      const findHeader=(row)=>{
+        const h={};
+        for(let c=0;c<row.length;c++){
+          const v=String(row[c]||'').toLowerCase().trim();
+          if(v==='tag')h.tag=c;
+          else if(v==='manuf'||v==='manuf.'||v==='manufacturer')h.manuf=c;
+          else if(v==='model #'||v==='model'||v==='model#'||v==='model number')h.model=c;
+          else if(v==='description'||v==='desc')h.desc=c;
+          else if(v==='color'||v==='finish')h.color=c;
+          else if(v==='qty'||v==='quantity')h.qty=c;
+          else if(v==='list'||v==='list price'||v==='list each')h.list=c;
+          else if(v==='ext'&&!h.listExt){if(h.list!==undefined)h.listExt=c;else h.list=c}
+          else if(v==='net each'||v==='net'||v==='net ea'||v==='net price'||v==='dealer'||v==='dealer net')h.net=c;
+          else if(v==='net ext'||v==='net extended')h.netExt=c;
+          else if(v==='your price'||v==='sell'||v==='sell price'||v==='unit price'||v==='price each'||v==='sell each'||v==='customer price')h.price=c;
+          else if(v==='your price extended'||v==='sell ext'||v==='sell extended'||v==='price ext'||v==='extended'||v==='ext price'||v==='line total')h.priceExt=c;
+          else if(v==='shipping'||v==='ship'||v==='shipping each'||v==='freight'){if(h.ship!==undefined)h.shipTotal=c;else h.ship=c}
+          else if(v==='install'||v==='install each'||v==='installation'){if(h.install!==undefined)h.installTotal=c;else h.install=c}
+        }
+        return Object.keys(h).length>=3?h:null;
+      };
+      const defaultMap={tag:0,manuf:1,model:2,desc:3,color:4,qty:5,list:6,listExt:7,net:8,netExt:9,price:10,priceExt:11};
+      let totalAdded=0;const newVendors=[];
+      const existNames=new Set(vendors.map(v=>v.name.toLowerCase().trim()));
+      const vMap={};vendors.forEach(v=>{vMap[v.name.toLowerCase().trim()]=v.id});
+      for(let si=0;si<wb.SheetNames.length;si++){
+        const sn=wb.SheetNames[si];const ws=wb.Sheets[sn];
+        const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+        const hiddenRows=ws['!rows']||[];
+        let grp='';let colMap=null;let lastManuf='';
+        for(let r=0;r<rows.length;r++){
+          if(hiddenRows[r]&&hiddenRows[r].hidden)continue;
+          const row=rows[r];if(!row||row.length<3)continue;
+          if(!colMap){const detected=findHeader(row);if(detected){colMap=detected;continue}if(String(row[0]||'').toLowerCase().trim()==='tag'){colMap=defaultMap;continue}}
+          const cm=colMap||defaultMap;
+          const g=v=>cm[v]!==undefined?row[cm[v]]:'';const n=v=>safeNum(g(v));const s=v=>String(g(v)||'').trim();
+          const rowHasTotal=row.some(cell=>{const cv=String(cell||'').trim().toLowerCase();return cv==='total'||cv==='subtotal'||cv==='grand total'});
+          if(rowHasTotal)continue;
+          const desc=s('desc');const tag=s('tag');const manuf=s('manuf');const model=s('model');
+          if(desc&&!tag&&!manuf&&!n('qty')&&!n('list')&&!n('net')&&!n('price')){grp=desc.replace(/\n/g,' ').substring(0,80);continue}
+          if(!desc)continue;
+          let cleanDesc=desc.replace(/\r/g,'').split('\n')[0].trim();
+          if(cleanDesc.startsWith('*')&&!n('qty')&&!n('list')&&!n('net')&&!n('price')&&!n('priceExt'))continue;
+          if(/^(subtotal|grand total|total)$/i.test(cleanDesc.trim()))continue;
+          const qty=Math.round(n('qty'));const list=n('list');const net=n('net');const price=n('price');const priceExt=n('priceExt');
+          if(qty<=0&&list<=0&&net<=0&&price<=0&&priceExt<=0)continue;
+          const mfr=manuf||lastManuf;if(manuf)lastManuf=manuf;
+          // Ensure vendor exists
+          const vk=(mfr||'').toLowerCase().trim();
+          if(vk&&!existNames.has(vk)){const vid='V-'+Math.random().toString(36).slice(2,8);
+            ctx.addVendor({id:vid,name:mfr,contact:'',email:'',phone:'',category:'Furniture',address:'',discountRate:0});
+            vMap[vk]=vid;existNames.add(vk);newVendors.push(mfr)}
+          let shipPU=n('ship');const shipTot=cm.shipTotal!==undefined?n('shipTotal'):0;
+          if(!shipPU&&shipTot&&qty>0)shipPU=shipTot/qty;
+          let instPU=n('install');const instTot=cm.installTotal!==undefined?n('installTotal'):0;
+          if(!instPU&&instTot&&qty>0)instPU=instTot/qty;
+          addLineItem({id:'LI-'+Date.now()+'-'+Math.random().toString(36).slice(2,6),jobId:job.id,
+            description:cleanDesc,vendor:vMap[vk]||'',tag:tag.replace(/\.0$/,''),group:grp||tag||'',
+            manufacturer:mfr||sn,modelNumber:model.replace(/\.0$/,''),color:s('color'),
+            listPrice:list,unitCost:net||0,unitPrice:price||(priceExt&&qty>0?priceExt/qty:0)||0,
+            shippingPerUnit:shipPU||0,installPerUnit:instPU||0,priceExtended:priceExt||0,
+            qtyOrdered:qty||1,qtyReceived:0,qtyInvoiced:0,poDate:'',deliveryDate:'',invoiceDate:''});
+          totalAdded++;
+        }
+      }
+      notify(totalAdded+' line items added to "'+job.name+'"'+(newVendors.length?' ('+newVendors.length+' new vendors created)':''));
+      setTimeout(async()=>{try{const d=await ctx.db.loadAll();if(d.lineItems)ctx.setLineItems(d.lineItems)}catch{}},3000);
+    }catch(err){notify('Error reading file: '+err.message,'error')}
+    setUploadingToJob(false);if(jobQuoteRef.current)jobQuoteRef.current.value='';
+  };
 
   const saveJob=()=>{updateJob(job.id,editJob);setEditing(false);notify("Job updated -- changes propagated everywhere")};
   const autoCalcFromList=(lp,vid)=>{const v=vendors.find(v=>v.id===vid);const dr=v?.discountRate||0;return{unitCost:Math.round(lp*(1-dr)*100)/100,unitPrice:Math.round(lp*100)/100}};
@@ -2166,7 +2245,7 @@ function JobDetail({job,ctx}){
       <button onClick={()=>setSelectedJob(null)} style={{background:"none",border:"none",color:"#2dd4bf",cursor:"pointer",fontSize:13,fontFamily:"inherit",marginBottom:12,display:"flex",alignItems:"center",gap:6}}>&larr; All Jobs</button>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}>
         <div><div style={{display:"flex",alignItems:"center",gap:10,marginBottom:2}}><h2 style={{fontSize:22,fontWeight:800,color:"#e5e5e5",margin:0}}><span style={{fontFamily:"'JetBrains Mono',monospace",color:"#525252",fontSize:13,marginRight:8}}>{ctx.jobNum?.(job.id)||""}</span>{job.name}</h2><Badge label={job.phase} color={statusColor(job.phase)}/><Badge label={job.paymentStatus} color={statusColor(job.paymentStatus)}/></div><div style={{fontSize:12,color:"#a3a3a3"}}>{job.id} - {customer?.name} - {rep?.name} - {fmt(f.totalRevenue)} rev - {pct(f.margin)} margin</div></div>
-        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}><Btn v="danger" onClick={()=>deleteJob(job.id)} style={{fontSize:12,padding:"6px 10px"}}><I n="close" s={12}/> Delete</Btn><Btn v="secondary" onClick={()=>setEditing(!editing)} style={{fontSize:12,padding:"6px 10px"}}><I n="edit" s={12}/> Edit</Btn><Btn v="secondary" onClick={duplicateJob} style={{fontSize:12,padding:"6px 10px"}}><I n="package" s={12}/> Duplicate</Btn><Btn onClick={()=>setAddingItem(true)} style={{fontSize:12,padding:"6px 10px"}}><I n="plus" s={12}/> Add Item</Btn><Btn v="ghost" onClick={()=>{
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}><input ref={jobQuoteRef} type="file" accept=".xls,.xlsx" onChange={e=>{if(e.target.files[0])parseQuoteIntoJob(e.target.files[0])}} style={{display:"none"}}/><Btn v="danger" onClick={()=>deleteJob(job.id)} style={{fontSize:12,padding:"6px 10px"}}><I n="close" s={12}/> Delete</Btn><Btn v="secondary" onClick={()=>setEditing(!editing)} style={{fontSize:12,padding:"6px 10px"}}><I n="edit" s={12}/> Edit</Btn><Btn v="secondary" onClick={duplicateJob} style={{fontSize:12,padding:"6px 10px"}}><I n="package" s={12}/> Duplicate</Btn><Btn onClick={()=>setAddingItem(true)} style={{fontSize:12,padding:"6px 10px"}}><I n="plus" s={12}/> Add Item</Btn><Btn v="ghost" onClick={()=>jobQuoteRef.current?.click()} style={{fontSize:12,padding:"6px 10px"}}><I n="upload" s={12}/> Upload Quote</Btn><Btn v="ghost" onClick={()=>{
   try{const allItems=items;const customer2=customer;const jobPOs=[];const groups={};allItems.forEach(i=>{if(!groups[i.vendor])groups[i.vendor]=[];groups[i.vendor].push(i)});Object.entries(groups).forEach(([vid,vitems])=>{jobPOs.push({vendor:vendors.find(v=>v.id===vid),items:vitems})});
   const invTotal=allItems.reduce((s,i)=>s+((i.unitPrice||0)+(i.shippingPerUnit||0)+(i.installPerUnit||0))*i.qtyOrdered,0);const costTotal=allItems.reduce((s,i)=>s+i.unitCost*i.qtyOrdered,0);
   const hd='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px"><div><div style="font-weight:700;font-size:14px">Midwest Educational Furnishings, Inc.</div><div style="font-size:12px;color:#888;line-height:1.6">21191 N Valley Rd<br>Kildeer, IL 60047 US<br>(847) 847-1865</div></div><div><img src="'+MW_LOGO+'" style="height:44px"/></div></div>';
