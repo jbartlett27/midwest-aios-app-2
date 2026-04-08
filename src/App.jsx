@@ -1979,7 +1979,7 @@ Never use emoji. Be concise.`;
           vMap[k]=vid;existNames.add(k)}}
       let ct=0;
       for(const item of items){const vk=(item.manufacturer||'').toLowerCase().trim();
-        addLineItem({id:'LI-'+Math.random().toString(36).slice(2,8),jobId:jid,description:item.description,
+        addLineItem({id:'LI-'+Date.now()+'-'+Math.random().toString(36).slice(2,6),jobId:jid,description:item.description,
           vendor:vMap[vk]||'',tag:item.tag,group:item.group,manufacturer:item.manufacturer,
           modelNumber:item.modelNumber,color:item.color,listPrice:item.listPrice,unitCost:item.unitCost,
           unitPrice:item.unitPrice,shippingPerUnit:item.shippingPerUnit,installPerUnit:item.installPerUnit,
@@ -2231,7 +2231,6 @@ function JobDetail({job,ctx}){
         }
       }
       notify(totalAdded+' line items added to "'+job.name+'"'+(newVendors.length?' ('+newVendors.length+' new vendors created)':''));
-      setTimeout(async()=>{try{const d=await ctx.db.loadAll();if(d.lineItems)ctx.setLineItems(d.lineItems)}catch{}},3000);
     }catch(err){notify('Error reading file: '+err.message,'error')}
     setUploadingToJob(false);if(jobQuoteRef.current)jobQuoteRef.current.value='';
   };
