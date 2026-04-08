@@ -6246,7 +6246,50 @@ const [tab,setTab]=useState("vendors");
     </Card>
   };
 
-  return <div style={{animation:"fadeUp 0.4s"}}><Header title="Directory" sub="Manage all vendors, customers, and sales reps -- edit, add, sort" action={<Btn onClick={startAdd}><I n="plus" s={14}/> Add {tab==="vendors"?"Vendor":tab==="customers"?"Customer":"Sales Rep"}</Btn>}/>
+  // CSV Upload for vendors/customers/reps
+  const csvUploadRef=React.useRef(null);
+  const handleCsvUpload=async(file)=>{
+    if(!file)return;
+    try{
+      const text=await file.text();
+      const lines=text.split('\n').map(l=>l.trim()).filter(Boolean);
+      if(lines.length<2){notify('CSV must have a header row and at least one data row','error');return}
+      const headers=lines[0].split(',').map(h=>h.trim().toLowerCase().replace(/['"]/g,''));
+      const rows=lines.slice(1).map(line=>{
+        const vals=[];let cur='';let inQ=false;
+        for(let i=0;i<line.length;i++){const c=line[i];if(c==='"')inQ=!inQ;else if(c===','&&!inQ){vals.push(cur.trim().replace(/^"|"$/g,''));cur=''}else cur+=c}
+        vals.push(cur.trim().replace(/^"|"$/g,''));
+        const obj={};headers.forEach((h,i)=>{obj[h]=vals[i]||''});return obj;
+      });
+      let count=0;
+      if(tab==='vendors'){
+        rows.forEach(r=>{
+          const name=r.name||r.company||r.vendor||r['company name']||r['vendor name']||'';
+          if(!name)return;
+          if(vendors.find(v=>v.name.toLowerCase()===name.toLowerCase()))return;
+          addVendor({name,contact:r.contact||r['contact person']||'',email:r.email||'',phone:r.phone||r.telephone||'',category:r.category||r.type||'',address:r.address||[r.street,r.city,r.state,r.zip].filter(Boolean).join(', ')||'',discountRate:parseFloat(r['discount rate']||r.discount||'0')/100||0});count++;
+        });
+      }else if(tab==='customers'){
+        rows.forEach(r=>{
+          const name=r.name||r.company||r.customer||r['organization']||r['company name']||r['customer name']||r['school']||r['school name']||r['district']||'';
+          if(!name)return;
+          if(customers.find(c=>c.name.toLowerCase()===name.toLowerCase()))return;
+          addCustomer({name,contact:r.contact||r['contact person']||r['contact name']||'',email:r.email||'',phone:r.phone||r.telephone||'',type:r.type||r.category||'K-12 District',address:r.address||[r.street,r.city,r.state,r.zip].filter(Boolean).join(', ')||''});count++;
+        });
+      }else if(tab==='reps'){
+        rows.forEach(r=>{
+          const name=r.name||r['rep name']||r['sales rep']||r['full name']||'';
+          if(!name)return;
+          if(reps.find(rep=>rep.name.toLowerCase()===name.toLowerCase()))return;
+          addRep({name,email:r.email||'',territory:r.territory||r.region||r.area||'',commissionRate:parseFloat(r['commission rate']||r.commission||r.rate||'5')/100||0.05,tier:r.tier||r.level||'Associate'});count++;
+        });
+      }
+      notify(count+' '+(tab==='vendors'?'vendors':tab==='customers'?'customers':'sales reps')+' imported'+(rows.length-count>0?' ('+Math.max(0,rows.length-count)+' skipped as duplicates)':''));
+    }catch(e){notify('Error reading CSV: '+e.message,'error')}
+    if(csvUploadRef.current)csvUploadRef.current.value='';
+  };
+
+  return <div style={{animation:"fadeUp 0.4s"}}><Header title="Directory" sub="Manage all vendors, customers, and sales reps -- edit, add, sort" action={<div style={{display:"flex",gap:8}}><input ref={csvUploadRef} type="file" accept=".csv,.tsv" onChange={e=>{if(e.target.files[0])handleCsvUpload(e.target.files[0])}} style={{display:"none"}}/><Btn v="secondary" onClick={()=>csvUploadRef.current?.click()}><I n="upload" s={14}/> Upload CSV</Btn><Btn onClick={startAdd}><I n="plus" s={14}/> Add {tab==="vendors"?"Vendor":tab==="customers"?"Customer":"Sales Rep"}</Btn></div>}/>
     <div style={{display:"flex",gap:12,marginBottom:20,alignItems:"center",flexWrap:"wrap"}}>
       <div style={{display:"flex",gap:4,background:"#111111",padding:4,borderRadius:10}}>{[["vendors","Vendors ("+vendors.length+")"],["customers","Customers ("+customers.length+")"],["reps","Sales Reps ("+reps.length+")"]].map(([id,label])=><button key={id} onClick={()=>{setTab(id);setEditId(null);setAdding(false);setSort("name");setDirSearch("");setSelected(new Set());setCustDetail(null)}} style={{padding:"8px 16px",borderRadius:8,border:"none",cursor:"pointer",background:tab===id?"#2dd4bf":"transparent",color:tab===id?"#000000":"#525252",fontSize:13,fontWeight:tab===id?600:400,fontFamily:"inherit"}}>{label}</button>)}</div>
       <input value={dirSearch} onChange={e=>setDirSearch(e.target.value)} placeholder={"Search "+tab+"..."} style={{...inputStyle,maxWidth:260,background:"#111111",border:"1px solid #222222",padding:"8px 14px"}}/>
