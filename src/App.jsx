@@ -120,8 +120,8 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
           else if(v==="ext"&&!h.listExt){if(h.list!==undefined)h.listExt=c;else h.list=c}
           else if(v==="net each"||v==="net"||v==="net ea"||v==="net price"||v==="dealer"||v==="dealer net")h.net=c;
           else if(v==="net ext"||v==="net extended")h.netExt=c;
-          else if(v==="your price"||v==="sell"||v==="sell price"||v==="unit price"||v==="price each"||v==="sell each"||v==="each")h.price=c;
-          else if(v==="your price extended"||v==="sell ext"||v==="sell extended"||v==="price ext"||v==="extended"||v==="ext price"||v==="line total"||v==="ext.")h.priceExt=c;
+          else if(v==="your price"||v==="sell"||v==="sell price"||v==="unit price"||v==="price each"||v==="sell each"||v==="customer price")h.price=c;
+          else if(v==="your price extended"||v==="sell ext"||v==="sell extended"||v==="price ext"||v==="extended"||v==="ext price"||v==="line total")h.priceExt=c;
           else if(v==="shipping"||v==="ship"||v==="shipping each"||v==="freight"){if(h.ship!==undefined)h.shipTotal=c;else h.ship=c}
           else if(v==="shipping total"||v==="ship total"||v==="freight total")h.shipTotal=c;
           else if(v==="install"||v==="install each"||v==="installation"){if(h.install!==undefined)h.installTotal=c;else h.install=c}
@@ -1799,8 +1799,8 @@ function JobsPage(ctx){
             else if(v==='ext'&&!h.listExt){if(h.list!==undefined)h.listExt=c;else h.list=c}
             else if(v==='net each'||v==='net'||v==='net ea'||v==='net price'||v==='dealer'||v==='dealer net')h.net=c;
             else if(v==='net ext'||v==='net extended')h.netExt=c;
-            else if(v==='your price'||v==='sell'||v==='sell price'||v==='unit price'||v==='price each'||v==='sell each'||v==='each')h.price=c;
-            else if(v==='your price extended'||v==='sell ext'||v==='sell extended'||v==='price ext'||v==='extended'||v==='ext price'||v==='line total'||v==='ext.')h.priceExt=c;
+            else if(v==='your price'||v==='sell'||v==='sell price'||v==='unit price'||v==='price each'||v==='sell each'||v==='customer price')h.price=c;
+            else if(v==='your price extended'||v==='sell ext'||v==='sell extended'||v==='price ext'||v==='extended'||v==='ext price'||v==='line total')h.priceExt=c;
             else if(v==='shipping'||v==='ship'||v==='shipping each'||v==='freight'){if(h.ship!==undefined)h.shipTotal=c;else h.ship=c}
             else if(v==='shipping total'||v==='ship total'||v==='freight total')h.shipTotal=c;
             else if(v==='install'||v==='install each'||v==='installation'){if(h.install!==undefined)h.installTotal=c;else h.install=c}
@@ -2120,7 +2120,8 @@ Never use emoji. Be concise.`;
 // --- JOB DETAIL ----------------------------------------------
 function DiscInput({initial,onCommit,style}){
   const [val,setVal]=useState(String(initial||""));
-  return <input type="number" value={val} onClick={e=>e.stopPropagation()} onMouseDown={e=>e.stopPropagation()} onChange={e=>{setVal(e.target.value);const pct=parseFloat(e.target.value);if(!isNaN(pct))onCommit(pct)}} style={style} placeholder="0" min="0" max="100" step="1"/>;
+  const [committed,setCommitted]=useState(false);
+  return <input type="number" value={val} onClick={e=>e.stopPropagation()} onMouseDown={e=>e.stopPropagation()} onChange={e=>{setVal(e.target.value);setCommitted(false)}} onBlur={()=>{if(!committed){const pct=parseFloat(val);if(!isNaN(pct)){onCommit(pct);setCommitted(true)}}}} onKeyDown={e=>{if(e.key==='Enter'){const pct=parseFloat(val);if(!isNaN(pct)){onCommit(pct);setCommitted(true)}}}} style={style} placeholder="0" min="0" max="100" step="0.01"/>;
 }
 function QuoteColToggle({job, updateJob}){
   const rawQvc = (job.docStatuses||{}).__qcv || {};
@@ -2228,7 +2229,7 @@ function JobDetail({job,ctx}){
       return <tr key={item.id} onClick={e=>{const tag=e.target.tagName;if(tag==="INPUT"||tag==="SELECT"||tag==="TEXTAREA"||tag==="BUTTON"||tag==="LABEL"||e.target.closest("input,select,textarea,button"))return;if(editingItem==="ALL")return;if(isE)return;setEditingItem(item.id)}} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",background:isE?"#0a0a0a":"transparent",transition:"background 0.15s"}}>
         <td style={{padding:"6px 8px",minWidth:55}}>{isE?<input value={item.tag||""} onChange={e=>updateLineItem(item.id,{tag:e.target.value})} style={{...eS,width:60}}/>:<span style={{color:"#c4c4c4"}}>{item.tag||""}</span>}</td>
         <td style={{padding:"6px 8px",minWidth:80}}>{isE?<div><input value={item.manufacturer||""} onChange={e=>{const val=e.target.value;const match=vendors.find(v=>v.name.toLowerCase()===val.toLowerCase());const updates={manufacturer:val};if(match){updates.vendor=match.id;if(item.listPrice&&match.discountRate){updates.unitCost=Math.round((item.listPrice||0)*(1-match.discountRate)*100)/100}}updateLineItem(item.id,updates)}} list="vendor-list-tbl" style={{...eS,width:90}}/></div>:<span style={{color:"#c4c4c4"}}>{item.manufacturer||vendors.find(v=>v.id===item.vendor)?.name||""}</span>}</td>
-        <td style={{padding:"6px 8px",textAlign:"right",minWidth:50}}>{(()=>{const v=vendors.find(v=>v.id===item.vendor);const dr=v?.discountRate||0;const calcDr=item.listPrice>0&&item.unitCost>0&&item.unitCost<item.listPrice?Math.round((1-item.unitCost/item.listPrice)*100):0;const showDr=calcDr||Math.round(dr*100);return isE?<DiscInput key={item.id+"-disc"} initial={editingItem==="ALL"?(dr?Math.round(dr*100):""):(showDr||"")} onCommit={pct=>{const newDr=pct/100;if(editingItem==="ALL"){updateVendor(v?.id||"",{discountRate:newDr});items.filter(li=>li.vendor===item.vendor&&li.listPrice).forEach(li=>{updateLineItem(li.id,{unitCost:Math.round((li.listPrice||0)*(1-newDr)*100)/100})})}else{if(item.listPrice){updateLineItem(item.id,{unitCost:Math.round((item.listPrice||0)*(1-newDr)*100)/100})}}}} style={{...eS,width:48,textAlign:"right"}}/>:showDr>0?<span style={{fontFamily:"'JetBrains Mono',monospace",color:"#34d399",fontSize:11}}>{showDr}%</span>:<span style={{color:"#555"}}>--</span>})()}</td>
+        <td style={{padding:"6px 8px",textAlign:"right",minWidth:50}}>{(()=>{const v=vendors.find(v=>v.id===item.vendor);const dr=v?.discountRate||0;const calcDr=item.listPrice>0&&item.unitCost>0&&item.unitCost<item.listPrice?Math.round((1-item.unitCost/item.listPrice)*10000)/100:0;const showDr=calcDr||Math.round(dr*10000)/100;return isE?<DiscInput key={item.id+"-disc"} initial={editingItem==="ALL"?(dr?Math.round(dr*10000)/100:""):(showDr||"")} onCommit={pct=>{const newDr=pct/100;if(editingItem==="ALL"){updateVendor(v?.id||"",{discountRate:newDr});items.filter(li=>li.vendor===item.vendor&&li.listPrice).forEach(li=>{updateLineItem(li.id,{unitCost:Math.round((li.listPrice||0)*(1-newDr)*100)/100})})}else{if(item.listPrice){updateLineItem(item.id,{unitCost:Math.round((item.listPrice||0)*(1-newDr)*100)/100})}}}} style={{...eS,width:48,textAlign:"right"}}/>:showDr>0?<span style={{fontFamily:"'JetBrains Mono',monospace",color:"#34d399",fontSize:11}}>{showDr%1===0?showDr:showDr.toFixed(2)}%</span>:<span style={{color:"#555"}}>--</span>})()}</td>
         <td style={{padding:"6px 8px",minWidth:80}}>{isE?<input value={item.modelNumber||""} onChange={e=>updateLineItem(item.id,{modelNumber:e.target.value})} style={{...eS,width:90}}/>:<span style={{color:"#c4c4c4"}}>{item.modelNumber||""}</span>}</td>
         <td style={{padding:"6px 8px",color:"#e5e5e5",fontWeight:500,minWidth:150,maxWidth:220}}>{isE?<textarea value={item.description} onChange={e=>updateLineItem(item.id,{description:e.target.value})} rows={Math.max(2,Math.ceil((item.description||"").length/40))} style={{...eS,width:"100%",resize:"vertical",minHeight:40,lineHeight:1.4,fontFamily:"inherit"}}/>:<div style={{whiteSpace:"pre-line"}}>{item.description}</div>}</td>
         <td style={{padding:"6px 8px",minWidth:65}}>{isE?<input value={item.color||""} onChange={e=>updateLineItem(item.id,{color:e.target.value})} style={{...eS,width:70}}/>:<span style={{color:"#c4c4c4"}}>{item.color||""}</span>}</td>
