@@ -2160,7 +2160,44 @@ function JobDetail({job,ctx}){
   const [uploadingToJob,setUploadingToJob]=useState(false);
   const parseQuoteIntoJob=async(file)=>{
     if(!file||uploadingToJob)return;setUploadingToJob(true);
+    const ext=(file.name||'').split('.').pop().toLowerCase();
+    const isPdf=ext==='pdf'||file.type==='application/pdf';
+    const isImage=['png','jpg','jpeg','gif','webp','tiff'].includes(ext)||file.type?.startsWith('image/');
     try{
+      if(isPdf||isImage){
+        notify('Scanning document with AI... this may take a moment');
+        const reader=new FileReader();
+        const base64=await new Promise((res,rej)=>{reader.onload=()=>res(reader.result.split(',')[1]);reader.onerror=rej;reader.readAsDataURL(file)});
+        const mediaType=file.type||'application/pdf';
+        const resp=await fetch('/api/ai-scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:base64,mediaType,prompt:'You are extracting line items from a furniture quote/invoice document for Midwest Educational Furnishings. Extract EVERY line item. For each item return: tag (room number), manufacturer, model_number, description, color, quantity (integer), list_price (per unit), net_cost (dealer cost per unit), sell_price (customer price per unit). Also extract the vendor/manufacturer name if visible. Return JSON format: {"vendor":"VENDOR NAME","items":[{"tag":"","manufacturer":"","model_number":"","description":"","color":"","quantity":1,"list_price":0,"net_cost":0,"sell_price":0}]}. Return ONLY valid JSON, no other text.'})});
+        if(!resp.ok)throw new Error('AI scan failed: '+resp.status);
+        const scanData=await resp.json();
+        const text=(scanData.text||scanData.content||'').trim();
+        let parsed;
+        try{const jsonMatch=text.match(/\{[\s\S]*\}/);parsed=jsonMatch?JSON.parse(jsonMatch[0]):JSON.parse(text)}catch(e2){notify('AI could not parse this document. Try an Excel file instead.','error');setUploadingToJob(false);if(jobQuoteRef.current)jobQuoteRef.current.value='';return}
+        if(!parsed.items||parsed.items.length===0){notify('No line items found in document.','error');setUploadingToJob(false);if(jobQuoteRef.current)jobQuoteRef.current.value='';return}
+        const existNames=new Set(vendors.map(v=>v.name.toLowerCase().trim()));
+        const vMap={};vendors.forEach(v=>{vMap[v.name.toLowerCase().trim()]=v.id});
+        const newVendors=[];
+        const vendorName=parsed.vendor||'';
+        if(vendorName){const vk=vendorName.toLowerCase().trim();if(!existNames.has(vk)){const vid='V-'+Date.now()+'-'+Math.random().toString(36).slice(2,6);ctx.addVendor({id:vid,name:vendorName,contact:'',email:'',phone:'',category:'Furniture',address:'',discountRate:0});vMap[vk]=vid;existNames.add(vk);newVendors.push(vendorName)}}
+        let totalAdded=0;
+        for(const item of parsed.items){
+          const mfr=item.manufacturer||vendorName||'';
+          const vk=mfr.toLowerCase().trim();
+          if(vk&&!existNames.has(vk)){const vid='V-'+Date.now()+'-'+Math.random().toString(36).slice(2,6);ctx.addVendor({id:vid,name:mfr,contact:'',email:'',phone:'',category:'Furniture',address:'',discountRate:0});vMap[vk]=vid;existNames.add(vk);newVendors.push(mfr)}
+          addLineItem({id:'LI-'+Date.now()+'-'+Math.random().toString(36).slice(2,6),jobId:job.id,
+            description:item.description||'',vendor:vMap[vk]||'',tag:item.tag||'',group:'',
+            manufacturer:mfr,modelNumber:item.model_number||item.model||'',color:item.color||'',
+            listPrice:parseFloat(item.list_price)||0,unitCost:parseFloat(item.net_cost)||0,
+            unitPrice:parseFloat(item.sell_price)||parseFloat(item.list_price)||0,
+            shippingPerUnit:0,installPerUnit:0,priceExtended:0,
+            qtyOrdered:parseInt(item.quantity)||1,qtyReceived:0,qtyInvoiced:0,
+            poDate:'',deliveryDate:'',invoiceDate:''});
+          totalAdded++;
+        }
+        notify(totalAdded+' line items added to "'+job.name+'" via AI scan'+(newVendors.length?' ('+newVendors.length+' new vendors created)':''));
+      }else{
       const XLSX=await import('xlsx');
       const data=await file.arrayBuffer();
       const wb=XLSX.read(data,{type:'array'});
@@ -2231,6 +2268,7 @@ function JobDetail({job,ctx}){
         }
       }
       notify(totalAdded+' line items added to "'+job.name+'"'+(newVendors.length?' ('+newVendors.length+' new vendors created)':''));
+      }
     }catch(err){notify('Error reading file: '+err.message,'error')}
     setUploadingToJob(false);if(jobQuoteRef.current)jobQuoteRef.current.value='';
   };
@@ -2244,7 +2282,7 @@ function JobDetail({job,ctx}){
       <button onClick={()=>setSelectedJob(null)} style={{background:"none",border:"none",color:"#2dd4bf",cursor:"pointer",fontSize:13,fontFamily:"inherit",marginBottom:12,display:"flex",alignItems:"center",gap:6}}>&larr; All Jobs</button>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}>
         <div><div style={{display:"flex",alignItems:"center",gap:10,marginBottom:2}}><h2 style={{fontSize:22,fontWeight:800,color:"#e5e5e5",margin:0}}><span style={{fontFamily:"'JetBrains Mono',monospace",color:"#525252",fontSize:13,marginRight:8}}>{ctx.jobNum?.(job.id)||""}</span>{job.name}</h2><Badge label={job.phase} color={statusColor(job.phase)}/><Badge label={job.paymentStatus} color={statusColor(job.paymentStatus)}/></div><div style={{fontSize:12,color:"#a3a3a3"}}>{job.id} - {customer?.name} - {rep?.name} - {fmt(f.totalRevenue)} rev - {pct(f.margin)} margin</div></div>
-        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}><input ref={jobQuoteRef} type="file" accept=".xls,.xlsx" onChange={e=>{if(e.target.files[0])parseQuoteIntoJob(e.target.files[0])}} style={{display:"none"}}/><Btn v="danger" onClick={()=>deleteJob(job.id)} style={{fontSize:12,padding:"6px 10px"}}><I n="close" s={12}/> Delete</Btn><Btn v="secondary" onClick={()=>setEditing(!editing)} style={{fontSize:12,padding:"6px 10px"}}><I n="edit" s={12}/> Edit</Btn><Btn v="secondary" onClick={duplicateJob} style={{fontSize:12,padding:"6px 10px"}}><I n="package" s={12}/> Duplicate</Btn><Btn onClick={()=>setAddingItem(true)} style={{fontSize:12,padding:"6px 10px"}}><I n="plus" s={12}/> Add Item</Btn><Btn v="secondary" onClick={()=>jobQuoteRef.current?.click()} style={{fontSize:12,padding:"6px 10px"}}><I n="upload" s={12}/> Upload Quote</Btn><Btn v="ghost" onClick={()=>{
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}><input ref={jobQuoteRef} type="file" accept=".xls,.xlsx,.pdf,.png,.jpg,.jpeg" onChange={e=>{if(e.target.files[0])parseQuoteIntoJob(e.target.files[0])}} style={{display:"none"}}/><Btn v="danger" onClick={()=>deleteJob(job.id)} style={{fontSize:12,padding:"6px 10px"}}><I n="close" s={12}/> Delete</Btn><Btn v="secondary" onClick={()=>setEditing(!editing)} style={{fontSize:12,padding:"6px 10px"}}><I n="edit" s={12}/> Edit</Btn><Btn v="secondary" onClick={duplicateJob} style={{fontSize:12,padding:"6px 10px"}}><I n="package" s={12}/> Duplicate</Btn><Btn onClick={()=>setAddingItem(true)} style={{fontSize:12,padding:"6px 10px"}}><I n="plus" s={12}/> Add Item</Btn><Btn v="secondary" onClick={()=>jobQuoteRef.current?.click()} style={{fontSize:12,padding:"6px 10px"}}><I n="upload" s={12}/> Upload Quote</Btn><Btn v="ghost" onClick={()=>{
   try{const allItems=items;const customer2=customer;const jobPOs=[];const groups={};allItems.forEach(i=>{if(!groups[i.vendor])groups[i.vendor]=[];groups[i.vendor].push(i)});Object.entries(groups).forEach(([vid,vitems])=>{jobPOs.push({vendor:vendors.find(v=>v.id===vid),items:vitems})});
   const invTotal=allItems.reduce((s,i)=>s+((i.unitPrice||0)+(i.shippingPerUnit||0)+(i.installPerUnit||0))*i.qtyOrdered,0);const costTotal=allItems.reduce((s,i)=>s+i.unitCost*i.qtyOrdered,0);
   const hd='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px"><div><div style="font-weight:700;font-size:14px">Midwest Educational Furnishings, Inc.</div><div style="font-size:12px;color:#888;line-height:1.6">21191 N Valley Rd<br>Kildeer, IL 60047 US<br>(847) 847-1865</div></div><div><img src="'+MW_LOGO+'" style="height:44px"/></div></div>';
