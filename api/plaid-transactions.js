@@ -7,7 +7,8 @@ export default async function handler(req, res) {
 
   const CLIENT_ID = process.env.PLAID_CLIENT_ID;
   const SECRET = process.env.PLAID_SECRET;
-  const PLAID_ENV = process.env.PLAID_ENV || 'sandbox';
+  // Default to production since Maureen has production keys
+  const PLAID_ENV = process.env.PLAID_ENV || 'production';
 
   if (!CLIENT_ID || !SECRET) {
     return res.status(500).json({ error: 'PLAID_CLIENT_ID or PLAID_SECRET not set' });
