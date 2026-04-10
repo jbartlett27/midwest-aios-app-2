@@ -1308,10 +1308,10 @@ function MidwestAIOSInner() {
 
     {id:"usermgmt",label:"Users & Permissions",icon:"shield"},
   ].filter(item => {
-    // Check for custom page-level permissions (set in Users & Permissions)
+    // Check for custom page-level permissions (stored in Supabase users.pages column)
     const customPages=(()=>{
       if(currentUser?.pages&&Array.isArray(currentUser.pages))return currentUser.pages;
-      if(currentUser?.id){try{const lp=localStorage.getItem("mw_pages_"+currentUser.id);if(lp)return JSON.parse(lp)}catch{}}
+      if(currentUser?.pages&&typeof currentUser.pages==='string'){try{return JSON.parse(currentUser.pages)}catch{}}
       return null;
     })();
     if(customPages){
@@ -5885,8 +5885,11 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
           const text=await r.text();let data;try{data=JSON.parse(text)}catch{notify('API returned invalid response. Go to Vercel > Deployments and click Redeploy.','error');setPlaidLoading(false);return}
           if(!r.ok||!data.link_token){
             const msg=typeof data.error==='string'?data.error:data.error_message||data.error?.message||'Unknown error';
+            const debugEnv=data._debug?.env||'unknown';
             if(msg.includes('not set')||msg.includes('CLIENT_ID')||msg.includes('SECRET')){
-              notify('Plaid keys not active yet. Go to Vercel > Settings > Environment Variables, confirm PLAID_CLIENT_ID, PLAID_SECRET, PLAID_ENV are there, then go to Deployments and click Redeploy.','error');
+              notify('Plaid keys not set. Go to Vercel > Settings > Environment Variables, add PLAID_CLIENT_ID, PLAID_SECRET, and PLAID_ENV=production, then Redeploy.','error');
+            } else if(msg.includes('invalid client_id')||msg.includes('invalid secret')){
+              notify('Plaid keys rejected (env: '+debugEnv+'). Verify PLAID_CLIENT_ID and PLAID_SECRET in Vercel match your Plaid dashboard, and PLAID_ENV is set to "production". Then Redeploy.','error');
             } else {notify('Plaid: '+msg,'error')}
             setPlaidLoading(false);return;
           }
@@ -6173,8 +6176,8 @@ function UserMgmtPage({notify,reps,customSops,addSop,deleteSop}){
   const roleDefaults={admin:allPages,office:["dashboard","jobs","dataimport","deliveries","documents","salesportal","playbook","tasks","notes","brain"],sales:["dashboard","jobs","deliveries","documents","tasks","notes","brain","salesportal"]};
 
   const allUsersList=[
-    ...users.map(u=>{const lp=(()=>{try{const s=localStorage.getItem("mw_pages_"+u.id);return s?JSON.parse(s):null}catch{return null}})();return{...u,source:"password",pages:u.pages||lp||roleDefaults[u.role]||roleDefaults.sales}}),
-    ...clerkUsers.map(u=>({...u,source:"clerk",username:u.email||"Google/Apple",pages:u.pages||roleDefaults[u.role||"admin"]}))
+    ...users.map(u=>{const dbPages=(()=>{try{return u.pages?JSON.parse(u.pages):null}catch{return null}})();return{...u,source:"password",pages:u.pages,_pages:dbPages||roleDefaults[u.role]||roleDefaults.sales}}),
+    ...clerkUsers.map(u=>({...u,source:"clerk",username:u.email||"Google/Apple",pages:u.pages,_pages:u.pages||roleDefaults[u.role||"admin"]}))
   ];
 
   return <div style={{animation:"fadeUp 0.4s"}}>
@@ -6221,11 +6224,10 @@ function UserMgmtPage({notify,reps,customSops,addSop,deleteSop}){
           {/* Role selector */}
           <div style={{marginBottom:14}}><label style={{fontSize:12,color:"#737373",display:"block",marginBottom:6}}>Role</label>
           <div style={{display:"flex",gap:6}}>{[{v:"admin",l:"Admin"},{v:"office",l:"Office"},{v:"sales",l:"Sales"}].map(r=><button key={r.v} onClick={()=>{
-            const newPages=roleDefaults[r.v];
-            if(u.source==="clerk"){saveClerkRole(u.clerkId,{...clerkRoles[u.clerkId],role:r.v,name:u.name,email:u.email||"",pages:newPages})}
+            const newPages=JSON.stringify(roleDefaults[r.v]);
+            if(u.source==="clerk"){saveClerkRole(u.clerkId,{...clerkRoles[u.clerkId],role:r.v,name:u.name,email:u.email||"",pages:roleDefaults[r.v]})}
             else{
-              try{localStorage.setItem("mw_pages_"+u.id,JSON.stringify(newPages))}catch{}
-              db.saveUser({...u,role:r.v}).then(()=>{setUsers(prev=>prev.map(x=>x.id===u.id?{...x,role:r.v,pages:newPages}:x));notify("Role updated to "+r.l+" -- pages reset to default")}).catch(()=>{})
+              db.saveUser({...u,role:r.v,pages:newPages}).then(()=>{setUsers(prev=>prev.map(x=>x.id===u.id?{...x,role:r.v,pages:newPages}:x));notify("Role updated to "+r.l+" -- pages reset to default")}).catch(()=>{})
             }
           }} style={{padding:"8px 16px",borderRadius:8,border:"1px solid "+((u.role||"admin")===r.v?(roleColor[r.v]||"#525252")+"60":"#222"),background:(u.role||"admin")===r.v?(roleColor[r.v]||"#525252")+"12":"transparent",color:(u.role||"admin")===r.v?roleColor[r.v]:"#737373",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>{r.l}</button>)}</div></div>
 
@@ -6234,16 +6236,18 @@ function UserMgmtPage({notify,reps,customSops,addSop,deleteSop}){
           <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
             {allPages.map(p=>{
               const storedPages=u.source==="clerk"?(clerkRoles[u.clerkId]?.pages||null):null;
-              const localPages=(()=>{try{const lp=localStorage.getItem("mw_pages_"+u.id);return lp?JSON.parse(lp):null}catch{return null}})();
-              const pages=storedPages||localPages||u.pages||roleDefaults[u.role||"admin"];
+              const dbPages=(()=>{try{return u.pages?JSON.parse(u.pages):null}catch{return null}})();
+              const pages=storedPages||dbPages||roleDefaults[u.role||"admin"];
               const isOn=pages.includes(p);
               return <button key={p} onClick={()=>{
                 const newPages=isOn?pages.filter(x=>x!==p):[...pages,p];
+                const newPagesStr=JSON.stringify(newPages);
                 if(u.source==="clerk"){saveClerkRole(u.clerkId,{...clerkRoles[u.clerkId],role:u.role||"admin",name:u.name,email:u.email||"",pages:newPages})}
                 else{
-                  try{localStorage.setItem("mw_pages_"+u.id,JSON.stringify(newPages))}catch{}
-                  setUsers(prev=>prev.map(x=>x.id===u.id?{...x,pages:newPages}:x));
-                  notify(pageLabels[p]+" "+(isOn?"hidden from":"shown to")+" "+u.name);
+                  db.saveUser({...u,pages:newPagesStr}).then(()=>{
+                    setUsers(prev=>prev.map(x=>x.id===u.id?{...x,pages:newPagesStr}:x));
+                    notify(pageLabels[p]+" "+(isOn?"hidden from":"shown to")+" "+u.name);
+                  }).catch(()=>{notify("Error saving permissions")});
                 }
               }} style={{padding:"5px 10px",borderRadius:6,border:"1px solid "+(isOn?"#2dd4bf30":"#222"),background:isOn?"#2dd4bf08":"transparent",color:isOn?"#2dd4bf":"#525252",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>{pageLabels[p]||p}</button>
             })}
