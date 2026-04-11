@@ -2063,10 +2063,10 @@ Never use emoji. Be concise.`;
   const sortedJobs = [...filteredJobs].sort((a,b)=>{ if(sortBy==="revenue") return getJobFinancials(b.id).totalRevenue-getJobFinancials(a.id).totalRevenue; if(sortBy==="margin") return getJobFinancials(b.id).margin-getJobFinancials(a.id).margin; if(sortBy==="name") return a.name.localeCompare(b.name); return (b[sortBy]||"").localeCompare(a[sortBy]||""); });
 
   return <>{newJobModal}<div style={{animation:"fadeUp 0.4s"}}>
-    <Header title="Job Records" sub="Central hub -- single source of truth for every project" action={<div style={{display:"flex",gap:8}}><Btn onClick={()=>setNewCust(true)} v="secondary"><I n="plus" s={14}/> New Customer</Btn><Btn onClick={()=>setShowNewJob(true)}><I n="plus" s={14}/> Add New Job</Btn></div>}/>
+    <Header title="Job Records" sub="Central hub -- single source of truth for every project"/>
 
-    <div style={{display:"flex",gap:12,marginBottom:16,alignItems:"center",flexWrap:"wrap"}}>
-      <input value={ctx.globalSearch} onChange={e=>ctx.setGlobalSearch(e.target.value)} placeholder="Search jobs..." style={{...inputStyle,maxWidth:300,background:"#111111",border:"1px solid #222222",padding:"10px 14px",fontSize:14}}/><Btn onClick={()=>uploadRef.current?.click()} style={{flexShrink:0,whiteSpace:"nowrap"}}><I n="download" s={14}/> Upload Quote</Btn>
+    <div style={{display:"flex",gap:8,marginBottom:16,alignItems:"center",flexWrap:"wrap"}}>
+      <input value={ctx.globalSearch} onChange={e=>ctx.setGlobalSearch(e.target.value)} placeholder="Search jobs..." style={{...inputStyle,flex:"0 1 260px",minWidth:160,background:"#111111",border:"1px solid #222222",padding:"10px 14px",fontSize:14}}/><Btn onClick={()=>setShowNewJob(true)} style={{flexShrink:0,whiteSpace:"nowrap"}}><I n="plus" s={14}/> New Job</Btn><Btn onClick={()=>uploadRef.current?.click()} v="secondary" style={{flexShrink:0,whiteSpace:"nowrap"}}><I n="download" s={14}/> Upload Quote</Btn><Btn onClick={()=>setNewCust(true)} v="secondary" style={{flexShrink:0,whiteSpace:"nowrap"}}><I n="plus" s={14}/> Add Customer</Btn>
       <div style={{display:"flex",gap:4,background:"#111111",padding:3,borderRadius:8}}>
         {[["table","Table"],["kanban","Kanban"]].map(([v,l])=><button key={v} onClick={()=>setViewMode(v)} style={{padding:"5px 12px",borderRadius:6,border:"none",cursor:"pointer",background:viewMode===v?"#2dd4bf":"transparent",color:viewMode===v?"#000000":"#525252",fontSize:12,fontWeight:viewMode===v?600:400,fontFamily:"inherit"}}>{l}</button>)}
       </div>
