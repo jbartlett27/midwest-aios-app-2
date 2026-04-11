@@ -1020,7 +1020,7 @@ function MidwestAIOSInner() {
       setCurrentUser(mapped);sessionStorage.setItem("mw_user",JSON.stringify(mapped));
       // Auto-register this Clerk user if not already in the roles store
       if(!existingRole){
-        const updated={...storedRoles,["clerk-"+clerkId]:{role:"office",name:cu.fullName||cu.firstName||email,email,avatar:cu.imageUrl,pages:["dashboard","jobs","dataimport","deliveries","documents","salesportal","playbook","tasks","notes","brain"],createdAt:new Date().toISOString()}};
+        const updated={...storedRoles,["clerk-"+clerkId]:{role:"office",name:cu.fullName||cu.firstName||email,email,avatar:cu.imageUrl,pages:["dashboard","jobs","deliveries","documents","salesportal","playbook","tasks","notes","brain"],createdAt:new Date().toISOString()}};
         addSop({id:"CLERK_USER_ROLES",title:"Clerk User Roles",cat:"Settings",icon:"shield",content:JSON.stringify(updated),custom:true});
       }
     }
@@ -1294,7 +1294,6 @@ function MidwestAIOSInner() {
     {id:"dashboard",label:"Command Center",icon:"dashboard",badge:overdueCount>0?overdueCount:null,badgeColor:"#f87171"},
     {id:"jobs",label:"Job Records",icon:"briefcase",badge:jobs.length||null,badgeColor:"#2dd4bf"},
     {id:"directory",label:"Directory",icon:"users"},
-    {id:"dataimport",label:"Data Import",icon:"download"},
     {id:"deliveries",label:"Delivery Tracker",icon:"truck",badge:pendingDeliveries||null,badgeColor:"#fbbf24"},
     {id:"documents",label:"Documents",icon:"file",badge:pendingInvoices||null,badgeColor:"#2dd4bf"},
     {id:"commissions",label:"Commissions",icon:"dollar"},
@@ -1442,7 +1441,6 @@ const sharedScreen = sharedQuote ? <ShareQuotePortal quoteData={sharedQuote} onA
           {page==="dashboard"&&<Dashboard {...ctx}/>}
           {page==="jobs"&&<JobsPage {...ctx}/>}
           {page==="directory"&&<DirectoryPage {...ctx}/>}
-          {page==="dataimport"&&<CsvUploadPage {...ctx} db={db}/>}
           {page==="deliveries"&&<DeliveryPage {...ctx}/>}
           {page==="documents"&&<DocumentsPage {...ctx}/>}
           {page==="financials"&&<FinancialsPage {...ctx}/>}
@@ -3812,7 +3810,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
                 notify(aiCount+' records imported via AI from '+f.name);
               }catch{notify('AI could not parse structured data from this file','error')}
             }catch(err2){notify('AI assist failed: '+err2.message,'error')}
-          }else if(failedSheets.length>0){notify(failedSheets.length+' file'+(failedSheets.length>1?'s':'')+' had unrecognized format. Use AI Document Scan in Data Import for those.')}
+          }else if(failedSheets.length>0){notify(failedSheets.length+' file'+(failedSheets.length>1?'s':'')+' had unrecognized format. Try uploading as PDF via Upload Quote on Job Records.')}
         }catch(err){notify('Error reading Excel: '+err.message,'error')}
         if(histExcelRef.current)histExcelRef.current.value='';
         if(histBulkExcelRef.current)histBulkExcelRef.current.value='';
@@ -5090,7 +5088,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         return{success:true,message:"Added "+ct+" line item"+(ct!==1?"s":"")+" to "+job.name+":\n"+items.map(i=>"- "+(i.quantity||1)+"x "+(i.description||i.manufacturer||"item")+" @ $"+(i.unit_price||0).toLocaleString()+" each").join("\n")+"\nTotal added: $"+totalRev.toLocaleString()};
       }
       if(toolName==="navigate_to_page"){
-        const pageMap={dashboard:"dashboard",jobs:"jobs",documents:"documents",deliveries:"deliveries",financials:"financials",playbook:"playbook",tasks:"tasks",notes:"notes",brain:"brain",dataimport:"dataimport",commissions:"commissions",salesportal:"salesportal",import:"dataimport",sales:"salesportal"};
+        const pageMap={dashboard:"dashboard",jobs:"jobs",documents:"documents",deliveries:"deliveries",financials:"financials",playbook:"playbook",tasks:"tasks",notes:"notes",brain:"brain",commissions:"commissions",salesportal:"salesportal",import:"jobs",sales:"salesportal"};
         const p=pageMap[(input.page||"").toLowerCase()]||input.page;
         if(p&&setPage)setPage(p);
         return{success:true,message:"Navigated to "+p};
@@ -6219,9 +6217,9 @@ function UserMgmtPage({notify,reps,customSops,addSop,deleteSop}){
   const deleteUser=async(id)=>{if(!confirm("Delete this user?"))return;await db.deleteUser(id);setUsers(p=>p.filter(u=>u.id!==id));notify("User deleted")};
 
   const roleColor={admin:"#2dd4bf",office:"#a78bfa",sales:"#fbbf24"};
-  const allPages=["dashboard","jobs","dataimport","deliveries","documents","commissions","financials","salesportal","playbook","tasks","notes","brain","exitreadiness","usermgmt"];
-  const pageLabels={dashboard:"Command Center",jobs:"Job Records",dataimport:"Data Import",deliveries:"Delivery Tracker",documents:"Documents",commissions:"Commissions",financials:"Financials",salesportal:"Sales Portal",playbook:"Playbook & SOPs",tasks:"Tasks",notes:"Notes",brain:"Midwest Brain",exitreadiness:"Exit Readiness",usermgmt:"Users & Permissions"};
-  const roleDefaults={admin:allPages,office:["dashboard","jobs","dataimport","deliveries","documents","salesportal","playbook","tasks","notes","brain"],sales:["dashboard","jobs","deliveries","documents","tasks","notes","brain","salesportal"]};
+  const allPages=["dashboard","jobs","deliveries","documents","commissions","financials","salesportal","playbook","tasks","notes","brain","exitreadiness","usermgmt"];
+  const pageLabels={dashboard:"Command Center",jobs:"Job Records",deliveries:"Delivery Tracker",documents:"Documents",commissions:"Commissions",financials:"Financials",salesportal:"Sales Portal",playbook:"Playbook & SOPs",tasks:"Tasks",notes:"Notes",brain:"Midwest Brain",exitreadiness:"Exit Readiness",usermgmt:"Users & Permissions"};
+  const roleDefaults={admin:allPages,office:["dashboard","jobs","deliveries","documents","salesportal","playbook","tasks","notes","brain"],sales:["dashboard","jobs","deliveries","documents","tasks","notes","brain","salesportal"]};
 
   const allUsersList=[
     ...users.map(u=>{const dbPages=(()=>{try{return u.pages?JSON.parse(u.pages):null}catch{return null}})();return{...u,source:"password",pages:u.pages,_pages:dbPages||roleDefaults[u.role]||roleDefaults.sales}}),
@@ -6314,7 +6312,7 @@ function UserMgmtPage({notify,reps,customSops,addSop,deleteSop}){
     <Card style={{marginTop:20,padding:16,border:"1px solid rgba(167,139,250,0.1)"}}>
       <div style={{fontSize:14,fontWeight:700,color:"#a78bfa",marginBottom:8}}>Permission Levels</div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(250px,1fr))",gap:12}} className="resp-grid-3">
-        <div style={{padding:12,background:"#000",borderRadius:10}}><div style={{fontSize:13,fontWeight:600,color:"#2dd4bf",marginBottom:6}}>Admin</div><div style={{fontSize:12,color:"#a3a3a3",lineHeight:1.6}}>Full access to all pages including Command Center, Job Records, Documents, Financials, Commissions, Exit Readiness, Brain, Data Import, and Users & Permissions.</div></div>
+        <div style={{padding:12,background:"#000",borderRadius:10}}><div style={{fontSize:13,fontWeight:600,color:"#2dd4bf",marginBottom:6}}>Admin</div><div style={{fontSize:12,color:"#a3a3a3",lineHeight:1.6}}>Full access to all pages including Command Center, Job Records, Documents, Financials, Commissions, Exit Readiness, Brain, and Users & Permissions.</div></div>
         <div style={{padding:12,background:"#000",borderRadius:10}}><div style={{fontSize:13,fontWeight:600,color:"#a78bfa",marginBottom:6}}>Office Manager</div><div style={{fontSize:12,color:"#a3a3a3",lineHeight:1.6}}>Access to all operational pages: Jobs, Documents, Deliveries, Directory, Tasks, Notes, Sales Portal, Playbook, and Brain. Cannot see Financials, Commissions, or Exit Readiness.</div></div>
         <div style={{padding:12,background:"#000",borderRadius:10}}><div style={{fontSize:13,fontWeight:600,color:"#fbbf24",marginBottom:6}}>Sales Rep</div><div style={{fontSize:12,color:"#a3a3a3",lineHeight:1.6}}>Sees only their own assigned jobs. Access to Dashboard (own data), Job Records, Documents, Deliveries, Tasks, Notes, Brain, and Sales Portal. Cannot see other reps' data.</div></div>
       </div>
