@@ -2174,10 +2174,10 @@ function JobDetail({job,ctx}){
         const reader=new FileReader();
         const base64=await new Promise((res,rej)=>{reader.onload=()=>res(reader.result.split(',')[1]);reader.onerror=rej;reader.readAsDataURL(file)});
         const mediaType=file.type||'application/pdf';
-        const resp=await fetch('/api/ai-scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:base64,mediaType,prompt:'You are extracting line items from a furniture quote/invoice document for Midwest Educational Furnishings. Extract EVERY line item. For each item return: tag (room number), manufacturer, model_number, description, color, quantity (integer), list_price (per unit), net_cost (dealer cost per unit), sell_price (customer price per unit). Also extract the vendor/manufacturer name if visible. Return JSON format: {"vendor":"VENDOR NAME","items":[{"tag":"","manufacturer":"","model_number":"","description":"","color":"","quantity":1,"list_price":0,"net_cost":0,"sell_price":0}]}. Return ONLY valid JSON, no other text.'})});
+        const resp=await fetch('/api/ai-scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image_data:base64,media_type:mediaType,scan_type:'quote_document'})});
         if(!resp.ok)throw new Error('AI scan failed: '+resp.status);
         const scanData=await resp.json();
-        const text=(scanData.text||scanData.content||'').trim();
+        const text=((scanData.content||[]).find(b=>b.type==='text')?.text||'').trim();
         let parsed;
         try{const jsonMatch=text.match(/\{[\s\S]*\}/);parsed=jsonMatch?JSON.parse(jsonMatch[0]):JSON.parse(text)}catch(e2){notify('AI could not parse this document. Try an Excel file instead.','error');setUploadingToJob(false);if(jobQuoteRef.current)jobQuoteRef.current.value='';return}
         if(!parsed.items||parsed.items.length===0){notify('No line items found in document.','error');setUploadingToJob(false);if(jobQuoteRef.current)jobQuoteRef.current.value='';return}
