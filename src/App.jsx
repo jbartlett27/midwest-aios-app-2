@@ -1326,7 +1326,7 @@ function MidwestAIOSInner() {
 
   
   const visibleJobs = userRole === "sales" && userRepId ? jobs.filter(j => j.salesRep === userRepId) : jobs;
-  const ctx = {jobs:visibleJobs,allJobs:jobs,setJobs,jobNum,currentUser,userRole,userRepId,logout,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,forceDeleteVendor,forceDeleteLineItem,forceDeleteCustomer,forceDeleteRep,setPage:p=>{setPage(p);setMobileMenuOpen(false);window.scrollTo(0,0);const mc=document.querySelector('.main-content');if(mc)mc.scrollTop=0},viewCustomer:id=>{setPage("customer360");window._viewCustId=id;window.scrollTo(0,0)},brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter,pendingCommPreview,setPendingCommPreview};
+  const ctx = {jobs:visibleJobs,allJobs:jobs,setJobs,jobNum,currentUser,userRole,userRepId,logout,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,forceDeleteVendor,forceDeleteLineItem,forceDeleteCustomer,forceDeleteRep,db,setPage:p=>{setPage(p);setMobileMenuOpen(false);window.scrollTo(0,0);const mc=document.querySelector('.main-content');if(mc)mc.scrollTop=0},viewCustomer:id=>{setPage("customer360");window._viewCustId=id;window.scrollTo(0,0)},brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter,pendingCommPreview,setPendingCommPreview};
 
   const loadingScreen = (
 <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",width:"100vw",background:"#0a0a0a",fontFamily:"'Satoshi',sans-serif"}}>
@@ -1756,7 +1756,7 @@ function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJo
 }
 
 function JobsPage(ctx){
-  const {jobs,reps,customers,vendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobFinancials,getJobItems,getItemStatus,getJobPOStatus,getJobInvStatus,updateJob,addJob,addLineItem,updateLineItem,deleteLineItem,lineItems,addCustomer,addVendor} = ctx;
+  const {jobs,reps,customers,vendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobFinancials,getJobItems,getItemStatus,getJobPOStatus,getJobInvStatus,updateJob,addJob,addLineItem,updateLineItem,deleteLineItem,lineItems,addCustomer,addVendor,deleteJob,confirm,db} = ctx;
   const [viewMode,setViewMode]=useState("kanban");
   const [newJob,setNewJob]=useState({name:"",customer:"",salesRep:reps[0]?.id||"",phase:"Quoting",dueDate:"",startDate:"",notes:"",terms:"Net 30",poNumber:"",shipTo:"",shipVia:""});
   const [newCust,setNewCust]=useState(false);
@@ -1771,6 +1771,8 @@ function JobsPage(ctx){
   const [uploadAiLoading,setUploadAiLoading]=useState(false);
   const [uploadAiStatus,setUploadAiStatus]=useState(null);
   const uploadRef=useRef();
+  const [jobSelected,setJobSelected]=useState(new Set());
+  const [jobBulkAction,setJobBulkAction]=useState(null);
 
   
   // XLS Quote Upload Parser
@@ -2134,19 +2136,35 @@ Never use emoji. Be concise.`;
     </Card>}
     {newCust&&<Card style={{marginBottom:20,border:"1px solid #2563eb30"}}><div style={{fontSize:14,fontWeight:700,marginBottom:16,color:"#a78bfa"}}>Add New Customer</div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12,marginBottom:12}}>{[["name","Name"],["contact","Contact"],["email","Email"],["phone","Phone"]].map(([k,l])=><div key={k}><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>{l}</label><input value={custForm[k]} onChange={e=>setCustForm({...custForm,[k]:e.target.value})} style={inputStyle}/></div>)}</div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12,marginBottom:12}}><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Type</label><select value={custForm.type||"K-12 District"} onChange={e=>setCustForm({...custForm,type:e.target.value})} style={inputStyle}><option>K-12 District</option><option>Private School</option><option>University</option><option>Government</option><option>Corporate</option><option>Other</option></select></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Address</label><input value={custForm.address||""} onChange={e=>setCustForm({...custForm,address:e.target.value})} placeholder="Full address (street, city, state, zip)" style={inputStyle}/></div></div><div style={{display:"flex",gap:8}}><Btn onClick={()=>{if(custForm.name){addCustomer(custForm);setNewCust(false);setCustForm({name:"",contact:"",email:"",phone:"",type:"K-12 District",address:""});notify("Customer added")}}}>Add Customer</Btn><Btn v="secondary" onClick={()=>setNewCust(false)}>Cancel</Btn></div></Card>}
 
-    {viewMode==="table"&&<Tbl columns={[
-      {header:"Project #",render:r=><span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:"#a78bfa",fontWeight:600}}>{ctx.jobNum?.(r.id)}</span>},{header:"Job ID",render:r=><span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:"#2dd4bf"}}>{r.id}</span>},
-      {header:"Job Name",render:r=><span style={{fontWeight:600,color:"#e5e5e5"}}>{r.name}</span>},
-      {header:"Customer",render:r=>customers.find(c=>c.id===r.customer)?.name},
-      {header:"Rep",render:r=>reps.find(rep=>rep.id===r.salesRep)?.name},
-      {header:"Phase",render:r=><Badge label={r.phase} color={statusColor(r.phase)}/>},
-      {header:"Created",render:r=><span style={{fontSize:12,color:"#a3a3a3"}}>{r.createdDate||"--"}</span>},
-      {header:"Start",render:r=><span style={{fontSize:12,color:r.startDate?"#a3a3a3":"#404040"}}>{r.startDate||"--"}</span>},
-      {header:"Due",render:r=><span style={{fontSize:12,color:r.dueDate&&new Date(r.dueDate)<new Date()?"#f87171":"#a3a3a3"}}>{r.dueDate||"--"}</span>},
-      {header:"Revenue",render:r=><span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12}}>{fmt(getJobFinancials(r.id).totalRevenue)}</span>},
-      {header:"Margin",render:r=>{const m=getJobFinancials(r.id).margin;return <span style={{color:m>=30?"#34d399":"#fbbf24",fontSize:12}}>{pct(m)}</span>}},
-      {header:"Payment",render:r=><Badge label={r.paymentStatus} color={statusColor(r.paymentStatus)}/>},
-    ]} data={sortedJobs} onRowClick={r=>setSelectedJob(r.id)}/>}{sortedJobs.length===0&&<Card style={{textAlign:"center",padding:40,marginTop:16}}><div style={{fontSize:40,marginBottom:8}}>+</div><div style={{fontSize:16,fontWeight:600,color:"#2dd4bf",marginBottom:4}}>No jobs yet</div><div style={{fontSize:13,color:"#a3a3a3",marginBottom:16}}>Create your first job to start tracking projects, deliveries, and invoices.</div><Btn onClick={()=>setShowNewJob(true)}><I n="plus" s={14}/> Create First Job</Btn></Card>}
+    {viewMode==="table"&&<>
+      {/* Bulk action bar */}
+      {jobSelected.size>0&&<div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 16px",background:"rgba(45,212,191,0.06)",border:"1px solid rgba(45,212,191,0.15)",borderRadius:10,marginBottom:12,flexWrap:"wrap"}}>
+        <span style={{fontSize:13,fontWeight:600,color:"#2dd4bf"}}>{jobSelected.size} job{jobSelected.size>1?'s':''} selected</span>
+        <Btn v="danger" style={{fontSize:12,padding:"5px 12px"}} onClick={async()=>{const cnt=jobSelected.size;const ok=await confirm("Delete "+cnt+" job(s) and all their line items? This cannot be undone.");if(!ok)return;const ids=[...jobSelected];ids.forEach(id=>{const jobItems=(lineItems||[]).filter(l=>l.jobId===id);jobItems.forEach(li=>db?.deleteLineItem(li.id));db?.deleteJob(id)});ctx.setJobs(p=>p.filter(j=>!jobSelected.has(j.id)));ctx.setLineItems(p=>p.filter(l=>!jobSelected.has(l.jobId)));notify(cnt+" jobs deleted");setJobSelected(new Set())}}><I n="close" s={12}/> Delete</Btn>
+        <div style={{width:1,height:20,background:"rgba(255,255,255,0.08)"}}/>
+        <span style={{fontSize:12,color:"#a3a3a3"}}>Set Phase:</span>
+        {["Quoting","In Progress","Invoiced","Complete"].map(ph=><button key={ph} onClick={()=>{[...jobSelected].forEach(id=>updateJob(id,{phase:ph}));notify(jobSelected.size+" job(s) moved to "+ph);setJobSelected(new Set())}} style={{padding:"4px 10px",borderRadius:6,border:"1px solid rgba(45,212,191,0.15)",background:"transparent",color:"#c4c4c4",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(45,212,191,0.1)";e.currentTarget.style.color="#2dd4bf"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";e.currentTarget.style.color="#c4c4c4"}}>{ph}</button>)}
+        <Btn v="secondary" style={{fontSize:11,padding:"4px 10px",marginLeft:"auto"}} onClick={()=>setJobSelected(new Set())}>Clear</Btn>
+      </div>}
+      <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}><thead><tr>
+        <th style={{padding:"10px 6px",width:32}}><input type="checkbox" checked={jobSelected.size===sortedJobs.length&&sortedJobs.length>0} onChange={()=>{if(jobSelected.size===sortedJobs.length)setJobSelected(new Set());else setJobSelected(new Set(sortedJobs.map(j=>j.id)))}} style={{accentColor:"#2dd4bf",cursor:"pointer"}}/></th>
+        {["Project #","Job ID","Job Name","Customer","Rep","Phase","Created","Start","Due","Revenue","Margin","Payment"].map(h=><th key={h} style={{padding:"10px 8px",textAlign:"left",fontSize:11,fontWeight:600,color:"#737373",borderBottom:"1px solid #222",whiteSpace:"nowrap"}}>{h}</th>)}
+      </tr></thead><tbody>{sortedJobs.map(r=><tr key={r.id} style={{cursor:"pointer",transition:"background 0.15s",background:jobSelected.has(r.id)?"rgba(45,212,191,0.06)":"transparent"}} onMouseEnter={e=>{if(!jobSelected.has(r.id))e.currentTarget.style.background="#0a0a0a"}} onMouseLeave={e=>{e.currentTarget.style.background=jobSelected.has(r.id)?"rgba(45,212,191,0.06)":"transparent"}}>
+        <td style={{padding:"10px 6px",borderBottom:"1px solid #111"}} onClick={e=>e.stopPropagation()}><input type="checkbox" checked={jobSelected.has(r.id)} onChange={()=>{setJobSelected(prev=>{const n=new Set(prev);if(n.has(r.id))n.delete(r.id);else n.add(r.id);return n})}} style={{accentColor:"#2dd4bf",cursor:"pointer"}}/></td>
+        <td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}} onClick={()=>setSelectedJob(r.id)}><span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:"#a78bfa",fontWeight:600}}>{ctx.jobNum?.(r.id)}</span></td>
+        <td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}} onClick={()=>setSelectedJob(r.id)}><span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12,color:"#2dd4bf"}}>{r.id}</span></td>
+        <td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}} onClick={()=>setSelectedJob(r.id)}><span style={{fontWeight:600,color:"#e5e5e5"}}>{r.name}</span></td>
+        <td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}} onClick={()=>setSelectedJob(r.id)}>{customers.find(c=>c.id===r.customer)?.name}</td>
+        <td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}} onClick={()=>setSelectedJob(r.id)}>{reps.find(rep=>rep.id===r.salesRep)?.name}</td>
+        <td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}} onClick={()=>setSelectedJob(r.id)}><Badge label={r.phase} color={statusColor(r.phase)}/></td>
+        <td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}} onClick={()=>setSelectedJob(r.id)}><span style={{fontSize:12,color:"#a3a3a3"}}>{r.createdDate||"--"}</span></td>
+        <td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}} onClick={()=>setSelectedJob(r.id)}><span style={{fontSize:12,color:r.startDate?"#a3a3a3":"#404040"}}>{r.startDate||"--"}</span></td>
+        <td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}} onClick={()=>setSelectedJob(r.id)}><span style={{fontSize:12,color:r.dueDate&&new Date(r.dueDate)<new Date()?"#f87171":"#a3a3a3"}}>{r.dueDate||"--"}</span></td>
+        <td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}} onClick={()=>setSelectedJob(r.id)}><span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:12}}>{fmt(getJobFinancials(r.id).totalRevenue)}</span></td>
+        <td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}} onClick={()=>setSelectedJob(r.id)}>{(()=>{const m=getJobFinancials(r.id).margin;return <span style={{color:m>=30?"#34d399":"#fbbf24",fontSize:12}}>{pct(m)}</span>})()}</td>
+        <td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}} onClick={()=>setSelectedJob(r.id)}><Badge label={r.paymentStatus} color={statusColor(r.paymentStatus)}/></td>
+      </tr>)}</tbody></table></div>
+    </>}{sortedJobs.length===0&&<Card style={{textAlign:"center",padding:40,marginTop:16}}><div style={{fontSize:40,marginBottom:8}}>+</div><div style={{fontSize:16,fontWeight:600,color:"#2dd4bf",marginBottom:4}}>No jobs yet</div><div style={{fontSize:13,color:"#a3a3a3",marginBottom:16}}>Create your first job to start tracking projects, deliveries, and invoices.</div><Btn onClick={()=>setShowNewJob(true)}><I n="plus" s={14}/> Create First Job</Btn></Card>}
 
     {viewMode==="kanban"&&<div className="kanban-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12,minHeight:400}}>
       {["Quoting","In Progress","Invoiced","Complete"].map(phase=><div key={phase} onDrop={e=>handleDrop(e,phase)} onDragOver={handleDragOver} style={{background:"#111111",borderRadius:12,padding:12,border:"1px solid #222222",minHeight:300}}>
