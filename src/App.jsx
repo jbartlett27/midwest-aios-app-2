@@ -6429,45 +6429,57 @@ const [tab,setTab]=useState("vendors");
 
   // CSV Upload for vendors/customers/reps
   const csvUploadRef=React.useRef(null);
+  const [csvPreview,setCsvPreview]=useState(null); // {rows:[{...}], tab, dupeCount, newCount}
   const handleCsvUpload=async(file)=>{
     if(!file)return;
     try{
       const text=await file.text();
+      const sep=text.indexOf('\t')!==-1&&text.split('\t').length>text.split(',').length?'\t':',';
       const lines=text.split('\n').map(l=>l.trim()).filter(Boolean);
       if(lines.length<2){notify('CSV must have a header row and at least one data row','error');return}
-      const headers=lines[0].split(',').map(h=>h.trim().toLowerCase().replace(/['"]/g,''));
-      const rows=lines.slice(1).map(line=>{
-        const vals=[];let cur='';let inQ=false;
-        for(let i=0;i<line.length;i++){const c=line[i];if(c==='"')inQ=!inQ;else if(c===','&&!inQ){vals.push(cur.trim().replace(/^"|"$/g,''));cur=''}else cur+=c}
-        vals.push(cur.trim().replace(/^"|"$/g,''));
-        const obj={};headers.forEach((h,i)=>{obj[h]=vals[i]||''});return obj;
-      });
-      let count=0;
+      const splitRow=(line)=>{if(sep==='\t')return line.split('\t').map(v=>v.trim().replace(/^"|"$/g,''));const vals=[];let cur='';let inQ=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"')inQ=!inQ;else if(c===sep&&!inQ){vals.push(cur.trim().replace(/^"|"$/g,''));cur=''}else cur+=c}vals.push(cur.trim().replace(/^"|"$/g,''));return vals};
+      const headers=splitRow(lines[0]).map(h=>h.toLowerCase().replace(/['"]/g,''));
+      const rows=lines.slice(1).map(line=>{const vals=splitRow(line);const obj={};headers.forEach((h,i)=>{obj[h]=vals[i]||''});return obj});
+      let previewRows=[];let dupeCount=0;
       if(tab==='vendors'){
         rows.forEach(r=>{
-          const name=r.name||r.company||r.vendor||r['company name']||r['vendor name']||'';
-          if(!name)return;
-          if(vendors.find(v=>v.name.toLowerCase()===name.toLowerCase()))return;
-          addVendor({name,contact:r.contact||r['contact person']||'',email:r.email||'',phone:r.phone||r.telephone||'',category:r.category||r.type||'',address:r.address||[r.street,r.city,r.state,r.zip].filter(Boolean).join(', ')||'',discountRate:parseFloat(r['discount rate']||r.discount||'0')/100||0});count++;
+          const name=r.name||r.company||r.vendor||r['company name']||r['vendor name']||'';if(!name)return;
+          const isDupe=vendors.find(v=>v.name.toLowerCase()===name.toLowerCase());
+          if(isDupe){dupeCount++;return}
+          previewRows.push({_include:true,name,contact:r.contact||r['contact person']||'',email:r.email||'',phone:r.phone||r.telephone||'',category:r.category||r.type||'',address:r.address||[r.street,r.city,r.state,r.zip].filter(Boolean).join(', ')||'',discountRate:parseFloat(r['discount rate']||r.discount||'0')/100||0});
         });
       }else if(tab==='customers'){
         rows.forEach(r=>{
-          const name=r.name||r.company||r.customer||r['organization']||r['company name']||r['customer name']||r['school']||r['school name']||r['district']||'';
-          if(!name)return;
-          if(customers.find(c=>c.name.toLowerCase()===name.toLowerCase()))return;
-          addCustomer({name,contact:r.contact||r['contact person']||r['contact name']||'',email:r.email||'',phone:r.phone||r.telephone||'',type:r.type||r.category||'K-12 District',address:r.address||[r.street,r.city,r.state,r.zip].filter(Boolean).join(', ')||''});count++;
+          const name=r.name||r.company||r.customer||r['organization']||r['company name']||r['customer name']||r['school']||r['school name']||r['district']||'';if(!name)return;
+          const isDupe=customers.find(c=>c.name.toLowerCase()===name.toLowerCase());
+          if(isDupe){dupeCount++;return}
+          previewRows.push({_include:true,name,contact:r.contact||r['contact person']||r['contact name']||'',email:r.email||'',phone:r.phone||r.telephone||'',type:r.type||r.category||'K-12 District',address:r.address||[r.street,r.city,r.state,r.zip].filter(Boolean).join(', ')||''});
         });
       }else if(tab==='reps'){
         rows.forEach(r=>{
-          const name=r.name||r['rep name']||r['sales rep']||r['full name']||'';
-          if(!name)return;
-          if(reps.find(rep=>rep.name.toLowerCase()===name.toLowerCase()))return;
-          addRep({name,email:r.email||'',territory:r.territory||r.region||r.area||'',commissionRate:parseFloat(r['commission rate']||r.commission||r.rate||'5')/100||0.05,tier:r.tier||r.level||'Associate'});count++;
+          const name=r.name||r['rep name']||r['sales rep']||r['full name']||'';if(!name)return;
+          const isDupe=reps.find(rep=>rep.name.toLowerCase()===name.toLowerCase());
+          if(isDupe){dupeCount++;return}
+          previewRows.push({_include:true,name,email:r.email||'',territory:r.territory||r.region||r.area||'',commissionRate:parseFloat(r['commission rate']||r.commission||r.rate||'5')/100||0.05,tier:r.tier||r.level||'Associate'});
         });
       }
-      notify(count+' '+(tab==='vendors'?'vendors':tab==='customers'?'customers':'sales reps')+' imported'+(rows.length-count>0?' ('+Math.max(0,rows.length-count)+' skipped as duplicates)':''));
+      if(previewRows.length===0){notify('No new records found'+(dupeCount>0?' ('+dupeCount+' duplicates skipped)':''),'error');if(csvUploadRef.current)csvUploadRef.current.value='';return}
+      setCsvPreview({rows:previewRows,tab,dupeCount});
+      notify(previewRows.length+' new records ready for review'+(dupeCount>0?' ('+dupeCount+' duplicates filtered)':''));
     }catch(e){notify('Error reading CSV: '+e.message,'error')}
     if(csvUploadRef.current)csvUploadRef.current.value='';
+  };
+  const csvPreviewUpdate=(idx,field,value)=>{setCsvPreview(prev=>{if(!prev)return prev;const rows=[...prev.rows];rows[idx]={...rows[idx],[field]:value};return{...prev,rows}})};
+  const csvPreviewToggle=(idx)=>{setCsvPreview(prev=>{if(!prev)return prev;const rows=[...prev.rows];rows[idx]={...rows[idx],_include:!rows[idx]._include};return{...prev,rows}})};
+  const csvPreviewConfirm=()=>{
+    if(!csvPreview)return;
+    const selected=csvPreview.rows.filter(r=>r._include);
+    let count=0;
+    if(csvPreview.tab==='vendors'){selected.forEach(r=>{const {_include,...data}=r;addVendor(data);count++})}
+    else if(csvPreview.tab==='customers'){selected.forEach(r=>{const {_include,...data}=r;addCustomer(data);count++})}
+    else if(csvPreview.tab==='reps'){selected.forEach(r=>{const {_include,...data}=r;addRep({...data,commissionRate:parseFloat(data.commissionRate)||0.05});count++})}
+    notify(count+' '+(csvPreview.tab==='vendors'?'vendors':csvPreview.tab==='customers'?'customers':'sales reps')+' imported');
+    setCsvPreview(null);
   };
 
   return <div style={{animation:"fadeUp 0.4s"}}><Header title="Directory" sub="Manage all vendors, customers, and sales reps -- edit, add, sort" action={<div style={{display:"flex",gap:8}}><input ref={csvUploadRef} type="file" accept=".csv,.tsv" onChange={e=>{if(e.target.files[0])handleCsvUpload(e.target.files[0])}} style={{display:"none"}}/><Btn v="secondary" onClick={()=>csvUploadRef.current?.click()}><I n="upload" s={14}/> Upload CSV</Btn><Btn onClick={startAdd}><I n="plus" s={14}/> Add {tab==="vendors"?"Vendor":tab==="customers"?"Customer":"Sales Rep"}</Btn></div>}/>
@@ -6492,6 +6504,63 @@ const [tab,setTab]=useState("vendors");
       {tab==="customers"&&<div style={{display:"grid",gridTemplateColumns:"2fr 1.5fr 2fr 1fr 1fr",gap:12,marginBottom:12}}>{field("name","Organization Name")}{field("contact","Contact Person")}{field("email","Email")}{field("phone","Phone")}{field("type","Type")}</div>}{tab==="customers"&&<div style={{marginBottom:12}}><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Address</label><input value={form.address||""} onChange={e=>setForm(prev=>({...prev,address:e.target.value}))} placeholder="Full address..." style={{...inputStyle,width:"100%"}}/></div>}
       {tab==="reps"&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:12}}>{field("name","Name")}{field("email","Email")}{field("territory","Territory")}{field("tier","Tier","select-tier")}<div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Commission Rate (%)</label><input type="number" step="0.5" value={((form.commissionRate||0)*100).toFixed(1)} onChange={e=>setForm(prev=>({...prev,commissionRate:parseFloat(e.target.value)/100||0}))} style={inputStyle}/></div></div>}
       <div style={{display:"flex",gap:8}}><Btn onClick={save}>Add</Btn><Btn v="secondary" onClick={cancel}>Cancel</Btn></div>
+    </Card>}
+
+    {/* CSV Import Preview */}
+    {csvPreview&&<Card style={{marginBottom:20,border:"1px solid rgba(45,212,191,0.2)"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+        <div style={{fontSize:16,fontWeight:800,color:"#2dd4bf"}}>CSV Import Preview</div>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          {csvPreview.dupeCount>0&&<span style={{fontSize:11,color:"#737373"}}>{csvPreview.dupeCount} duplicates filtered</span>}
+          <Btn v="secondary" style={{fontSize:12,padding:"4px 10px"}} onClick={()=>setCsvPreview(null)}>Cancel</Btn>
+        </div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:12,marginBottom:16}}>
+        <div style={{padding:12,background:"#0a0a0a",borderRadius:10,textAlign:"center"}}><div style={{fontSize:10,color:"#737373",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>New Records</div><div style={{fontSize:22,fontWeight:700,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{csvPreview.rows.filter(r=>r._include).length}</div></div>
+        <div style={{padding:12,background:"#0a0a0a",borderRadius:10,textAlign:"center"}}><div style={{fontSize:10,color:"#737373",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Total Parsed</div><div style={{fontSize:22,fontWeight:700,color:"#a78bfa",fontFamily:"'JetBrains Mono',monospace"}}>{csvPreview.rows.length}</div></div>
+        <div style={{padding:12,background:"#0a0a0a",borderRadius:10,textAlign:"center"}}><div style={{fontSize:10,color:"#737373",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Duplicates Skipped</div><div style={{fontSize:22,fontWeight:700,color:"#fbbf24",fontFamily:"'JetBrains Mono',monospace"}}>{csvPreview.dupeCount}</div></div>
+        <div style={{padding:12,background:"#0a0a0a",borderRadius:10,textAlign:"center"}}><div style={{fontSize:10,color:"#737373",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Type</div><div style={{fontSize:16,fontWeight:700,color:"#e5e5e5"}}>{csvPreview.tab==='vendors'?'Vendors':csvPreview.tab==='customers'?'Customers':'Sales Reps'}</div></div>
+      </div>
+      <div style={{overflowX:"auto",maxHeight:360,borderRadius:8,border:"1px solid rgba(255,255,255,0.04)",marginBottom:16}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,minWidth:csvPreview.tab==='reps'?500:700}}>
+          <thead><tr style={{background:"#0a0a0a",position:"sticky",top:0}}>
+            <th style={{padding:"5px 6px",width:32}}/>
+            {csvPreview.tab==='vendors'&&["Name","Contact","Email","Phone","Category","Address","Discount %"].map(h=><th key={h} style={{padding:"5px 6px",textAlign:"left",fontWeight:600,color:"#525252",fontSize:10,textTransform:"uppercase",letterSpacing:0.5}}>{h}</th>)}
+            {csvPreview.tab==='customers'&&["Name","Contact","Email","Phone","Type","Address"].map(h=><th key={h} style={{padding:"5px 6px",textAlign:"left",fontWeight:600,color:"#525252",fontSize:10,textTransform:"uppercase",letterSpacing:0.5}}>{h}</th>)}
+            {csvPreview.tab==='reps'&&["Name","Email","Territory","Tier","Rate %"].map(h=><th key={h} style={{padding:"5px 6px",textAlign:"left",fontWeight:600,color:"#525252",fontSize:10,textTransform:"uppercase",letterSpacing:0.5}}>{h}</th>)}
+          </tr></thead>
+          <tbody>{csvPreview.rows.map((r,idx)=><tr key={idx} style={{borderBottom:"1px solid rgba(255,255,255,0.02)",opacity:r._include?1:0.35,transition:"opacity 0.15s"}}>
+            <td style={{padding:"4px 6px",textAlign:"center"}}><input type="checkbox" checked={r._include} onChange={()=>csvPreviewToggle(idx)} style={{accentColor:"#2dd4bf",cursor:"pointer"}}/></td>
+            {csvPreview.tab==='vendors'&&<>
+              <td style={{padding:"4px 6px"}}><input value={r.name} onChange={e=>csvPreviewUpdate(idx,'name',e.target.value)} style={{background:"transparent",border:"1px solid transparent",borderRadius:4,padding:"2px 4px",color:"#e5e5e5",fontSize:11,width:"100%",fontFamily:"inherit",outline:"none"}} onFocus={e=>e.target.style.borderColor='rgba(45,212,191,0.3)'} onBlur={e=>e.target.style.borderColor='transparent'}/></td>
+              <td style={{padding:"4px 6px"}}><input value={r.contact} onChange={e=>csvPreviewUpdate(idx,'contact',e.target.value)} style={{background:"transparent",border:"1px solid transparent",borderRadius:4,padding:"2px 4px",color:"#9a9a9a",fontSize:11,width:"100%",fontFamily:"inherit",outline:"none"}} onFocus={e=>e.target.style.borderColor='rgba(45,212,191,0.3)'} onBlur={e=>e.target.style.borderColor='transparent'}/></td>
+              <td style={{padding:"4px 6px"}}><input value={r.email} onChange={e=>csvPreviewUpdate(idx,'email',e.target.value)} style={{background:"transparent",border:"1px solid transparent",borderRadius:4,padding:"2px 4px",color:"#2dd4bf",fontSize:11,width:"100%",fontFamily:"inherit",outline:"none"}} onFocus={e=>e.target.style.borderColor='rgba(45,212,191,0.3)'} onBlur={e=>e.target.style.borderColor='transparent'}/></td>
+              <td style={{padding:"4px 6px"}}><input value={r.phone} onChange={e=>csvPreviewUpdate(idx,'phone',e.target.value)} style={{background:"transparent",border:"1px solid transparent",borderRadius:4,padding:"2px 4px",color:"#9a9a9a",fontSize:11,width:"100%",fontFamily:"inherit",outline:"none"}} onFocus={e=>e.target.style.borderColor='rgba(45,212,191,0.3)'} onBlur={e=>e.target.style.borderColor='transparent'}/></td>
+              <td style={{padding:"4px 6px"}}><input value={r.category} onChange={e=>csvPreviewUpdate(idx,'category',e.target.value)} style={{background:"transparent",border:"1px solid transparent",borderRadius:4,padding:"2px 4px",color:"#a78bfa",fontSize:11,width:"100%",fontFamily:"inherit",outline:"none"}} onFocus={e=>e.target.style.borderColor='rgba(45,212,191,0.3)'} onBlur={e=>e.target.style.borderColor='transparent'}/></td>
+              <td style={{padding:"4px 6px"}}><input value={r.address} onChange={e=>csvPreviewUpdate(idx,'address',e.target.value)} style={{background:"transparent",border:"1px solid transparent",borderRadius:4,padding:"2px 4px",color:"#737373",fontSize:11,width:"100%",fontFamily:"inherit",outline:"none"}} onFocus={e=>e.target.style.borderColor='rgba(45,212,191,0.3)'} onBlur={e=>e.target.style.borderColor='transparent'}/></td>
+              <td style={{padding:"4px 6px",fontFamily:"'JetBrains Mono',monospace"}}><input value={((r.discountRate||0)*100).toFixed(0)} onChange={e=>csvPreviewUpdate(idx,'discountRate',parseFloat(e.target.value)/100||0)} style={{background:"transparent",border:"1px solid transparent",borderRadius:4,padding:"2px 4px",color:"#34d399",fontSize:11,width:50,fontFamily:"'JetBrains Mono',monospace",textAlign:"right",outline:"none"}} onFocus={e=>e.target.style.borderColor='rgba(45,212,191,0.3)'} onBlur={e=>e.target.style.borderColor='transparent'}/></td>
+            </>}
+            {csvPreview.tab==='customers'&&<>
+              <td style={{padding:"4px 6px"}}><input value={r.name} onChange={e=>csvPreviewUpdate(idx,'name',e.target.value)} style={{background:"transparent",border:"1px solid transparent",borderRadius:4,padding:"2px 4px",color:"#e5e5e5",fontSize:11,width:"100%",fontFamily:"inherit",outline:"none"}} onFocus={e=>e.target.style.borderColor='rgba(45,212,191,0.3)'} onBlur={e=>e.target.style.borderColor='transparent'}/></td>
+              <td style={{padding:"4px 6px"}}><input value={r.contact} onChange={e=>csvPreviewUpdate(idx,'contact',e.target.value)} style={{background:"transparent",border:"1px solid transparent",borderRadius:4,padding:"2px 4px",color:"#9a9a9a",fontSize:11,width:"100%",fontFamily:"inherit",outline:"none"}} onFocus={e=>e.target.style.borderColor='rgba(45,212,191,0.3)'} onBlur={e=>e.target.style.borderColor='transparent'}/></td>
+              <td style={{padding:"4px 6px"}}><input value={r.email} onChange={e=>csvPreviewUpdate(idx,'email',e.target.value)} style={{background:"transparent",border:"1px solid transparent",borderRadius:4,padding:"2px 4px",color:"#2dd4bf",fontSize:11,width:"100%",fontFamily:"inherit",outline:"none"}} onFocus={e=>e.target.style.borderColor='rgba(45,212,191,0.3)'} onBlur={e=>e.target.style.borderColor='transparent'}/></td>
+              <td style={{padding:"4px 6px"}}><input value={r.phone} onChange={e=>csvPreviewUpdate(idx,'phone',e.target.value)} style={{background:"transparent",border:"1px solid transparent",borderRadius:4,padding:"2px 4px",color:"#9a9a9a",fontSize:11,width:"100%",fontFamily:"inherit",outline:"none"}} onFocus={e=>e.target.style.borderColor='rgba(45,212,191,0.3)'} onBlur={e=>e.target.style.borderColor='transparent'}/></td>
+              <td style={{padding:"4px 6px"}}><select value={r.type||'K-12 District'} onChange={e=>csvPreviewUpdate(idx,'type',e.target.value)} style={{background:"transparent",border:"1px solid transparent",borderRadius:4,padding:"2px 4px",color:"#a78bfa",fontSize:11,fontFamily:"inherit",outline:"none",cursor:"pointer"}}><option style={{background:"#111"}} value="K-12 District">K-12 District</option><option style={{background:"#111"}} value="Private School">Private School</option><option style={{background:"#111"}} value="University">University</option><option style={{background:"#111"}} value="Government">Government</option><option style={{background:"#111"}} value="Corporate">Corporate</option><option style={{background:"#111"}} value="Other">Other</option></select></td>
+              <td style={{padding:"4px 6px"}}><input value={r.address} onChange={e=>csvPreviewUpdate(idx,'address',e.target.value)} style={{background:"transparent",border:"1px solid transparent",borderRadius:4,padding:"2px 4px",color:"#737373",fontSize:11,width:"100%",fontFamily:"inherit",outline:"none"}} onFocus={e=>e.target.style.borderColor='rgba(45,212,191,0.3)'} onBlur={e=>e.target.style.borderColor='transparent'}/></td>
+            </>}
+            {csvPreview.tab==='reps'&&<>
+              <td style={{padding:"4px 6px"}}><input value={r.name} onChange={e=>csvPreviewUpdate(idx,'name',e.target.value)} style={{background:"transparent",border:"1px solid transparent",borderRadius:4,padding:"2px 4px",color:"#e5e5e5",fontSize:11,width:"100%",fontFamily:"inherit",outline:"none"}} onFocus={e=>e.target.style.borderColor='rgba(45,212,191,0.3)'} onBlur={e=>e.target.style.borderColor='transparent'}/></td>
+              <td style={{padding:"4px 6px"}}><input value={r.email} onChange={e=>csvPreviewUpdate(idx,'email',e.target.value)} style={{background:"transparent",border:"1px solid transparent",borderRadius:4,padding:"2px 4px",color:"#2dd4bf",fontSize:11,width:"100%",fontFamily:"inherit",outline:"none"}} onFocus={e=>e.target.style.borderColor='rgba(45,212,191,0.3)'} onBlur={e=>e.target.style.borderColor='transparent'}/></td>
+              <td style={{padding:"4px 6px"}}><input value={r.territory} onChange={e=>csvPreviewUpdate(idx,'territory',e.target.value)} style={{background:"transparent",border:"1px solid transparent",borderRadius:4,padding:"2px 4px",color:"#9a9a9a",fontSize:11,width:"100%",fontFamily:"inherit",outline:"none"}} onFocus={e=>e.target.style.borderColor='rgba(45,212,191,0.3)'} onBlur={e=>e.target.style.borderColor='transparent'}/></td>
+              <td style={{padding:"4px 6px"}}><select value={r.tier||'Associate'} onChange={e=>csvPreviewUpdate(idx,'tier',e.target.value)} style={{background:"transparent",border:"1px solid transparent",borderRadius:4,padding:"2px 4px",color:"#a78bfa",fontSize:11,fontFamily:"inherit",outline:"none",cursor:"pointer"}}><option style={{background:"#111"}} value="Owner">Owner</option><option style={{background:"#111"}} value="Sales Development Manager">Sales Development Manager</option><option style={{background:"#111"}} value="Regional Sales Manager">Regional Sales Manager</option><option style={{background:"#111"}} value="Administrative Support">Administrative Support</option><option style={{background:"#111"}} value="Associate">Associate</option></select></td>
+              <td style={{padding:"4px 6px",fontFamily:"'JetBrains Mono',monospace"}}><input value={((r.commissionRate||0)*100).toFixed(1)} onChange={e=>csvPreviewUpdate(idx,'commissionRate',parseFloat(e.target.value)/100||0)} style={{background:"transparent",border:"1px solid transparent",borderRadius:4,padding:"2px 4px",color:"#34d399",fontSize:11,width:50,fontFamily:"'JetBrains Mono',monospace",textAlign:"right",outline:"none"}} onFocus={e=>e.target.style.borderColor='rgba(45,212,191,0.3)'} onBlur={e=>e.target.style.borderColor='transparent'}/></td>
+            </>}
+          </tr>)}</tbody>
+        </table>
+      </div>
+      <Btn onClick={csvPreviewConfirm} style={{width:"100%",justifyContent:"center",padding:"12px",fontSize:14}}>
+        Import {csvPreview.rows.filter(r=>r._include).length} {csvPreview.tab==='vendors'?'Vendors':csvPreview.tab==='customers'?'Customers':'Sales Reps'}
+      </Btn>
     </Card>}
 
     {/* Customer analytics panel */}
