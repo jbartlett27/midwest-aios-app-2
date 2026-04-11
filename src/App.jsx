@@ -1894,7 +1894,7 @@ function JobsPage(ctx){
       }catch{}
     }catch(err){notify('Error reading file: '+err.message,'error')}
   };
-  // AI quote scan for PDF/image uploads from Job Records page -- creates new job + line items
+  // AI quote scan for PDF/image uploads from Job Records page -- populates uploadData preview (same as Excel)
   const parseQuoteFileAI=async(file)=>{
     if(uploading)return;setUploading(true);
     notify('Scanning document with AI... this may take a moment');
@@ -1909,32 +1909,37 @@ function JobsPage(ctx){
       let parsed;
       try{const m=text.match(/\{[\s\S]*\}/);parsed=m?JSON.parse(m[0]):JSON.parse(text)}catch(e2){notify('AI could not parse this document. Try an Excel file instead.','error');setUploading(false);if(uploadRef.current)uploadRef.current.value='';return}
       if(!parsed.items||parsed.items.length===0){notify('No line items found in document.','error');setUploading(false);if(uploadRef.current)uploadRef.current.value='';return}
-      // Create the job first
-      const jobName=parsed.customer||parsed.quote_number||file.name.replace(/\.(pdf|png|jpg|jpeg)$/i,'').replace(/_/g,' ');
-      const jobId='J-'+Date.now()+'-'+Math.random().toString(36).slice(2,6);
-      await addJob({id:jobId,name:jobName,phase:'Quoting',status:'active',notes:'',paymentStatus:'Unpaid',terms:'Net 30',poNumber:'',shipTo:'',billTo:'',shipVia:'',startDate:new Date().toISOString().slice(0,10),dueDate:'',jobName});
-      // Resolve vendors
-      const existNames=new Set(vendors.map(v=>v.name.toLowerCase().trim()));
-      const vMap={};vendors.forEach(v=>{vMap[v.name.toLowerCase().trim()]=v.id});
+      // Map AI scan results into the same uploadData format as Excel parser
+      const sheetName='AI Scan';
+      const vendorSet=new Set();
+      const items=[];
       const vendorName=parsed.vendor||'';
-      if(vendorName){const vk=vendorName.toLowerCase().trim();if(!existNames.has(vk)){const vid='V-'+Date.now()+'-'+Math.random().toString(36).slice(2,6);addVendor({id:vid,name:vendorName,contact:'',email:'',phone:'',category:'Furniture',address:'',discountRate:0});vMap[vk]=vid;existNames.add(vk)}}
-      let totalAdded=0;const newVendors=[];
       for(const item of parsed.items){
         const mfr=item.manufacturer||vendorName||'';
-        const vk=mfr.toLowerCase().trim();
-        if(vk&&!existNames.has(vk)){const vid='V-'+Date.now()+'-'+Math.random().toString(36).slice(2,6);addVendor({id:vid,name:mfr,contact:'',email:'',phone:'',category:'Furniture',address:'',discountRate:0});vMap[vk]=vid;existNames.add(vk);newVendors.push(mfr)}
-        addLineItem({id:'LI-'+Date.now()+'-'+Math.random().toString(36).slice(2,6),jobId,
-          description:item.description||'',vendor:vMap[vk]||'',tag:item.tag||'',group:'',
-          manufacturer:mfr,modelNumber:item.model_number||item.model||'',color:item.color||'',
-          listPrice:parseFloat(item.list_price)||0,unitCost:parseFloat(item.net_cost)||0,
-          unitPrice:parseFloat(item.sell_price)||parseFloat(item.list_price)||0,
-          shippingPerUnit:0,installPerUnit:0,priceExtended:0,
-          qtyOrdered:parseInt(item.quantity)||1,qtyReceived:0,qtyInvoiced:0,
-          poDate:'',deliveryDate:'',invoiceDate:''});
-        totalAdded++;
+        if(mfr)vendorSet.add(mfr);
+        const qty=parseInt(item.quantity)||1;
+        const listPrice=parseFloat(item.list_price)||0;
+        const unitCost=parseFloat(item.net_cost)||0;
+        const unitPrice=parseFloat(item.sell_price)||parseFloat(item.list_price)||0;
+        items.push({
+          tag:item.tag||'',manufacturer:mfr,modelNumber:item.model_number||item.model||'',
+          description:item.description||'',color:item.color||'',
+          qtyOrdered:qty,listPrice,unitCost,
+          shippingPerUnit:parseFloat(item.shipping)||0,installPerUnit:parseFloat(item.install)||0,
+          unitPrice,priceExtended:parseFloat(item.extended_price)||(unitPrice*qty)||0,
+          group:'',sheet:sheetName
+        });
       }
-      notify(totalAdded+' line items added to new job "'+jobName+'"'+(newVendors.length?' ('+newVendors.length+' new vendors created)':''));
-    }catch(err){notify('Error reading file: '+err.message,'error')}
+      const sheets=[{name:sheetName,count:items.length}];
+      const jobName=parsed.customer||parsed.quote_number||file.name.replace(/\.(pdf|png|jpg|jpeg)$/i,'').replace(/_/g,' ');
+      if(uploadRef.current)uploadRef.current.value='';
+      setUploadJobName(jobName);
+      setUploadSheets({[sheetName]:true});
+      setUploadData({items,vendors:vendorSet,groups:new Set(),sheets});
+      notify(items.length+' items found via AI scan');
+      setUploadAiChat([{role:'assistant',content:'AI scan found '+items.length+' line items'+(vendorSet.size>0?' from '+vendorSet.size+' vendor(s)':'')+'. Review the data below and click Import when ready. You can ask me questions about the parsed data.'}]);
+      setUploadAiStatus('verified');
+    }catch(err){notify('Error scanning file: '+err.message,'error')}
     setUploading(false);if(uploadRef.current)uploadRef.current.value='';
   };
   const [uploadAiChangedRows, setUploadAiChangedRows] = useState(new Set());
@@ -2016,7 +2021,7 @@ Never use emoji. Be concise.`;
       const jid='JOB-2026-'+String(maxNum+1).padStart(3,'0');
       addJob({id:jid,name:uploadJobName||'Imported Quote',customer:customers[0]?.id||'',salesRep:reps[0]?.id||'',
         phase:'Quoting',createdDate:new Date().toISOString().split('T')[0],
-        startDate:'',dueDate:'',endDate:'',notes:'Imported from Excel quote - '+items.length+' line items',
+        startDate:'',dueDate:'',endDate:'',notes:'Imported from uploaded quote - '+items.length+' line items',
         paymentStatus:'unpaid',terms:'Net 30',poNumber:'',shipTo:'',shipVia:'',billTo:'',orderNotes:'',
         docStatuses:{},activities:[],auditTrail:[]});
       const existNames=new Set(vendors.map(v=>v.name.toLowerCase().trim()));
