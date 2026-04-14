@@ -4848,7 +4848,9 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
   const brainTools=[
     {name:"update_job",description:"Update a job's phase, payment status, notes, due date, or other fields.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name keywords"},updates:{type:"object",properties:{phase:{type:"string"},paymentStatus:{type:"string"},notes:{type:"string"},dueDate:{type:"string"},paymentTerms:{type:"string"},shipTo:{type:"string"},poNumber:{type:"string"}}}},required:["job_id","updates"]}},
     {name:"create_job",description:"Create a new job record.",input_schema:{type:"object",properties:{name:{type:"string"},customer_name:{type:"string",description:"Customer name to link"},sales_rep_name:{type:"string",description:"Rep name to link"},phase:{type:"string"},notes:{type:"string"}},required:["name"]}},
-    {name:"update_line_item",description:"Update a specific line item's received qty, price, cost, description.",input_schema:{type:"object",properties:{item_id:{type:"string"},updates:{type:"object",properties:{qtyReceived:{type:"number"},unitPrice:{type:"number"},unitCost:{type:"number"},description:{type:"string"},deliveryDate:{type:"string"}}}},required:["item_id","updates"]}},
+    {name:"update_line_item",description:"Update a line item by ID or by job + description match. Can update price, cost, qty, description, color, model number, received qty, and more. Use when user says 'change the price on the desks to $300' or 'update the chair qty to 25'.",input_schema:{type:"object",properties:{item_id:{type:"string",description:"Line item ID (if known)"},job_id:{type:"string",description:"Job ID or name (used with item_description to find the item)"},item_description:{type:"string",description:"Keywords to match the line item (e.g. 'desk', 'apex chair', 'table dolly')"},updates:{type:"object",properties:{qtyOrdered:{type:"number"},qtyReceived:{type:"number"},unitPrice:{type:"number"},unitCost:{type:"number"},listPrice:{type:"number"},description:{type:"string"},color:{type:"string"},modelNumber:{type:"string"},manufacturer:{type:"string"},shippingPerUnit:{type:"number"},installPerUnit:{type:"number"},deliveryDate:{type:"string"}}}},required:["updates"]}},
+    {name:"get_job_details",description:"Get full details of a job including ALL line items formatted as a table. Use when user says 'show me the Hopewell job', 'pull up job details', 'what line items are on this job', 'show me the line items'. Returns job info and a markdown table of all line items with prices, quantities, and status.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name keywords"}},required:["job_id"]}},
+    {name:"bulk_edit_line_items",description:"Update multiple line items on a job at once. Use when user says 'change all prices by 10%', 'mark everything as received', 'update shipping on all items'. Can filter by description keywords and apply the same update to all matches.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name"},filter_description:{type:"string",description:"Optional keywords to filter which items to update (e.g. 'chair', 'KI'). Leave empty to update ALL items."},updates:{type:"object",properties:{qtyReceived:{type:"number"},unitPrice:{type:"number"},unitCost:{type:"number"},shippingPerUnit:{type:"number"},installPerUnit:{type:"number"},price_multiply:{type:"number",description:"Multiply current unitPrice by this factor (e.g. 1.10 for +10%)"},cost_multiply:{type:"number",description:"Multiply current unitCost by this factor"}}}},required:["job_id","updates"]}},
     {name:"mark_items_received",description:"Mark ALL items on a job as fully received. Sets phase to Delivered.",input_schema:{type:"object",properties:{job_id:{type:"string"}},required:["job_id"]}},
     {name:"log_delivery",description:"Log a specific quantity received for a line item on a job. Use when user says 'log 25 desks received' or 'received 10 chairs on job X'. Finds the item by description keywords.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name"},item_description:{type:"string",description:"Keywords to match the line item description (e.g. 'desk', 'chair', 'table')"},quantity:{type:"number",description:"Number of units received"}},required:["job_id","item_description","quantity"]}},
     {name:"bulk_update_jobs",description:"Update multiple jobs at once based on a filter. Use for 'mark all Quoting jobs as Ordered' or 'set all delivered jobs to paid'.",input_schema:{type:"object",properties:{filter:{type:"object",description:"Filter criteria",properties:{phase:{type:"string",description:"Match jobs in this phase"},paymentStatus:{type:"string",description:"Match jobs with this payment status"},all_delivered:{type:"boolean",description:"Match jobs where all items are received"}}},updates:{type:"object",properties:{phase:{type:"string"},paymentStatus:{type:"string"},notes:{type:"string"}}}},required:["filter","updates"]}},
@@ -4901,10 +4903,61 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         return{success:true,message:"Created job: "+input.name+" ("+id+")"+(cust?" for "+cust.name:"")+(rep?" rep: "+rep.name:"")};
       }
       if(toolName==="update_line_item"){
-        const item=lineItems.find(i=>i.id===input.item_id);
-        if(!item)return{error:"Line item not found: "+input.item_id};
+        let item=null;
+        if(input.item_id)item=lineItems.find(i=>i.id===input.item_id);
+        if(!item&&input.job_id&&input.item_description){
+          const job=findJob(input.job_id);
+          if(!job)return{error:"Job not found: "+input.job_id};
+          const jobItems=getJobItems(job.id);
+          const desc=(input.item_description||'').toLowerCase();
+          item=jobItems.find(i=>i.description.toLowerCase().includes(desc))||jobItems.find(i=>(i.modelNumber||'').toLowerCase().includes(desc))||jobItems.find(i=>(i.manufacturer||'').toLowerCase().includes(desc));
+        }
+        if(!item)return{error:"Line item not found. Provide item_id or job_id + item_description."};
         updateLineItem(item.id,input.updates||{});
-        return{success:true,message:"Updated line item: "+item.description};
+        return{success:true,message:"Updated line item: "+item.description+" on job "+item.jobId};
+      }
+      if(toolName==="get_job_details"){
+        const job=findJob(input.job_id);
+        if(!job)return{error:"Job not found: "+input.job_id};
+        const items=getJobItems(job.id);
+        const f=getJobFinancials(job.id);
+        const cust=customers.find(c=>c.id===job.customer);
+        const rep=reps.find(r=>r.id===job.salesRep);
+        let msg="**"+job.name+"** ("+job.id+")\n";
+        msg+="Customer: "+(cust?.name||"--")+" | Rep: "+(rep?.name||"--")+" | Phase: "+job.phase+" | Payment: "+job.paymentStatus+"\n";
+        msg+="Revenue: $"+f.totalRevenue.toFixed(2)+" | Cost: $"+f.totalCost.toFixed(2)+" | Margin: "+f.margin.toFixed(1)+"% | Items: "+items.length+"\n";
+        if(job.terms)msg+="Terms: "+job.terms+(job.poNumber?" | PO#: "+job.poNumber:"")+(job.dueDate?" | Due: "+job.dueDate:"")+"\n";
+        msg+="\n| # | Description | Vendor | Model | Color | Qty | Cost | Price | Line Total | Received | Status | ID |\n";
+        msg+="| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n";
+        items.forEach((it,idx)=>{
+          const v=vendors.find(v2=>v2.id===it.vendor);
+          const total=((it.priceExtended&&it.priceExtended>0)?it.priceExtended:(it.unitPrice||0)*(it.qtyOrdered||0));
+          const status=it.qtyReceived>=it.qtyOrdered?"complete":it.qtyReceived>0?"partial":"ordered";
+          msg+="| "+(idx+1)+" | "+it.description+" | "+(v?.name||"--")+" | "+(it.modelNumber||"--")+" | "+(it.color||"--")+" | "+it.qtyOrdered+" | $"+(it.unitCost||0).toFixed(2)+" | $"+(it.unitPrice||0).toFixed(2)+" | $"+total.toFixed(2)+" | "+it.qtyReceived+"/"+it.qtyOrdered+" | "+status+" | "+it.id+" |\n";
+        });
+        msg+="\nYou can ask me to update any line item by description (e.g. 'change the desk price to $300') or make bulk changes.";
+        return{success:true,message:msg};
+      }
+      if(toolName==="bulk_edit_line_items"){
+        const job=findJob(input.job_id);
+        if(!job)return{error:"Job not found: "+input.job_id};
+        const allItems=getJobItems(job.id);
+        const filter=(input.filter_description||'').toLowerCase();
+        const targets=filter?allItems.filter(i=>i.description.toLowerCase().includes(filter)||(i.manufacturer||'').toLowerCase().includes(filter)||(i.modelNumber||'').toLowerCase().includes(filter)):allItems;
+        if(targets.length===0)return{error:"No items matched filter: "+(input.filter_description||"(all)")};
+        let ct=0;const u=input.updates||{};
+        targets.forEach(item=>{
+          const changes={};
+          if(u.qtyReceived!==undefined)changes.qtyReceived=u.qtyReceived;
+          if(u.unitPrice!==undefined)changes.unitPrice=u.unitPrice;
+          if(u.unitCost!==undefined)changes.unitCost=u.unitCost;
+          if(u.shippingPerUnit!==undefined)changes.shippingPerUnit=u.shippingPerUnit;
+          if(u.installPerUnit!==undefined)changes.installPerUnit=u.installPerUnit;
+          if(u.price_multiply)changes.unitPrice=Math.round(item.unitPrice*u.price_multiply*100)/100;
+          if(u.cost_multiply)changes.unitCost=Math.round(item.unitCost*u.cost_multiply*100)/100;
+          if(Object.keys(changes).length>0){updateLineItem(item.id,changes);ct++}
+        });
+        return{success:true,message:"Updated "+ct+" line items on "+job.name+(filter?" (filter: "+input.filter_description+")":"")};
       }
       if(toolName==="mark_items_received"){
         const job=findJob(input.job_id);
@@ -5272,9 +5325,8 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
             addLineItem({jobId:jid,description:item.description||'',vendor:vMap[vk]||'',tag:item.tag||'',group:'',manufacturer:mfr,modelNumber:item.model_number||'',color:item.color||'',listPrice:parseFloat(item.list_price)||0,unitCost:parseFloat(item.unit_cost)||0,unitPrice:parseFloat(item.unit_price)||parseFloat(item.list_price)||0,shippingPerUnit:parseFloat(item.shipping)||0,installPerUnit:parseFloat(item.install)||0,priceExtended:0,qtyOrdered:parseInt(item.quantity)||1,qtyReceived:0,qtyInvoiced:0,poDate:'',deliveryDate:'',invoiceDate:''});
             ct++;
           }
-          setSelectedJob(jid);
-          return{success:true,message:'Created job "'+input.job_name+'" ('+jid+') with '+ct+' line items.'+(input.customer_name&&!custMatch?' New customer "'+input.customer_name+'" also created.':'')};
-        }catch(e){return{error:'Failed to create job: '+e.message}}
+          window._brainNavJob=jid;
+          return{success:true,message:'Created job "'+input.job_name+'" ('+jid+') with '+ct+' line items.'+(input.customer_name&&!custMatch?' New customer "'+input.customer_name+'" also created.':'')+' Click "View Job" below to see it.'};        }catch(e){return{error:'Failed to create job: '+e.message}}
       }
       if(toolName==="compare_quote_to_job"){
         try{
@@ -5559,8 +5611,21 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
       const webCitations=[];
       (data.content||[]).filter(b=>b.type==="web_search_tool_result").forEach(b=>{(b.content||[]).filter(r=>r.type==="web_search_result").forEach(r=>{if(r.url&&r.title)webCitations.push({url:r.url,title:r.title})})});
       if(toolBlocks.length>0){
-        // Claude wants to take actions -- show confirmation
-        const actions=toolBlocks.map(tb=>({id:tb.id,name:tb.name,input:tb.input,status:"pending"}));
+        // Separate read-only tools (auto-execute) from write tools (require confirmation)
+        const readOnlyTools=new Set(['get_job_details','search_and_report','detect_anomalies','analyze_trends','summarize_context','recall_memory','predictive_flag','database_query','compare_quote_to_job']);
+        const readTools=toolBlocks.filter(tb=>readOnlyTools.has(tb.name));
+        const writeTools=toolBlocks.filter(tb=>!readOnlyTools.has(tb.name));
+        // Auto-execute read-only tools and show results inline
+        if(readTools.length>0&&writeTools.length===0){
+          let readResults=[];
+          for(const tb of readTools){const result=await executeTool(tb.name,tb.input);readResults.push(result)}
+          const readText=readResults.map(r=>r.success?r.message:(r.error||'Error')).join('\n\n');
+          setHistory(p=>[...p,{role:"assistant",content:(textBlocks?textBlocks+"\n\n":"")+readText}]);
+          setAnimatingIdx(history.length+1);setTimeout(()=>setAnimatingIdx(-1),800);
+        } else {
+        // Write tools -- show confirmation
+        const allToolBlocks=writeTools.length>0?toolBlocks:writeTools;
+        const actions=(allToolBlocks.length>0?allToolBlocks:toolBlocks).map(tb=>({id:tb.id,name:tb.name,input:tb.input,status:"pending"}));
         setPendingActions(actions);
         const actionSummary=actions.map(a=>{
           if(a.name==="update_job")return "Update "+((a.input.job_id||"job")+": "+Object.entries(a.input.updates||{}).map(([k,v])=>"**"+k+"** to **"+v+"**").join(", "));
@@ -5593,10 +5658,14 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
           if(a.name==="compare_quote_to_job")return "Compare **"+(a.input.items?.length||0)+" items** against job **"+(a.input.job_id||"")+"**";
           if(a.name==="import_customers_from_file")return "Import **"+(a.input.customers?.length||0)+" customers** from file";
           if(a.name==="import_vendors_from_file")return "Import **"+(a.input.vendors?.length||0)+" vendors** from file";
+          if(a.name==="get_job_details")return "Pull details for **"+(a.input.job_id||"job")+"**";
+          if(a.name==="bulk_edit_line_items")return "Bulk update **"+(a.input.filter_description||"all")+"** items on **"+(a.input.job_id||"job")+"**";
+          if(a.name==="update_line_item")return "Update line item: **"+(a.input.item_description||a.input.item_id||"")+"**"+(a.input.updates?" >> "+Object.entries(a.input.updates).map(([k,v])=>k+"="+v).join(", "):"");
           return a.name+"("+JSON.stringify(a.input).slice(0,60)+")";
         }).join("\n");
         setHistory(p=>[...p,{role:"assistant",content:(textBlocks?textBlocks+"\n\n":"")+"I'd like to take these actions:\n"+actionSummary,actions}]);
         setAnimatingIdx(history.length+1);setTimeout(()=>setAnimatingIdx(-1),800);
+        }
       } else if(textBlocks){
         const citeText=webCitations.length>0?"\n\n**Sources:**\n"+webCitations.slice(0,5).map(c=>"- ["+c.title+"]("+c.url+")").join("\n"):"";
         setHistory(p=>[...p,{role:"assistant",content:textBlocks+citeText}]);
