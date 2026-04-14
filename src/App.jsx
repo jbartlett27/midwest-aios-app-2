@@ -4799,17 +4799,51 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
   const [pendingActions,setPendingActions]=useState([]);
   // === VOICE INPUT ===
   const [isListening, setIsListening] = useState(false);
+  const [isCleaningTranscript, setIsCleaningTranscript] = useState(false);
   const recognitionRef = useRef(null);
-  const listeningRef = useRef(false); // Ref to track listening state inside callbacks
+  const listeningRef = useRef(false);
+  const rawTranscriptRef = useRef("");
+  // AI-powered transcript cleanup using the existing Brain API
+  const cleanTranscript = async (raw) => {
+    if (!raw.trim()) return raw;
+    setIsCleaningTranscript(true);
+    try {
+      const resp = await fetch("/api/brain", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          system: "You are a transcript cleaner for a furniture business called Midwest Educational Furnishings. Fix the speech-to-text transcript below. Rules:\n1. Fix capitalization, punctuation, and grammar\n2. Fix industry terms: KI, Virco, Marco, NPS (National Public Seating), Ruckus, MyPlace, STEM, CUSD, USD, DuPage, Naperville, Glenbrook, Kildeer\n3. Fix common mishearings: 'ki' -> 'KI', 'marco' -> 'Marco', 'virco' -> 'Virco', 'nps' -> 'NPS', 'see you SD' -> 'CUSD', 'do page' -> 'DuPage'\n4. Fix numbers and dollar amounts: 'three hundred dollars' -> '$300', 'twenty five' -> '25'\n5. Keep the meaning identical. Do NOT add content, rephrase, or summarize.\n6. Return ONLY the cleaned transcript text. No quotes, no explanation, no preamble.",
+          messages: [{role: "user", content: "Clean this transcript:\n\n" + raw}],
+          tools: []
+        })
+      });
+      const data = await resp.json();
+      const cleaned = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("").trim();
+      if (cleaned && cleaned.length > 0) {
+        setIsCleaningTranscript(false);
+        return cleaned;
+      }
+    } catch (e) { console.error("Transcript cleanup error:", e); }
+    setIsCleaningTranscript(false);
+    // Fallback: basic local cleanup
+    let t = raw.trim();
+    if (t.length > 0) t = t.charAt(0).toUpperCase() + t.slice(1);
+    t = t.replace(/\bi\b/g, 'I');
+    return t;
+  };
   const startListening = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { notify("Voice input not supported on this browser"); return; }
     if (isListening) {
-      // Stop listening
+      // Stop listening -- clean up transcript with AI
       listeningRef.current = false;
       setIsListening(false);
       if (recognitionRef.current) { try { recognitionRef.current.stop(); } catch(e2) {} }
       recognitionRef.current = null;
+      // Send raw transcript through AI for cleanup
+      const raw = rawTranscriptRef.current;
+      if (raw.trim()) {
+        cleanTranscript(raw).then(cleaned => { setBrainQuery(cleaned); });
+      }
       return;
     }
     const recognition = new SR();
@@ -4819,14 +4853,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     recognition.maxAlternatives = 3;
     let finalTranscript = brainQuery || "";
     let interimTranscript = "";
-    const addPunctuation = (text) => {
-      let t = text.trim();
-      if (t.length > 0) t = t.charAt(0).toUpperCase() + t.slice(1);
-      if (t.length > 0 && !/[.!?]$/.test(t)) t += '.';
-      t = t.replace(/\bi\b/g, 'I');
-      t = t.replace(/\. ([a-z])/g, (m, c) => '. ' + c.toUpperCase());
-      return t;
-    };
+    rawTranscriptRef.current = finalTranscript;
     recognition.onstart = () => { setIsListening(true); listeningRef.current = true; };
     recognition.onresult = (event) => {
       interimTranscript = "";
@@ -4843,10 +4870,10 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
           interimTranscript = t;
         }
       }
+      rawTranscriptRef.current = finalTranscript;
       setBrainQuery(finalTranscript + interimTranscript);
     };
     recognition.onend = () => {
-      // Auto-restart if user hasn't manually stopped
       if (listeningRef.current) {
         try { recognitionRef.current?.start(); } catch(e2) {
           listeningRef.current = false;
@@ -4857,11 +4884,9 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
       }
       setIsListening(false);
       recognitionRef.current = null;
-      if (finalTranscript.trim()) { setBrainQuery(addPunctuation(finalTranscript.trim())); }
     };
     recognition.onerror = (e) => {
       if (e.error === "no-speech" && listeningRef.current) {
-        // No speech detected -- restart silently
         try { recognitionRef.current?.start(); } catch(e2) {}
         return;
       }
@@ -4872,6 +4897,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
       notify("Voice error: " + e.error);
     };
     finalTranscript = brainQuery || "";
+    rawTranscriptRef.current = finalTranscript;
     recognitionRef.current = recognition;
     recognition.start();
   };
@@ -5828,7 +5854,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
       {brainFileContext&&!brainFile&&!brainFilePreview&&<div style={{display:"flex",alignItems:"center",gap:4,padding:"3px 8px",background:"rgba(45,212,191,0.05)",borderRadius:12,fontSize:10,color:"#525252",maxWidth:110,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flexShrink:0}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>{brainFileContext.name}<span onClick={()=>setBrainFileContext(null)} style={{cursor:"pointer",marginLeft:2,color:"#444",fontSize:12}}>x</span></div>}
       {brainFilePreview&&<div style={{display:"flex",alignItems:"center",gap:4,padding:"3px 8px",background:"rgba(45,212,191,0.08)",borderRadius:12,fontSize:11,color:"#2dd4bf",maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flexShrink:0}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>{brainFilePreview}<span onClick={()=>{setBrainFile(null);setBrainFilePreview(null)}} style={{cursor:"pointer",marginLeft:2,color:"#737373",fontSize:14}}>×</span></div>}
       <button onClick={()=>brainFileRef.current?.click()} title="Attach a file (PDF, image, Excel, CSV)" style={{background:"transparent",border:"none",cursor:"pointer",color:brainFile?"#2dd4bf":"#525252",fontSize:18,padding:"4px 6px",borderRadius:8,transition:"color 0.15s",flexShrink:0,display:"flex",alignItems:"center"}} onMouseEnter={e=>{e.currentTarget.style.color="#2dd4bf"}} onMouseLeave={e=>{if(!brainFile)e.currentTarget.style.color="#525252"}}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg></button>
-      <input value={brainQuery} onChange={e=>setBrainQuery(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")handleQuery()}} placeholder={isListening?"Listening... click DONE when finished":brainFile?"Ask about "+brainFile.name+"...":brainFileContext?"Ask about "+brainFileContext.name+"...":"Ask the Brain anything..."} style={{flex:1,padding:"10px 16px",background:"#0a0a0a",border:isListening?"1px solid rgba(248,113,113,0.4)":brainFile?"1px solid rgba(45,212,191,0.2)":"1px solid #1a1a1a",borderRadius:24,color:"#f0f0f0",fontSize:13,outline:"none",fontFamily:"inherit",transition:"border-color 0.3s"}} onFocus={e=>{if(!isListening)e.currentTarget.style.borderColor="#2dd4bf30"}} onBlur={e=>{if(!isListening&&!brainFile)e.currentTarget.style.borderColor="#1a1a1a"}}/>
+      <input value={brainQuery} onChange={e=>setBrainQuery(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!isCleaningTranscript)handleQuery()}} placeholder={isCleaningTranscript?"Cleaning up transcript...":isListening?"Listening... click DONE when finished":brainFile?"Ask about "+brainFile.name+"...":brainFileContext?"Ask about "+brainFileContext.name+"...":"Ask the Brain anything..."} style={{flex:1,padding:"10px 16px",background:"#0a0a0a",border:isCleaningTranscript?"1px solid rgba(167,139,250,0.4)":isListening?"1px solid rgba(248,113,113,0.4)":brainFile?"1px solid rgba(45,212,191,0.2)":"1px solid #1a1a1a",borderRadius:24,color:"#f0f0f0",fontSize:13,outline:"none",fontFamily:"inherit",transition:"border-color 0.3s"}} onFocus={e=>{if(!isListening)e.currentTarget.style.borderColor="#2dd4bf30"}} onBlur={e=>{if(!isListening&&!brainFile)e.currentTarget.style.borderColor="#1a1a1a"}}/>
       <button onClick={startListening} title={isListening?"Click to stop dictation":"Voice input (continuous)"} style={{width:40,height:40,borderRadius:20,border:"none",background:isListening?"rgba(248,113,113,0.15)":"#0a0a0a",color:isListening?"#f87171":"#525252",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.2s",flexShrink:0,position:"relative"}} onMouseEnter={e=>{if(!isListening)e.currentTarget.style.color="#2dd4bf"}} onMouseLeave={e=>{if(!isListening)e.currentTarget.style.color="#525252"}}>{isListening&&<div style={{position:"absolute",inset:-2,borderRadius:22,border:"2px solid #f87171",animation:"pulse 1.5s infinite",opacity:0.6}}/>}{isListening?<span style={{fontSize:10,fontWeight:700,letterSpacing:0.5}}>DONE</span>:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>}</button>
       <button onClick={handleQuery} disabled={brainLoading} style={{width:40,height:40,borderRadius:20,border:"none",background:brainQuery.trim()?"#2dd4bf":"#1a1a1a",color:brainQuery.trim()?"#000":"#333",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.2s",flexShrink:0}} onMouseEnter={e=>{if(brainQuery.trim())e.currentTarget.style.background="#34d399"}} onMouseLeave={e=>{e.currentTarget.style.background=brainQuery.trim()?"#2dd4bf":"#1a1a1a"}}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
     </div>
