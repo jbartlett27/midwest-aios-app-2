@@ -1216,12 +1216,12 @@ function MidwestAIOSInner() {
   const getJobItems = jobId => { const filtered = []; for (let i = 0; i < lineItems.length; i++) { if (lineItems[i].jobId === jobId) filtered.push(lineItems[i]); } return filtered; };
   const getJobFinancials = jobId => {
     const items = getJobItems(jobId);
-    const totalCost = items.reduce((s,i)=>s+i.unitCost*i.qtyOrdered,0);
-    const totalRevenue = items.reduce((s,i)=>s+i.unitPrice*i.qtyOrdered,0);
+    const totalCost = items.reduce((s,i)=>s+(i.unitCost||0)*(i.qtyOrdered||0),0);
+    const totalRevenue = items.reduce((s,i)=>s+(i.priceExtended&&i.priceExtended>0?i.priceExtended:((i.unitPrice||0)*(i.qtyOrdered||0))),0);
     const margin = totalRevenue>0?((totalRevenue-totalCost)/totalRevenue*100):0;
-    const totalReceived = items.reduce((s,i)=>s+i.qtyReceived,0);
-    const totalOrdered = items.reduce((s,i)=>s+i.qtyOrdered,0);
-    const totalInvoiced = items.reduce((s,i)=>s+i.unitPrice*i.qtyInvoiced,0);
+    const totalReceived = items.reduce((s,i)=>s+(i.qtyReceived||0),0);
+    const totalOrdered = items.reduce((s,i)=>s+(i.qtyOrdered||0),0);
+    const totalInvoiced = items.reduce((s,i)=>s+(i.unitPrice||0)*(i.qtyInvoiced||0),0);
     return {totalCost,totalRevenue,margin,totalReceived,totalOrdered,totalInvoiced,itemCount:items.length};
   };
   const getItemStatus = i => {
@@ -1237,10 +1237,12 @@ function MidwestAIOSInner() {
   const updateLineItem = (id, u) => {
     setLineItems(p => { const old=p.find(li=>li.id===id);const updated = p.map(li => li.id===id ? {...li,...u} : li); const item = updated.find(li=>li.id===id); if(item){db.saveLineItem(item);const changes=Object.keys(u).filter(k=>String(old?.[k])!==String(u[k]));if(changes.length>0){const log={time:new Date().toISOString(),type:"edit",entity:"lineItem",entityId:id,desc:(old?.description||"item"),fields:changes.map(k=>({field:k,from:old?.[k],to:u[k]}))};setTimeout(()=>{setJobs(jp=>{const jobId=item.jobId;return jp.map(j=>{if(j.id!==jobId)return j;const trail=[log,...(j.auditTrail||[])].slice(0,200);const nj={...j,auditTrail:trail};db.saveJob(nj);return nj})})},0)}} return updated; });
   };
+  let _liSeq=0;
   const addLineItem = item => {
-    const newItem = {...item, id: "LI-"+Date.now()+"-"+Math.random().toString(36).slice(2,6)};
+    _liSeq++;
+    const newItem = {...item, id: item.id||("LI-"+Date.now()+"-"+String(_liSeq).padStart(3,'0')+"-"+Math.random().toString(36).slice(2,6))};
     setLineItems(p => [...p, newItem]);
-    db.saveLineItem(newItem);
+    db.saveLineItem(newItem).then(r=>{if(!r?.ok){setTimeout(()=>db.saveLineItem(newItem).catch(()=>{}),2000)}}).catch(()=>{setTimeout(()=>db.saveLineItem(newItem).catch(()=>{}),2000)});
   };
   const deleteLineItem = async (id) => {
     if (!await confirm("Delete this line item? This cannot be undone.")) return;
@@ -1253,7 +1255,7 @@ function MidwestAIOSInner() {
   };
   const addJob = (job) => {
     setJobs(p => [...p, job]);
-    db.saveJob(job);
+    db.saveJob(job).then(r=>{if(!r?.ok){setTimeout(()=>db.saveJob(job).catch(()=>{}),2000)}}).catch(()=>{setTimeout(()=>db.saveJob(job).catch(()=>{}),2000)});
   };
   const deleteJob = async (id) => {
     if (!await confirm("Delete this entire job and all its line items? This cannot be undone.")) return;
@@ -1269,10 +1271,10 @@ function MidwestAIOSInner() {
   const updateRep = (id, u) => {
     setReps(p => { const updated = p.map(r => r.id===id ? {...r,...u} : r); const rep = updated.find(r=>r.id===id); if(rep) db.saveRep(rep); return updated; });
   };
-  const addRep = rep => { const newRep = {...rep, id: "S-"+uid()}; setReps(p => [...p, newRep]); db.saveRep(newRep); };
+  const addRep = rep => { const newRep = {...rep, id: rep.id||("S-"+uid())}; setReps(p => [...p, newRep]); db.saveRep(newRep).then(r=>{if(!r?.ok)setTimeout(()=>db.saveRep(newRep).catch(()=>{}),2000)}).catch(()=>setTimeout(()=>db.saveRep(newRep).catch(()=>{}),2000)); };
   const deleteRep = async (id) => { if (!await confirm("Delete this sales rep? Their jobs will be unassigned.")) return; setReps(p => p.filter(r => r.id !== id)); db.deleteRep(id); };
   const forceDeleteRep = (id) => { setReps(p => p.filter(r => r.id !== id)); db.deleteRep(id); };
-  const addCustomer = c => { const nc = {...c, id: "C-"+uid()}; setCustomers(p => [...p, nc]); db.saveCustomer(nc); };
+  const addCustomer = c => { const nc = {...c, id: c.id||("C-"+uid())}; setCustomers(p => [...p, nc]); db.saveCustomer(nc).then(r=>{if(!r?.ok)setTimeout(()=>db.saveCustomer(nc).catch(()=>{}),2000)}).catch(()=>setTimeout(()=>db.saveCustomer(nc).catch(()=>{}),2000)); };
   const updateCustomer = (id, u) => {
     setCustomers(p => { const updated = p.map(c => c.id===id ? {...c,...u} : c); const cust = updated.find(c=>c.id===id); if(cust) db.saveCustomer(cust); return updated; });
   };
@@ -1280,7 +1282,7 @@ function MidwestAIOSInner() {
   const forceDeleteCustomer = (id) => { setCustomers(p => p.filter(c => c.id !== id)); db.deleteCustomer(id); };
   const addSop = (sop) => { setCustomSops(p => { const exists = p.findIndex(s => s.id === sop.id); if (exists >= 0) { const updated = [...p]; updated[exists] = sop; return updated; } return [...p, sop]; }); db.deleteSop(sop.id).then(()=>db.saveSop(sop)); };
   const deleteSop = (id) => { setCustomSops(p => p.filter(s => s.id !== id)); db.deleteSop(id); };
-  const addVendor = v => { const nv = {...v, id: "V-"+uid()}; setVendors(p => [...p, nv]); db.saveVendor(nv); };
+  const addVendor = v => { const nv = {...v, id: v.id||("V-"+uid())}; setVendors(p => [...p, nv]); db.saveVendor(nv).then(r=>{if(!r?.ok)setTimeout(()=>db.saveVendor(nv).catch(()=>{}),2000)}).catch(()=>setTimeout(()=>db.saveVendor(nv).catch(()=>{}),2000)); };
   const updateVendor = (id, u) => {
     setVendors(p => { const updated = p.map(v => v.id===id ? {...v,...u} : v); const ven = updated.find(v=>v.id===id); if(ven) db.saveVendor(ven); return updated; });
   };
