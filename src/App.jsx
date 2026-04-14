@@ -4800,38 +4800,76 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
   // === VOICE INPUT ===
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef(null);
+  const listeningRef = useRef(false); // Ref to track listening state inside callbacks
   const startListening = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { notify("Voice input not supported on this browser"); return; }
-    if (isListening) { setIsListening(false); if (recognitionRef.current) { try { recognitionRef.current.stop(); } catch(e2) {} } recognitionRef.current = null; return; }
+    if (isListening) {
+      // Stop listening
+      listeningRef.current = false;
+      setIsListening(false);
+      if (recognitionRef.current) { try { recognitionRef.current.stop(); } catch(e2) {} }
+      recognitionRef.current = null;
+      return;
+    }
     const recognition = new SR();
     recognition.lang = "en-US";
     recognition.interimResults = true;
     recognition.continuous = true;
-    recognition.maxAlternatives = 1;
+    recognition.maxAlternatives = 3;
     let finalTranscript = brainQuery || "";
     let interimTranscript = "";
-    recognition.onstart = () => { setIsListening(true); };
+    const addPunctuation = (text) => {
+      let t = text.trim();
+      if (t.length > 0) t = t.charAt(0).toUpperCase() + t.slice(1);
+      if (t.length > 0 && !/[.!?]$/.test(t)) t += '.';
+      t = t.replace(/\bi\b/g, 'I');
+      t = t.replace(/\. ([a-z])/g, (m, c) => '. ' + c.toUpperCase());
+      return t;
+    };
+    recognition.onstart = () => { setIsListening(true); listeningRef.current = true; };
     recognition.onresult = (event) => {
       interimTranscript = "";
       for (let i = event.resultIndex; i < event.results.length; i++) {
-        const t = event.results[i][0].transcript;
-        if (event.results[i].isFinal) { finalTranscript += t + " "; } else { interimTranscript = t; }
+        let bestIdx = 0;
+        let bestConf = 0;
+        for (let a = 0; a < event.results[i].length; a++) {
+          if (event.results[i][a].confidence > bestConf) { bestConf = event.results[i][a].confidence; bestIdx = a; }
+        }
+        const t = event.results[i][bestIdx].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscript += t + " ";
+        } else {
+          interimTranscript = t;
+        }
       }
       setBrainQuery(finalTranscript + interimTranscript);
     };
     recognition.onend = () => {
-      // Only stop if user manually clicked stop
-      if (recognitionRef.current && isListening) { try { recognitionRef.current.start(); } catch(e2) {} return; }
+      // Auto-restart if user hasn't manually stopped
+      if (listeningRef.current) {
+        try { recognitionRef.current?.start(); } catch(e2) {
+          listeningRef.current = false;
+          setIsListening(false);
+          recognitionRef.current = null;
+        }
+        return;
+      }
       setIsListening(false);
       recognitionRef.current = null;
-      if (finalTranscript.trim()) { setBrainQuery(finalTranscript.trim()); }
+      if (finalTranscript.trim()) { setBrainQuery(addPunctuation(finalTranscript.trim())); }
     };
     recognition.onerror = (e) => {
-      if (e.error === "no-speech" && recognitionRef.current) { try { recognitionRef.current.start(); } catch(e2) {} return; }
+      if (e.error === "no-speech" && listeningRef.current) {
+        // No speech detected -- restart silently
+        try { recognitionRef.current?.start(); } catch(e2) {}
+        return;
+      }
+      if (e.error === "aborted") return;
+      listeningRef.current = false;
       setIsListening(false);
       recognitionRef.current = null;
-      if (e.error !== "aborted") notify("Voice error: " + e.error);
+      notify("Voice error: " + e.error);
     };
     finalTranscript = brainQuery || "";
     recognitionRef.current = recognition;
