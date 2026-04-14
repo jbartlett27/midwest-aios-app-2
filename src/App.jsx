@@ -5379,9 +5379,9 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     const isPdf = ext === 'pdf';
     const isExcel = ['xls','xlsx'].includes(ext);
     const isCsv = ['csv','tsv'].includes(ext);
+    const isDocx = ext === 'docx' || ext === 'doc';
     
     if (isExcel) {
-      // Convert Excel to structured text using SheetJS (already loaded in the app)
       const XLSX = await import('xlsx');
       const data = await file.arrayBuffer();
       const wb = XLSX.read(data, {type:'array'});
@@ -5403,6 +5403,17 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
       const text = await file.text();
       return [{type:'text', text:'[Attached CSV file: ' + file.name + ']\n\n' + text.slice(0, 50000)}];
     }
+
+    if (isDocx) {
+      // Send .docx as a PDF-style document block so Claude can read it natively
+      const base64 = await new Promise((res, rej) => {
+        const reader = new FileReader();
+        reader.onload = () => res(reader.result.split(',')[1]);
+        reader.onerror = rej;
+        reader.readAsDataURL(file);
+      });
+      return [{type:'document', source:{type:'base64', media_type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document', data:base64}}, {type:'text', text:'[Attached Word document: ' + file.name + '] Analyze this document thoroughly. Extract all content.'}];
+    }
     
     // For images and PDFs, convert to base64
     const base64 = await new Promise((res, rej) => {
@@ -5421,8 +5432,11 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
       return [{type:'image', source:{type:'base64', media_type:mimeMap[ext]||'image/png', data:base64}}, {type:'text', text:'[Attached image: ' + file.name + '] Describe and analyze what you see.'}];
     }
     
-    // Text files
+    // Text files (.txt, .json, etc.)
     const text = await file.text();
+    if (ext === 'json') {
+      try { const parsed = JSON.parse(text); return [{type:'text', text:'[Attached JSON file: ' + file.name + ']\n\n' + JSON.stringify(parsed, null, 2).slice(0, 50000)}]; } catch {}
+    }
     return [{type:'text', text:'[Attached file: ' + file.name + ']\n\n' + text.slice(0, 50000)}];
   };
 
@@ -5441,16 +5455,22 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         try {
           const fileBlocks = await processFileForBrain(brainFile);
           userContent = [...fileBlocks, {type:'text', text:(q || 'Analyze this file thoroughly. Extract all data.') + '\n\n[SYSTEM: The file content is embedded above. Read it directly. Do NOT call parse_uploaded_file. The data is already here in this message.]'}];
-          // Save file content to context so it persists across follow-up messages
+          // Save file context for follow-up messages
           const textBlock = fileBlocks.find(b => b.type === 'text');
-          if (textBlock) setBrainFileContext({name: brainFile.name, content: textBlock.text, blocks: fileBlocks});
+          const hasDoc = fileBlocks.some(b => b.type === 'document' || b.type === 'image');
+          setBrainFileContext({name: brainFile.name, content: textBlock?.text || '', blocks: fileBlocks, hasDoc});
         } catch(e) { notify('Error reading file: ' + e.message, 'error'); }
         setBrainFile(null); setBrainFilePreview(null);
       } else if (brainFileContext) {
         // Include file context in follow-up messages so the AI remembers the file
-        userContent = [{type:'text', text:'[Context: Previously uploaded file "' + brainFileContext.name + '" -- the full file content is below. Read it directly, do NOT call parse_uploaded_file.]\n' + (brainFileContext.content || '').slice(0, 30000) + '\n\n' + q}];
+        if (brainFileContext.hasDoc && brainFileContext.blocks) {
+          // For PDFs/images, re-send the actual document/image blocks so Claude can see them
+          userContent = [...brainFileContext.blocks, {type:'text', text:q + '\n\n[SYSTEM: The previously attached file "' + brainFileContext.name + '" is embedded above. Read it directly.]'}];
+        } else {
+          userContent = [{type:'text', text:'[Context: Previously uploaded file "' + brainFileContext.name + '" -- the full file content is below. Read it directly, do NOT call parse_uploaded_file.]\n' + (brainFileContext.content || '').slice(0, 30000) + '\n\n' + q}];
+        }
       }
-      const msgs = [...history.filter(h=>h.role==="user"||h.role==="assistant").slice(-8).map(h=>({role:h.role,content:typeof h.content==="string"?h.content:JSON.stringify(h.content)})),{role:"user",content:userContent}];
+      const msgs = [...history.filter(h=>h.role==="user"||h.role==="assistant").slice(-8).map(h=>({role:h.role,content:typeof h.content==="string"?h.content:h.content})),{role:"user",content:userContent}];
       const response = await fetch("/api/brain", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({system:ctx,messages:msgs,tools:brainTools})});
       const data = await response.json();
       if(data.error){
