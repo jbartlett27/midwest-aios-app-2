@@ -1304,7 +1304,7 @@ function MidwestAIOSInner() {
     {id:"playbook",label:"Playbook & SOPs",icon:"book"},
     {id:"tasks",label:"Tasks",icon:"check"},
     {id:"notes",label:"Notes",icon:"file"},
-    {id:"brain",label:"Midwest Brain",icon:"brain"},
+    {id:"brain",label:"Brain",icon:"brain"},
     {id:"exitready",label:"Exit Readiness",icon:"shield"},
 
     {id:"usermgmt",label:"Users & Permissions",icon:"shield"},
@@ -2042,7 +2042,7 @@ Never use emoji. Be concise.`;
           qtyOrdered:item.qtyOrdered,qtyReceived:0,qtyInvoiced:0,poDate:'',deliveryDate:'',invoiceDate:''});ct++}
       notify('Imported '+ct+' items into "'+uploadJobName+'" -- click the job to view');
       // Force re-fetch line items after batch import to ensure consistency across sessions
-      setTimeout(async()=>{try{const d=await db.loadAll();if(d.lineItems)setLineItems(d.lineItems);if(d.jobs)setJobs(d.jobs)}catch{}},3000);
+      setTimeout(async()=>{try{const d=await db.loadAll();if(d.lineItems)ctx.setLineItems(d.lineItems);if(d.jobs)ctx.setJobs(d.jobs)}catch{}},3000);
       setUploadData(null);setUploadJobName('');setUploadAiChat([]);setUploadAiStatus(null);setUploadAiChangedRows(new Set());setSelectedJob(jid);
     }catch(err){notify('Import error: '+err.message,'error')}
     setUploading(false);
@@ -5563,7 +5563,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     <div style={{display:"flex",alignItems:"center",gap:8,padding:"12px 16px",flexShrink:0}}>
       <div style={{width:10,height:10,borderRadius:"50%",background:"#34d399",boxShadow:"0 0 8px #34d39980"}}/>
       <span style={{fontSize:13,color:"#34d399",fontWeight:600}}>Live</span>
-      <span style={{fontSize:13,fontWeight:700,color:"#f0f0f0"}}>Midwest Brain</span>
+      <span style={{fontSize:13,fontWeight:700,color:"#f0f0f0"}}>Brain</span>
       <span style={{fontSize:11,color:"#333"}}>|</span>
       <span style={{fontSize:11,color:"#525252"}}>{jobs.length} jobs, {vendors.length} vendors, {customers.length} customers</span>
     </div>
@@ -6227,7 +6227,7 @@ function UserMgmtPage({notify,reps,customSops,addSop,deleteSop}){
 
   const roleColor={admin:"#2dd4bf",office:"#a78bfa",sales:"#fbbf24"};
   const allPages=["dashboard","jobs","deliveries","documents","commissions","financials","salesportal","playbook","tasks","notes","brain","exitreadiness","usermgmt"];
-  const pageLabels={dashboard:"Command Center",jobs:"Job Records",deliveries:"Delivery Tracker",documents:"Documents",commissions:"Commissions",financials:"Financials",salesportal:"Sales Portal",playbook:"Playbook & SOPs",tasks:"Tasks",notes:"Notes",brain:"Midwest Brain",exitreadiness:"Exit Readiness",usermgmt:"Users & Permissions"};
+  const pageLabels={dashboard:"Command Center",jobs:"Job Records",deliveries:"Delivery Tracker",documents:"Documents",commissions:"Commissions",financials:"Financials",salesportal:"Sales Portal",playbook:"Playbook & SOPs",tasks:"Tasks",notes:"Notes",brain:"Brain",exitreadiness:"Exit Readiness",usermgmt:"Users & Permissions"};
   const roleDefaults={admin:allPages,office:["dashboard","jobs","deliveries","documents","salesportal","playbook","tasks","notes","brain"],sales:["dashboard","jobs","deliveries","documents","tasks","notes","brain","salesportal"]};
 
   const allUsersList=[
