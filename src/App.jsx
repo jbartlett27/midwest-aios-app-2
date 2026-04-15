@@ -4793,7 +4793,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     if (brainMemory.length === 0) return "";
     return brainMemory.map(m => { try { const d = JSON.parse(m.content); return "## " + m.title + " (updated: " + (d.updatedAt || "unknown") + ")\n" + d.text; } catch { return "## " + m.title + "\n" + m.content; } }).join("\n\n");
   };
-  const suggestedQueries=["What is our total pipeline revenue?","Which vendor do we spend the most with?","Show me all jobs that are In Progress","What is our average margin?","Which reps have the highest revenue?","List all overdue deliveries","Run a health check on the business","Draft a collection email for overdue invoices","What anomalies should I know about?","What are our top trends this quarter?","Summarize our commission obligations","What SOPs do we have documented?"];
+  const suggestedQueries=["Show me the Hopewell Valley job details","What is our total pipeline revenue?","Which vendor do we spend the most with?","Run a health check on the business","Draft a follow-up email for pending quotes","What anomalies should I know about?","List all jobs with deliveries pending","What are our margins by vendor?","Summarize our commission obligations","Which jobs are past due?","Compare our top 5 jobs by revenue","What is our cash position outlook?"];
   const chatRef=useRef(null);
   const [animatingIdx,setAnimatingIdx]=useState(-1);
   const [pendingActions,setPendingActions]=useState([]);
@@ -4947,7 +4947,11 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     {name:"create_job_from_file",description:"Create a complete new job with line items extracted from an attached file (quote, invoice, spreadsheet). Use this when user attaches a file and says 'create a job from this', 'import this quote', 'add this to the system', etc. Extracts all line items and creates everything in one action.",input_schema:{type:"object",properties:{job_name:{type:"string",description:"Name for the new job"},customer_name:{type:"string",description:"Customer/school name"},sales_rep_name:{type:"string",description:"Sales rep name"},items:{type:"array",description:"Line items extracted from the file",items:{type:"object",properties:{description:{type:"string"},manufacturer:{type:"string"},model_number:{type:"string"},color:{type:"string"},quantity:{type:"number"},list_price:{type:"number"},unit_cost:{type:"number",description:"Dealer net cost per unit"},unit_price:{type:"number",description:"Customer sell price per unit"},shipping:{type:"number"},install:{type:"number"},tag:{type:"string"},vendor_name:{type:"string"}}}},notes:{type:"string"},terms:{type:"string",description:"Net 30, Net 15, Due Upon Receipt"},po_number:{type:"string"}},required:["job_name","items"]}},
     {name:"compare_quote_to_job",description:"Compare an attached vendor quote/price list against an existing job's line items. Finds matching products and highlights price differences, missing items, and potential savings. Use when user says 'compare this quote to job X', 'check these prices against the Hopewell job', etc.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name to compare against"},items:{type:"array",description:"Items extracted from the attached file to compare",items:{type:"object",properties:{description:{type:"string"},model_number:{type:"string"},manufacturer:{type:"string"},unit_cost:{type:"number"},unit_price:{type:"number"},quantity:{type:"number"}}}}},required:["job_id","items"]}},
     {name:"import_customers_from_file",description:"Import customers/schools from an attached file (CSV, Excel, or list). Creates customer records in the directory. Use when user attaches a customer list, school directory, or district roster.",input_schema:{type:"object",properties:{customers:{type:"array",items:{type:"object",properties:{name:{type:"string"},contact:{type:"string"},email:{type:"string"},phone:{type:"string"},type:{type:"string",description:"K-12 District, Private School, University, Government, Corporate"},address:{type:"string"}}}}},required:["customers"]}},
-    {name:"import_vendors_from_file",description:"Import vendors/manufacturers from an attached file. Creates vendor records in the directory.",input_schema:{type:"object",properties:{vendors:{type:"array",items:{type:"object",properties:{name:{type:"string"},contact:{type:"string"},email:{type:"string"},phone:{type:"string"},category:{type:"string"},address:{type:"string"},discount_rate:{type:"number",description:"Decimal e.g. 0.40 for 40%"}}}}},required:["vendors"]}}
+    {name:"import_vendors_from_file",description:"Import vendors/manufacturers from an attached file. Creates vendor records in the directory.",input_schema:{type:"object",properties:{vendors:{type:"array",items:{type:"object",properties:{name:{type:"string"},contact:{type:"string"},email:{type:"string"},phone:{type:"string"},category:{type:"string"},address:{type:"string"},discount_rate:{type:"number",description:"Decimal e.g. 0.40 for 40%"}}}}},required:["vendors"]}},
+    {name:"set_doc_status",description:"Set the status of a document (quote, PO, invoice, commission statement). Use when user says 'mark the Hopewell quote as sent', 'approve the PO for Marco', 'set the invoice to drafted'. Statuses: new, drafted, sent, approved.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name"},doc_type:{type:"string",description:"quote, po, invoice, commission"},vendor_name:{type:"string",description:"For POs: which vendor's PO to update"},status:{type:"string",description:"new, drafted, sent, approved"}},required:["job_id","doc_type","status"]}},
+    {name:"calculate_financials",description:"Calculate detailed financial breakdown for a job or across all jobs. Returns revenue, cost, margin, shipping total, install total, commission, and per-vendor breakdown. Use for 'what's the margin on Hopewell', 'break down costs by vendor', 'what's our total commission exposure'.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name. Use 'all' for entire business."},include_vendor_breakdown:{type:"boolean",description:"Include per-vendor cost breakdown"}},required:["job_id"]}},
+    {name:"schedule_followup",description:"Create a follow-up task tied to a job with a specific due date. Use when user says 'remind me to follow up on the Lincoln quote next Tuesday', 'schedule a check-in with Naperville in 2 weeks'.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name"},text:{type:"string",description:"What to follow up on"},due_date:{type:"string",description:"Due date (YYYY-MM-DD or relative like 'next Tuesday', '2 weeks')"},assignee:{type:"string",description:"Who to assign to"}},required:["text","due_date"]}},
+    {name:"export_data",description:"Export job line items, vendor list, customer list, or financial summary as a formatted table the user can copy. Use when user says 'export the Hopewell items', 'give me a vendor list I can copy', 'export all jobs as a table'.",input_schema:{type:"object",properties:{type:{type:"string",description:"job_items, jobs_list, vendors, customers, reps, financials"},job_id:{type:"string",description:"For job_items: which job"},format:{type:"string",description:"table (markdown) or csv"}},required:["type"]}}
   ];
 
   // Execute a tool call locally
@@ -4987,17 +4991,18 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         const f=getJobFinancials(job.id);
         const cust=customers.find(c=>c.id===job.customer);
         const rep=reps.find(r=>r.id===job.salesRep);
+        const clean=(s)=>(s||'--').replace(/\n/g,' ').replace(/\r/g,'').replace(/\|/g,'/').replace(/\s+/g,' ').trim()||'--';
         let msg="**"+job.name+"** ("+job.id+")\n";
         msg+="Customer: "+(cust?.name||"--")+" | Rep: "+(rep?.name||"--")+" | Phase: "+job.phase+" | Payment: "+job.paymentStatus+"\n";
         msg+="Revenue: $"+f.totalRevenue.toFixed(2)+" | Cost: $"+f.totalCost.toFixed(2)+" | Margin: "+f.margin.toFixed(1)+"% | Items: "+items.length+"\n";
         if(job.terms)msg+="Terms: "+job.terms+(job.poNumber?" | PO#: "+job.poNumber:"")+(job.dueDate?" | Due: "+job.dueDate:"")+"\n";
-        msg+="\n| # | Description | Vendor | Model | Color | Qty | Cost | Price | Line Total | Received | Status | ID |\n";
-        msg+="| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n";
+        msg+="\n| # | Description | Vendor | Model | Color | Qty | Cost | Price | Line Total | Received | Status |\n";
+        msg+="| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n";
         items.forEach((it,idx)=>{
           const v=vendors.find(v2=>v2.id===it.vendor);
           const total=((it.priceExtended&&it.priceExtended>0)?it.priceExtended:(it.unitPrice||0)*(it.qtyOrdered||0));
           const status=it.qtyReceived>=it.qtyOrdered?"complete":it.qtyReceived>0?"partial":"ordered";
-          msg+="| "+(idx+1)+" | "+it.description+" | "+(v?.name||"--")+" | "+(it.modelNumber||"--")+" | "+(it.color||"--")+" | "+it.qtyOrdered+" | $"+(it.unitCost||0).toFixed(2)+" | $"+(it.unitPrice||0).toFixed(2)+" | $"+total.toFixed(2)+" | "+it.qtyReceived+"/"+it.qtyOrdered+" | "+status+" | "+it.id+" |\n";
+          msg+="| "+(idx+1)+" | "+clean(it.description)+" | "+clean(v?.name||it.manufacturer)+" | "+clean(it.modelNumber)+" | "+clean(it.color)+" | "+it.qtyOrdered+" | $"+(it.unitCost||0).toFixed(2)+" | $"+(it.unitPrice||0).toFixed(2)+" | $"+total.toFixed(2)+" | "+it.qtyReceived+"/"+it.qtyOrdered+" | "+status+" |\n";
         });
         msg+="\nYou can ask me to update any line item by description (e.g. 'change the desk price to $300') or make bulk changes.";
         return{success:true,message:msg};
@@ -5346,7 +5351,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
           data2=data2.slice(0,input.limit||50);
           if(data2.length===0)return{success:true,message:"No results in "+table+"."};
           if(table==="jobs")return{success:true,message:"Found "+data2.length+" jobs:\n"+data2.map(j=>{const f=getJobFinancials(j.id);return j.name+" ["+j.phase+"] $"+Math.round(f.totalRevenue).toLocaleString()+" "+f.margin.toFixed(1)+"% "+j.paymentStatus}).join("\n")};
-          if(table==="line_items")return{success:true,message:"Found "+data2.length+" items:\n"+data2.map(i=>i.description+" qty:"+i.qtyOrdered+" $"+i.unitPrice).join("\n")};
+          if(table==="line_items")return{success:true,message:"Found "+data2.length+" items:\n"+data2.map(i=>(i.description||'').replace(/\n/g,' ').trim()+" qty:"+i.qtyOrdered+" $"+i.unitPrice).join("\n")};
           if(table==="vendors")return{success:true,message:"Found "+data2.length+" vendors:\n"+data2.map(v=>v.name+" ["+v.category+"] "+(v.discountRate*100).toFixed(0)+"%").join("\n")};
           return{success:true,message:"Found "+data2.length+" records:\n"+JSON.stringify(data2.slice(0,10),null,2).slice(0,2000)};
         }catch(e){return{error:"Query error: "+e.message}}
@@ -5437,6 +5442,110 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
           return{success:true,message:'Imported '+ct+' new vendors. '+(input.vendors.length-ct)+' skipped (duplicates or missing name).'};
         }catch(e){return{error:'Import error: '+e.message}}
       }
+      if(toolName==="set_doc_status"){
+        const job=findJob(input.job_id);
+        if(!job)return{error:"Job not found: "+input.job_id};
+        const stableNum2=(prefix,a,b)=>prefix+(a||'').replace(/[^A-Z0-9]/gi,'').slice(-4).toUpperCase()+'-'+(b||'').replace(/[^A-Z0-9]/gi,'').slice(-4).toUpperCase();
+        let docNum='';
+        if(input.doc_type==='quote')docNum=stableNum2('QT-',job.id,job.customer);
+        else if(input.doc_type==='invoice')docNum=stableNum2('INV-',job.id,job.customer);
+        else if(input.doc_type==='commission'){const rep2=reps.find(r=>r.id===job.salesRep);docNum=stableNum2('COMM-',rep2?.id||'',  'stmt')}
+        else if(input.doc_type==='po'&&input.vendor_name){const v=findVendor(input.vendor_name);docNum=stableNum2('PO-',job.id,v?.id||'')}
+        else return{error:"For POs, provide vendor_name to identify which PO"};
+        const ds={...(job.docStatuses||{}),[docNum]:input.status};
+        updateJob(job.id,{docStatuses:ds});
+        return{success:true,message:"Set "+input.doc_type+" "+docNum+" to "+input.status+" on "+job.name};
+      }
+      if(toolName==="calculate_financials"){
+        const isAll=!input.job_id||input.job_id==='all';
+        const targetJobs=isAll?jobs:[findJob(input.job_id)].filter(Boolean);
+        if(targetJobs.length===0)return{error:"Job not found: "+input.job_id};
+        let totalRev2=0,totalCost2=0,totalShip=0,totalInstall=0,totalComm=0;
+        const vendorSpend={};
+        targetJobs.forEach(j=>{
+          const f=getJobFinancials(j.id);const items=getJobItems(j.id);
+          totalRev2+=f.totalRevenue;totalCost2+=f.totalCost;
+          totalShip+=items.reduce((s,i)=>(s+(i.shippingPerUnit||0)*i.qtyOrdered),0);
+          totalInstall+=items.reduce((s,i)=>(s+(i.installPerUnit||0)*i.qtyOrdered),0);
+          const rep2=reps.find(r=>r.id===j.salesRep);totalComm+=f.totalRevenue*(rep2?.commissionRate||0);
+          if(input.include_vendor_breakdown)items.forEach(i=>{const v=vendors.find(v2=>v2.id===i.vendor);const vn=v?.name||'Unknown';vendorSpend[vn]=(vendorSpend[vn]||0)+i.unitCost*i.qtyOrdered});
+        });
+        const margin=totalRev2>0?((totalRev2-totalCost2)/totalRev2*100):0;
+        let msg="**Financial Summary"+(isAll?" (All Jobs)":" -- "+targetJobs[0].name)+"**\n\n";
+        msg+="| Metric | Amount |\n| --- | --- |\n";
+        msg+="| Revenue | $"+totalRev2.toFixed(2)+" |\n";
+        msg+="| Cost | $"+totalCost2.toFixed(2)+" |\n";
+        msg+="| Gross Profit | $"+(totalRev2-totalCost2).toFixed(2)+" |\n";
+        msg+="| Margin | "+margin.toFixed(1)+"% |\n";
+        msg+="| Shipping | $"+totalShip.toFixed(2)+" |\n";
+        msg+="| Install | $"+totalInstall.toFixed(2)+" |\n";
+        msg+="| Commission Exposure | $"+totalComm.toFixed(2)+" |\n";
+        msg+="| Net After Commission | $"+(totalRev2-totalCost2-totalComm).toFixed(2)+" |\n";
+        if(input.include_vendor_breakdown&&Object.keys(vendorSpend).length>0){
+          msg+="\n**Vendor Cost Breakdown:**\n\n| Vendor | Spend | % of Cost |\n| --- | --- | --- |\n";
+          Object.entries(vendorSpend).sort((a,b)=>b[1]-a[1]).forEach(([vn,s])=>{msg+="| "+vn+" | $"+s.toFixed(2)+" | "+(totalCost2>0?(s/totalCost2*100).toFixed(1):0)+"% |\n"});
+        }
+        return{success:true,message:msg};
+      }
+      if(toolName==="schedule_followup"){
+        let dueDate=input.due_date;
+        // Parse relative dates
+        if(dueDate&&!/^\d{4}-\d{2}-\d{2}$/.test(dueDate)){
+          const d=new Date();const lower=dueDate.toLowerCase();
+          if(lower.includes('tomorrow'))d.setDate(d.getDate()+1);
+          else if(lower.includes('next week')||lower.includes('1 week'))d.setDate(d.getDate()+7);
+          else if(lower.includes('2 week'))d.setDate(d.getDate()+14);
+          else if(lower.includes('next month')||lower.includes('1 month'))d.setMonth(d.getMonth()+1);
+          else if(lower.includes('monday'))d.setDate(d.getDate()+((1-d.getDay()+7)%7||7));
+          else if(lower.includes('tuesday'))d.setDate(d.getDate()+((2-d.getDay()+7)%7||7));
+          else if(lower.includes('wednesday'))d.setDate(d.getDate()+((3-d.getDay()+7)%7||7));
+          else if(lower.includes('thursday'))d.setDate(d.getDate()+((4-d.getDay()+7)%7||7));
+          else if(lower.includes('friday'))d.setDate(d.getDate()+((5-d.getDay()+7)%7||7));
+          else{const numMatch=lower.match(/(\d+)\s*day/);if(numMatch)d.setDate(d.getDate()+parseInt(numMatch[1]))}
+          dueDate=d.toISOString().split('T')[0];
+        }
+        const job=input.job_id?findJob(input.job_id):null;
+        const taskText='FOLLOW-UP: '+input.text+(job?' ['+job.name+']':'');
+        addSop({id:'TASK-'+Date.now(),title:taskText,cat:'Task',icon:'check',content:JSON.stringify({text:taskText,status:'todo',priority:'normal',due:dueDate,assignees:[input.assignee||''],jobId:job?.id||'',createdAt:new Date().toISOString()}),custom:true});
+        return{success:true,message:'Follow-up scheduled for '+dueDate+': "'+input.text+'"'+(job?' on '+job.name:'')};
+      }
+      if(toolName==="export_data"){
+        const fmt3=n=>'$'+Number(n||0).toFixed(2);
+        const clean2=(s)=>(s||'--').replace(/\n/g,' ').replace(/\r/g,'').replace(/\|/g,'/').replace(/\s+/g,' ').trim()||'--';
+        const isCsv=input.format==='csv';
+        const sep=isCsv?',':' | ';
+        if(input.type==='job_items'){
+          const job=findJob(input.job_id);if(!job)return{error:"Job not found"};
+          const items=getJobItems(job.id);
+          let msg=isCsv?"Tag,Manufacturer,Model,Description,Color,Qty,Cost,Price,Line Total,Status\n":
+            "| Tag | Manufacturer | Model | Description | Qty | Cost | Price | Line Total | Status |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n";
+          items.forEach(it=>{const v=vendors.find(v2=>v2.id===it.vendor);const total=(it.unitPrice||0)*it.qtyOrdered;const status=it.qtyReceived>=it.qtyOrdered?'complete':it.qtyReceived>0?'partial':'ordered';
+            msg+=isCsv?[it.tag,v?.name||it.manufacturer,it.modelNumber,'"'+(it.description||'').replace(/"/g,'""').replace(/\n/g,' ')+'"',it.color,it.qtyOrdered,it.unitCost,it.unitPrice,total.toFixed(2),status].join(',')+"\n":
+              "| "+clean2(it.tag)+" | "+clean2(v?.name||it.manufacturer)+" | "+clean2(it.modelNumber)+" | "+clean2(it.description)+" | "+it.qtyOrdered+" | "+fmt3(it.unitCost)+" | "+fmt3(it.unitPrice)+" | "+fmt3(total)+" | "+status+" |\n";
+          });
+          return{success:true,message:"**"+job.name+" -- "+items.length+" line items:**\n\n"+msg};
+        }
+        if(input.type==='jobs_list'){
+          let msg=isCsv?"ID,Name,Customer,Rep,Phase,Revenue,Cost,Margin,Payment\n":
+            "| ID | Name | Customer | Rep | Phase | Revenue | Margin | Payment |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n";
+          jobs.forEach(j=>{const f=getJobFinancials(j.id);const c=customers.find(c2=>c2.id===j.customer);const r=reps.find(r2=>r2.id===j.salesRep);
+            msg+=isCsv?[j.id,'"'+j.name+'"',c?.name||'',r?.name||'',j.phase,f.totalRevenue.toFixed(2),f.totalCost.toFixed(2),f.margin.toFixed(1)+'%',j.paymentStatus].join(',')+"\n":
+              "| "+j.id+" | "+j.name+" | "+(c?.name||"--")+" | "+(r?.name||"--")+" | "+j.phase+" | "+fmt3(f.totalRevenue)+" | "+f.margin.toFixed(1)+"% | "+j.paymentStatus+" |\n";
+          });
+          return{success:true,message:"**All Jobs ("+jobs.length+"):**\n\n"+msg};
+        }
+        if(input.type==='vendors'){
+          let msg="| Name | Category | Contact | Email | Phone | Discount |\n| --- | --- | --- | --- | --- | --- |\n";
+          vendors.filter(v=>v.name&&!v.id.includes('SEED')).forEach(v=>{msg+="| "+v.name+" | "+(v.category||"--")+" | "+(v.contact||"--")+" | "+(v.email||"--")+" | "+(v.phone||"--")+" | "+((v.discountRate||0)*100).toFixed(0)+"% |\n"});
+          return{success:true,message:"**Vendors ("+vendors.length+"):**\n\n"+msg};
+        }
+        if(input.type==='customers'){
+          let msg="| Name | Type | Contact | Email | Phone |\n| --- | --- | --- | --- | --- |\n";
+          customers.forEach(c=>{msg+="| "+c.name+" | "+(c.type||"--")+" | "+(c.contact||"--")+" | "+(c.email||"--")+" | "+(c.phone||"--")+" |\n"});
+          return{success:true,message:"**Customers ("+customers.length+"):**\n\n"+msg};
+        }
+        return{error:"Unknown export type: "+input.type};
+      }
       return{error:"Unknown tool: "+toolName};
     }catch(err){return{error:"Execution error: "+err.message}}
   };
@@ -5470,7 +5579,8 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         const items=getJobItems(j.id);if(items.length===0)return "";
         return "--- "+j.name+" ("+j.id+") ---\n"+items.map(i=>{
           const v=vendors.find(v2=>v2.id===i.vendor);
-          return "  "+i.description+" | Vendor:"+(v?.name||"--")+" | Model:"+(i.modelNumber||"--")+" | Qty:"+i.qtyOrdered+" | Received:"+i.qtyReceived+" | Cost:$"+(i.unitCost||0).toFixed(2)+" | Price:$"+(i.unitPrice||0).toFixed(2)+" | Color:"+(i.color||"--")+" | Tag:"+(i.tag||"--");
+          const desc=(i.description||'').replace(/\n/g,' ').replace(/\r/g,'').trim();
+          return "  "+desc+" | Vendor:"+(v?.name||"--")+" | Model:"+(i.modelNumber||"--")+" | Qty:"+i.qtyOrdered+" | Received:"+i.qtyReceived+" | Cost:$"+(i.unitCost||0).toFixed(2)+" | Price:$"+(i.unitPrice||0).toFixed(2)+" | Color:"+(i.color||"--")+" | Tag:"+(i.tag||"--")+" | ID:"+i.id;
         }).join("\n");
       }).filter(Boolean).join("\n");
     }
@@ -5482,7 +5592,8 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         const vItems=lineItems.filter(i=>i.vendor===v.id);
         return "--- "+v.name+" ---\n"+vItems.slice(0,30).map(i=>{
           const j=jobs.find(j2=>j2.id===i.jobId);
-          return "  "+i.description+" | Job:"+(j?.name||"--")+" | Qty:"+i.qtyOrdered+" | Cost:$"+(i.unitCost||0).toFixed(2)+" | Price:$"+(i.unitPrice||0).toFixed(2);
+          const desc=(i.description||'').replace(/\n/g,' ').replace(/\r/g,'').trim();
+          return "  "+desc+" | Job:"+(j?.name||"--")+" | Qty:"+i.qtyOrdered+" | Cost:$"+(i.unitCost||0).toFixed(2)+" | Price:$"+(i.unitPrice||0).toFixed(2);
         }).join("\n");
       }).join("\n");
     }
@@ -5676,7 +5787,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
       (data.content||[]).filter(b=>b.type==="web_search_tool_result").forEach(b=>{(b.content||[]).filter(r=>r.type==="web_search_result").forEach(r=>{if(r.url&&r.title)webCitations.push({url:r.url,title:r.title})})});
       if(toolBlocks.length>0){
         // Separate read-only tools (auto-execute) from write tools (require confirmation)
-        const readOnlyTools=new Set(['get_job_details','search_and_report','detect_anomalies','analyze_trends','summarize_context','recall_memory','predictive_flag','database_query','compare_quote_to_job']);
+        const readOnlyTools=new Set(['get_job_details','search_and_report','detect_anomalies','analyze_trends','summarize_context','recall_memory','predictive_flag','database_query','compare_quote_to_job','calculate_financials','export_data']);
         const readTools=toolBlocks.filter(tb=>readOnlyTools.has(tb.name));
         const writeTools=toolBlocks.filter(tb=>!readOnlyTools.has(tb.name));
         // Auto-execute read-only tools and show results inline
@@ -5724,6 +5835,10 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
           if(a.name==="import_vendors_from_file")return "Import **"+(a.input.vendors?.length||0)+" vendors** from file";
           if(a.name==="get_job_details")return "Pull details for **"+(a.input.job_id||"job")+"**";
           if(a.name==="bulk_edit_line_items")return "Bulk update **"+(a.input.filter_description||"all")+"** items on **"+(a.input.job_id||"job")+"**";
+          if(a.name==="set_doc_status")return "Set **"+(a.input.doc_type||"document")+"** on **"+(a.input.job_id||"job")+"** to **"+(a.input.status||"")+"**";
+          if(a.name==="schedule_followup")return "Schedule follow-up: **"+(a.input.text||"")+"** due **"+(a.input.due_date||"")+"**";
+          if(a.name==="calculate_financials")return "Calculate financials for **"+(a.input.job_id||"all jobs")+"**";
+          if(a.name==="export_data")return "Export **"+(a.input.type||"data")+"**"+(a.input.job_id?" for **"+a.input.job_id+"**":"");
           if(a.name==="update_line_item")return "Update line item: **"+(a.input.item_description||a.input.item_id||"")+"**"+(a.input.updates?" >> "+Object.entries(a.input.updates).map(([k,v])=>k+"="+v).join(", "):"");
           return a.name+"("+JSON.stringify(a.input).slice(0,60)+")";
         }).join("\n");
@@ -5792,9 +5907,17 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
           continue;
         }
         const line=lines[i];
-        const bold=line.replace(/\*\*([^*]+)\*\*/g,"<strong>$1</strong>");
-        if(line.startsWith(">> "))result.push(<div key={i} onClick={()=>{setBrainQuery(line.slice(3));setTimeout(handleQuery,50)}} style={{padding:"6px 12px",margin:"3px 0",borderRadius:8,border:"1px solid rgba(45,212,191,0.12)",background:"rgba(45,212,191,0.03)",color:"#2dd4bf",fontSize:12,cursor:"pointer",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(45,212,191,0.08)"}} onMouseLeave={e=>{e.currentTarget.style.background="rgba(45,212,191,0.03)"}}>{line.slice(3)}</div>);
+        const bold=line.replace(/\*\*([^*]+)\*\*/g,"<strong>$1</strong>").replace(/`([^`]+)`/g,'<code style="background:#1a1a1a;padding:1px 5px;borderRadius:4;fontSize:11;fontFamily:JetBrains Mono,monospace;color:#2dd4bf">$1</code>');
+        // Headings
+        if(line.startsWith("### "))result.push(<div key={i} style={{fontSize:14,fontWeight:700,color:"#e5e5e5",margin:"12px 0 4px",borderBottom:"1px solid #1a1a1a",paddingBottom:4}} dangerouslySetInnerHTML={{__html:bold.slice(4)}}/>);
+        else if(line.startsWith("## "))result.push(<div key={i} style={{fontSize:15,fontWeight:800,color:"#f0f0f0",margin:"14px 0 6px",borderBottom:"1px solid #222",paddingBottom:6}} dangerouslySetInnerHTML={{__html:bold.slice(3)}}/>);
+        // Suggested follow-ups
+        else if(line.startsWith(">> "))result.push(<div key={i} onClick={()=>{setBrainQuery(line.slice(3));setTimeout(handleQuery,50)}} style={{padding:"6px 12px",margin:"3px 0",borderRadius:8,border:"1px solid rgba(45,212,191,0.12)",background:"rgba(45,212,191,0.03)",color:"#2dd4bf",fontSize:12,cursor:"pointer",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(45,212,191,0.08)"}} onMouseLeave={e=>{e.currentTarget.style.background="rgba(45,212,191,0.03)"}}>{line.slice(3)}</div>);
+        // Bullet lists
         else if(line.startsWith("- ")||line.startsWith("* "))result.push(<div key={i} style={{display:"flex",gap:8,padding:"2px 0"}}><div style={{width:4,height:4,borderRadius:"50%",background:"#2dd4bf",marginTop:8,flexShrink:0}}/><span dangerouslySetInnerHTML={{__html:bold.slice(2)}}/></div>);
+        // Numbered lists
+        else if(/^\d+\.\s/.test(line)){const numEnd=line.indexOf('. ');result.push(<div key={i} style={{display:"flex",gap:8,padding:"2px 0"}}><span style={{color:"#2dd4bf",fontWeight:600,fontSize:12,minWidth:16,flexShrink:0}}>{line.slice(0,numEnd+1)}</span><span dangerouslySetInnerHTML={{__html:bold.slice(numEnd+2)}}/></div>)}
+        // Bold text
         else if(bold!==line)result.push(<div key={i} style={{padding:"2px 0"}} dangerouslySetInnerHTML={{__html:bold}}/>);
         else result.push(<div key={i} style={{padding:"2px 0",minHeight:line?"auto":8}}>{line}</div>);
         i++;
@@ -5833,6 +5956,9 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
       <span style={{fontSize:13,fontWeight:700,color:"#f0f0f0"}}>Brain</span>
       <span style={{fontSize:11,color:"#333"}}>|</span>
       <span style={{fontSize:11,color:"#525252"}}>{jobs.length} jobs, {vendors.length} vendors, {customers.length} customers</span>
+      <div style={{marginLeft:"auto",display:"flex",gap:4}}>
+        {history.length>1&&<button onClick={()=>{setBrainHistory([history[0]]);setPendingActions([]);setBrainFileContext(null)}} title="Clear chat" style={{padding:"4px 10px",borderRadius:6,border:"1px solid #222",background:"transparent",color:"#525252",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.color="#f87171";e.currentTarget.style.borderColor="#f8717130"}} onMouseLeave={e=>{e.currentTarget.style.color="#525252";e.currentTarget.style.borderColor="#222"}}>Clear</button>}
+      </div>
     </div>
     <div ref={chatRef} style={{flex:1,overflowY:"auto",padding:"8px 16px",display:"flex",flexDirection:"column",gap:8,background:"#000",minHeight:0}}>
       {history.map((msg,i)=><div key={i} style={{display:"flex",justifyContent:msg.role==="user"?"flex-end":"flex-start",animation:i===animatingIdx?"fadeUp 0.5s ease-out":"none"}}>
