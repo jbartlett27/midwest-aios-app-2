@@ -2951,7 +2951,7 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
         const today=new Date();const mm=String(today.getMonth()+1).padStart(2,'0');const dd=String(today.getDate()).padStart(2,'0');const yyyy=today.getFullYear();
         const dateStr=mm+'/'+dd+'/'+yyyy;
         // Auto-generate check number
-        const allCheckNums=Object.values(docStatuses).filter(v=>typeof v==='object'&&v.checkNum&&v.checkNum!=='____').map(v=>parseInt(v.checkNum)).filter(n=>!isNaN(n)&&n>0);
+        const allCheckNums=Object.values(docStatuses).filter(v=>v&&typeof v==='object'&&v.checkNum&&v.checkNum!=='____').map(v=>parseInt(v.checkNum)).filter(n=>!isNaN(n)&&n>0);
         const maxCheck=allCheckNums.length>0?Math.max(...allCheckNums):1110;
         const checkNo=String(maxCheck+1);
         const amtDollars=Math.floor(totalCost);const amtCents=Math.round((totalCost-amtDollars)*100);
@@ -3051,7 +3051,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
           const dateStr=mm+'/'+dd+'/'+yyyy;
           let checkNo=billCheckNum&&billCheckNum.trim()&&billCheckNum.trim()!=='____'?billCheckNum.trim():'';
           if(!checkNo){
-            const allCheckNums=Object.values(docStatuses).filter(v=>typeof v==='object'&&v.checkNum&&v.checkNum!=='____').map(v=>parseInt(v.checkNum)).filter(n=>!isNaN(n)&&n>0);
+            const allCheckNums=Object.values(docStatuses).filter(v=>v&&typeof v==='object'&&v.checkNum&&v.checkNum!=='____').map(v=>parseInt(v.checkNum)).filter(n=>!isNaN(n)&&n>0);
             const maxCheck=allCheckNums.length>0?Math.max(...allCheckNums):1110;
             checkNo=String(maxCheck+1);
             setBillCheckNum(checkNo);
