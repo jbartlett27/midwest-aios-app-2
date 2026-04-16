@@ -3024,7 +3024,19 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
   <div class="stub-footer"><div class="stub-bank">Cornerstone Bank Ch</div><div class="stub-amount">${amtFmt}</div></div>
 </div>
 </body></html>`;
-        const w=window.open('','_blank');w.document.write(html);w.document.close();if(w.document.fonts){w.document.fonts.ready.then(()=>w.print())}else{setTimeout(()=>w.print(),800)}
+        const w=window.open('','_blank');
+        if(!w||w.closed){
+          try{
+            const iframe=document.createElement('iframe');
+            iframe.style.cssText='position:fixed;top:0;left:0;width:0;height:0;border:none;visibility:hidden';
+            document.body.appendChild(iframe);
+            iframe.contentDocument.write(html);
+            iframe.contentDocument.close();
+            setTimeout(()=>{try{iframe.contentWindow.print()}catch(e2){notify('Print failed. Please allow popups for this site and try again.','error')}setTimeout(()=>{try{document.body.removeChild(iframe)}catch{}},5000)},600);
+          }catch(e3){notify('Could not open print window. Please allow popups for this site.','error');return}
+        } else {
+          w.document.write(html);w.document.close();if(w.document.fonts){w.document.fonts.ready.then(()=>w.print())}else{setTimeout(()=>w.print(),800)}
+        }
         // Save check number to all included bills
         selectedBills.forEach(b=>{const existing=typeof docStatuses[b.billDocNum]==='object'?docStatuses[b.billDocNum]:{};setDocStatus(b.billDocNum,{...existing,checkNum:checkNo,checkPrinted:new Date().toISOString(),status:'check_sent',memo:existing.memo||'Batch check #'+checkNo})});
         notify('Batch Check #'+checkNo+' printed for '+vendorName+' -- '+fmt(totalCost)+' ('+selectedBills.length+' POs)');
@@ -3197,7 +3209,20 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
 </div>
 
 </body></html>`;
-          const w=window.open('','_blank');w.document.write(html);w.document.close();if(w.document.fonts){w.document.fonts.ready.then(()=>w.print())}else{setTimeout(()=>w.print(),800)}
+          const w=window.open('','_blank');
+          if(!w||w.closed){
+            // Popup blocked -- fallback: create a hidden iframe to print
+            try{
+              const iframe=document.createElement('iframe');
+              iframe.style.cssText='position:fixed;top:0;left:0;width:0;height:0;border:none;visibility:hidden';
+              document.body.appendChild(iframe);
+              iframe.contentDocument.write(html);
+              iframe.contentDocument.close();
+              setTimeout(()=>{try{iframe.contentWindow.print()}catch(e2){notify('Print failed. Please allow popups for this site and try again.','error')}setTimeout(()=>{try{document.body.removeChild(iframe)}catch{}},5000)},600);
+            }catch(e3){notify('Could not open print window. Please allow popups for this site in your browser settings.','error');return}
+          } else {
+            w.document.write(html);w.document.close();if(w.document.fonts){w.document.fonts.ready.then(()=>w.print())}else{setTimeout(()=>w.print(),800)}
+          }
           const existing2=typeof docStatuses[bill2.billDocNum]==='object'?docStatuses[bill2.billDocNum]:{};
           setDocStatus(bill2.billDocNum,{...existing2,checkNum:checkNo,checkPrinted:new Date().toISOString(),vendorInvNum:billInvNum||existing2.vendorInvNum||'',payDate:billPayDate||existing2.payDate||'',memo:billMemo||existing2.memo||''});
           notify('Check #'+checkNo+' printed for '+bill2.vendorName+' -- '+fmt(bill2.cost));
@@ -6072,6 +6097,8 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   const [newCatName,setNewCatName]=useState('');
   const [editingCat,setEditingCat]=useState(null);
   const [editingCatName,setEditingCatName]=useState('');
+  const [showAcctEditor,setShowAcctEditor]=useState(false);
+  const [newAcctName,setNewAcctName]=useState('');
   const [bankSearch,setBankSearch]=useState('');
   const [bankCatFilter,setBankCatFilter]=useState('all');
 
@@ -6212,7 +6239,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       html+='</tbody></table>';
     }
     html+='</div>';
-    const w=window.open("","_blank");w.document.write(html);w.document.close();if(w.document.fonts){w.document.fonts.ready.then(()=>w.print())}else{setTimeout(()=>w.print(),800)}
+    const w=window.open("","_blank");if(!w||w.closed){notify('Please allow popups to print','error');return}w.document.write(html);w.document.close();if(w.document.fonts){w.document.fonts.ready.then(()=>w.print())}else{setTimeout(()=>w.print(),800)}
   };
 
   const kpi=(label,value,sub,color)=><Card style={{padding:16,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:6}}>{label}</div><div style={{fontSize:"clamp(18px,4vw,28px)",fontWeight:800,color:color||"#f0f0f0",fontFamily:"'JetBrains Mono',monospace",lineHeight:1}}><AnimNum value={value}/></div>{sub&&<div style={{fontSize:12,color:"#a3a3a3",marginTop:6}}>{sub}</div>}</Card>;
@@ -6361,6 +6388,13 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
         // Also rename in all transactions that used the old name
         manualTxns.filter(t=>t.category===oldName).forEach(t=>{addSop({id:t.id,title:t.description||'Transaction',cat:'ManualTxn',icon:'dollar',content:JSON.stringify({...t,category:newName}),custom:true})});
         notify('Category renamed: '+oldName+' -> '+newName);setEditingCat(null);setEditingCatName('')};
+      // Custom accounts
+      const defaultAccts=['Operating','Savings','Money Market','Credit Card','Payroll'];
+      const customAcctRecord=(customSops||[]).find(s=>s.id==='CUSTOM_ACCOUNTS');
+      const customAccts=customAcctRecord?(()=>{try{return JSON.parse(customAcctRecord.content)}catch{return []}})():[];
+      const allAccounts=[...defaultAccts,...customAccts.filter(a=>!defaultAccts.includes(a))];
+      const addCustomAcct=(name)=>{if(!name||allAccounts.includes(name))return;const next=[...customAccts,name];addSop({id:'CUSTOM_ACCOUNTS',title:'Custom Accounts',cat:'Settings',icon:'dollar',content:JSON.stringify(next),custom:true});notify('Account added: '+name)};
+      const removeCustomAcct=(name)=>{if(defaultAccts.includes(name)){notify('Cannot remove default account');return}const next=customAccts.filter(a=>a!==name);addSop({id:'CUSTOM_ACCOUNTS',title:'Custom Accounts',cat:'Settings',icon:'dollar',content:JSON.stringify(next),custom:true});notify('Account removed: '+name)};
       const allTxns=manualTxns.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
       const filteredBankTxns=allTxns.filter(t=>{
         if(bankCatFilter!=='all'&&t.category!==bankCatFilter)return false;
@@ -6512,7 +6546,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
             <div style={{position:"relative"}}><label style={{fontSize:11,color:"#a3a3a3",display:"block",marginBottom:3}}>Category</label><input value={manualForm.category} onChange={e=>{const cat=e.target.value;const newType=cat.startsWith('Revenue')?'revenue':'expense';setManualForm({...manualForm,category:cat,type:newType});e.target.nextElementSibling&&(e.target.nextElementSibling.style.display='block')}} onFocus={e=>{e.target.nextElementSibling&&(e.target.nextElementSibling.style.display='block')}} onBlur={e=>{setTimeout(()=>{if(e.target.nextElementSibling)e.target.nextElementSibling.style.display='none'},150)}} placeholder="Type to search..." style={inputStyle} autoComplete="off"/><div style={{display:"none",position:"absolute",top:"100%",left:0,right:0,maxHeight:220,overflowY:"auto",background:"#111",border:"1px solid #333",borderRadius:6,zIndex:20,boxShadow:"0 8px 20px rgba(0,0,0,0.5)"}}>{categories.filter(c=>!manualForm.category||c.toLowerCase().includes(manualForm.category.toLowerCase())).map(c=><div key={c} onMouseDown={e=>{e.preventDefault();const newType=c.startsWith('Revenue')?'revenue':'expense';setManualForm({...manualForm,category:c,type:newType});e.target.closest('div[style*="position"]').style.display='none'}} style={{padding:"6px 10px",fontSize:11,color:manualForm.category===c?"#14b8a6":"#a3a3a3",cursor:"pointer",borderBottom:"1px solid #1a1a1a"}} onMouseEnter={e=>{e.currentTarget.style.background="#1a1a1a"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>{c}</div>)}</div></div>
             <div><label style={{fontSize:11,color:"#a3a3a3",display:"block",marginBottom:3}}>Amount</label><input type="number" value={manualForm.amount} onChange={e=>setManualForm({...manualForm,amount:e.target.value})} placeholder="0.00" style={inputStyle}/></div>
             <div><label style={{fontSize:11,color:"#a3a3a3",display:"block",marginBottom:3}}>Type</label><select value={manualForm.type} onChange={e=>setManualForm({...manualForm,type:e.target.value})} style={inputStyle}><option value="expense">Expense (out)</option><option value="revenue">Revenue (in)</option><option value="asset">Asset</option><option value="liability">Liability</option></select></div>
-            <div><label style={{fontSize:11,color:"#a3a3a3",display:"block",marginBottom:3}}>Account</label><select value={manualForm.account} onChange={e=>setManualForm({...manualForm,account:e.target.value})} style={inputStyle}><option>Operating</option><option>Savings</option><option>Money Market</option><option>Credit Card</option></select></div>
+            <div><label style={{fontSize:11,color:"#a3a3a3",display:"block",marginBottom:3}}>Account</label><select value={manualForm.account} onChange={e=>setManualForm({...manualForm,account:e.target.value})} style={inputStyle}>{allAccounts.map(a=><option key={a} value={a}>{a}</option>)}</select></div>
           </div>
           <div style={{display:"flex",gap:8}}><Btn onClick={saveTxn}>{manualEditing?'Update':'Add Transaction'}</Btn>{manualEditing&&<Btn v="secondary" onClick={()=>{setManualForm({date:'',description:'',category:'',amount:'',type:'expense',account:'Operating'});setManualEditing(null)}}>Cancel</Btn>}</div>
         </Card>
@@ -6521,6 +6555,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
           <input value={bankSearch} onChange={e=>setBankSearch(e.target.value)} placeholder="Search transactions..." style={{...inputStyle,flex:1,minWidth:200,maxWidth:300}}/>
           <select value={bankCatFilter} onChange={e=>setBankCatFilter(e.target.value)} style={{...inputStyle,width:"auto"}}><option value="all">All Categories</option>{categories.map(c=><option key={c} value={c}>{c}</option>)}</select>
           <Btn v="secondary" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>setShowCatEditor(!showCatEditor)}><I n="tag" s={12}/> {showCatEditor?'Close':'Manage Categories'}</Btn>
+          <Btn v="secondary" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>setShowAcctEditor(!showAcctEditor)}><I n="dollar" s={12}/> {showAcctEditor?'Close':'Manage Accounts'}</Btn>
           <span style={{fontSize:11,color:"#737373"}}>{filteredBankTxns.length} transaction{filteredBankTxns.length!==1?'s':''}{customCats.length>0?' -- '+customCats.length+' custom':''}</span>
         </div>
 
@@ -6539,6 +6574,24 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
           </div>}
           <div style={{fontSize:11,color:"#737373",marginBottom:6,fontWeight:600}}>DEFAULT CATEGORIES ({defaultCats.length})</div>
           <div style={{display:"flex",flexWrap:"wrap",gap:4}}>{defaultCats.map(c=><span key={c} style={{padding:"3px 8px",background:"#0a0a0a",border:"1px solid #1a1a1a",borderRadius:5,fontSize:10,color:"#737373"}}>{c}</span>)}</div>
+        </Card>}
+
+        {showAcctEditor&&<Card style={{padding:16,border:"1px solid #a78bfa20"}}>
+          <div style={{fontSize:14,fontWeight:700,color:"#f0f0f0",marginBottom:12}}>Manage Accounts</div>
+          <div style={{display:"flex",gap:8,marginBottom:14}}>
+            <input value={newAcctName} onChange={e=>setNewAcctName(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&newAcctName.trim()){addCustomAcct(newAcctName.trim());setNewAcctName('')}}} placeholder="New account name..." style={{...inputStyle,flex:1,maxWidth:300}}/>
+            <Btn onClick={()=>{if(newAcctName.trim()){addCustomAcct(newAcctName.trim());setNewAcctName('')}}}>Add Account</Btn>
+          </div>
+          {customAccts.length>0&&<div style={{marginBottom:12}}>
+            <div style={{fontSize:11,color:"#737373",marginBottom:6,fontWeight:600}}>CUSTOM ACCOUNTS ({customAccts.length})</div>
+            <div style={{display:"flex",flexDirection:"column",gap:4}}>{customAccts.map(a=><div key={a} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",background:"#111",borderRadius:6,border:"1px solid #222"}}>
+              <span style={{flex:1,fontSize:12,color:"#e5e5e5"}}>{a}</span>
+              <span style={{fontSize:10,color:"#525252"}}>{manualTxns.filter(t=>t.account===a).length} txns</span>
+              <button onClick={()=>removeCustomAcct(a)} style={{background:"none",border:"none",color:"#f87171",cursor:"pointer",fontSize:10,fontFamily:"inherit"}}>Remove</button>
+            </div>)}</div>
+          </div>}
+          <div style={{fontSize:11,color:"#737373",marginBottom:6,fontWeight:600}}>DEFAULT ACCOUNTS ({defaultAccts.length})</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:4}}>{defaultAccts.map(a=><span key={a} style={{padding:"3px 8px",background:"#0a0a0a",border:"1px solid #1a1a1a",borderRadius:5,fontSize:10,color:"#737373"}}>{a}</span>)}</div>
         </Card>}
 
         {txnSelected.size>0&&<div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:"#2dd4bf08",border:"1px solid #2dd4bf20",borderRadius:8}}>
@@ -6569,7 +6622,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
                   <div style={{position:"relative"}}><label style={{fontSize:10,color:"#737373",display:"block",marginBottom:3}}>Category</label><input value={manualForm.category} onChange={e=>{setManualForm(f=>({...f,category:e.target.value}));e.target.nextElementSibling&&(e.target.nextElementSibling.style.display='block')}} onFocus={e=>{e.target.nextElementSibling&&(e.target.nextElementSibling.style.display='block')}} onBlur={e=>{setTimeout(()=>{if(e.target.nextElementSibling)e.target.nextElementSibling.style.display='none'},150)}} placeholder="Type to search..." style={inputStyle} autoComplete="off"/><div style={{display:"none",position:"absolute",top:"100%",left:0,right:0,maxHeight:200,overflowY:"auto",background:"#111",border:"1px solid #333",borderRadius:6,zIndex:20,boxShadow:"0 8px 20px rgba(0,0,0,0.5)"}}>{categories.filter(c=>!manualForm.category||c.toLowerCase().includes(manualForm.category.toLowerCase())).map(c=><div key={c} onMouseDown={e=>{e.preventDefault();setManualForm(f=>({...f,category:c}));e.target.closest('div[style*="position: absolute"]').style.display='none'}} style={{padding:"6px 10px",fontSize:11,color:manualForm.category===c?"#14b8a6":"#a3a3a3",cursor:"pointer",borderBottom:"1px solid #1a1a1a"}} onMouseEnter={e=>{e.currentTarget.style.background="#1a1a1a"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>{c}</div>)}</div></div>
                   <div><label style={{fontSize:10,color:"#737373",display:"block",marginBottom:3}}>Amount</label><input type="number" value={manualForm.amount} onChange={e=>setManualForm(f=>({...f,amount:e.target.value}))} style={inputStyle}/></div>
                   <div><label style={{fontSize:10,color:"#737373",display:"block",marginBottom:3}}>Type</label><select value={manualForm.type} onChange={e=>setManualForm(f=>({...f,type:e.target.value}))} style={inputStyle}><option value="expense">Expense (out)</option><option value="revenue">Revenue (in)</option></select></div>
-                  <div><label style={{fontSize:10,color:"#737373",display:"block",marginBottom:3}}>Account</label><select value={manualForm.account} onChange={e=>setManualForm(f=>({...f,account:e.target.value}))} style={inputStyle}><option value="Operating">Operating</option><option value="Payroll">Payroll</option><option value="Savings">Savings</option><option value="Credit Card">Credit Card</option></select></div>
+                  <div><label style={{fontSize:10,color:"#737373",display:"block",marginBottom:3}}>Account</label><select value={manualForm.account} onChange={e=>setManualForm(f=>({...f,account:e.target.value}))} style={inputStyle}>{allAccounts.map(a=><option key={a} value={a}>{a}</option>)}</select></div>
                 </div>
                 <div style={{display:"flex",gap:8}}><Btn onClick={saveTxn} style={{fontSize:11,padding:"5px 14px"}}>Update</Btn><Btn v="secondary" onClick={()=>setManualEditing(null)} style={{fontSize:11,padding:"5px 14px"}}>Cancel</Btn></div>
               </div>
