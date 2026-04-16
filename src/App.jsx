@@ -3024,18 +3024,23 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
   <div class="stub-footer"><div class="stub-bank">Cornerstone Bank Ch</div><div class="stub-amount">${amtFmt}</div></div>
 </div>
 </body></html>`;
-        const w=window.open('','_blank');
-        if(!w||w.closed){
-          try{
-            const iframe=document.createElement('iframe');
-            iframe.style.cssText='position:fixed;top:0;left:0;width:0;height:0;border:none;visibility:hidden';
-            document.body.appendChild(iframe);
-            iframe.contentDocument.write(html);
-            iframe.contentDocument.close();
-            setTimeout(()=>{try{iframe.contentWindow.print()}catch(e2){notify('Print failed. Please allow popups for this site and try again.','error')}setTimeout(()=>{try{document.body.removeChild(iframe)}catch{}},5000)},600);
-          }catch(e3){notify('Could not open print window. Please allow popups for this site.','error');return}
+        const w=window.open('','_blank','width=850,height=1100,menubar=yes,toolbar=yes');
+        if(w){
+          w.document.write(html);w.document.close();
+          const tryPrint=()=>{try{w.focus();w.print()}catch(e2){notify('Print window opened. Use Ctrl+P to print.')}};
+          if(w.document.fonts&&w.document.fonts.ready){w.document.fonts.ready.then(tryPrint)}else{setTimeout(tryPrint,1000)}
         } else {
-          w.document.write(html);w.document.close();if(w.document.fonts){w.document.fonts.ready.then(()=>w.print())}else{setTimeout(()=>w.print(),800)}
+          const overlay=document.createElement('div');overlay.id='check-print-overlay';
+          overlay.style.cssText='position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:99999;background:#fff;overflow:auto';
+          const printFrame=document.createElement('iframe');printFrame.style.cssText='width:100%;height:100%;border:none';
+          overlay.appendChild(printFrame);
+          const closeBtn=document.createElement('button');closeBtn.textContent='Close';
+          closeBtn.style.cssText='position:fixed;top:10px;right:10px;z-index:100000;padding:10px 20px;background:#111;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-family:inherit';
+          closeBtn.onclick=()=>{try{document.body.removeChild(overlay)}catch{}};
+          overlay.appendChild(closeBtn);document.body.appendChild(overlay);
+          const iDoc=printFrame.contentDocument||printFrame.contentWindow.document;
+          iDoc.write(html);iDoc.close();
+          setTimeout(()=>{try{printFrame.contentWindow.focus();printFrame.contentWindow.print()}catch(e2){notify('Use Ctrl+P or Cmd+P to print')}},800);
         }
         // Save check number to all included bills
         selectedBills.forEach(b=>{const existing=typeof docStatuses[b.billDocNum]==='object'?docStatuses[b.billDocNum]:{};setDocStatus(b.billDocNum,{...existing,checkNum:checkNo,checkPrinted:new Date().toISOString(),status:'check_sent',memo:existing.memo||'Batch check #'+checkNo})});
@@ -3209,19 +3214,29 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
 </div>
 
 </body></html>`;
-          const w=window.open('','_blank');
-          if(!w||w.closed){
-            // Popup blocked -- fallback: create a hidden iframe to print
-            try{
-              const iframe=document.createElement('iframe');
-              iframe.style.cssText='position:fixed;top:0;left:0;width:0;height:0;border:none;visibility:hidden';
-              document.body.appendChild(iframe);
-              iframe.contentDocument.write(html);
-              iframe.contentDocument.close();
-              setTimeout(()=>{try{iframe.contentWindow.print()}catch(e2){notify('Print failed. Please allow popups for this site and try again.','error')}setTimeout(()=>{try{document.body.removeChild(iframe)}catch{}},5000)},600);
-            }catch(e3){notify('Could not open print window. Please allow popups for this site in your browser settings.','error');return}
+          const w=window.open('','_blank','width=850,height=1100,menubar=yes,toolbar=yes');
+          if(w){
+            w.document.write(html);w.document.close();
+            const tryPrint=()=>{try{w.focus();w.print()}catch(e2){notify('Print window opened but could not trigger print dialog. Use Ctrl+P in the new window.','error')}};
+            if(w.document.fonts&&w.document.fonts.ready){w.document.fonts.ready.then(tryPrint)}else{setTimeout(tryPrint,1000)}
           } else {
-            w.document.write(html);w.document.close();if(w.document.fonts){w.document.fonts.ready.then(()=>w.print())}else{setTimeout(()=>w.print(),800)}
+            // Popup blocked -- use print overlay approach
+            const overlay=document.createElement('div');
+            overlay.id='check-print-overlay';
+            overlay.style.cssText='position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:99999;background:#fff;overflow:auto';
+            const printFrame=document.createElement('iframe');
+            printFrame.style.cssText='width:100%;height:100%;border:none';
+            overlay.appendChild(printFrame);
+            const closeBtn=document.createElement('button');
+            closeBtn.textContent='Close';
+            closeBtn.style.cssText='position:fixed;top:10px;right:10px;z-index:100000;padding:10px 20px;background:#111;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-family:inherit';
+            closeBtn.className='no-print-btn';
+            closeBtn.onclick=()=>{try{document.body.removeChild(overlay)}catch{}};
+            overlay.appendChild(closeBtn);
+            document.body.appendChild(overlay);
+            const iDoc=printFrame.contentDocument||printFrame.contentWindow.document;
+            iDoc.write(html);iDoc.close();
+            setTimeout(()=>{try{printFrame.contentWindow.focus();printFrame.contentWindow.print()}catch(e2){notify('Use Ctrl+P or Cmd+P to print')}},800);
           }
           const existing2=typeof docStatuses[bill2.billDocNum]==='object'?docStatuses[bill2.billDocNum]:{};
           setDocStatus(bill2.billDocNum,{...existing2,checkNum:checkNo,checkPrinted:new Date().toISOString(),vendorInvNum:billInvNum||existing2.vendorInvNum||'',payDate:billPayDate||existing2.payDate||'',memo:billMemo||existing2.memo||''});
