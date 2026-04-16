@@ -3024,24 +3024,14 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
   <div class="stub-footer"><div class="stub-bank">Cornerstone Bank Ch</div><div class="stub-amount">${amtFmt}</div></div>
 </div>
 </body></html>`;
-        const w=window.open('','_blank','width=850,height=1100,menubar=yes,toolbar=yes');
-        if(w){
-          w.document.write(html);w.document.close();
-          const tryPrint=()=>{try{w.focus();w.print()}catch(e2){notify('Print window opened. Use Ctrl+P to print.')}};
-          if(w.document.fonts&&w.document.fonts.ready){w.document.fonts.ready.then(tryPrint)}else{setTimeout(tryPrint,1000)}
-        } else {
-          const overlay=document.createElement('div');overlay.id='check-print-overlay';
-          overlay.style.cssText='position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:99999;background:#fff;overflow:auto';
-          const printFrame=document.createElement('iframe');printFrame.style.cssText='width:100%;height:100%;border:none';
-          overlay.appendChild(printFrame);
-          const closeBtn=document.createElement('button');closeBtn.textContent='Close';
-          closeBtn.style.cssText='position:fixed;top:10px;right:10px;z-index:100000;padding:10px 20px;background:#111;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-family:inherit';
-          closeBtn.onclick=()=>{try{document.body.removeChild(overlay)}catch{}};
-          overlay.appendChild(closeBtn);document.body.appendChild(overlay);
-          const iDoc=printFrame.contentDocument||printFrame.contentWindow.document;
-          iDoc.write(html);iDoc.close();
-          setTimeout(()=>{try{printFrame.contentWindow.focus();printFrame.contentWindow.print()}catch(e2){notify('Use Ctrl+P or Cmd+P to print')}},800);
+        const blob=new Blob([html],{type:'text/html'});
+        const url=URL.createObjectURL(blob);
+        const w=window.open(url,'_blank');
+        if(w){setTimeout(()=>{try{w.focus();w.print()}catch(e2){}},1200)} else {
+          const a=document.createElement('a');a.href=url;a.target='_blank';a.rel='noopener';document.body.appendChild(a);a.click();document.body.removeChild(a);
+          notify('Check opened in new tab. Use Ctrl+P or Cmd+P to print.');
         }
+        setTimeout(()=>URL.revokeObjectURL(url),60000);
         // Save check number to all included bills
         selectedBills.forEach(b=>{const existing=typeof docStatuses[b.billDocNum]==='object'?docStatuses[b.billDocNum]:{};setDocStatus(b.billDocNum,{...existing,checkNum:checkNo,checkPrinted:new Date().toISOString(),status:'check_sent',memo:existing.memo||'Batch check #'+checkNo})});
         notify('Batch Check #'+checkNo+' printed for '+vendorName+' -- '+fmt(totalCost)+' ('+selectedBills.length+' POs)');
@@ -3214,30 +3204,15 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
 </div>
 
 </body></html>`;
-          const w=window.open('','_blank','width=850,height=1100,menubar=yes,toolbar=yes');
-          if(w){
-            w.document.write(html);w.document.close();
-            const tryPrint=()=>{try{w.focus();w.print()}catch(e2){notify('Print window opened but could not trigger print dialog. Use Ctrl+P in the new window.','error')}};
-            if(w.document.fonts&&w.document.fonts.ready){w.document.fonts.ready.then(tryPrint)}else{setTimeout(tryPrint,1000)}
-          } else {
-            // Popup blocked -- use print overlay approach
-            const overlay=document.createElement('div');
-            overlay.id='check-print-overlay';
-            overlay.style.cssText='position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:99999;background:#fff;overflow:auto';
-            const printFrame=document.createElement('iframe');
-            printFrame.style.cssText='width:100%;height:100%;border:none';
-            overlay.appendChild(printFrame);
-            const closeBtn=document.createElement('button');
-            closeBtn.textContent='Close';
-            closeBtn.style.cssText='position:fixed;top:10px;right:10px;z-index:100000;padding:10px 20px;background:#111;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-family:inherit';
-            closeBtn.className='no-print-btn';
-            closeBtn.onclick=()=>{try{document.body.removeChild(overlay)}catch{}};
-            overlay.appendChild(closeBtn);
-            document.body.appendChild(overlay);
-            const iDoc=printFrame.contentDocument||printFrame.contentWindow.document;
-            iDoc.write(html);iDoc.close();
-            setTimeout(()=>{try{printFrame.contentWindow.focus();printFrame.contentWindow.print()}catch(e2){notify('Use Ctrl+P or Cmd+P to print')}},800);
+          const blob=new Blob([html],{type:'text/html'});
+          const url=URL.createObjectURL(blob);
+          const w=window.open(url,'_blank');
+          if(w){setTimeout(()=>{try{w.focus();w.print()}catch(e2){}},1200)} else {
+            // Last resort: navigate current tab temporarily
+            const a=document.createElement('a');a.href=url;a.target='_blank';a.rel='noopener';document.body.appendChild(a);a.click();document.body.removeChild(a);
+            notify('Check opened in new tab. Use Ctrl+P or Cmd+P to print.');
           }
+          setTimeout(()=>URL.revokeObjectURL(url),60000);
           const existing2=typeof docStatuses[bill2.billDocNum]==='object'?docStatuses[bill2.billDocNum]:{};
           setDocStatus(bill2.billDocNum,{...existing2,checkNum:checkNo,checkPrinted:new Date().toISOString(),vendorInvNum:billInvNum||existing2.vendorInvNum||'',payDate:billPayDate||existing2.payDate||'',memo:billMemo||existing2.memo||''});
           notify('Check #'+checkNo+' printed for '+bill2.vendorName+' -- '+fmt(bill2.cost));
