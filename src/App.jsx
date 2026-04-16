@@ -2952,8 +2952,10 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
         const dateStr=mm+'/'+dd+'/'+yyyy;
         // Auto-generate check number
         const allCheckNums=Object.values(docStatuses).filter(v=>v&&typeof v==='object'&&v.checkNum&&v.checkNum!=='____').map(v=>parseInt(v.checkNum)).filter(n=>!isNaN(n)&&n>0);
-        const maxCheck=allCheckNums.length>0?Math.max(...allCheckNums):1115;
-        const checkNo=String(maxCheck+1);
+        const usedSet=new Set(allCheckNums);
+        let nextCheck=allCheckNums.length>0?Math.max(...allCheckNums)+1:1116;
+        while(usedSet.has(nextCheck))nextCheck++;
+        const checkNo=String(nextCheck);
         const amtDollars=Math.floor(totalCost);const amtCents=Math.round((totalCost-amtDollars)*100);
         const amtWords=(()=>{const ones=['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];const tens=['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];const convert=(n)=>{if(n<20)return ones[n];if(n<100)return tens[Math.floor(n/10)]+(n%10?' '+ones[n%10]:'');if(n<1000)return ones[Math.floor(n/100)]+' Hundred'+(n%100?' '+convert(n%100):'');if(n<1000000)return convert(Math.floor(n/1000))+' Thousand'+(n%1000?' '+convert(n%1000):'');return String(n)};return convert(amtDollars)+' and '+String(amtCents).padStart(2,'0')+'/100'})();
         const amtFmt=totalCost.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -3050,10 +3052,17 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
           const today=new Date();const mm=String(today.getMonth()+1).padStart(2,'0');const dd=String(today.getDate()).padStart(2,'0');const yyyy=today.getFullYear();
           const dateStr=mm+'/'+dd+'/'+yyyy;
           let checkNo=billCheckNum&&billCheckNum.trim()&&billCheckNum.trim()!=='____'?billCheckNum.trim():'';
+          const allCheckNums=Object.values(docStatuses).filter(v=>v&&typeof v==='object'&&v.checkNum&&v.checkNum!=='____').map(v=>parseInt(v.checkNum)).filter(n=>!isNaN(n)&&n>0);
+          const usedSet=new Set(allCheckNums);
+          if(checkNo){
+            // Validate manually entered check number is not a duplicate
+            const num=parseInt(checkNo);
+            if(!isNaN(num)&&usedSet.has(num)){notify('Check #'+checkNo+' already used. Assigning next available number.','error');checkNo=''}
+          }
           if(!checkNo){
-            const allCheckNums=Object.values(docStatuses).filter(v=>v&&typeof v==='object'&&v.checkNum&&v.checkNum!=='____').map(v=>parseInt(v.checkNum)).filter(n=>!isNaN(n)&&n>0);
-            const maxCheck=allCheckNums.length>0?Math.max(...allCheckNums):1115;
-            checkNo=String(maxCheck+1);
+            let nextCheck=allCheckNums.length>0?Math.max(...allCheckNums)+1:1116;
+            while(usedSet.has(nextCheck))nextCheck++;
+            checkNo=String(nextCheck);
             setBillCheckNum(checkNo);
           }
           const costVal=Number(bill2.cost)||0;
