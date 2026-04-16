@@ -5674,16 +5674,66 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
 
   // Convert attached file to Anthropic API content blocks
   const processFileForBrain = async (file) => {
-    const ext = file.name.split('.').pop().toLowerCase();
+    if (!file || !file.name) throw new Error('Invalid file');
+    // Size check: 30MB max (Anthropic API has a 32MB limit, leave headroom for base64 encoding)
+    const MAX_SIZE = 30 * 1024 * 1024;
+    if (file.size > MAX_SIZE) {
+      throw new Error('File is too large ('+(file.size/1024/1024).toFixed(1)+'MB). Max is 30MB. Try compressing or splitting the file.');
+    }
+    if (file.size === 0) throw new Error('File appears to be empty');
+    const parts = file.name.split('.');
+    const ext = (parts.length > 1 ? parts.pop() : '').toLowerCase().trim();
     const isImage = ['jpg','jpeg','png','gif','webp'].includes(ext);
+    const isHeic = ['heic','heif'].includes(ext);
     const isPdf = ext === 'pdf';
-    const isExcel = ['xls','xlsx'].includes(ext);
+    const isExcel = ['xls','xlsx','xlsm'].includes(ext);
     const isCsv = ['csv','tsv'].includes(ext);
     const isDocx = ext === 'docx' || ext === 'doc';
-    
+    const isText = ['txt','json','md','log','xml'].includes(ext);
+    // Helper: read file as base64 with robust error handling
+    const readBase64 = (f) => new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const result = reader.result;
+          if (typeof result !== 'string') return reject(new Error('Unexpected file read result'));
+          const commaIdx = result.indexOf(',');
+          if (commaIdx < 0) return reject(new Error('Invalid data URL'));
+          resolve(result.slice(commaIdx + 1));
+        } catch (e) { reject(e); }
+      };
+      reader.onerror = () => reject(new Error('Could not read file. It may be corrupted or inaccessible.'));
+      reader.onabort = () => reject(new Error('File read was cancelled'));
+      try { reader.readAsDataURL(f); } catch (e) { reject(e); }
+    });
+    // Helper: read file as text with fallback for older browsers
+    const readText = async (f) => {
+      if (typeof f.text === 'function') return await f.text();
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('Could not read file as text'));
+        reader.readAsText(f);
+      });
+    };
+    // Helper: read file as ArrayBuffer with fallback
+    const readArrayBuffer = async (f) => {
+      if (typeof f.arrayBuffer === 'function') return await f.arrayBuffer();
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('Could not read file'));
+        reader.readAsArrayBuffer(f);
+      });
+    };
+
+    if (isHeic) {
+      throw new Error('HEIC images from iPhone are not supported. Change your iPhone camera setting to "Most Compatible" (Settings > Camera > Formats), or convert the image to JPEG before uploading.');
+    }
+
     if (isExcel) {
       const XLSX = await import('xlsx');
-      const data = await file.arrayBuffer();
+      const data = await readArrayBuffer(file);
       const wb = XLSX.read(data, {type:'array'});
       let textContent = 'FILE: ' + file.name + '\n\n';
       for (const sn of wb.SheetNames) {
@@ -5696,48 +5746,46 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         });
         textContent += '\n';
       }
-      return [{type:'text', text:'[Attached Excel file: ' + file.name + ']\n\n' + textContent}];
+      return [{type:'text', text:'[Attached Excel file: ' + file.name + ']\n\n' + textContent.slice(0, 200000)}];
     }
     
     if (isCsv) {
-      const text = await file.text();
-      return [{type:'text', text:'[Attached CSV file: ' + file.name + ']\n\n' + text.slice(0, 50000)}];
+      const text = await readText(file);
+      return [{type:'text', text:'[Attached '+ext.toUpperCase()+' file: ' + file.name + ']\n\n' + text.slice(0, 100000)}];
     }
 
     if (isDocx) {
-      // Send .docx as a PDF-style document block so Claude can read it natively
-      const base64 = await new Promise((res, rej) => {
-        const reader = new FileReader();
-        reader.onload = () => res(reader.result.split(',')[1]);
-        reader.onerror = rej;
-        reader.readAsDataURL(file);
-      });
+      const base64 = await readBase64(file);
       return [{type:'document', source:{type:'base64', media_type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document', data:base64}}, {type:'text', text:'[Attached Word document: ' + file.name + '] Analyze this document thoroughly. Extract all content.'}];
     }
-    
-    // For images and PDFs, convert to base64
-    const base64 = await new Promise((res, rej) => {
-      const reader = new FileReader();
-      reader.onload = () => res(reader.result.split(',')[1]);
-      reader.onerror = rej;
-      reader.readAsDataURL(file);
-    });
-    
+
     if (isPdf) {
+      const base64 = await readBase64(file);
       return [{type:'document', source:{type:'base64', media_type:'application/pdf', data:base64}}, {type:'text', text:'[Attached PDF: ' + file.name + '] Analyze this document thoroughly.'}];
     }
-    
+
     if (isImage) {
+      const base64 = await readBase64(file);
       const mimeMap = {jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',gif:'image/gif',webp:'image/webp'};
-      return [{type:'image', source:{type:'base64', media_type:mimeMap[ext]||'image/png', data:base64}}, {type:'text', text:'[Attached image: ' + file.name + '] Describe and analyze what you see.'}];
+      return [{type:'image', source:{type:'base64', media_type:mimeMap[ext]||'image/jpeg', data:base64}}, {type:'text', text:'[Attached image: ' + file.name + '] Describe and analyze what you see.'}];
     }
-    
-    // Text files (.txt, .json, etc.)
-    const text = await file.text();
-    if (ext === 'json') {
-      try { const parsed = JSON.parse(text); return [{type:'text', text:'[Attached JSON file: ' + file.name + ']\n\n' + JSON.stringify(parsed, null, 2).slice(0, 50000)}]; } catch {}
+
+    if (isText || !ext) {
+      const text = await readText(file);
+      if (ext === 'json') {
+        try { const parsed = JSON.parse(text); return [{type:'text', text:'[Attached JSON file: ' + file.name + ']\n\n' + JSON.stringify(parsed, null, 2).slice(0, 100000)}]; } catch {}
+      }
+      return [{type:'text', text:'[Attached file: ' + file.name + ']\n\n' + text.slice(0, 100000)}];
     }
-    return [{type:'text', text:'[Attached file: ' + file.name + ']\n\n' + text.slice(0, 50000)}];
+
+    // Unknown extension: try reading as text, fall back to error
+    try {
+      const text = await readText(file);
+      if (text && text.length > 0) {
+        return [{type:'text', text:'[Attached file: ' + file.name + ']\n\n' + text.slice(0, 100000)}];
+      }
+    } catch {}
+    throw new Error('Unsupported file type: .'+ext+'. Supported: PDF, images (JPG/PNG/GIF/WebP), Excel, CSV, Word, and text files.');
   };
 
   const handleQuery = async () => {
@@ -5759,8 +5807,14 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
           const textBlock = fileBlocks.find(b => b.type === 'text');
           const hasDoc = fileBlocks.some(b => b.type === 'document' || b.type === 'image');
           setBrainFileContext({name: brainFile.name, content: textBlock?.text || '', blocks: fileBlocks, hasDoc});
-        } catch(e) { notify('Error reading file: ' + e.message, 'error'); }
-        setBrainFile(null); setBrainFilePreview(null);
+          setBrainFile(null); setBrainFilePreview(null);
+        } catch(e) {
+          notify('File error: ' + e.message, 'error');
+          setHistory(p => [...p, {role:"assistant", content: "I couldn't read that file. " + e.message + "\n\nPlease try again with a different file or format."}]);
+          setBrainFile(null); setBrainFilePreview(null);
+          setBrainLoading(false);
+          return;
+        }
       } else if (brainFileContext) {
         // Include file context in follow-up messages so the AI remembers the file
         if (brainFileContext.hasDoc && brainFileContext.blocks) {
@@ -5976,10 +6030,19 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     </div>
     {history.length<=1&&<div style={{display:"flex",flexWrap:"wrap",gap:6,padding:"8px 16px",flexShrink:0,maxHeight:"40vh",overflowY:"auto"}}>{suggestedQueries.map(q=><button key={q} onClick={()=>{setBrainQuery(q);setTimeout(handleQuery,50)}} style={{padding:"6px 12px",borderRadius:8,border:"1px solid #1a1a1a",background:"transparent",color:"#525252",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.2s"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="#2dd4bf30";e.currentTarget.style.color="#2dd4bf"}} onMouseLeave={e=>{e.currentTarget.style.borderColor="#1a1a1a";e.currentTarget.style.color="#525252"}}>{q}</button>)}</div>}
     <div style={{display:"flex",gap:8,padding:"12px 16px",background:"#000",flexShrink:0,borderTop:"1px solid #111",alignItems:"center"}}>
-      <input ref={brainFileRef} type="file" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.xls,.xlsx,.csv,.tsv,.txt,.json,.doc,.docx" onChange={e=>{const f=e.target.files[0];if(f){setBrainFile(f);setBrainFilePreview(f.name);notify("File attached: "+f.name)}e.target.value=""}} style={{display:"none"}}/>
-      {brainFileContext&&!brainFile&&!brainFilePreview&&<div style={{display:"flex",alignItems:"center",gap:4,padding:"3px 8px",background:"rgba(45,212,191,0.05)",borderRadius:12,fontSize:10,color:"#525252",maxWidth:110,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flexShrink:0}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>{brainFileContext.name}<span onClick={()=>setBrainFileContext(null)} style={{cursor:"pointer",marginLeft:2,color:"#444",fontSize:12}}>x</span></div>}
-      {brainFilePreview&&<div style={{display:"flex",alignItems:"center",gap:4,padding:"3px 8px",background:"rgba(45,212,191,0.08)",borderRadius:12,fontSize:11,color:"#2dd4bf",maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flexShrink:0}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>{brainFilePreview}<span onClick={()=>{setBrainFile(null);setBrainFilePreview(null)}} style={{cursor:"pointer",marginLeft:2,color:"#737373",fontSize:14}}>×</span></div>}
-      <button onClick={()=>brainFileRef.current?.click()} title="Attach a file (PDF, image, Excel, CSV)" style={{background:"transparent",border:"none",cursor:"pointer",color:brainFile?"#2dd4bf":"#525252",fontSize:18,padding:"4px 6px",borderRadius:8,transition:"color 0.15s",flexShrink:0,display:"flex",alignItems:"center"}} onMouseEnter={e=>{e.currentTarget.style.color="#2dd4bf"}} onMouseLeave={e=>{if(!brainFile)e.currentTarget.style.color="#525252"}}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg></button>
+      <input ref={brainFileRef} type="file" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.heic,.heif,.xls,.xlsx,.xlsm,.csv,.tsv,.txt,.json,.md,.doc,.docx,application/pdf,image/*,text/*" onChange={e=>{
+        const f=e.target.files?.[0];
+        if(f){
+          const MAX=30*1024*1024;
+          if(f.size>MAX){notify('File too large: '+(f.size/1024/1024).toFixed(1)+'MB. Max 30MB.','error');e.target.value='';return}
+          if(f.size===0){notify('File appears to be empty','error');e.target.value='';return}
+          setBrainFile(f);setBrainFilePreview(f.name);notify("File attached: "+f.name);
+        }
+        e.target.value="";
+      }} style={{display:"none"}}/>
+      {brainFileContext&&!brainFile&&!brainFilePreview&&<div style={{display:"flex",alignItems:"center",gap:4,padding:"3px 8px",background:"rgba(45,212,191,0.05)",borderRadius:12,fontSize:10,color:"#525252",maxWidth:110,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flexShrink:0}}><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>{brainFileContext.name}<span onClick={()=>setBrainFileContext(null)} style={{cursor:"pointer",marginLeft:2,color:"#444",fontSize:12,padding:"0 4px",minHeight:24,display:"inline-flex",alignItems:"center"}}>x</span></div>}
+      {brainFilePreview&&<div style={{display:"flex",alignItems:"center",gap:4,padding:"3px 8px",background:"rgba(45,212,191,0.08)",borderRadius:12,fontSize:11,color:"#2dd4bf",maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flexShrink:0}}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0}}><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>{brainFilePreview}<span onClick={()=>{setBrainFile(null);setBrainFilePreview(null)}} style={{cursor:"pointer",marginLeft:2,color:"#737373",fontSize:14,padding:"0 4px",minHeight:24,display:"inline-flex",alignItems:"center"}}>×</span></div>}
+      <button onClick={()=>brainFileRef.current?.click()} aria-label="Attach a file" title="Attach a file (PDF, image, Excel, CSV, Word)" style={{background:"transparent",border:"none",cursor:"pointer",color:brainFile?"#2dd4bf":"#525252",fontSize:18,padding:"10px 10px",borderRadius:8,transition:"color 0.15s",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",minWidth:40,minHeight:40,touchAction:"manipulation"}} onMouseEnter={e=>{e.currentTarget.style.color="#2dd4bf"}} onMouseLeave={e=>{if(!brainFile)e.currentTarget.style.color="#525252"}}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg></button>
       <input value={brainQuery} onChange={e=>setBrainQuery(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!isCleaningTranscript)handleQuery()}} placeholder={isCleaningTranscript?"Cleaning up transcript...":isListening?"Listening... click DONE when finished":brainFile?"Ask about "+brainFile.name+"...":brainFileContext?"Ask about "+brainFileContext.name+"...":"Ask the Brain anything..."} style={{flex:1,padding:"10px 16px",background:"#0a0a0a",border:isCleaningTranscript?"1px solid rgba(167,139,250,0.4)":isListening?"1px solid rgba(248,113,113,0.4)":brainFile?"1px solid rgba(45,212,191,0.2)":"1px solid #1a1a1a",borderRadius:24,color:"#f0f0f0",fontSize:13,outline:"none",fontFamily:"inherit",transition:"border-color 0.3s"}} onFocus={e=>{if(!isListening)e.currentTarget.style.borderColor="#2dd4bf30"}} onBlur={e=>{if(!isListening&&!brainFile)e.currentTarget.style.borderColor="#1a1a1a"}}/>
       <button onClick={startListening} title={isListening?"Click to stop dictation":"Voice input (continuous)"} style={{width:40,height:40,borderRadius:20,border:"none",background:isListening?"rgba(248,113,113,0.15)":"#0a0a0a",color:isListening?"#f87171":"#525252",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.2s",flexShrink:0,position:"relative"}} onMouseEnter={e=>{if(!isListening)e.currentTarget.style.color="#2dd4bf"}} onMouseLeave={e=>{if(!isListening)e.currentTarget.style.color="#525252"}}>{isListening&&<div style={{position:"absolute",inset:-2,borderRadius:22,border:"2px solid #f87171",animation:"pulse 1.5s infinite",opacity:0.6}}/>}{isListening?<span style={{fontSize:10,fontWeight:700,letterSpacing:0.5}}>DONE</span>:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>}</button>
       <button onClick={handleQuery} disabled={brainLoading} style={{width:40,height:40,borderRadius:20,border:"none",background:brainQuery.trim()?"#2dd4bf":"#1a1a1a",color:brainQuery.trim()?"#000":"#333",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.2s",flexShrink:0}} onMouseEnter={e=>{if(brainQuery.trim())e.currentTarget.style.background="#34d399"}} onMouseLeave={e=>{e.currentTarget.style.background=brainQuery.trim()?"#2dd4bf":"#1a1a1a"}}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
