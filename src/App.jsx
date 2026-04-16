@@ -3024,14 +3024,9 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
   <div class="stub-footer"><div class="stub-bank">Cornerstone Bank Ch</div><div class="stub-amount">${amtFmt}</div></div>
 </div>
 </body></html>`;
-        const blob=new Blob([html],{type:'text/html'});
-        const url=URL.createObjectURL(blob);
-        const w=window.open(url,'_blank');
-        if(w){setTimeout(()=>{try{w.focus();w.print()}catch(e2){}},1200)} else {
-          const a=document.createElement('a');a.href=url;a.target='_blank';a.rel='noopener';document.body.appendChild(a);a.click();document.body.removeChild(a);
-          notify('Check opened in new tab. Use Ctrl+P or Cmd+P to print.');
-        }
-        setTimeout(()=>URL.revokeObjectURL(url),60000);
+        const w=window.open('','_blank');
+        if(!w){notify('Popup blocked. Please allow popups for this site and try again.','error')}
+        else{w.document.write(html);w.document.close();setTimeout(()=>{try{w.focus();w.print()}catch(e2){}},1000)}
         // Save check number to all included bills
         selectedBills.forEach(b=>{const existing=typeof docStatuses[b.billDocNum]==='object'?docStatuses[b.billDocNum]:{};setDocStatus(b.billDocNum,{...existing,checkNum:checkNo,checkPrinted:new Date().toISOString(),status:'check_sent',memo:existing.memo||'Batch check #'+checkNo})});
         notify('Batch Check #'+checkNo+' printed for '+vendorName+' -- '+fmt(totalCost)+' ('+selectedBills.length+' POs)');
@@ -3051,10 +3046,9 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
           setBillDetail({...bill,paid:newStatus==='paid'});
         };
         const printCheck=(bill2)=>{
+          try{
           const today=new Date();const mm=String(today.getMonth()+1).padStart(2,'0');const dd=String(today.getDate()).padStart(2,'0');const yyyy=today.getFullYear();
           const dateStr=mm+'/'+dd+'/'+yyyy;
-          // Auto-generate check number if empty: find highest existing check number and increment
-          // Auto-generate check number: always ensure a real number
           let checkNo=billCheckNum&&billCheckNum.trim()&&billCheckNum.trim()!=='____'?billCheckNum.trim():'';
           if(!checkNo){
             const allCheckNums=Object.values(docStatuses).filter(v=>typeof v==='object'&&v.checkNum&&v.checkNum!=='____').map(v=>parseInt(v.checkNum)).filter(n=>!isNaN(n)&&n>0);
@@ -3062,13 +3056,14 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
             checkNo=String(maxCheck+1);
             setBillCheckNum(checkNo);
           }
-          const amtDollars=Math.floor(bill2.cost);const amtCents=Math.round((bill2.cost-amtDollars)*100);
+          const costVal=Number(bill2.cost)||0;
+          const amtDollars=Math.floor(costVal);const amtCents=Math.round((costVal-amtDollars)*100);
           const amtWords=(()=>{const ones=['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];const tens=['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
             const convert=(n)=>{if(n<20)return ones[n];if(n<100)return tens[Math.floor(n/10)]+(n%10?' '+ones[n%10]:'');if(n<1000)return ones[Math.floor(n/100)]+' Hundred'+(n%100?' '+convert(n%100):'');if(n<1000000)return convert(Math.floor(n/1000))+' Thousand'+(n%1000?' '+convert(n%1000):'');return String(n)};
             return convert(amtDollars)+' and '+String(amtCents).padStart(2,'0')+'/100';
           })();
-          const amtFmt=bill2.cost.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-          const vendorAddr=bill2.vendor?(bill2.vendor.contact?(bill2.vendor.contact+'\n'):'')+(bill2.vendorName||'')+'\n'+(bill2.vendor.address||''):'';
+          const amtFmt=costVal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+          const vendorAddr=bill2.vendor?(bill2.vendor.contact?(bill2.vendor.contact+'\n'):'')+(bill2.vendorName||'')+'\n'+(bill2.vendor.address||''):(bill2.vendorName||'');
           const vendorAddrHtml=vendorAddr.split('\n').filter(Boolean).join('<br>');
           const billDate=bill2.payDate||bill2.poDate||dateStr;
           const refNum=bill2.vendorInvNum||billInvNum||bill2.poDocNum||'';
@@ -3204,18 +3199,13 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
 </div>
 
 </body></html>`;
-          const blob=new Blob([html],{type:'text/html'});
-          const url=URL.createObjectURL(blob);
-          const w=window.open(url,'_blank');
-          if(w){setTimeout(()=>{try{w.focus();w.print()}catch(e2){}},1200)} else {
-            // Last resort: navigate current tab temporarily
-            const a=document.createElement('a');a.href=url;a.target='_blank';a.rel='noopener';document.body.appendChild(a);a.click();document.body.removeChild(a);
-            notify('Check opened in new tab. Use Ctrl+P or Cmd+P to print.');
-          }
-          setTimeout(()=>URL.revokeObjectURL(url),60000);
+          const w=window.open('','_blank');
+          if(!w){notify('Popup blocked. Please allow popups for this site and try again.','error')}
+          else{w.document.write(html);w.document.close();setTimeout(()=>{try{w.focus();w.print()}catch(e2){}},1000)}
           const existing2=typeof docStatuses[bill2.billDocNum]==='object'?docStatuses[bill2.billDocNum]:{};
           setDocStatus(bill2.billDocNum,{...existing2,checkNum:checkNo,checkPrinted:new Date().toISOString(),vendorInvNum:billInvNum||existing2.vendorInvNum||'',payDate:billPayDate||existing2.payDate||'',memo:billMemo||existing2.memo||''});
-          notify('Check #'+checkNo+' printed for '+bill2.vendorName+' -- '+fmt(bill2.cost));
+          notify('Check #'+checkNo+' printed for '+bill2.vendorName+' -- '+fmt(costVal));
+          }catch(err){console.error('Print check error:',err);notify('Error printing check: '+err.message,'error');alert('Print Check Error: '+err.message)}
         };
         return <div>
           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16}}><button onClick={()=>setBillDetail(null)} style={{background:"#14b8a620",border:"1px solid #14b8a640",color:"#14b8a6",cursor:"pointer",fontSize:13,fontFamily:"inherit",padding:"8px 16px",borderRadius:8,fontWeight:600,transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.background="#14b8a630"}} onMouseLeave={e=>{e.currentTarget.style.background="#14b8a620"}}>&larr; Back to Bills</button></div>
