@@ -6186,6 +6186,7 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify}){
   const [addForm,setAddForm]=useState({name:'',title:'',company:'',email:'',phone:'',city:'',state:'',linkedin:'',website:'',twitter:'',employees:'',status:'New',notes:'',address:'',assignedRep:'',revenue:'',funding:''});
   const [selected,setSelected]=useState(new Set());
   const [expandedId,setExpandedId]=useState(null);
+  const [viewMode,setViewMode]=useState('table');
   const [pageNum,setPageNum]=useState(0);
   const PAGE_SIZE=50;
   const fileRef=React.useRef(null);
@@ -6254,15 +6255,19 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify}){
     <Header title="Prospects" sub={"Sales prospecting and lead tracking -- "+prospects.length+" total contacts"}/>
     {/* Status pipeline */}
     <div style={{display:'flex',gap:4,flexWrap:'wrap',marginBottom:16,overflowX:'auto',WebkitOverflowScrolling:'touch',paddingBottom:4}}>
-      <button onClick={()=>{setStatusFilter('all');setPageNum(0)}} style={{padding:'5px 12px',borderRadius:20,border:statusFilter==='all'?'1px solid #2dd4bf':'1px solid #1a1a1a',background:statusFilter==='all'?'#2dd4bf12':'transparent',color:statusFilter==='all'?'#2dd4bf':'#525252',fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:"'JetBrains Mono',monospace",whiteSpace:'nowrap',transition:'all 0.15s'}}>ALL {prospects.length}</button>
-      {statuses.map(s=><button key={s} onClick={()=>{setStatusFilter(statusFilter===s?'all':s);setPageNum(0)}} style={{padding:'5px 12px',borderRadius:20,border:'1px solid '+(statusFilter===s?(sc[s]||'#333')+'60':'#1a1a1a'),background:statusFilter===s?(sc[s]||'#333')+'12':'transparent',color:statusFilter===s?sc[s]||'#f0f0f0':'#333',fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:"'JetBrains Mono',monospace",whiteSpace:'nowrap',transition:'all 0.15s'}}>{s} {statusCounts[s]||0}</button>)}
+      <button onClick={()=>{setStatusFilter('all');setPageNum(0)}} style={{padding:'5px 12px',borderRadius:20,border:statusFilter==='all'?'1px solid #2dd4bf':'1px solid #1a1a1a',background:statusFilter==='all'?'#2dd4bf12':'transparent',color:statusFilter==='all'?'#2dd4bf':'#525252',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:"'JetBrains Mono',monospace",whiteSpace:'nowrap',transition:'all 0.15s'}}>ALL {prospects.length}</button>
+      {statuses.map(s=><button key={s} onClick={()=>{setStatusFilter(statusFilter===s?'all':s);setPageNum(0)}} style={{padding:'5px 12px',borderRadius:20,border:'1px solid '+(statusFilter===s?(sc[s]||'#333')+'60':'#1a1a1a'),background:statusFilter===s?(sc[s]||'#333')+'12':'transparent',color:statusFilter===s?sc[s]||'#f0f0f0':'#333',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:"'JetBrains Mono',monospace",whiteSpace:'nowrap',transition:'all 0.15s'}}>{s} {statusCounts[s]||0}</button>)}
     </div>
     {/* Toolbar */}
     <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',marginBottom:12}}>
       <input value={search} onChange={e=>{setSearch(e.target.value);setPageNum(0)}} placeholder="Search name, company, email, city, state..." style={{...is,flex:1,minWidth:200,maxWidth:400,fontFamily:"'JetBrains Mono',monospace"}}/>
       <select value={stateFilter} onChange={e=>{setStateFilter(e.target.value);setPageNum(0)}} style={{...is,width:'auto',fontFamily:"'JetBrains Mono',monospace"}}><option value="all">All States</option>{allStates.map(s=><option key={s} value={s}>{s}</option>)}</select>
       <select value={repFilter} onChange={e=>{setRepFilter(e.target.value);setPageNum(0)}} style={{...is,width:'auto'}}><option value="all">All Reps</option><option value="">Unassigned</option>{reps.filter(r=>!r.id.includes('SEED')).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select>
-      <div style={{marginLeft:'auto',display:'flex',gap:6}}>
+      <div style={{marginLeft:'auto',display:'flex',gap:6,alignItems:'center'}}>
+        <div style={{display:'flex',borderRadius:8,overflow:'hidden',border:'1px solid #1a1a1a'}}>
+          <button onClick={()=>setViewMode('table')} style={{padding:'6px 12px',border:'none',background:viewMode==='table'?'#2dd4bf15':'transparent',color:viewMode==='table'?'#2dd4bf':'#525252',fontSize:11,cursor:'pointer',fontFamily:"'JetBrains Mono',monospace",fontWeight:600}}>TABLE</button>
+          <button onClick={()=>setViewMode('kanban')} style={{padding:'6px 12px',border:'none',borderLeft:'1px solid #1a1a1a',background:viewMode==='kanban'?'#2dd4bf15':'transparent',color:viewMode==='kanban'?'#2dd4bf':'#525252',fontSize:11,cursor:'pointer',fontFamily:"'JetBrains Mono',monospace",fontWeight:600}}>BOARD</button>
+        </div>
         <input ref={fileRef} type="file" accept=".csv,.tsv" onChange={handleCsv} style={{display:'none'}}/>
         <Btn v="secondary" onClick={()=>fileRef.current?.click()} style={{fontSize:11,padding:'7px 14px'}}><I n="upload" s={13}/> CSV</Btn>
         <Btn onClick={()=>setShowAdd(!showAdd)} style={{fontSize:11,padding:'7px 14px'}}><I n="plus" s={13}/> Add</Btn>
@@ -6274,26 +6279,64 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify}){
       <select onChange={e=>{if(e.target.value)bulkStatus(e.target.value);e.target.value=''}} style={{...is,width:'auto',fontSize:11,padding:'4px 8px'}}><option value="">Status...</option>{statuses.map(s=><option key={s}>{s}</option>)}</select>
       <select onChange={e=>{if(e.target.value==='__none')bulkAssign('');else if(e.target.value)bulkAssign(e.target.value);e.target.value=''}} style={{...is,width:'auto',fontSize:11,padding:'4px 8px'}}><option value="">Assign...</option><option value="__none">Unassign</option>{reps.filter(r=>!r.id.includes('SEED')).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select>
       <button onClick={bulkDel} style={{padding:'4px 10px',borderRadius:6,border:'1px solid #f8717125',background:'transparent',color:'#f87171',fontSize:11,cursor:'pointer',fontFamily:'inherit'}}>Delete</button>
-      <button onClick={()=>setSelected(new Set())} style={{background:'none',border:'none',color:'#525252',cursor:'pointer',fontSize:11,fontFamily:'inherit'}}>Clear</button>
+      <button onClick={()=>setSelected(new Set())} style={{background:'none',border:'none',color:'#737373',cursor:'pointer',fontSize:12,fontFamily:'inherit'}}>Clear</button>
     </div>}
     {/* Add form */}
     {showAdd&&<Card style={{padding:16,marginBottom:14,border:'1px solid rgba(45,212,191,0.1)'}}>
       <div style={{fontSize:13,fontWeight:700,color:'#f0f0f0',marginBottom:10}}>New Prospect</div>
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:8,marginBottom:10}}>
         {[['name','Name *'],['title','Title'],['company','Company'],['email','Email'],['phone','Phone'],['city','City'],['state','State'],['address','Address'],['linkedin','LinkedIn URL'],['website','Website'],['twitter','Twitter'],['employees','Employees'],['revenue','Annual Revenue'],['funding','Latest Funding']].map(([k,label])=>
-          <div key={k}><label style={{fontSize:10,color:'#525252',display:'block',marginBottom:2,fontFamily:"'JetBrains Mono',monospace",textTransform:'uppercase',letterSpacing:0.5}}>{label}</label><input value={addForm[k]||''} onChange={e=>setAddForm({...addForm,[k]:e.target.value})} style={{...is,fontSize:11}} placeholder={label}/></div>
+          <div key={k}><label style={{fontSize:12,color:'#737373',display:'block',marginBottom:2,fontFamily:"'JetBrains Mono',monospace",textTransform:'uppercase',letterSpacing:0.5}}>{label}</label><input value={addForm[k]||''} onChange={e=>setAddForm({...addForm,[k]:e.target.value})} style={{...is,fontSize:11}} placeholder={label}/></div>
         )}
-        <div><label style={{fontSize:10,color:'#525252',display:'block',marginBottom:2,fontFamily:"'JetBrains Mono',monospace",textTransform:'uppercase',letterSpacing:0.5}}>Rep</label><select value={addForm.assignedRep||''} onChange={e=>setAddForm({...addForm,assignedRep:e.target.value})} style={{...is,fontSize:11}}><option value="">--</option>{reps.filter(r=>!r.id.includes('SEED')).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></div>
+        <div><label style={{fontSize:12,color:'#737373',display:'block',marginBottom:2,fontFamily:"'JetBrains Mono',monospace",textTransform:'uppercase',letterSpacing:0.5}}>Rep</label><select value={addForm.assignedRep||''} onChange={e=>setAddForm({...addForm,assignedRep:e.target.value})} style={{...is,fontSize:11}}><option value="">--</option>{reps.filter(r=>!r.id.includes('SEED')).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></div>
       </div>
       <div style={{display:'flex',gap:6}}><Btn onClick={addSingle} style={{fontSize:11}}>Save</Btn><Btn v="secondary" onClick={()=>setShowAdd(false)} style={{fontSize:11}}>Cancel</Btn></div>
     </Card>}
-    {/* Table */}
-    <div style={{overflowX:'auto',borderRadius:12,border:'1px solid #1a1a1a',background:'#000'}}>
+    {/* Kanban Board View */}
+    {viewMode==='kanban'&&<div style={{display:'flex',gap:10,overflowX:'auto',paddingBottom:16,WebkitOverflowScrolling:'touch',minHeight:400}}>
+      {statuses.map(status=>{
+        const col=filtered.filter(p=>p.status===status);
+        return <div key={status} style={{minWidth:240,maxWidth:280,flex:'0 0 260px',background:'#050505',borderRadius:12,border:'1px solid #1a1a1a',display:'flex',flexDirection:'column',maxHeight:'70vh'}}>
+          <div style={{padding:'12px 14px',borderBottom:'1px solid #1a1a1a',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <div style={{width:8,height:8,borderRadius:'50%',background:sc[status]||'#525252'}}/>
+              <span style={{fontSize:12,fontWeight:700,color:'#e5e5e5',fontFamily:"'JetBrains Mono',monospace"}}>{status}</span>
+            </div>
+            <span style={{fontSize:11,color:'#525252',fontFamily:"'JetBrains Mono',monospace"}}>{col.length}</span>
+          </div>
+          <div style={{flex:1,overflowY:'auto',padding:8,display:'flex',flexDirection:'column',gap:6}}>
+            {col.slice(0,30).map(p=>{
+              const rep2=reps.find(r=>r.id===p.assignedRep);
+              return <div key={p.id} style={{padding:'10px 12px',background:'#0a0a0a',borderRadius:8,border:'1px solid #111',transition:'all 0.15s',cursor:'pointer'}} onClick={()=>{setViewMode('table');setExpandedId(p.id);setStatusFilter('all');setPageNum(0)}} onMouseEnter={e=>{e.currentTarget.style.borderColor='#2dd4bf30';e.currentTarget.style.transform='translateY(-1px)'}} onMouseLeave={e=>{e.currentTarget.style.borderColor='#111';e.currentTarget.style.transform='translateY(0)'}}>
+                <div style={{fontSize:12,fontWeight:600,color:'#f0f0f0',marginBottom:3}}>{p.name}</div>
+                <div style={{fontSize:11,color:'#a3a3a3',marginBottom:2}}>{p.title||'--'}</div>
+                <div style={{fontSize:11,color:'#2dd4bf',marginBottom:4}}>{p.company||'--'}</div>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                  <span style={{fontSize:10,color:'#525252',fontFamily:"'JetBrains Mono',monospace"}}>{p.city}{p.state?', '+p.state:''}</span>
+                  {rep2&&<span style={{fontSize:9,padding:'2px 6px',borderRadius:4,background:'#a78bfa15',color:'#a78bfa',fontFamily:"'JetBrains Mono',monospace"}}>{rep2.name.split(' ')[0]}</span>}
+                </div>
+                <div style={{display:'flex',gap:4,marginTop:6}}>
+                  {p.linkedin&&<a href={p.linkedin.startsWith('http')?p.linkedin:'https://'+p.linkedin} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{padding:'3px 6px',borderRadius:4,background:'#0a66c215',border:'1px solid #0a66c225',color:'#0a66c2',fontSize:9,fontWeight:700,textDecoration:'none'}}>in</a>}
+                  {p.email&&<a href={'mailto:'+p.email} onClick={e=>e.stopPropagation()} style={{padding:'3px 6px',borderRadius:4,background:'#a78bfa10',border:'1px solid #a78bfa20',color:'#a78bfa',fontSize:9,fontWeight:600,textDecoration:'none',fontFamily:"'JetBrains Mono',monospace"}}>EMAIL</a>}
+                </div>
+                <div style={{display:'flex',gap:4,marginTop:6,flexWrap:'wrap'}}>
+                  {statuses.filter(s2=>s2!==status).slice(0,4).map(s2=><button key={s2} onClick={e=>{e.stopPropagation();save(p.id,{...p,status:s2});notify(p.name+' >> '+s2)}} style={{padding:'2px 6px',borderRadius:4,border:'1px solid '+(sc[s2]||'#333')+'25',background:'transparent',color:(sc[s2]||'#525252')+'99',fontSize:8,cursor:'pointer',fontFamily:"'JetBrains Mono',monospace",transition:'all 0.15s'}} onMouseEnter={e=>{e.currentTarget.style.background=(sc[s2]||'#333')+'15'}} onMouseLeave={e=>{e.currentTarget.style.background='transparent'}}>{s2}</button>)}
+                </div>
+              </div>;
+            })}
+            {col.length>30&&<div style={{fontSize:10,color:'#525252',textAlign:'center',padding:8,fontFamily:"'JetBrains Mono',monospace"}}>+{col.length-30} more</div>}
+            {col.length===0&&<div style={{fontSize:11,color:'#333',textAlign:'center',padding:20,fontFamily:"'JetBrains Mono',monospace"}}>Empty</div>}
+          </div>
+        </div>;
+      })}
+    </div>}
+    {/* Table View */}
+    {viewMode==='table'&&<><div style={{overflowX:'auto',borderRadius:12,border:'1px solid #1a1a1a',background:'#000'}}>
       <table style={{width:'100%',borderCollapse:'collapse',minWidth:900}}>
         <thead><tr style={{background:'#050505'}}>
           <th style={{padding:'10px 6px',width:32}}><input type="checkbox" checked={selected.size===paged.length&&paged.length>0} onChange={selectAll} style={{accentColor:'#2dd4bf',cursor:'pointer'}}/></th>
           {[['name','Name',180],['title','Title',130],['company','Company',150],['email','Email',180],['phone','Phone',120],['city','Location',120],['employees','Size',60],['status','Status',90],['assignedRep','Rep',80],['','',100]].map(([col,label,w])=>
-            <th key={label||'actions'} onClick={col?()=>handleSort(col):undefined} style={{padding:'10px 6px',textAlign:'left',fontSize:9,fontWeight:700,color:'#525252',textTransform:'uppercase',letterSpacing:1.2,cursor:col?'pointer':'default',whiteSpace:'nowrap',fontFamily:"'JetBrains Mono',monospace",minWidth:w,borderBottom:'1px solid #111'}}>{label}{sortCol===col&&<span style={{color:'#2dd4bf',marginLeft:3}}>{sortDir==='asc'?'\u25B2':'\u25BC'}</span>}</th>
+            <th key={label||'actions'} onClick={col?()=>handleSort(col):undefined} style={{padding:'10px 6px',textAlign:'left',fontSize:12,fontWeight:700,color:'#737373',textTransform:'uppercase',letterSpacing:1.2,cursor:col?'pointer':'default',whiteSpace:'nowrap',fontFamily:"'JetBrains Mono',monospace",minWidth:w,borderBottom:'1px solid #111'}}>{label}{sortCol===col&&<span style={{color:'#2dd4bf',marginLeft:3}}>{sortDir==='asc'?'\u25B2':'\u25BC'}</span>}</th>
           )}
         </tr></thead>
         <tbody>{paged.map(p=>{
@@ -6303,18 +6346,18 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify}){
           <tr style={{borderBottom:'1px solid #0a0a0a',transition:'background 0.1s',background:selected.has(p.id)?'rgba(45,212,191,0.03)':'transparent',cursor:'pointer'}} onClick={()=>setExpandedId(isExp?null:p.id)} onMouseEnter={e=>{if(!selected.has(p.id))e.currentTarget.style.background='#050505'}} onMouseLeave={e=>{e.currentTarget.style.background=selected.has(p.id)?'rgba(45,212,191,0.03)':'transparent'}}>
             <td style={{padding:'8px 6px'}} onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selected.has(p.id)} onChange={()=>{const s=new Set(selected);if(s.has(p.id))s.delete(p.id);else s.add(p.id);setSelected(s)}} style={{accentColor:'#2dd4bf',cursor:'pointer'}}/></td>
             <td style={{padding:'8px 6px'}}><span style={{fontWeight:600,color:'#e5e5e5',fontSize:12}}>{p.name}</span></td>
-            <td style={{padding:'8px 6px',fontSize:11,color:'#737373',maxWidth:140,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.title||'--'}</td>
-            <td style={{padding:'8px 6px'}}>{p.website?<a href={p.website.startsWith('http')?p.website:'https://'+p.website} target="_blank" rel="noopener noreferrer" style={{color:'#2dd4bf',fontSize:11,textDecoration:'none',fontWeight:500}} onClick={e=>e.stopPropagation()}>{p.company||'--'}</a>:<span style={{fontSize:11,color:'#a3a3a3'}}>{p.company||'--'}</span>}</td>
-            <td style={{padding:'8px 6px'}} onClick={e=>e.stopPropagation()}>{p.email?<a href={'mailto:'+p.email} style={{color:'#a78bfa',fontSize:10,textDecoration:'none',fontFamily:"'JetBrains Mono',monospace"}}>{p.email}</a>:<span style={{color:'#222',fontSize:10}}>--</span>}</td>
-            <td style={{padding:'8px 6px',fontSize:11,color:'#737373',fontFamily:"'JetBrains Mono',monospace",whiteSpace:'nowrap'}}>{p.phone||'--'}</td>
-            <td style={{padding:'8px 6px',fontSize:10,color:'#525252',whiteSpace:'nowrap'}}>{p.city?(p.city+(p.state?', '+p.state:'')):'--'}</td>
-            <td style={{padding:'8px 6px',fontSize:10,color:'#737373',fontFamily:"'JetBrains Mono',monospace",textAlign:'right'}}>{fN(p.employees)}</td>
-            <td style={{padding:'8px 6px'}} onClick={e=>e.stopPropagation()}><select value={p.status||'New'} onChange={e=>{save(p.id,{...p,status:e.target.value});notify(p.name+' >> '+e.target.value)}} style={{background:'transparent',border:'1px solid '+(sc[p.status]||'#333')+'30',color:sc[p.status]||'#525252',borderRadius:6,padding:'3px 6px',fontSize:10,fontFamily:"'JetBrains Mono',monospace",cursor:'pointer',outline:'none',fontWeight:500}}>{statuses.map(s=><option key={s} style={{background:'#111',color:'#e5e5e5'}}>{s}</option>)}</select></td>
-            <td style={{padding:'8px 6px'}} onClick={e=>e.stopPropagation()}><select value={p.assignedRep||''} onChange={e=>{save(p.id,{...p,assignedRep:e.target.value});const r2=reps.find(r3=>r3.id===e.target.value);notify(p.name+' >> '+(r2?.name||'unassigned'))}} style={{...is,padding:'3px 6px',fontSize:10,width:'auto',minWidth:60}}><option value="">--</option>{reps.filter(r=>!r.id.includes('SEED')).map(r=><option key={r.id} value={r.id}>{r.name.split(' ')[0]}</option>)}</select></td>
+            <td style={{padding:'8px 6px',fontSize:12,color:'#c4c4c4',maxWidth:140,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.title||'--'}</td>
+            <td style={{padding:'8px 6px'}}>{p.website?<a href={p.website.startsWith('http')?p.website:'https://'+p.website} target="_blank" rel="noopener noreferrer" style={{color:'#2dd4bf',fontSize:12,textDecoration:'none',fontWeight:500}} onClick={e=>e.stopPropagation()}>{p.company||'--'}</a>:<span style={{fontSize:12,color:'#a3a3a3'}}>{p.company||'--'}</span>}</td>
+            <td style={{padding:'8px 6px'}} onClick={e=>e.stopPropagation()}>{p.email?<a href={'mailto:'+p.email} style={{color:'#a78bfa',fontSize:12,textDecoration:'none',fontFamily:"'JetBrains Mono',monospace"}}>{p.email}</a>:<span style={{color:'#333',fontSize:10}}>--</span>}</td>
+            <td style={{padding:'8px 6px',fontSize:12,color:'#c4c4c4',fontFamily:"'JetBrains Mono',monospace",whiteSpace:'nowrap'}}>{p.phone||'--'}</td>
+            <td style={{padding:'8px 6px',fontSize:12,color:'#737373',whiteSpace:'nowrap'}}>{p.city?(p.city+(p.state?', '+p.state:'')):'--'}</td>
+            <td style={{padding:'8px 6px',fontSize:12,color:'#c4c4c4',fontFamily:"'JetBrains Mono',monospace",textAlign:'right'}}>{fN(p.employees)}</td>
+            <td style={{padding:'8px 6px'}} onClick={e=>e.stopPropagation()}><select value={p.status||'New'} onChange={e=>{save(p.id,{...p,status:e.target.value});notify(p.name+' >> '+e.target.value)}} style={{background:'transparent',border:'1px solid '+(sc[p.status]||'#333')+'30',color:sc[p.status]||'#525252',borderRadius:6,padding:'3px 6px',fontSize:12,fontFamily:"'JetBrains Mono',monospace",cursor:'pointer',outline:'none',fontWeight:500}}>{statuses.map(s=><option key={s} style={{background:'#111',color:'#e5e5e5'}}>{s}</option>)}</select></td>
+            <td style={{padding:'8px 6px'}} onClick={e=>e.stopPropagation()}><select value={p.assignedRep||''} onChange={e=>{save(p.id,{...p,assignedRep:e.target.value});const r2=reps.find(r3=>r3.id===e.target.value);notify(p.name+' >> '+(r2?.name||'unassigned'))}} style={{...is,padding:'3px 6px',fontSize:11,width:'auto',minWidth:60}}><option value="">--</option>{reps.filter(r=>!r.id.includes('SEED')).map(r=><option key={r.id} value={r.id}>{r.name.split(' ')[0]}</option>)}</select></td>
             <td style={{padding:'8px 6px',whiteSpace:'nowrap'}} onClick={e=>e.stopPropagation()}>
-              {p.linkedin&&<a href={p.linkedin.startsWith('http')?p.linkedin:'https://'+p.linkedin} target="_blank" rel="noopener noreferrer" style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:28,height:28,borderRadius:6,background:'#0a66c215',border:'1px solid #0a66c230',color:'#0a66c2',fontSize:11,fontWeight:800,textDecoration:'none',marginRight:4,transition:'all 0.15s'}} onMouseEnter={e=>{e.currentTarget.style.background='#0a66c230'}} onMouseLeave={e=>{e.currentTarget.style.background='#0a66c215'}}>in</a>}
-              <button onClick={()=>{setEditing(p.id);setEditForm({...p})}} style={{background:'none',border:'none',color:'#525252',cursor:'pointer',fontSize:10,fontFamily:"'JetBrains Mono',monospace",padding:'4px 6px'}} onMouseEnter={e=>{e.currentTarget.style.color='#2dd4bf'}} onMouseLeave={e=>{e.currentTarget.style.color='#525252'}}>EDIT</button>
-              <button onClick={()=>{if(confirm('Delete '+p.name+'?'))del(p.id)}} style={{background:'none',border:'none',color:'#333',cursor:'pointer',fontSize:10,fontFamily:"'JetBrains Mono',monospace",padding:'4px 6px'}} onMouseEnter={e=>{e.currentTarget.style.color='#f87171'}} onMouseLeave={e=>{e.currentTarget.style.color='#333'}}>DEL</button>
+              {p.linkedin&&<a href={p.linkedin.startsWith('http')?p.linkedin:'https://'+p.linkedin} target="_blank" rel="noopener noreferrer" style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:28,height:28,borderRadius:6,background:'#0a66c215',border:'1px solid #0a66c230',color:'#0a66c2',fontSize:12,fontWeight:800,textDecoration:'none',marginRight:4,transition:'all 0.15s'}} onMouseEnter={e=>{e.currentTarget.style.background='#0a66c230'}} onMouseLeave={e=>{e.currentTarget.style.background='#0a66c215'}}>in</a>}
+              <button onClick={()=>{setEditing(p.id);setEditForm({...p})}} style={{background:'none',border:'none',color:'#737373',cursor:'pointer',fontSize:12,fontFamily:"'JetBrains Mono',monospace",padding:'4px 6px'}} onMouseEnter={e=>{e.currentTarget.style.color='#2dd4bf'}} onMouseLeave={e=>{e.currentTarget.style.color='#525252'}}>EDIT</button>
+              <button onClick={()=>{if(confirm('Delete '+p.name+'?'))del(p.id)}} style={{background:'none',border:'none',color:'#525252',cursor:'pointer',fontSize:12,fontFamily:"'JetBrains Mono',monospace",padding:'4px 6px'}} onMouseEnter={e=>{e.currentTarget.style.color='#f87171'}} onMouseLeave={e=>{e.currentTarget.style.color='#333'}}>DEL</button>
             </td>
           </tr>
           {/* Expanded detail row */}
@@ -6322,37 +6365,37 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify}){
             {editing===p.id?<div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:8,marginBottom:10}}>
                 {[['name','Name'],['title','Title'],['company','Company'],['email','Email'],['phone','Phone'],['city','City'],['state','State'],['address','Address'],['linkedin','LinkedIn'],['website','Website'],['twitter','Twitter'],['employees','Employees'],['revenue','Revenue'],['funding','Funding'],['notes','Notes']].map(([k,l])=>
-                  <div key={k}><label style={{fontSize:9,color:'#525252',display:'block',marginBottom:2,fontFamily:"'JetBrains Mono',monospace",textTransform:'uppercase',letterSpacing:0.8}}>{l}</label><input value={editForm[k]||''} onChange={e=>setEditForm({...editForm,[k]:e.target.value})} style={{...is,fontSize:11,padding:'6px 10px'}}/></div>
+                  <div key={k}><label style={{fontSize:12,color:'#737373',display:'block',marginBottom:2,fontFamily:"'JetBrains Mono',monospace",textTransform:'uppercase',letterSpacing:0.8}}>{l}</label><input value={editForm[k]||''} onChange={e=>setEditForm({...editForm,[k]:e.target.value})} style={{...is,fontSize:11,padding:'6px 10px'}}/></div>
                 )}
-                <div><label style={{fontSize:9,color:'#525252',display:'block',marginBottom:2,fontFamily:"'JetBrains Mono',monospace",textTransform:'uppercase',letterSpacing:0.8}}>Rep</label><select value={editForm.assignedRep||''} onChange={e=>setEditForm({...editForm,assignedRep:e.target.value})} style={{...is,fontSize:11,padding:'6px 10px'}}><option value="">--</option>{reps.filter(r=>!r.id.includes('SEED')).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></div>
+                <div><label style={{fontSize:12,color:'#737373',display:'block',marginBottom:2,fontFamily:"'JetBrains Mono',monospace",textTransform:'uppercase',letterSpacing:0.8}}>Rep</label><select value={editForm.assignedRep||''} onChange={e=>setEditForm({...editForm,assignedRep:e.target.value})} style={{...is,fontSize:11,padding:'6px 10px'}}><option value="">--</option>{reps.filter(r=>!r.id.includes('SEED')).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></div>
               </div>
               <div style={{display:'flex',gap:6}}><Btn onClick={()=>{save(p.id,editForm);setEditing(null);notify('Updated: '+editForm.name)}} style={{fontSize:11}}>Save</Btn><Btn v="secondary" onClick={()=>setEditing(null)} style={{fontSize:11}}>Cancel</Btn></div>
             </div>:
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:12}}>
               <div>
-                <div style={{fontSize:9,color:'#333',fontFamily:"'JetBrains Mono',monospace",textTransform:'uppercase',letterSpacing:1,marginBottom:6}}>CONTACT</div>
+                <div style={{fontSize:12,color:'#525252',fontFamily:"'JetBrains Mono',monospace",textTransform:'uppercase',letterSpacing:1,marginBottom:6}}>CONTACT</div>
                 <div style={{fontSize:13,fontWeight:700,color:'#f0f0f0',marginBottom:2}}>{p.name}</div>
-                <div style={{fontSize:11,color:'#737373',marginBottom:2}}>{p.title||'--'}</div>
-                <div style={{fontSize:11,color:'#a3a3a3',marginBottom:6}}>{p.company||'--'}</div>
+                <div style={{fontSize:12,color:'#c4c4c4',marginBottom:2}}>{p.title||'--'}</div>
+                <div style={{fontSize:12,color:'#a3a3a3',marginBottom:6}}>{p.company||'--'}</div>
                 {p.email&&<div style={{fontSize:11,marginBottom:2}}><a href={'mailto:'+p.email} style={{color:'#a78bfa',textDecoration:'none',fontFamily:"'JetBrains Mono',monospace",fontSize:10}}>{p.email}</a></div>}
-                {p.phone&&<div style={{fontSize:11,color:'#737373',fontFamily:"'JetBrains Mono',monospace",marginBottom:2}}>{p.phone}</div>}
+                {p.phone&&<div style={{fontSize:12,color:'#c4c4c4',fontFamily:"'JetBrains Mono',monospace",marginBottom:2}}>{p.phone}</div>}
               </div>
               <div>
-                <div style={{fontSize:9,color:'#333',fontFamily:"'JetBrains Mono',monospace",textTransform:'uppercase',letterSpacing:1,marginBottom:6}}>LOCATION</div>
-                {p.address&&<div style={{fontSize:11,color:'#737373',marginBottom:2}}>{p.address}</div>}
-                <div style={{fontSize:11,color:'#a3a3a3'}}>{p.city}{p.state?', '+p.state:''}</div>
-                {p.employees&&<div style={{fontSize:11,color:'#525252',fontFamily:"'JetBrains Mono',monospace",marginTop:4}}>{fN(p.employees)} employees</div>}
+                <div style={{fontSize:12,color:'#525252',fontFamily:"'JetBrains Mono',monospace",textTransform:'uppercase',letterSpacing:1,marginBottom:6}}>LOCATION</div>
+                {p.address&&<div style={{fontSize:12,color:'#c4c4c4',marginBottom:2}}>{p.address}</div>}
+                <div style={{fontSize:12,color:'#a3a3a3'}}>{p.city}{p.state?', '+p.state:''}</div>
+                {p.employees&&<div style={{fontSize:12,color:'#737373',fontFamily:"'JetBrains Mono',monospace",marginTop:4}}>{fN(p.employees)} employees</div>}
               </div>
               <div>
-                <div style={{fontSize:9,color:'#333',fontFamily:"'JetBrains Mono',monospace",textTransform:'uppercase',letterSpacing:1,marginBottom:6}}>LINKS</div>
+                <div style={{fontSize:12,color:'#525252',fontFamily:"'JetBrains Mono',monospace",textTransform:'uppercase',letterSpacing:1,marginBottom:6}}>LINKS</div>
                 <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-                  {p.linkedin&&<a href={p.linkedin.startsWith('http')?p.linkedin:'https://'+p.linkedin} target="_blank" rel="noopener noreferrer" style={{display:'inline-flex',alignItems:'center',gap:4,padding:'5px 10px',borderRadius:6,background:'#0a66c215',border:'1px solid #0a66c225',color:'#0a66c2',fontSize:10,fontWeight:600,textDecoration:'none',fontFamily:"'JetBrains Mono',monospace"}}>LinkedIn</a>}
-                  {p.companyLinkedin&&<a href={p.companyLinkedin.startsWith('http')?p.companyLinkedin:'https://'+p.companyLinkedin} target="_blank" rel="noopener noreferrer" style={{display:'inline-flex',alignItems:'center',gap:4,padding:'5px 10px',borderRadius:6,background:'#0a66c210',border:'1px solid #0a66c218',color:'#0a66c280',fontSize:10,fontWeight:600,textDecoration:'none',fontFamily:"'JetBrains Mono',monospace"}}>Co. LinkedIn</a>}
-                  {p.website&&<a href={p.website.startsWith('http')?p.website:'https://'+p.website} target="_blank" rel="noopener noreferrer" style={{display:'inline-flex',alignItems:'center',gap:4,padding:'5px 10px',borderRadius:6,background:'#2dd4bf10',border:'1px solid #2dd4bf20',color:'#2dd4bf',fontSize:10,fontWeight:600,textDecoration:'none',fontFamily:"'JetBrains Mono',monospace"}}>Website</a>}
-                  {p.twitter&&<a href={p.twitter.startsWith('http')?p.twitter:'https://'+p.twitter} target="_blank" rel="noopener noreferrer" style={{display:'inline-flex',alignItems:'center',gap:4,padding:'5px 10px',borderRadius:6,background:'#1d9bf010',border:'1px solid #1d9bf020',color:'#1d9bf0',fontSize:10,fontWeight:600,textDecoration:'none',fontFamily:"'JetBrains Mono',monospace"}}>Twitter</a>}
+                  {p.linkedin&&<a href={p.linkedin.startsWith('http')?p.linkedin:'https://'+p.linkedin} target="_blank" rel="noopener noreferrer" style={{display:'inline-flex',alignItems:'center',gap:4,padding:'5px 10px',borderRadius:6,background:'#0a66c215',border:'1px solid #0a66c225',color:'#0a66c2',fontSize:12,fontWeight:600,textDecoration:'none',fontFamily:"'JetBrains Mono',monospace"}}>LinkedIn</a>}
+                  {p.companyLinkedin&&<a href={p.companyLinkedin.startsWith('http')?p.companyLinkedin:'https://'+p.companyLinkedin} target="_blank" rel="noopener noreferrer" style={{display:'inline-flex',alignItems:'center',gap:4,padding:'5px 10px',borderRadius:6,background:'#0a66c210',border:'1px solid #0a66c218',color:'#0a66c280',fontSize:12,fontWeight:600,textDecoration:'none',fontFamily:"'JetBrains Mono',monospace"}}>Co. LinkedIn</a>}
+                  {p.website&&<a href={p.website.startsWith('http')?p.website:'https://'+p.website} target="_blank" rel="noopener noreferrer" style={{display:'inline-flex',alignItems:'center',gap:4,padding:'5px 10px',borderRadius:6,background:'#2dd4bf10',border:'1px solid #2dd4bf20',color:'#2dd4bf',fontSize:12,fontWeight:600,textDecoration:'none',fontFamily:"'JetBrains Mono',monospace"}}>Website</a>}
+                  {p.twitter&&<a href={p.twitter.startsWith('http')?p.twitter:'https://'+p.twitter} target="_blank" rel="noopener noreferrer" style={{display:'inline-flex',alignItems:'center',gap:4,padding:'5px 10px',borderRadius:6,background:'#1d9bf010',border:'1px solid #1d9bf020',color:'#1d9bf0',fontSize:12,fontWeight:600,textDecoration:'none',fontFamily:"'JetBrains Mono',monospace"}}>Twitter</a>}
                 </div>
-                {(p.revenue||p.funding)&&<div style={{marginTop:8,fontSize:10,color:'#525252',fontFamily:"'JetBrains Mono',monospace"}}>{p.revenue?'Revenue: '+p.revenue:''}{p.revenue&&p.funding?' | ':''}{p.funding?'Funding: '+p.funding:''}</div>}
-                {p.notes&&<div style={{marginTop:6,fontSize:11,color:'#525252',fontStyle:'italic'}}>{p.notes}</div>}
+                {(p.revenue||p.funding)&&<div style={{marginTop:8,fontSize:12,color:'#737373',fontFamily:"'JetBrains Mono',monospace"}}>{p.revenue?'Revenue: '+p.revenue:''}{p.revenue&&p.funding?' | ':''}{p.funding?'Funding: '+p.funding:''}</div>}
+                {p.notes&&<div style={{marginTop:6,fontSize:12,color:'#737373',fontStyle:'italic'}}>{p.notes}</div>}
               </div>
             </div>}
           </td></tr>}
@@ -6363,10 +6406,11 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify}){
     {/* Pagination */}
     {totalPages>1&&<div style={{display:'flex',justifyContent:'center',alignItems:'center',gap:8,padding:'14px 0'}}>
       <button onClick={()=>setPageNum(Math.max(0,pageNum-1))} disabled={pageNum===0} style={{padding:'5px 14px',borderRadius:8,border:'1px solid #1a1a1a',background:'transparent',color:pageNum===0?'#222':'#737373',fontSize:11,cursor:pageNum===0?'default':'pointer',fontFamily:"'JetBrains Mono',monospace",transition:'all 0.15s'}}>PREV</button>
-      <span style={{fontSize:10,color:'#333',fontFamily:"'JetBrains Mono',monospace",letterSpacing:1}}>{pageNum+1} / {totalPages}</span>
+      <span style={{fontSize:12,color:'#525252',fontFamily:"'JetBrains Mono',monospace",letterSpacing:1}}>{pageNum+1} / {totalPages}</span>
       <button onClick={()=>setPageNum(Math.min(totalPages-1,pageNum+1))} disabled={pageNum>=totalPages-1} style={{padding:'5px 14px',borderRadius:8,border:'1px solid #1a1a1a',background:'transparent',color:pageNum>=totalPages-1?'#222':'#737373',fontSize:11,cursor:pageNum>=totalPages-1?'default':'pointer',fontFamily:"'JetBrains Mono',monospace",transition:'all 0.15s'}}>NEXT</button>
     </div>}
-    <div style={{fontSize:10,color:'#222',textAlign:'center',padding:'8px 0',fontFamily:"'JetBrains Mono',monospace"}}>{filtered.length} prospect{filtered.length!==1?'s':''}{search?' matching "'+search+'"':''}</div>
+    </>}
+    <div style={{fontSize:12,color:'#525252',textAlign:'center',padding:'8px 0',fontFamily:"'JetBrains Mono',monospace"}}>{filtered.length} prospect{filtered.length!==1?'s':''}{search?' matching "'+search+'"':''}</div>
   </div>;
 }
 function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,getJobItems,notify,triggerPrint,dateFilter,jobNum,customSops,addSop,deleteSop,...fCtx}){
