@@ -6253,6 +6253,24 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify}){
 
   return <div style={{animation:'fadeUp 0.4s'}}>
     <Header title="Prospects" sub={"Sales prospecting and lead tracking -- "+prospects.length+" total contacts"}/>
+
+    {/* KPI Dashboard Cards */}
+    <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(130px,1fr))',gap:10,marginBottom:18}}>
+      {[
+        {label:'TOTAL LEADS',value:String(prospects.length),color:'#2dd4bf'},
+        {label:'NEW',value:String(statusCounts['New']||0),color:'#525252'},
+        {label:'CONTACTED',value:String(statusCounts['Contacted']||0),color:'#a78bfa'},
+        {label:'REPLIED',value:String(statusCounts['Replied']||0),color:'#2dd4bf'},
+        {label:'MEETINGS',value:String(statusCounts['Meeting Set']||0),color:'#fbbf24'},
+        {label:'PROPOSALS',value:String(statusCounts['Proposal']||0),color:'#f97316'},
+        {label:'WON',value:String(statusCounts['Won']||0),color:'#34d399'},
+        {label:'RESPONSE RATE',value:(prospects.length>0?((((statusCounts['Replied']||0)+(statusCounts['Meeting Set']||0)+(statusCounts['Proposal']||0)+(statusCounts['Won']||0))/prospects.length)*100).toFixed(1):'0')+'%',color:((statusCounts['Replied']||0)+(statusCounts['Meeting Set']||0)+(statusCounts['Proposal']||0)+(statusCounts['Won']||0))>0?'#34d399':'#525252'},
+      ].map((kpi,i)=><Card key={i} style={{padding:14,textAlign:'center',transition:'all 0.25s'}} hover>
+        <div style={{fontSize:9,color:'#525252',fontWeight:700,letterSpacing:2,fontFamily:"'JetBrains Mono',monospace",marginBottom:6}}>{kpi.label}</div>
+        <div style={{fontSize:'clamp(20px,4vw,28px)',fontWeight:800,color:kpi.color,fontFamily:"'JetBrains Mono',monospace",lineHeight:1}}><AnimNum value={kpi.value}/></div>
+      </Card>)}
+    </div>
+
     {/* Status pipeline */}
     <div style={{display:'flex',gap:4,flexWrap:'wrap',marginBottom:16,overflowX:'auto',WebkitOverflowScrolling:'touch',paddingBottom:4}}>
       <button onClick={()=>{setStatusFilter('all');setPageNum(0)}} style={{padding:'5px 12px',borderRadius:20,border:statusFilter==='all'?'1px solid #2dd4bf':'1px solid #1a1a1a',background:statusFilter==='all'?'#2dd4bf12':'transparent',color:statusFilter==='all'?'#2dd4bf':'#525252',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:"'JetBrains Mono',monospace",whiteSpace:'nowrap',transition:'all 0.15s'}}>ALL {prospects.length}</button>
@@ -6313,7 +6331,7 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify}){
                 <div style={{fontSize:11,color:'#2dd4bf',marginBottom:4}}>{p.company||'--'}</div>
                 <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
                   <span style={{fontSize:10,color:'#525252',fontFamily:"'JetBrains Mono',monospace"}}>{p.city}{p.state?', '+p.state:''}</span>
-                  {rep2&&<span style={{fontSize:9,padding:'2px 6px',borderRadius:4,background:'#a78bfa15',color:'#a78bfa',fontFamily:"'JetBrains Mono',monospace"}}>{rep2.name.split(' ')[0]}</span>}
+                  {rep2&&<span style={{fontSize:9,padding:'2px 6px',borderRadius:4,background:'#a78bfa15',color:'#a78bfa',fontFamily:"'JetBrains Mono',monospace"}}>{rep2.name}</span>}
                 </div>
                 <div style={{display:'flex',gap:4,marginTop:6}}>
                   {p.linkedin&&<a href={p.linkedin.startsWith('http')?p.linkedin:'https://'+p.linkedin} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{padding:'3px 6px',borderRadius:4,background:'#0a66c215',border:'1px solid #0a66c225',color:'#0a66c2',fontSize:9,fontWeight:700,textDecoration:'none'}}>in</a>}
@@ -6353,7 +6371,7 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify}){
             <td style={{padding:'8px 6px',fontSize:12,color:'#737373',whiteSpace:'nowrap'}}>{p.city?(p.city+(p.state?', '+p.state:'')):'--'}</td>
             <td style={{padding:'8px 6px',fontSize:12,color:'#c4c4c4',fontFamily:"'JetBrains Mono',monospace",textAlign:'right'}}>{fN(p.employees)}</td>
             <td style={{padding:'8px 6px'}} onClick={e=>e.stopPropagation()}><select value={p.status||'New'} onChange={e=>{save(p.id,{...p,status:e.target.value});notify(p.name+' >> '+e.target.value)}} style={{background:'transparent',border:'1px solid '+(sc[p.status]||'#333')+'30',color:sc[p.status]||'#525252',borderRadius:6,padding:'3px 6px',fontSize:12,fontFamily:"'JetBrains Mono',monospace",cursor:'pointer',outline:'none',fontWeight:500}}>{statuses.map(s=><option key={s} style={{background:'#111',color:'#e5e5e5'}}>{s}</option>)}</select></td>
-            <td style={{padding:'8px 6px'}} onClick={e=>e.stopPropagation()}><select value={p.assignedRep||''} onChange={e=>{save(p.id,{...p,assignedRep:e.target.value});const r2=reps.find(r3=>r3.id===e.target.value);notify(p.name+' >> '+(r2?.name||'unassigned'))}} style={{...is,padding:'3px 6px',fontSize:11,width:'auto',minWidth:60}}><option value="">--</option>{reps.filter(r=>!r.id.includes('SEED')).map(r=><option key={r.id} value={r.id}>{r.name.split(' ')[0]}</option>)}</select></td>
+            <td style={{padding:'8px 6px'}} onClick={e=>e.stopPropagation()}><select value={p.assignedRep||''} onChange={e=>{save(p.id,{...p,assignedRep:e.target.value});const r2=reps.find(r3=>r3.id===e.target.value);notify(p.name+' >> '+(r2?.name||'unassigned'))}} style={{...is,padding:'3px 6px',fontSize:11,width:'auto',minWidth:60}}><option value="">--</option>{reps.filter(r=>!r.id.includes('SEED')).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></td>
             <td style={{padding:'8px 6px',whiteSpace:'nowrap'}} onClick={e=>e.stopPropagation()}>
               {p.linkedin&&<a href={p.linkedin.startsWith('http')?p.linkedin:'https://'+p.linkedin} target="_blank" rel="noopener noreferrer" style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:28,height:28,borderRadius:6,background:'#0a66c215',border:'1px solid #0a66c230',color:'#0a66c2',fontSize:12,fontWeight:800,textDecoration:'none',marginRight:4,transition:'all 0.15s'}} onMouseEnter={e=>{e.currentTarget.style.background='#0a66c230'}} onMouseLeave={e=>{e.currentTarget.style.background='#0a66c215'}}>in</a>}
               <button onClick={()=>{setEditing(p.id);setEditForm({...p})}} style={{background:'none',border:'none',color:'#737373',cursor:'pointer',fontSize:12,fontFamily:"'JetBrains Mono',monospace",padding:'4px 6px'}} onMouseEnter={e=>{e.currentTarget.style.color='#2dd4bf'}} onMouseLeave={e=>{e.currentTarget.style.color='#525252'}}>EDIT</button>
