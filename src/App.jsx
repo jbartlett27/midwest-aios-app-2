@@ -849,7 +849,7 @@ const INIT_JOBS = [
 
 // --- ICONS ---------------------------------------------------
 const I = ({ n, s = 18 }) => {
-  const d = { dashboard: "M3 3h7v7H3zm11 0h7v7h-7zM3 14h7v7H3zm11 0h7v7h-7z", briefcase: "M2 7h20v14H2zM8 7V5a2 2 0 012-2h4a2 2 0 012 2v2", truck: "M1 3h15v13H1zM16 8h4l3 3v5h-7zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z", dollar: "M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6", users: "M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75", chart: "M18 20V10M12 20V4M6 20v-6", check: "M20 6L9 17l-5-5", alert: "M12 2a10 10 0 100 20 10 10 0 000-20zM12 8v4M12 16h.01", file: "M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6", send: "M22 2L11 13M22 2l-7 20-4-9-9-4z", plus: "M12 5v14M5 12h14", close: "M18 6L6 18M6 6l12 12", receipt: "M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1zM8 6h8M8 10h8M8 14h5", shield: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z", brain: "M9.5 2A5.5 5.5 0 004 7.5c0 1.5.5 2.8 1.3 3.8A5 5 0 004 14.5 5.5 5.5 0 009.5 20h1V2zM14.5 2A5.5 5.5 0 0120 7.5c0 1.5-.5 2.8-1.3 3.8A5 5 0 0120 14.5 5.5 5.5 0 0114.5 20h-1V2z", package: "M16.5 9.4l-9-5.19M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12", edit: "M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4z", settings: "M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z", download: "M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3", book: "M4 19.5A2.5 2.5 0 016.5 17H20M4 19.5A2.5 2.5 0 004 17V5a2.5 2.5 0 012.5-2.5H20v15H6.5" };
+  const d = { dashboard: "M3 3h7v7H3zm11 0h7v7h-7zM3 14h7v7H3zm11 0h7v7h-7z", briefcase: "M2 7h20v14H2zM8 7V5a2 2 0 012-2h4a2 2 0 012 2v2", truck: "M1 3h15v13H1zM16 8h4l3 3v5h-7zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z", dollar: "M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6", users: "M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75", chart: "M18 20V10M12 20V4M6 20v-6", check: "M20 6L9 17l-5-5", alert: "M12 2a10 10 0 100 20 10 10 0 000-20zM12 8v4M12 16h.01", file: "M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6", send: "M22 2L11 13M22 2l-7 20-4-9-9-4z", plus: "M12 5v14M5 12h14", close: "M18 6L6 18M6 6l12 12", receipt: "M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1zM8 6h8M8 10h8M8 14h5", shield: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z", brain: "M9.5 2A5.5 5.5 0 004 7.5c0 1.5.5 2.8 1.3 3.8A5 5 0 004 14.5 5.5 5.5 0 009.5 20h1V2zM14.5 2A5.5 5.5 0 0120 7.5c0 1.5-.5 2.8-1.3 3.8A5 5 0 0120 14.5 5.5 5.5 0 0114.5 20h-1V2z", package: "M16.5 9.4l-9-5.19M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12", edit: "M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4z", settings: "M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z", download: "M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3", book: "M4 19.5A2.5 2.5 0 016.5 17H20M4 19.5A2.5 2.5 0 004 17V5a2.5 2.5 0 012.5-2.5H20v15H6.5", target: "M12 22a10 10 0 100-20 10 10 0 000 20zM12 18a6 6 0 100-12 6 6 0 000 12zM12 14a2 2 0 100-4 2 2 0 000 4z", upload: "M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12", search: "M11 19a8 8 0 100-16 8 8 0 000 16zM21 21l-4.35-4.35", "external-link": "M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3" };
   return <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={d[n]||""}/></svg>;
 };
 
@@ -6176,238 +6176,197 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
 function ProspectsPage({reps,customSops,addSop,deleteSop,notify}){
   const [search,setSearch]=useState('');
   const [statusFilter,setStatusFilter]=useState('all');
-  const [tierFilter,setTierFilter]=useState('all');
   const [stateFilter,setStateFilter]=useState('all');
   const [repFilter,setRepFilter]=useState('all');
   const [sortCol,setSortCol]=useState('rank');
   const [sortDir,setSortDir]=useState('asc');
   const [editing,setEditing]=useState(null);
   const [editForm,setEditForm]=useState({});
-  const [adding,setAdding]=useState(false);
-  const [addForm,setAddForm]=useState({name:'',title:'',company:'',email:'',phone:'',city:'',state:'',linkedin:'',website:'',twitter:'',employees:'',tier:'1',status:'New',notes:'',address:'',assignedRep:''});
-  const [csvUploading,setCsvUploading]=useState(false);
+  const [showAdd,setShowAdd]=useState(false);
+  const [addForm,setAddForm]=useState({name:'',title:'',company:'',email:'',phone:'',city:'',state:'',linkedin:'',website:'',twitter:'',employees:'',status:'New',notes:'',address:'',assignedRep:'',revenue:'',funding:''});
   const [selected,setSelected]=useState(new Set());
+  const [expandedId,setExpandedId]=useState(null);
   const [pageNum,setPageNum]=useState(0);
   const PAGE_SIZE=50;
   const fileRef=React.useRef(null);
 
-  // Load prospects from SOPs
   const prospects=(customSops||[]).filter(s=>s.cat==='Prospect').map(s=>{try{return{id:s.id,...JSON.parse(s.content)}}catch{return null}}).filter(Boolean);
   const statuses=['New','Contacted','Replied','Meeting Set','Proposal','Won','Lost','Nurture'];
-  const statusColors={New:'#525252',Contacted:'#a78bfa',Replied:'#2dd4bf',['Meeting Set']:'#fbbf24',Proposal:'#f97316',Won:'#34d399',Lost:'#f87171',Nurture:'#8b5cf6'};
+  const sc={New:'#525252',Contacted:'#a78bfa',Replied:'#2dd4bf','Meeting Set':'#fbbf24',Proposal:'#f97316',Won:'#34d399',Lost:'#f87171',Nurture:'#8b5cf6'};
 
-  // Filtering
   const allStates=[...new Set(prospects.map(p=>p.state).filter(Boolean))].sort();
   let filtered=prospects;
-  if(search){const q=search.toLowerCase();filtered=filtered.filter(p=>(p.name||'').toLowerCase().includes(q)||(p.company||'').toLowerCase().includes(q)||(p.email||'').toLowerCase().includes(q)||(p.city||'').toLowerCase().includes(q)||(p.title||'').toLowerCase().includes(q))}
+  if(search){const q=search.toLowerCase();filtered=filtered.filter(p=>[p.name,p.company,p.email,p.city,p.title,p.state,p.address].some(f=>(f||'').toLowerCase().includes(q)))}
   if(statusFilter!=='all')filtered=filtered.filter(p=>p.status===statusFilter);
-  if(tierFilter!=='all')filtered=filtered.filter(p=>String(p.tier)===tierFilter);
   if(stateFilter!=='all')filtered=filtered.filter(p=>p.state===stateFilter);
   if(repFilter!=='all')filtered=filtered.filter(p=>p.assignedRep===repFilter);
-
-  // Sorting
-  filtered.sort((a,b)=>{let va=a[sortCol]||'',vb=b[sortCol]||'';if(sortCol==='employees'||sortCol==='rank'||sortCol==='tier'){va=parseInt(va)||0;vb=parseInt(vb)||0}else{va=String(va).toLowerCase();vb=String(vb).toLowerCase()}if(va<vb)return sortDir==='asc'?-1:1;if(va>vb)return sortDir==='asc'?1:-1;return 0});
+  filtered.sort((a,b)=>{let va=a[sortCol]||'',vb=b[sortCol]||'';if(['employees','rank'].includes(sortCol)){va=parseInt(va)||0;vb=parseInt(vb)||0}else{va=String(va).toLowerCase();vb=String(vb).toLowerCase()}return sortDir==='asc'?(va<vb?-1:va>vb?1:0):(va>vb?-1:va<vb?1:0)});
 
   const totalPages=Math.ceil(filtered.length/PAGE_SIZE);
   const paged=filtered.slice(pageNum*PAGE_SIZE,(pageNum+1)*PAGE_SIZE);
   const statusCounts={};statuses.forEach(s=>{statusCounts[s]=prospects.filter(p=>p.status===s).length});
 
-  const saveProspect=(id,data)=>{addSop({id,title:data.name||'Prospect',cat:'Prospect',icon:'target',content:JSON.stringify(data),custom:true})};
-  const deleteProspect=(id)=>{deleteSop(id);notify('Prospect deleted')};
-  const updateStatus=(id,newStatus)=>{const p=prospects.find(x=>x.id===id);if(p){saveProspect(id,{...p,status:newStatus});notify(p.name+' >> '+newStatus)}};
-  const assignRep=(id,repId)=>{const p=prospects.find(x=>x.id===id);if(p){saveProspect(id,{...p,assignedRep:repId});const r=reps.find(r2=>r2.id===repId);notify(p.name+' assigned to '+(r?.name||'unassigned'))}};
-
+  const save=(id,data)=>{addSop({id,title:data.name||'Prospect',cat:'Prospect',icon:'target',content:JSON.stringify(data),custom:true})};
+  const del=(id)=>{deleteSop(id);notify('Prospect deleted')};
   const handleSort=(col)=>{if(sortCol===col)setSortDir(d=>d==='asc'?'desc':'asc');else{setSortCol(col);setSortDir('asc')}};
 
-  // CSV Upload
-  const handleCsvUpload=async(e)=>{
-    const file=e.target.files?.[0];if(!file)return;e.target.value='';setCsvUploading(true);
+  const handleCsv=async(e)=>{
+    const file=e.target.files?.[0];if(!file)return;e.target.value='';
     try{
-      const text=await file.text();
-      const lines=text.split('\n').filter(l=>l.trim());if(lines.length<2){notify('CSV appears empty');setCsvUploading(false);return}
+      const text=await file.text();const lines=text.split('\n').filter(l=>l.trim());if(lines.length<2){notify('Empty CSV');return}
       const sep=lines[0].includes('\t')?'\t':',';
-      const parseRow=(line)=>{const result=[];let current='';let inQuotes=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'){inQuotes=!inQuotes}else if(c===sep&&!inQuotes){result.push(current.trim());current=''}else{current+=c}}result.push(current.trim());return result};
-      const headers=parseRow(lines[0]).map(h=>h.replace(/^"|"$/g,'').trim().toLowerCase());
-      const nameIdx=headers.findIndex(h=>h==='name'||h==='full name'||h==='contact name');
-      const titleIdx=headers.findIndex(h=>h==='title'||h==='job title');
-      const companyIdx=headers.findIndex(h=>h==='company'||h==='company name'||h==='organization');
-      const emailIdx=headers.findIndex(h=>h==='email'||h==='email address');
-      const phoneIdx=headers.findIndex(h=>h.includes('direct')||h.includes('mobile')||h==='phone');
-      const corpPhoneIdx=headers.findIndex(h=>h.includes('corporate phone')||h.includes('company phone'));
-      const linkedinIdx=headers.findIndex(h=>h==='linkedin'||h.includes('linkedin'));
-      const websiteIdx=headers.findIndex(h=>h==='website'||h.includes('website'));
-      const twitterIdx=headers.findIndex(h=>h==='twitter'||h.includes('twitter'));
-      const empIdx=headers.findIndex(h=>h.includes('employee')||h==='# employees');
-      const cityIdx=headers.findIndex(h=>h==='city');
-      const stateIdx=headers.findIndex(h=>h==='state');
-      const addressIdx=headers.findIndex(h=>h.includes('address'));
-      const tierIdx=headers.findIndex(h=>h==='tier');
-      const statusIdx=headers.findIndex(h=>h==='status');
-      const notesIdx=headers.findIndex(h=>h==='notes');
-      const rankIdx=headers.findIndex(h=>h==='rank'||h==='#');
-      const existingNames=new Set(prospects.map(p=>(p.name||'').toLowerCase()+(p.company||'').toLowerCase()));
+      const parseRow=(line)=>{const r=[];let c='';let q=false;for(let i=0;i<line.length;i++){const ch=line[i];if(ch==='"')q=!q;else if(ch===sep&&!q){r.push(c.trim());c=''}else c+=ch}r.push(c.trim());return r};
+      const hdr=parseRow(lines[0]).map(h=>h.replace(/^"|"$/g,'').trim().toLowerCase());
+      const col=(names)=>hdr.findIndex(h=>names.some(n=>h.includes(n)));
+      const ci={name:col(['name','full name']),title:col(['title','job title']),company:col(['company','organization']),email:col(['email']),
+        mobile:col(['mobile']),directPhone:col(['direct','work phone']),corpPhone:col(['corporate phone']),compPhone:col(['company phone']),otherPhone:col(['other phone']),
+        linkedin:col(['linkedin']),compLinkedin:col(['company linkedin']),website:col(['website']),twitter:col(['twitter']),
+        emp:col(['employee','# employees']),city:col(['city']),state:col(['state']),address:col(['address']),
+        tier:col(['tier']),status:col(['status']),notes:col(['notes']),rank:col(['rank','#'])};
+      const g=(row,idx)=>(idx>=0?(row[idx]||''):'').replace(/^"|"$/g,'').trim();
+      const existing=new Set(prospects.map(p=>(p.name||'').toLowerCase()+(p.company||'').toLowerCase()));
       let added=0,skipped=0;
       for(let i=1;i<lines.length;i++){
         const row=parseRow(lines[i]);if(row.length<3)continue;
-        const name=(nameIdx>=0?row[nameIdx]:'').replace(/^"|"$/g,'').trim();
-        const company=(companyIdx>=0?row[companyIdx]:'').replace(/^"|"$/g,'').trim();
-        if(!name)continue;
-        const key=name.toLowerCase()+company.toLowerCase();
-        if(existingNames.has(key)){skipped++;continue}
-        existingNames.add(key);
-        const phone=(phoneIdx>=0?row[phoneIdx]:'').replace(/^"|"$/g,'').trim();
-        const corpPhone=(corpPhoneIdx>=0?row[corpPhoneIdx]:'').replace(/^"|"$/g,'').trim();
-        const data={
-          rank:rankIdx>=0?parseInt(row[rankIdx])||i:i,
-          name,title:(titleIdx>=0?row[titleIdx]:'').replace(/^"|"$/g,'').trim(),
-          company,email:(emailIdx>=0?row[emailIdx]:'').replace(/^"|"$/g,'').trim(),
-          phone:phone||corpPhone,
-          linkedin:(linkedinIdx>=0?row[linkedinIdx]:'').replace(/^"|"$/g,'').trim(),
-          website:(websiteIdx>=0?row[websiteIdx]:'').replace(/^"|"$/g,'').trim(),
-          twitter:(twitterIdx>=0?row[twitterIdx]:'').replace(/^"|"$/g,'').trim(),
-          employees:(empIdx>=0?row[empIdx]:'').replace(/^"|"$/g,'').replace(/,/g,'').trim(),
-          city:(cityIdx>=0?row[cityIdx]:'').replace(/^"|"$/g,'').trim(),
-          state:(stateIdx>=0?row[stateIdx]:'').replace(/^"|"$/g,'').trim(),
-          address:(addressIdx>=0?row[addressIdx]:'').replace(/^"|"$/g,'').trim(),
-          tier:(tierIdx>=0?row[tierIdx]:'1').replace(/^"|"$/g,'').trim(),
-          status:(statusIdx>=0?row[statusIdx]:'New').replace(/^"|"$/g,'').trim()||'New',
-          notes:(notesIdx>=0?row[notesIdx]:'').replace(/^"|"$/g,'').trim(),
-          assignedRep:'',addedAt:new Date().toISOString()
-        };
-        const id='PROS-'+Date.now()+'-'+Math.random().toString(36).slice(2,7);
-        saveProspect(id,data);added++;
+        const name=g(row,ci.name);const company=g(row,ci.company);if(!name)continue;
+        const key=name.toLowerCase()+company.toLowerCase();if(existing.has(key)){skipped++;continue}existing.add(key);
+        const phone=g(row,ci.mobile)||g(row,ci.directPhone)||g(row,ci.corpPhone)||g(row,ci.compPhone)||g(row,ci.otherPhone);
+        save('PROS-'+Date.now()+'-'+Math.random().toString(36).slice(2,7),{
+          rank:parseInt(g(row,ci.rank))||i,name,title:g(row,ci.title),company,email:g(row,ci.email),phone,
+          linkedin:g(row,ci.linkedin),companyLinkedin:g(row,ci.compLinkedin),website:g(row,ci.website),twitter:g(row,ci.twitter),
+          employees:g(row,ci.emp).replace(/,/g,''),city:g(row,ci.city),state:g(row,ci.state),address:g(row,ci.address),
+          status:g(row,ci.status)||'New',notes:g(row,ci.notes),assignedRep:'',addedAt:new Date().toISOString()
+        });added++;
       }
       notify(added+' prospects imported'+(skipped>0?', '+skipped+' duplicates skipped':''));
     }catch(err){notify('CSV error: '+err.message,'error')}
-    setCsvUploading(false);
   };
 
-  const addSingle=()=>{
-    if(!addForm.name.trim()){notify('Name is required');return}
-    const id='PROS-'+Date.now()+'-'+Math.random().toString(36).slice(2,7);
-    saveProspect(id,{...addForm,rank:prospects.length+1,addedAt:new Date().toISOString()});
-    setAddForm({name:'',title:'',company:'',email:'',phone:'',city:'',state:'',linkedin:'',website:'',twitter:'',employees:'',tier:'1',status:'New',notes:'',address:'',assignedRep:''});
-    setAdding(false);notify('Prospect added: '+addForm.name);
-  };
-
-  const bulkUpdateStatus=(newStatus)=>{selected.forEach(id=>{const p=prospects.find(x=>x.id===id);if(p)saveProspect(id,{...p,status:newStatus})});notify(selected.size+' prospects >> '+newStatus);setSelected(new Set())};
-  const bulkDelete=()=>{if(!confirm('Delete '+selected.size+' prospects?'))return;selected.forEach(id=>deleteSop(id));notify(selected.size+' prospects deleted');setSelected(new Set())};
-  const bulkAssign=(repId)=>{selected.forEach(id=>{const p=prospects.find(x=>x.id===id);if(p)saveProspect(id,{...p,assignedRep:repId})});const r=reps.find(r2=>r2.id===repId);notify(selected.size+' prospects assigned to '+(r?.name||'none'));setSelected(new Set())};
-
+  const addSingle=()=>{if(!addForm.name.trim()){notify('Name required');return}save('PROS-'+Date.now()+'-'+Math.random().toString(36).slice(2,7),{...addForm,rank:prospects.length+1,addedAt:new Date().toISOString()});setAddForm({name:'',title:'',company:'',email:'',phone:'',city:'',state:'',linkedin:'',website:'',twitter:'',employees:'',status:'New',notes:'',address:'',assignedRep:'',revenue:'',funding:''});setShowAdd(false);notify('Added: '+addForm.name)};
+  const bulkStatus=(s)=>{selected.forEach(id=>{const p=prospects.find(x=>x.id===id);if(p)save(id,{...p,status:s})});notify(selected.size+' >> '+s);setSelected(new Set())};
+  const bulkDel=()=>{if(!confirm('Delete '+selected.size+' prospects?'))return;selected.forEach(id=>deleteSop(id));notify(selected.size+' deleted');setSelected(new Set())};
+  const bulkAssign=(rid)=>{selected.forEach(id=>{const p=prospects.find(x=>x.id===id);if(p)save(id,{...p,assignedRep:rid})});notify(selected.size+' assigned');setSelected(new Set())};
   const selectAll=()=>{if(selected.size===paged.length)setSelected(new Set());else setSelected(new Set(paged.map(p=>p.id)))};
-
-  const inputStyle={background:'#0a0a0a',border:'1px solid #222',borderRadius:6,color:'#f0f0f0',padding:'6px 10px',fontSize:12,fontFamily:'inherit',width:'100%',outline:'none'};
-  const fmtN=n=>{const num=parseInt(n);if(isNaN(num))return'--';if(num>=1000)return(num/1000).toFixed(num>=10000?0:1)+'k';return String(num)};
+  const is=({...inputStyle,padding:'8px 12px',fontSize:12,borderRadius:8});
+  const fN=n=>{const v=parseInt(String(n).replace(/,/g,''));if(isNaN(v))return'--';if(v>=1000000)return(v/1000000).toFixed(1)+'M';if(v>=1000)return(v/1000).toFixed(v>=10000?0:1)+'k';return String(v)};
 
   return <div style={{animation:'fadeUp 0.4s'}}>
-    <Header title="Prospects" sub="Sales prospecting, lead tracking, and outreach management"/>
-
-    {/* Status pipeline chips */}
-    <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:16}}>
-      <button onClick={()=>setStatusFilter('all')} style={{padding:'6px 14px',borderRadius:8,border:'1px solid '+(statusFilter==='all'?'#2dd4bf':'#222'),background:statusFilter==='all'?'#2dd4bf15':'transparent',color:statusFilter==='all'?'#2dd4bf':'#737373',fontSize:12,fontWeight:statusFilter==='all'?600:400,cursor:'pointer',fontFamily:'inherit'}}>All ({prospects.length})</button>
-      {statuses.map(s=><button key={s} onClick={()=>{setStatusFilter(statusFilter===s?'all':s);setPageNum(0)}} style={{padding:'6px 14px',borderRadius:8,border:'1px solid '+(statusFilter===s?statusColors[s]||'#333':'#222'),background:statusFilter===s?(statusColors[s]||'#333')+'15':'transparent',color:statusFilter===s?statusColors[s]||'#f0f0f0':'#525252',fontSize:12,fontWeight:statusFilter===s?600:400,cursor:'pointer',fontFamily:'inherit'}}>{s} ({statusCounts[s]||0})</button>)}
+    <Header title="Prospects" sub={"Sales prospecting and lead tracking -- "+prospects.length+" total contacts"}/>
+    {/* Status pipeline */}
+    <div style={{display:'flex',gap:4,flexWrap:'wrap',marginBottom:16,overflowX:'auto',WebkitOverflowScrolling:'touch',paddingBottom:4}}>
+      <button onClick={()=>{setStatusFilter('all');setPageNum(0)}} style={{padding:'5px 12px',borderRadius:20,border:statusFilter==='all'?'1px solid #2dd4bf':'1px solid #1a1a1a',background:statusFilter==='all'?'#2dd4bf12':'transparent',color:statusFilter==='all'?'#2dd4bf':'#525252',fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:"'JetBrains Mono',monospace",whiteSpace:'nowrap',transition:'all 0.15s'}}>ALL {prospects.length}</button>
+      {statuses.map(s=><button key={s} onClick={()=>{setStatusFilter(statusFilter===s?'all':s);setPageNum(0)}} style={{padding:'5px 12px',borderRadius:20,border:'1px solid '+(statusFilter===s?(sc[s]||'#333')+'60':'#1a1a1a'),background:statusFilter===s?(sc[s]||'#333')+'12':'transparent',color:statusFilter===s?sc[s]||'#f0f0f0':'#333',fontSize:11,fontWeight:600,cursor:'pointer',fontFamily:"'JetBrains Mono',monospace",whiteSpace:'nowrap',transition:'all 0.15s'}}>{s} {statusCounts[s]||0}</button>)}
     </div>
-
-    {/* Action bar */}
-    <Card style={{padding:14,marginBottom:16}}>
-      <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
-        <div style={{position:'relative',flex:1,minWidth:200,maxWidth:400}}><input value={search} onChange={e=>{setSearch(e.target.value);setPageNum(0)}} placeholder="Search name, title, company, email, city..." style={{...inputStyle,paddingLeft:32,width:'100%'}}/><I n="search" s={14} color="#525252" style={{position:'absolute',left:10,top:8}}/></div>
-        <select value={tierFilter} onChange={e=>{setTierFilter(e.target.value);setPageNum(0)}} style={{...inputStyle,width:'auto'}}><option value="all">All Tiers</option><option value="1">Tier 1</option><option value="2">Tier 2</option><option value="3">Tier 3</option></select>
-        <select value={stateFilter} onChange={e=>{setStateFilter(e.target.value);setPageNum(0)}} style={{...inputStyle,width:'auto'}}><option value="all">All States</option>{allStates.map(s=><option key={s} value={s}>{s}</option>)}</select>
-        <select value={repFilter} onChange={e=>{setRepFilter(e.target.value);setPageNum(0)}} style={{...inputStyle,width:'auto'}}><option value="all">All Reps</option><option value="">Unassigned</option>{reps.filter(r=>!r.id.includes('SEED')).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select>
-        <div style={{marginLeft:'auto',display:'flex',gap:6}}>
-          <input ref={fileRef} type="file" accept=".csv,.tsv" onChange={handleCsvUpload} style={{display:'none'}}/>
-          <Btn v="secondary" onClick={()=>fileRef.current?.click()} style={{fontSize:11,padding:'6px 12px'}}><I n="upload" s={12}/> Upload CSV</Btn>
-          <Btn onClick={()=>setAdding(!adding)} style={{fontSize:11,padding:'6px 12px'}}><I n="plus" s={12}/> Add Prospect</Btn>
-        </div>
+    {/* Toolbar */}
+    <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',marginBottom:12}}>
+      <input value={search} onChange={e=>{setSearch(e.target.value);setPageNum(0)}} placeholder="Search name, company, email, city, state..." style={{...is,flex:1,minWidth:200,maxWidth:400,fontFamily:"'JetBrains Mono',monospace"}}/>
+      <select value={stateFilter} onChange={e=>{setStateFilter(e.target.value);setPageNum(0)}} style={{...is,width:'auto',fontFamily:"'JetBrains Mono',monospace"}}><option value="all">All States</option>{allStates.map(s=><option key={s} value={s}>{s}</option>)}</select>
+      <select value={repFilter} onChange={e=>{setRepFilter(e.target.value);setPageNum(0)}} style={{...is,width:'auto'}}><option value="all">All Reps</option><option value="">Unassigned</option>{reps.filter(r=>!r.id.includes('SEED')).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select>
+      <div style={{marginLeft:'auto',display:'flex',gap:6}}>
+        <input ref={fileRef} type="file" accept=".csv,.tsv" onChange={handleCsv} style={{display:'none'}}/>
+        <Btn v="secondary" onClick={()=>fileRef.current?.click()} style={{fontSize:11,padding:'7px 14px'}}><I n="upload" s={13}/> CSV</Btn>
+        <Btn onClick={()=>setShowAdd(!showAdd)} style={{fontSize:11,padding:'7px 14px'}}><I n="plus" s={13}/> Add</Btn>
       </div>
-      <div style={{fontSize:11,color:'#525252',marginTop:8}}>{filtered.length} of {prospects.length} prospects{search?' matching "'+search+'"':''}</div>
-    </Card>
-
-    {/* Bulk actions */}
-    {selected.size>0&&<div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',marginBottom:12,background:'#2dd4bf08',border:'1px solid #2dd4bf20',borderRadius:8,flexWrap:'wrap'}}>
-      <span style={{fontSize:13,color:'#2dd4bf',fontWeight:600}}>{selected.size} selected</span>
-      <select onChange={e=>{if(e.target.value)bulkUpdateStatus(e.target.value);e.target.value=''}} style={{background:'#111',border:'1px solid #222',color:'#a3a3a3',borderRadius:6,padding:'4px 8px',fontSize:11,fontFamily:'inherit',cursor:'pointer'}}><option value="">Set status...</option>{statuses.map(s=><option key={s} value={s}>{s}</option>)}</select>
-      <select onChange={e=>{if(e.target.value==='__none')bulkAssign('');else if(e.target.value)bulkAssign(e.target.value);e.target.value=''}} style={{background:'#111',border:'1px solid #222',color:'#a3a3a3',borderRadius:6,padding:'4px 8px',fontSize:11,fontFamily:'inherit',cursor:'pointer'}}><option value="">Assign rep...</option><option value="__none">Unassign</option>{reps.filter(r=>!r.id.includes('SEED')).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select>
-      <button onClick={bulkDelete} style={{background:'none',border:'1px solid #f8717130',color:'#f87171',padding:'4px 10px',borderRadius:6,fontSize:11,cursor:'pointer',fontFamily:'inherit'}}>Delete</button>
+    </div>
+    {/* Bulk */}
+    {selected.size>0&&<div style={{display:'flex',alignItems:'center',gap:8,padding:'8px 14px',marginBottom:10,background:'rgba(45,212,191,0.04)',border:'1px solid rgba(45,212,191,0.12)',borderRadius:10,flexWrap:'wrap'}}>
+      <span style={{fontSize:12,color:'#2dd4bf',fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}>{selected.size} selected</span>
+      <select onChange={e=>{if(e.target.value)bulkStatus(e.target.value);e.target.value=''}} style={{...is,width:'auto',fontSize:11,padding:'4px 8px'}}><option value="">Status...</option>{statuses.map(s=><option key={s}>{s}</option>)}</select>
+      <select onChange={e=>{if(e.target.value==='__none')bulkAssign('');else if(e.target.value)bulkAssign(e.target.value);e.target.value=''}} style={{...is,width:'auto',fontSize:11,padding:'4px 8px'}}><option value="">Assign...</option><option value="__none">Unassign</option>{reps.filter(r=>!r.id.includes('SEED')).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select>
+      <button onClick={bulkDel} style={{padding:'4px 10px',borderRadius:6,border:'1px solid #f8717125',background:'transparent',color:'#f87171',fontSize:11,cursor:'pointer',fontFamily:'inherit'}}>Delete</button>
       <button onClick={()=>setSelected(new Set())} style={{background:'none',border:'none',color:'#525252',cursor:'pointer',fontSize:11,fontFamily:'inherit'}}>Clear</button>
     </div>}
-
-    {/* Add prospect form */}
-    {adding&&<Card style={{padding:16,marginBottom:16,border:'1px solid #2dd4bf20'}}>
-      <div style={{fontSize:14,fontWeight:700,color:'#f0f0f0',marginBottom:12}}>Add Prospect</div>
-      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:10,marginBottom:12}}>
-        <div><label style={{fontSize:11,color:'#a3a3a3',display:'block',marginBottom:3}}>Name *</label><input value={addForm.name} onChange={e=>setAddForm({...addForm,name:e.target.value})} style={inputStyle} placeholder="Full name"/></div>
-        <div><label style={{fontSize:11,color:'#a3a3a3',display:'block',marginBottom:3}}>Title</label><input value={addForm.title} onChange={e=>setAddForm({...addForm,title:e.target.value})} style={inputStyle} placeholder="CFO, Director, etc."/></div>
-        <div><label style={{fontSize:11,color:'#a3a3a3',display:'block',marginBottom:3}}>Company</label><input value={addForm.company} onChange={e=>setAddForm({...addForm,company:e.target.value})} style={inputStyle} placeholder="School or district"/></div>
-        <div><label style={{fontSize:11,color:'#a3a3a3',display:'block',marginBottom:3}}>Email</label><input value={addForm.email} onChange={e=>setAddForm({...addForm,email:e.target.value})} style={inputStyle} placeholder="email@school.edu" type="email"/></div>
-        <div><label style={{fontSize:11,color:'#a3a3a3',display:'block',marginBottom:3}}>Phone</label><input value={addForm.phone} onChange={e=>setAddForm({...addForm,phone:e.target.value})} style={inputStyle} placeholder="+1 555-123-4567"/></div>
-        <div><label style={{fontSize:11,color:'#a3a3a3',display:'block',marginBottom:3}}>City</label><input value={addForm.city} onChange={e=>setAddForm({...addForm,city:e.target.value})} style={inputStyle}/></div>
-        <div><label style={{fontSize:11,color:'#a3a3a3',display:'block',marginBottom:3}}>State</label><input value={addForm.state} onChange={e=>setAddForm({...addForm,state:e.target.value})} style={inputStyle}/></div>
-        <div><label style={{fontSize:11,color:'#a3a3a3',display:'block',marginBottom:3}}>Employees</label><input value={addForm.employees} onChange={e=>setAddForm({...addForm,employees:e.target.value})} style={inputStyle}/></div>
-        <div><label style={{fontSize:11,color:'#a3a3a3',display:'block',marginBottom:3}}>LinkedIn</label><input value={addForm.linkedin} onChange={e=>setAddForm({...addForm,linkedin:e.target.value})} style={inputStyle} placeholder="https://linkedin.com/in/..."/></div>
-        <div><label style={{fontSize:11,color:'#a3a3a3',display:'block',marginBottom:3}}>Website</label><input value={addForm.website} onChange={e=>setAddForm({...addForm,website:e.target.value})} style={inputStyle} placeholder="https://..."/></div>
-        <div><label style={{fontSize:11,color:'#a3a3a3',display:'block',marginBottom:3}}>Tier</label><select value={addForm.tier} onChange={e=>setAddForm({...addForm,tier:e.target.value})} style={inputStyle}><option value="1">Tier 1</option><option value="2">Tier 2</option><option value="3">Tier 3</option></select></div>
-        <div><label style={{fontSize:11,color:'#a3a3a3',display:'block',marginBottom:3}}>Assigned Rep</label><select value={addForm.assignedRep} onChange={e=>setAddForm({...addForm,assignedRep:e.target.value})} style={inputStyle}><option value="">Unassigned</option>{reps.filter(r=>!r.id.includes('SEED')).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></div>
+    {/* Add form */}
+    {showAdd&&<Card style={{padding:16,marginBottom:14,border:'1px solid rgba(45,212,191,0.1)'}}>
+      <div style={{fontSize:13,fontWeight:700,color:'#f0f0f0',marginBottom:10}}>New Prospect</div>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:8,marginBottom:10}}>
+        {[['name','Name *'],['title','Title'],['company','Company'],['email','Email'],['phone','Phone'],['city','City'],['state','State'],['address','Address'],['linkedin','LinkedIn URL'],['website','Website'],['twitter','Twitter'],['employees','Employees'],['revenue','Annual Revenue'],['funding','Latest Funding']].map(([k,label])=>
+          <div key={k}><label style={{fontSize:10,color:'#525252',display:'block',marginBottom:2,fontFamily:"'JetBrains Mono',monospace",textTransform:'uppercase',letterSpacing:0.5}}>{label}</label><input value={addForm[k]||''} onChange={e=>setAddForm({...addForm,[k]:e.target.value})} style={{...is,fontSize:11}} placeholder={label}/></div>
+        )}
+        <div><label style={{fontSize:10,color:'#525252',display:'block',marginBottom:2,fontFamily:"'JetBrains Mono',monospace",textTransform:'uppercase',letterSpacing:0.5}}>Rep</label><select value={addForm.assignedRep||''} onChange={e=>setAddForm({...addForm,assignedRep:e.target.value})} style={{...is,fontSize:11}}><option value="">--</option>{reps.filter(r=>!r.id.includes('SEED')).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></div>
       </div>
-      <div style={{display:'flex',gap:8}}><Btn onClick={addSingle}>Add Prospect</Btn><Btn v="secondary" onClick={()=>setAdding(false)}>Cancel</Btn></div>
+      <div style={{display:'flex',gap:6}}><Btn onClick={addSingle} style={{fontSize:11}}>Save</Btn><Btn v="secondary" onClick={()=>setShowAdd(false)} style={{fontSize:11}}>Cancel</Btn></div>
     </Card>}
-
     {/* Table */}
-    <Card style={{padding:0,overflow:'hidden'}}>
-      <div style={{overflowX:'auto'}}>
-        <table style={{width:'100%',borderCollapse:'collapse',minWidth:1100}}>
-          <thead><tr style={{background:'#0a0a0a',borderBottom:'2px solid #222'}}>
-            <th style={{padding:'10px 8px',width:36}}><input type="checkbox" checked={selected.size===paged.length&&paged.length>0} onChange={selectAll} style={{accentColor:'#2dd4bf',cursor:'pointer'}}/></th>
-            {[['name','Name'],['title','Title'],['company','Company'],['email','Email'],['phone','Phone'],['city','Location'],['employees','Size'],['tier','Tier'],['status','Status'],['assignedRep','Rep'],['','Actions']].map(([col,label])=>
-              <th key={label} onClick={col?()=>handleSort(col):undefined} style={{padding:'10px 8px',textAlign:'left',fontSize:10,fontWeight:600,color:'#737373',textTransform:'uppercase',letterSpacing:0.8,cursor:col?'pointer':'default',whiteSpace:'nowrap',userSelect:'none'}}>{label}{sortCol===col?<span style={{marginLeft:4,color:'#2dd4bf'}}>{sortDir==='asc'?'\u25B2':'\u25BC'}</span>:''}</th>
-            )}
-          </tr></thead>
-          <tbody>{paged.map((p,idx)=>{
-            const rep=reps.find(r=>r.id===p.assignedRep);
-            const isEditing=editing===p.id;
-            if(isEditing)return <tr key={p.id} style={{background:'#2dd4bf08',borderBottom:'1px solid #1a1a1a'}}>
-              <td style={{padding:'6px 8px'}}/>
-              <td style={{padding:'6px 4px'}}><input value={editForm.name||''} onChange={e=>setEditForm({...editForm,name:e.target.value})} style={{...inputStyle,padding:'4px 6px',fontSize:11}}/></td>
-              <td style={{padding:'6px 4px'}}><input value={editForm.title||''} onChange={e=>setEditForm({...editForm,title:e.target.value})} style={{...inputStyle,padding:'4px 6px',fontSize:11}}/></td>
-              <td style={{padding:'6px 4px'}}><input value={editForm.company||''} onChange={e=>setEditForm({...editForm,company:e.target.value})} style={{...inputStyle,padding:'4px 6px',fontSize:11}}/></td>
-              <td style={{padding:'6px 4px'}}><input value={editForm.email||''} onChange={e=>setEditForm({...editForm,email:e.target.value})} style={{...inputStyle,padding:'4px 6px',fontSize:11}}/></td>
-              <td style={{padding:'6px 4px'}}><input value={editForm.phone||''} onChange={e=>setEditForm({...editForm,phone:e.target.value})} style={{...inputStyle,padding:'4px 6px',fontSize:11}}/></td>
-              <td style={{padding:'6px 4px'}}><input value={(editForm.city||'')+', '+(editForm.state||'')} onChange={e=>{const parts=e.target.value.split(',');setEditForm({...editForm,city:(parts[0]||'').trim(),state:(parts[1]||'').trim()})}} style={{...inputStyle,padding:'4px 6px',fontSize:11}}/></td>
-              <td style={{padding:'6px 4px'}}><input value={editForm.employees||''} onChange={e=>setEditForm({...editForm,employees:e.target.value})} style={{...inputStyle,padding:'4px 6px',fontSize:11,width:60}}/></td>
-              <td style={{padding:'6px 4px'}}><select value={editForm.tier||'1'} onChange={e=>setEditForm({...editForm,tier:e.target.value})} style={{...inputStyle,padding:'4px 6px',fontSize:11,width:60}}><option value="1">1</option><option value="2">2</option><option value="3">3</option></select></td>
-              <td style={{padding:'6px 4px'}}><select value={editForm.status||'New'} onChange={e=>setEditForm({...editForm,status:e.target.value})} style={{...inputStyle,padding:'4px 6px',fontSize:11}}>{statuses.map(s=><option key={s}>{s}</option>)}</select></td>
-              <td style={{padding:'6px 4px'}}><select value={editForm.assignedRep||''} onChange={e=>setEditForm({...editForm,assignedRep:e.target.value})} style={{...inputStyle,padding:'4px 6px',fontSize:11}}><option value="">--</option>{reps.filter(r=>!r.id.includes('SEED')).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></td>
-              <td style={{padding:'6px 4px',whiteSpace:'nowrap'}}><button onClick={()=>{saveProspect(p.id,editForm);setEditing(null);notify('Updated: '+editForm.name)}} style={{background:'none',border:'none',color:'#34d399',cursor:'pointer',fontSize:10,fontFamily:'inherit',marginRight:4}}>Save</button><button onClick={()=>setEditing(null)} style={{background:'none',border:'none',color:'#737373',cursor:'pointer',fontSize:10,fontFamily:'inherit'}}>Cancel</button></td>
-            </tr>;
-            return <tr key={p.id} style={{borderBottom:'1px solid #111',transition:'background 0.1s',background:selected.has(p.id)?'#2dd4bf08':'transparent'}} onMouseEnter={e=>{if(!selected.has(p.id))e.currentTarget.style.background='#0a0a0a'}} onMouseLeave={e=>{e.currentTarget.style.background=selected.has(p.id)?'#2dd4bf08':'transparent'}}>
-              <td style={{padding:'8px 8px'}}><input type="checkbox" checked={selected.has(p.id)} onChange={()=>{const s=new Set(selected);if(s.has(p.id))s.delete(p.id);else s.add(p.id);setSelected(s)}} style={{accentColor:'#2dd4bf',cursor:'pointer'}}/></td>
-              <td style={{padding:'8px 8px'}}><div style={{fontWeight:600,color:'#e5e5e5',fontSize:12}}>{p.name}</div></td>
-              <td style={{padding:'8px 8px',fontSize:11,color:'#a3a3a3',maxWidth:160,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.title||'--'}</td>
-              <td style={{padding:'8px 8px'}}>{p.website?<a href={p.website.startsWith('http')?p.website:'https://'+p.website} target="_blank" rel="noopener noreferrer" style={{color:'#2dd4bf',fontSize:12,textDecoration:'none'}}>{p.company||'--'}</a>:<span style={{fontSize:12,color:'#c4c4c4'}}>{p.company||'--'}</span>}</td>
-              <td style={{padding:'8px 8px'}}>{p.email?<a href={'mailto:'+p.email} style={{color:'#a78bfa',fontSize:11,textDecoration:'none',fontFamily:"'JetBrains Mono',monospace"}}>{p.email}</a>:<span style={{color:'#333',fontSize:11}}>--</span>}</td>
-              <td style={{padding:'8px 8px',fontSize:11,color:'#a3a3a3',whiteSpace:'nowrap'}}>{p.phone||'--'}</td>
-              <td style={{padding:'8px 8px',fontSize:11,color:'#a3a3a3',whiteSpace:'nowrap'}}>{p.city?p.city+(p.state?', '+p.state:''):'--'}</td>
-              <td style={{padding:'8px 8px',fontSize:11,color:'#a3a3a3',fontFamily:"'JetBrains Mono',monospace",textAlign:'right'}}>{fmtN(p.employees)}</td>
-              <td style={{padding:'8px 8px'}}><span style={{padding:'2px 8px',borderRadius:4,fontSize:10,fontWeight:600,background:p.tier==='1'||p.tier===1?'#2dd4bf20':p.tier==='2'||p.tier===2?'#a78bfa20':'#52525220',color:p.tier==='1'||p.tier===1?'#2dd4bf':p.tier==='2'||p.tier===2?'#a78bfa':'#525252'}}>Tier {p.tier||1}</span></td>
-              <td style={{padding:'8px 8px'}}><select value={p.status||'New'} onChange={e=>updateStatus(p.id,e.target.value)} style={{background:'transparent',border:'1px solid '+(statusColors[p.status]||'#333')+'40',color:statusColors[p.status]||'#737373',borderRadius:6,padding:'3px 6px',fontSize:10,fontWeight:600,fontFamily:'inherit',cursor:'pointer',outline:'none'}}>{statuses.map(s=><option key={s} style={{background:'#111',color:'#e5e5e5'}}>{s}</option>)}</select></td>
-              <td style={{padding:'8px 8px'}}><select value={p.assignedRep||''} onChange={e=>assignRep(p.id,e.target.value)} style={{...inputStyle,padding:'3px 6px',fontSize:10,width:'auto',minWidth:70}}><option value="">--</option>{reps.filter(r=>!r.id.includes('SEED')).map(r=><option key={r.id} value={r.id}>{r.name.split(' ')[0]}</option>)}</select></td>
-              <td style={{padding:'8px 6px',whiteSpace:'nowrap'}}>
-                {p.linkedin&&<a href={p.linkedin.startsWith('http')?p.linkedin:'https://'+p.linkedin} target="_blank" rel="noopener noreferrer" style={{color:'#0a66c2',fontSize:9,marginRight:4,padding:'2px 5px',border:'1px solid #0a66c230',borderRadius:4,textDecoration:'none',fontWeight:600}}>in</a>}
-                <button onClick={()=>{setEditing(p.id);setEditForm({...p})}} style={{background:'none',border:'none',color:'#525252',cursor:'pointer',fontSize:10,fontFamily:'inherit',padding:'2px 4px'}}>Edit</button>
-                <button onClick={()=>{if(confirm('Delete '+p.name+'?'))deleteProspect(p.id)}} style={{background:'none',border:'none',color:'#f87171',cursor:'pointer',fontSize:10,fontFamily:'inherit',padding:'2px 4px'}}>Del</button>
-              </td>
-            </tr>;
-          })}</tbody>
-        </table>
-      </div>
-      {/* Pagination */}
-      {totalPages>1&&<div style={{display:'flex',justifyContent:'center',alignItems:'center',gap:8,padding:'12px 16px',borderTop:'1px solid #1a1a1a'}}>
-        <button onClick={()=>setPageNum(Math.max(0,pageNum-1))} disabled={pageNum===0} style={{padding:'4px 12px',borderRadius:6,border:'1px solid #222',background:'transparent',color:pageNum===0?'#333':'#a3a3a3',fontSize:11,cursor:pageNum===0?'default':'pointer',fontFamily:'inherit'}}>Prev</button>
-        <span style={{fontSize:11,color:'#525252'}}>Page {pageNum+1} of {totalPages}</span>
-        <button onClick={()=>setPageNum(Math.min(totalPages-1,pageNum+1))} disabled={pageNum>=totalPages-1} style={{padding:'4px 12px',borderRadius:6,border:'1px solid #222',background:'transparent',color:pageNum>=totalPages-1?'#333':'#a3a3a3',fontSize:11,cursor:pageNum>=totalPages-1?'default':'pointer',fontFamily:'inherit'}}>Next</button>
-      </div>}
-    </Card>
+    <div style={{overflowX:'auto',borderRadius:12,border:'1px solid #1a1a1a',background:'#000'}}>
+      <table style={{width:'100%',borderCollapse:'collapse',minWidth:900}}>
+        <thead><tr style={{background:'#050505'}}>
+          <th style={{padding:'10px 6px',width:32}}><input type="checkbox" checked={selected.size===paged.length&&paged.length>0} onChange={selectAll} style={{accentColor:'#2dd4bf',cursor:'pointer'}}/></th>
+          {[['name','Name',180],['title','Title',130],['company','Company',150],['email','Email',180],['phone','Phone',120],['city','Location',120],['employees','Size',60],['status','Status',90],['assignedRep','Rep',80],['','',100]].map(([col,label,w])=>
+            <th key={label||'actions'} onClick={col?()=>handleSort(col):undefined} style={{padding:'10px 6px',textAlign:'left',fontSize:9,fontWeight:700,color:'#525252',textTransform:'uppercase',letterSpacing:1.2,cursor:col?'pointer':'default',whiteSpace:'nowrap',fontFamily:"'JetBrains Mono',monospace",minWidth:w,borderBottom:'1px solid #111'}}>{label}{sortCol===col&&<span style={{color:'#2dd4bf',marginLeft:3}}>{sortDir==='asc'?'\u25B2':'\u25BC'}</span>}</th>
+          )}
+        </tr></thead>
+        <tbody>{paged.map(p=>{
+          const rep=reps.find(r=>r.id===p.assignedRep);
+          const isExp=expandedId===p.id;
+          return <React.Fragment key={p.id}>
+          <tr style={{borderBottom:'1px solid #0a0a0a',transition:'background 0.1s',background:selected.has(p.id)?'rgba(45,212,191,0.03)':'transparent',cursor:'pointer'}} onClick={()=>setExpandedId(isExp?null:p.id)} onMouseEnter={e=>{if(!selected.has(p.id))e.currentTarget.style.background='#050505'}} onMouseLeave={e=>{e.currentTarget.style.background=selected.has(p.id)?'rgba(45,212,191,0.03)':'transparent'}}>
+            <td style={{padding:'8px 6px'}} onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selected.has(p.id)} onChange={()=>{const s=new Set(selected);if(s.has(p.id))s.delete(p.id);else s.add(p.id);setSelected(s)}} style={{accentColor:'#2dd4bf',cursor:'pointer'}}/></td>
+            <td style={{padding:'8px 6px'}}><span style={{fontWeight:600,color:'#e5e5e5',fontSize:12}}>{p.name}</span></td>
+            <td style={{padding:'8px 6px',fontSize:11,color:'#737373',maxWidth:140,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.title||'--'}</td>
+            <td style={{padding:'8px 6px'}}>{p.website?<a href={p.website.startsWith('http')?p.website:'https://'+p.website} target="_blank" rel="noopener noreferrer" style={{color:'#2dd4bf',fontSize:11,textDecoration:'none',fontWeight:500}} onClick={e=>e.stopPropagation()}>{p.company||'--'}</a>:<span style={{fontSize:11,color:'#a3a3a3'}}>{p.company||'--'}</span>}</td>
+            <td style={{padding:'8px 6px'}} onClick={e=>e.stopPropagation()}>{p.email?<a href={'mailto:'+p.email} style={{color:'#a78bfa',fontSize:10,textDecoration:'none',fontFamily:"'JetBrains Mono',monospace"}}>{p.email}</a>:<span style={{color:'#222',fontSize:10}}>--</span>}</td>
+            <td style={{padding:'8px 6px',fontSize:11,color:'#737373',fontFamily:"'JetBrains Mono',monospace",whiteSpace:'nowrap'}}>{p.phone||'--'}</td>
+            <td style={{padding:'8px 6px',fontSize:10,color:'#525252',whiteSpace:'nowrap'}}>{p.city?(p.city+(p.state?', '+p.state:'')):'--'}</td>
+            <td style={{padding:'8px 6px',fontSize:10,color:'#737373',fontFamily:"'JetBrains Mono',monospace",textAlign:'right'}}>{fN(p.employees)}</td>
+            <td style={{padding:'8px 6px'}} onClick={e=>e.stopPropagation()}><select value={p.status||'New'} onChange={e=>{save(p.id,{...p,status:e.target.value});notify(p.name+' >> '+e.target.value)}} style={{background:'transparent',border:'1px solid '+(sc[p.status]||'#333')+'30',color:sc[p.status]||'#525252',borderRadius:6,padding:'3px 6px',fontSize:10,fontFamily:"'JetBrains Mono',monospace",cursor:'pointer',outline:'none',fontWeight:500}}>{statuses.map(s=><option key={s} style={{background:'#111',color:'#e5e5e5'}}>{s}</option>)}</select></td>
+            <td style={{padding:'8px 6px'}} onClick={e=>e.stopPropagation()}><select value={p.assignedRep||''} onChange={e=>{save(p.id,{...p,assignedRep:e.target.value});const r2=reps.find(r3=>r3.id===e.target.value);notify(p.name+' >> '+(r2?.name||'unassigned'))}} style={{...is,padding:'3px 6px',fontSize:10,width:'auto',minWidth:60}}><option value="">--</option>{reps.filter(r=>!r.id.includes('SEED')).map(r=><option key={r.id} value={r.id}>{r.name.split(' ')[0]}</option>)}</select></td>
+            <td style={{padding:'8px 6px',whiteSpace:'nowrap'}} onClick={e=>e.stopPropagation()}>
+              {p.linkedin&&<a href={p.linkedin.startsWith('http')?p.linkedin:'https://'+p.linkedin} target="_blank" rel="noopener noreferrer" style={{display:'inline-flex',alignItems:'center',justifyContent:'center',width:28,height:28,borderRadius:6,background:'#0a66c215',border:'1px solid #0a66c230',color:'#0a66c2',fontSize:11,fontWeight:800,textDecoration:'none',marginRight:4,transition:'all 0.15s'}} onMouseEnter={e=>{e.currentTarget.style.background='#0a66c230'}} onMouseLeave={e=>{e.currentTarget.style.background='#0a66c215'}}>in</a>}
+              <button onClick={()=>{setEditing(p.id);setEditForm({...p})}} style={{background:'none',border:'none',color:'#525252',cursor:'pointer',fontSize:10,fontFamily:"'JetBrains Mono',monospace",padding:'4px 6px'}} onMouseEnter={e=>{e.currentTarget.style.color='#2dd4bf'}} onMouseLeave={e=>{e.currentTarget.style.color='#525252'}}>EDIT</button>
+              <button onClick={()=>{if(confirm('Delete '+p.name+'?'))del(p.id)}} style={{background:'none',border:'none',color:'#333',cursor:'pointer',fontSize:10,fontFamily:"'JetBrains Mono',monospace",padding:'4px 6px'}} onMouseEnter={e=>{e.currentTarget.style.color='#f87171'}} onMouseLeave={e=>{e.currentTarget.style.color='#333'}}>DEL</button>
+            </td>
+          </tr>
+          {/* Expanded detail row */}
+          {isExp&&<tr style={{background:'#050505'}}><td colSpan={11} style={{padding:'12px 16px 16px 42px',borderBottom:'1px solid #1a1a1a'}}>
+            {editing===p.id?<div>
+              <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:8,marginBottom:10}}>
+                {[['name','Name'],['title','Title'],['company','Company'],['email','Email'],['phone','Phone'],['city','City'],['state','State'],['address','Address'],['linkedin','LinkedIn'],['website','Website'],['twitter','Twitter'],['employees','Employees'],['revenue','Revenue'],['funding','Funding'],['notes','Notes']].map(([k,l])=>
+                  <div key={k}><label style={{fontSize:9,color:'#525252',display:'block',marginBottom:2,fontFamily:"'JetBrains Mono',monospace",textTransform:'uppercase',letterSpacing:0.8}}>{l}</label><input value={editForm[k]||''} onChange={e=>setEditForm({...editForm,[k]:e.target.value})} style={{...is,fontSize:11,padding:'6px 10px'}}/></div>
+                )}
+                <div><label style={{fontSize:9,color:'#525252',display:'block',marginBottom:2,fontFamily:"'JetBrains Mono',monospace",textTransform:'uppercase',letterSpacing:0.8}}>Rep</label><select value={editForm.assignedRep||''} onChange={e=>setEditForm({...editForm,assignedRep:e.target.value})} style={{...is,fontSize:11,padding:'6px 10px'}}><option value="">--</option>{reps.filter(r=>!r.id.includes('SEED')).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></div>
+              </div>
+              <div style={{display:'flex',gap:6}}><Btn onClick={()=>{save(p.id,editForm);setEditing(null);notify('Updated: '+editForm.name)}} style={{fontSize:11}}>Save</Btn><Btn v="secondary" onClick={()=>setEditing(null)} style={{fontSize:11}}>Cancel</Btn></div>
+            </div>:
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(200px,1fr))',gap:12}}>
+              <div>
+                <div style={{fontSize:9,color:'#333',fontFamily:"'JetBrains Mono',monospace",textTransform:'uppercase',letterSpacing:1,marginBottom:6}}>CONTACT</div>
+                <div style={{fontSize:13,fontWeight:700,color:'#f0f0f0',marginBottom:2}}>{p.name}</div>
+                <div style={{fontSize:11,color:'#737373',marginBottom:2}}>{p.title||'--'}</div>
+                <div style={{fontSize:11,color:'#a3a3a3',marginBottom:6}}>{p.company||'--'}</div>
+                {p.email&&<div style={{fontSize:11,marginBottom:2}}><a href={'mailto:'+p.email} style={{color:'#a78bfa',textDecoration:'none',fontFamily:"'JetBrains Mono',monospace",fontSize:10}}>{p.email}</a></div>}
+                {p.phone&&<div style={{fontSize:11,color:'#737373',fontFamily:"'JetBrains Mono',monospace",marginBottom:2}}>{p.phone}</div>}
+              </div>
+              <div>
+                <div style={{fontSize:9,color:'#333',fontFamily:"'JetBrains Mono',monospace",textTransform:'uppercase',letterSpacing:1,marginBottom:6}}>LOCATION</div>
+                {p.address&&<div style={{fontSize:11,color:'#737373',marginBottom:2}}>{p.address}</div>}
+                <div style={{fontSize:11,color:'#a3a3a3'}}>{p.city}{p.state?', '+p.state:''}</div>
+                {p.employees&&<div style={{fontSize:11,color:'#525252',fontFamily:"'JetBrains Mono',monospace",marginTop:4}}>{fN(p.employees)} employees</div>}
+              </div>
+              <div>
+                <div style={{fontSize:9,color:'#333',fontFamily:"'JetBrains Mono',monospace",textTransform:'uppercase',letterSpacing:1,marginBottom:6}}>LINKS</div>
+                <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                  {p.linkedin&&<a href={p.linkedin.startsWith('http')?p.linkedin:'https://'+p.linkedin} target="_blank" rel="noopener noreferrer" style={{display:'inline-flex',alignItems:'center',gap:4,padding:'5px 10px',borderRadius:6,background:'#0a66c215',border:'1px solid #0a66c225',color:'#0a66c2',fontSize:10,fontWeight:600,textDecoration:'none',fontFamily:"'JetBrains Mono',monospace"}}>LinkedIn</a>}
+                  {p.companyLinkedin&&<a href={p.companyLinkedin.startsWith('http')?p.companyLinkedin:'https://'+p.companyLinkedin} target="_blank" rel="noopener noreferrer" style={{display:'inline-flex',alignItems:'center',gap:4,padding:'5px 10px',borderRadius:6,background:'#0a66c210',border:'1px solid #0a66c218',color:'#0a66c280',fontSize:10,fontWeight:600,textDecoration:'none',fontFamily:"'JetBrains Mono',monospace"}}>Co. LinkedIn</a>}
+                  {p.website&&<a href={p.website.startsWith('http')?p.website:'https://'+p.website} target="_blank" rel="noopener noreferrer" style={{display:'inline-flex',alignItems:'center',gap:4,padding:'5px 10px',borderRadius:6,background:'#2dd4bf10',border:'1px solid #2dd4bf20',color:'#2dd4bf',fontSize:10,fontWeight:600,textDecoration:'none',fontFamily:"'JetBrains Mono',monospace"}}>Website</a>}
+                  {p.twitter&&<a href={p.twitter.startsWith('http')?p.twitter:'https://'+p.twitter} target="_blank" rel="noopener noreferrer" style={{display:'inline-flex',alignItems:'center',gap:4,padding:'5px 10px',borderRadius:6,background:'#1d9bf010',border:'1px solid #1d9bf020',color:'#1d9bf0',fontSize:10,fontWeight:600,textDecoration:'none',fontFamily:"'JetBrains Mono',monospace"}}>Twitter</a>}
+                </div>
+                {(p.revenue||p.funding)&&<div style={{marginTop:8,fontSize:10,color:'#525252',fontFamily:"'JetBrains Mono',monospace"}}>{p.revenue?'Revenue: '+p.revenue:''}{p.revenue&&p.funding?' | ':''}{p.funding?'Funding: '+p.funding:''}</div>}
+                {p.notes&&<div style={{marginTop:6,fontSize:11,color:'#525252',fontStyle:'italic'}}>{p.notes}</div>}
+              </div>
+            </div>}
+          </td></tr>}
+          </React.Fragment>;
+        })}</tbody>
+      </table>
+    </div>
+    {/* Pagination */}
+    {totalPages>1&&<div style={{display:'flex',justifyContent:'center',alignItems:'center',gap:8,padding:'14px 0'}}>
+      <button onClick={()=>setPageNum(Math.max(0,pageNum-1))} disabled={pageNum===0} style={{padding:'5px 14px',borderRadius:8,border:'1px solid #1a1a1a',background:'transparent',color:pageNum===0?'#222':'#737373',fontSize:11,cursor:pageNum===0?'default':'pointer',fontFamily:"'JetBrains Mono',monospace",transition:'all 0.15s'}}>PREV</button>
+      <span style={{fontSize:10,color:'#333',fontFamily:"'JetBrains Mono',monospace",letterSpacing:1}}>{pageNum+1} / {totalPages}</span>
+      <button onClick={()=>setPageNum(Math.min(totalPages-1,pageNum+1))} disabled={pageNum>=totalPages-1} style={{padding:'5px 14px',borderRadius:8,border:'1px solid #1a1a1a',background:'transparent',color:pageNum>=totalPages-1?'#222':'#737373',fontSize:11,cursor:pageNum>=totalPages-1?'default':'pointer',fontFamily:"'JetBrains Mono',monospace",transition:'all 0.15s'}}>NEXT</button>
+    </div>}
+    <div style={{fontSize:10,color:'#222',textAlign:'center',padding:'8px 0',fontFamily:"'JetBrains Mono',monospace"}}>{filtered.length} prospect{filtered.length!==1?'s':''}{search?' matching "'+search+'"':''}</div>
   </div>;
 }
 function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,getJobItems,notify,triggerPrint,dateFilter,jobNum,customSops,addSop,deleteSop,...fCtx}){
