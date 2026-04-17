@@ -6279,8 +6279,8 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify}){
     {/* Toolbar */}
     <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',marginBottom:12}}>
       <input value={search} onChange={e=>{setSearch(e.target.value);setPageNum(0)}} placeholder={"Search "+filtered.length+" prospects..."} style={{...inputStyle,maxWidth:300,background:'#111',border:'1px solid #222',padding:'10px 16px',fontSize:13}}/>
-      <select value={stateFilter} onChange={e=>{setStateFilter(e.target.value);setPageNum(0)}} style={{...is,width:'auto',fontFamily:"'JetBrains Mono',monospace"}}><option value="all">All States</option>{allStates.map(s=><option key={s} value={s}>{s}</option>)}</select>
-      <select value={repFilter} onChange={e=>{setRepFilter(e.target.value);setPageNum(0)}} style={{...is,width:'auto'}}><option value="all">All Reps</option><option value="">Unassigned</option>{reps.filter(r=>!r.id.includes('SEED')).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select>
+      <select value={stateFilter} onChange={e=>{setStateFilter(e.target.value);setPageNum(0)}} style={{...inputStyle,width:'auto',background:'#111',border:'1px solid #222',padding:'10px 16px',fontSize:13}}><option value="all">All States</option>{allStates.map(s=><option key={s} value={s}>{s}</option>)}</select>
+      <select value={repFilter} onChange={e=>{setRepFilter(e.target.value);setPageNum(0)}} style={{...inputStyle,width:'auto',background:'#111',border:'1px solid #222',padding:'10px 16px',fontSize:13}}><option value="all">All Reps</option><option value="">Unassigned</option>{reps.filter(r=>!r.id.includes('SEED')).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select>
       <div style={{marginLeft:'auto',display:'flex',gap:6,alignItems:'center'}}>
         <div style={{display:'flex',borderRadius:8,overflow:'hidden',border:'1px solid #1a1a1a'}}>
           <button onClick={()=>setViewMode('table')} style={{padding:'6px 12px',border:'none',background:viewMode==='table'?'#2dd4bf15':'transparent',color:viewMode==='table'?'#2dd4bf':'#525252',fontSize:11,cursor:'pointer',fontFamily:"'JetBrains Mono',monospace",fontWeight:600}}>TABLE</button>
@@ -6352,12 +6352,12 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify}){
     {viewMode==='table'&&<>
     {/* Select All + count */}
     <div style={{marginBottom:8,display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
-      <div style={{display:'flex',alignItems:'center',gap:6,cursor:'pointer'}} onClick={selectAll}><input type="checkbox" checked={selected.size===paged.length&&paged.length>0} onChange={selectAll} style={{accentColor:'#2dd4bf',cursor:'pointer',width:15,height:15}}/><span style={{fontSize:12,color:selected.size>0?'#2dd4bf':'#737373',fontWeight:selected.size>0?600:400}}>{selected.size>0?selected.size+' of '+filtered.length+' selected':'Select All'}</span></div>
+      <div style={{display:'flex',alignItems:'center',gap:6,cursor:'pointer'}} onClick={selectAll}>{selected.size>0&&selected.size<paged.length?<CheckMinus checked={true} onChange={selectAll}/>:<Check checked={selected.size===paged.length&&paged.length>0} onChange={selectAll}/>}<span style={{fontSize:12,color:selected.size>0?'#2dd4bf':'#737373',fontWeight:selected.size>0?600:400}}>{selected.size>0?selected.size+' of '+filtered.length+' selected':'Select All'}</span></div>
     </div>
     <div style={{overflowX:'auto',borderRadius:12,border:'1px solid #1a1a1a',background:'#000'}}>
       <table style={{width:'100%',borderCollapse:'collapse',minWidth:900}}>
         <thead><tr style={{background:'#050505'}}>
-          <th style={{padding:'10px 6px',width:32}}><input type="checkbox" checked={selected.size===paged.length&&paged.length>0} onChange={selectAll} style={{accentColor:'#2dd4bf',cursor:'pointer'}}/></th>
+          <th style={{padding:'10px 6px',width:32}}><Check checked={selected.size===paged.length&&paged.length>0} onChange={selectAll}/></th>
           {[['name','Name',180],['title','Title',130],['company','Company',150],['email','Email',180],['phone','Phone',120],['city','Location',120],['employees','Size',60],['status','Status',90],['assignedRep','Rep',80],['','',100]].map(([col,label,w])=>
             <th key={label||'actions'} onClick={col?()=>handleSort(col):undefined} style={{padding:'10px 6px',textAlign:'left',fontSize:12,fontWeight:700,color:'#737373',textTransform:'uppercase',letterSpacing:1.2,cursor:col?'pointer':'default',whiteSpace:'nowrap',fontFamily:"'JetBrains Mono',monospace",minWidth:w,borderBottom:'1px solid #111'}}>{label}{sortCol===col&&<span style={{color:'#2dd4bf',marginLeft:3}}>{sortDir==='asc'?'\u25B2':'\u25BC'}</span>}</th>
           )}
@@ -6367,7 +6367,7 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify}){
           const isExp=expandedId===p.id;
           return <React.Fragment key={p.id}>
           <tr style={{borderBottom:'1px solid #0a0a0a',transition:'background 0.1s',background:selected.has(p.id)?'rgba(45,212,191,0.03)':'transparent',cursor:'pointer'}} onClick={()=>setExpandedId(isExp?null:p.id)} onMouseEnter={e=>{if(!selected.has(p.id))e.currentTarget.style.background='#050505'}} onMouseLeave={e=>{e.currentTarget.style.background=selected.has(p.id)?'rgba(45,212,191,0.03)':'transparent'}}>
-            <td style={{padding:'8px 6px'}} onClick={e=>e.stopPropagation()}><input type="checkbox" checked={selected.has(p.id)} onChange={()=>{const s=new Set(selected);if(s.has(p.id))s.delete(p.id);else s.add(p.id);setSelected(s)}} style={{accentColor:'#2dd4bf',cursor:'pointer'}}/></td>
+            <td style={{padding:'8px 6px'}} onClick={e=>e.stopPropagation()}><Check checked={selected.has(p.id)} onChange={()=>{const s=new Set(selected);if(s.has(p.id))s.delete(p.id);else s.add(p.id);setSelected(s)}}/></td>
             <td style={{padding:'8px 6px'}}><span style={{fontWeight:600,color:'#e5e5e5',fontSize:12}}>{p.name}</span></td>
             <td style={{padding:'8px 6px',fontSize:12,color:'#c4c4c4',maxWidth:140,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.title||'--'}</td>
             <td style={{padding:'8px 6px'}}>{p.website?<a href={p.website.startsWith('http')?p.website:'https://'+p.website} target="_blank" rel="noopener noreferrer" style={{color:'#2dd4bf',fontSize:12,textDecoration:'none',fontWeight:500}} onClick={e=>e.stopPropagation()}>{p.company||'--'}</a>:<span style={{fontSize:12,color:'#a3a3a3'}}>{p.company||'--'}</span>}</td>
