@@ -6278,7 +6278,7 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify}){
     </div>
     {/* Toolbar */}
     <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',marginBottom:12}}>
-      <input value={search} onChange={e=>{setSearch(e.target.value);setPageNum(0)}} placeholder="Search name, company, email, city, state..." style={{...is,flex:1,minWidth:200,maxWidth:400,fontFamily:"'JetBrains Mono',monospace"}}/>
+      <input value={search} onChange={e=>{setSearch(e.target.value);setPageNum(0)}} placeholder={"Search "+filtered.length+" prospects..."} style={{...inputStyle,maxWidth:300,background:'#111',border:'1px solid #222',padding:'10px 16px',fontSize:13}}/>
       <select value={stateFilter} onChange={e=>{setStateFilter(e.target.value);setPageNum(0)}} style={{...is,width:'auto',fontFamily:"'JetBrains Mono',monospace"}}><option value="all">All States</option>{allStates.map(s=><option key={s} value={s}>{s}</option>)}</select>
       <select value={repFilter} onChange={e=>{setRepFilter(e.target.value);setPageNum(0)}} style={{...is,width:'auto'}}><option value="all">All Reps</option><option value="">Unassigned</option>{reps.filter(r=>!r.id.includes('SEED')).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select>
       <div style={{marginLeft:'auto',display:'flex',gap:6,alignItems:'center'}}>
@@ -6349,7 +6349,12 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify}){
       })}
     </div>}
     {/* Table View */}
-    {viewMode==='table'&&<><div style={{overflowX:'auto',borderRadius:12,border:'1px solid #1a1a1a',background:'#000'}}>
+    {viewMode==='table'&&<>
+    {/* Select All + count */}
+    <div style={{marginBottom:8,display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+      <div style={{display:'flex',alignItems:'center',gap:6,cursor:'pointer'}} onClick={selectAll}><input type="checkbox" checked={selected.size===paged.length&&paged.length>0} onChange={selectAll} style={{accentColor:'#2dd4bf',cursor:'pointer',width:15,height:15}}/><span style={{fontSize:12,color:selected.size>0?'#2dd4bf':'#737373',fontWeight:selected.size>0?600:400}}>{selected.size>0?selected.size+' of '+filtered.length+' selected':'Select All'}</span></div>
+    </div>
+    <div style={{overflowX:'auto',borderRadius:12,border:'1px solid #1a1a1a',background:'#000'}}>
       <table style={{width:'100%',borderCollapse:'collapse',minWidth:900}}>
         <thead><tr style={{background:'#050505'}}>
           <th style={{padding:'10px 6px',width:32}}><input type="checkbox" checked={selected.size===paged.length&&paged.length>0} onChange={selectAll} style={{accentColor:'#2dd4bf',cursor:'pointer'}}/></th>
