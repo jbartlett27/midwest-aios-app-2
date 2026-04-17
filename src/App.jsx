@@ -4965,7 +4965,11 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     {name:"set_doc_status",description:"Set the status of a document (quote, PO, invoice, commission statement). Use when user says 'mark the Hopewell quote as sent', 'approve the PO for Marco', 'set the invoice to drafted'. Statuses: new, drafted, sent, approved.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name"},doc_type:{type:"string",description:"quote, po, invoice, commission"},vendor_name:{type:"string",description:"For POs: which vendor's PO to update"},status:{type:"string",description:"new, drafted, sent, approved"}},required:["job_id","doc_type","status"]}},
     {name:"calculate_financials",description:"Calculate detailed financial breakdown for a job or across all jobs. Returns revenue, cost, margin, shipping total, install total, commission, and per-vendor breakdown. Use for 'what's the margin on Hopewell', 'break down costs by vendor', 'what's our total commission exposure'.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name. Use 'all' for entire business."},include_vendor_breakdown:{type:"boolean",description:"Include per-vendor cost breakdown"}},required:["job_id"]}},
     {name:"schedule_followup",description:"Create a follow-up task tied to a job with a specific due date. Use when user says 'remind me to follow up on the Lincoln quote next Tuesday', 'schedule a check-in with Naperville in 2 weeks'.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name"},text:{type:"string",description:"What to follow up on"},due_date:{type:"string",description:"Due date (YYYY-MM-DD or relative like 'next Tuesday', '2 weeks')"},assignee:{type:"string",description:"Who to assign to"}},required:["text","due_date"]}},
-    {name:"export_data",description:"Export job line items, vendor list, customer list, or financial summary as a formatted table the user can copy. Use when user says 'export the Hopewell items', 'give me a vendor list I can copy', 'export all jobs as a table'.",input_schema:{type:"object",properties:{type:{type:"string",description:"job_items, jobs_list, vendors, customers, reps, financials"},job_id:{type:"string",description:"For job_items: which job"},format:{type:"string",description:"table (markdown) or csv"}},required:["type"]}}
+    {name:"export_data",description:"Export job line items, vendor list, customer list, or financial summary as a formatted table the user can copy. Use when user says 'export the Hopewell items', 'give me a vendor list I can copy', 'export all jobs as a table'.",input_schema:{type:"object",properties:{type:{type:"string",description:"job_items, jobs_list, vendors, customers, reps, financials"},job_id:{type:"string",description:"For job_items: which job"},format:{type:"string",description:"table (markdown) or csv"}},required:["type"]}},
+    {name:"create_transaction",description:"Create a banking transaction (expense or revenue) on the Financials page. Use when user says 'add an expense for $500 rent', 'log a payment of $1200 from customer', 'record a $300 office supply purchase', 'add a deposit of $5000'.",input_schema:{type:"object",properties:{description:{type:"string",description:"What the transaction is for"},amount:{type:"number",description:"Dollar amount (positive number)"},type:{type:"string",description:"expense or revenue",enum:["expense","revenue"]},category:{type:"string",description:"Category like Operating - Rent, COGS - Vendor Payments, Revenue - Product Sales, etc."},date:{type:"string",description:"Date in YYYY-MM-DD format. Defaults to today."},account:{type:"string",description:"Account name like Operating, Savings, Credit Card, Payroll. Defaults to Operating."}},required:["description","amount"]}},
+    {name:"categorize_transaction",description:"Change the category on an existing banking transaction. Use when user says 'categorize the Chesapeake payment as insurance', 'change the United Airlines charge to travel', 'mark that $500 as rent'.",input_schema:{type:"object",properties:{transaction_description:{type:"string",description:"Description keywords to find the transaction"},category:{type:"string",description:"New category to assign"},date:{type:"string",description:"Date to narrow search if needed"}},required:["transaction_description","category"]}},
+    {name:"get_banking_summary",description:"Get a summary of banking transactions -- totals by category, recent transactions, account balances, cash flow. Use when user says 'what did we spend this month', 'show me our expenses by category', 'what is our cash position', 'banking summary', 'how much have we spent on rent'.",input_schema:{type:"object",properties:{period:{type:"string",description:"month, quarter, ytd, year, all. Defaults to ytd."},category_filter:{type:"string",description:"Optional: filter to a specific category"}},required:[]}},
+    {name:"get_payables_summary",description:"Get accounts payable / vendor bills summary -- what is owed, what is overdue, upcoming payments. Use when user says 'what do we owe vendors', 'show overdue bills', 'AP aging', 'what bills are due this week'.",input_schema:{type:"object",properties:{},required:[]}}
   ];
 
   // Execute a tool call locally
@@ -5560,6 +5564,108 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         }
         return{error:"Unknown export type: "+input.type};
       }
+      if(toolName==="create_transaction"){
+        const txnDate=input.date||new Date().toISOString().split('T')[0];
+        const txnType=input.type||'expense';
+        const txnCat=input.category||(txnType==='revenue'?'Revenue - Product Sales':'Uncategorized');
+        const txnAcct=input.account||'Operating';
+        const txnAmt=String(Math.abs(Number(input.amount)||0));
+        const id='TXN-'+Date.now()+'-'+Math.random().toString(36).slice(2,6);
+        addSop({id,title:input.description||'Transaction',cat:'ManualTxn',icon:'dollar',content:JSON.stringify({date:txnDate,description:input.description||'',category:txnCat,amount:txnAmt,type:txnType,account:txnAcct}),custom:true});
+        return{success:true,message:'Created '+txnType+': $'+Number(txnAmt).toFixed(2)+' -- "'+input.description+'" ['+txnCat+'] on '+txnDate+' ('+txnAcct+' account)'};
+      }
+      if(toolName==="categorize_transaction"){
+        const txns=(customSops||[]).filter(s=>s.cat==='ManualTxn').map(s=>{try{return{id:s.id,...JSON.parse(s.content)}}catch{return null}}).filter(Boolean);
+        const desc=(input.transaction_description||'').toLowerCase();
+        const dateFilter=input.date||'';
+        let matches=txns.filter(t=>(t.description||'').toLowerCase().includes(desc));
+        if(dateFilter)matches=matches.filter(t=>t.date===dateFilter);
+        if(matches.length===0)return{error:'No transaction found matching "'+input.transaction_description+'"'+(dateFilter?' on '+dateFilter:'')};
+        const t=matches[0];
+        const newType=input.category.startsWith('Revenue')?'revenue':'expense';
+        addSop({id:t.id,title:t.description||'Transaction',cat:'ManualTxn',icon:'dollar',content:JSON.stringify({...t,category:input.category,type:newType}),custom:true});
+        return{success:true,message:'Categorized "'+t.description+'" ($'+Number(t.amount||0).toFixed(2)+') as '+input.category+(matches.length>1?' (matched first of '+matches.length+' results)':'')};
+      }
+      if(toolName==="get_banking_summary"){
+        const txns=(customSops||[]).filter(s=>s.cat==='ManualTxn').map(s=>{try{return{id:s.id,...JSON.parse(s.content)}}catch{return null}}).filter(Boolean);
+        const now2=new Date();const y=now2.getFullYear();const m=now2.getMonth();
+        let fromDate='2020-01-01';
+        const period=input.period||'ytd';
+        if(period==='month')fromDate=new Date(y,m,1).toISOString().split('T')[0];
+        else if(period==='quarter'){const qm=Math.floor(m/3)*3;fromDate=new Date(y,qm,1).toISOString().split('T')[0]}
+        else if(period==='ytd')fromDate=new Date(y,0,1).toISOString().split('T')[0];
+        else if(period==='year')fromDate=new Date(y-1,m,now2.getDate()).toISOString().split('T')[0];
+        const filtered=txns.filter(t=>{if(!t.date)return true;return t.date>=fromDate});
+        const catFilter=(input.category_filter||'').toLowerCase();
+        const final=catFilter?filtered.filter(t=>(t.category||'').toLowerCase().includes(catFilter)):filtered;
+        const totalIn=final.filter(t=>t.type==='revenue').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+        const totalOut=final.filter(t=>t.type==='expense').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+        // Group by category
+        const byCat={};final.forEach(t=>{const c=t.category||'Uncategorized';byCat[c]=(byCat[c]||0)+(t.type==='revenue'?1:-1)*(parseFloat(t.amount)||0)});
+        let msg='## Banking Summary ('+period.toUpperCase()+')\n\n';
+        msg+='| Metric | Amount |\n| --- | --- |\n';
+        msg+='| Total In (deposits) | $'+totalIn.toFixed(2)+' |\n';
+        msg+='| Total Out (payments) | $'+totalOut.toFixed(2)+' |\n';
+        msg+='| Net | $'+(totalIn-totalOut).toFixed(2)+' |\n';
+        msg+='| Transactions | '+final.length+' |\n';
+        if(Object.keys(byCat).length>0){
+          msg+='\n## By Category\n\n| Category | Amount | Type |\n| --- | --- | --- |\n';
+          Object.entries(byCat).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1])).forEach(([c,v])=>{
+            const catTxns=final.filter(t=>(t.category||'Uncategorized')===c);
+            const catTotal=catTxns.reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+            msg+='| '+c+' | $'+catTotal.toFixed(2)+' | '+(catTxns[0]?.type||'expense')+' |\n';
+          });
+        }
+        if(final.length>0){
+          msg+='\n## Recent Transactions\n\n| Date | Description | Category | Account | Amount |\n| --- | --- | --- | --- | --- |\n';
+          final.sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,15).forEach(t=>{
+            msg+='| '+(t.date||'--')+' | '+(t.description||'--')+' | '+(t.category||'--')+' | '+(t.account||'Operating')+' | '+(t.type==='revenue'?'+':'-')+'$'+(parseFloat(t.amount)||0).toFixed(2)+' |\n';
+          });
+        }
+        return{success:true,message:msg};
+      }
+      if(toolName==="get_payables_summary"){
+        const f2=getJobFinancials;const gi=getJobItems;
+        let allBills2=[];
+        jobs.forEach(j=>{
+          const items2=gi(j.id);const pos2=[];
+          const byVendor={};items2.forEach(it=>{const vid=it.vendor||'unknown';if(!byVendor[vid])byVendor[vid]=[];byVendor[vid].push(it)});
+          Object.entries(byVendor).forEach(([vid,vitems])=>{
+            const v=vendors.find(v2=>v2.id===vid);
+            const cost=vitems.reduce((s,it)=>s+(it.unitCost||0)*it.qtyOrdered,0);
+            if(cost>0){
+              const poDoc='PO-'+(j.id||'').replace(/[^A-Z0-9]/gi,'').slice(-4).toUpperCase()+'-'+(vid||'').replace(/[^A-Z0-9]/gi,'').slice(-4).toUpperCase();
+              const ds=typeof docStatuses[poDoc]==='object'&&docStatuses[poDoc]?docStatuses[poDoc]:{};
+              const paid=ds.status==='paid'||ds.paid;
+              const voided=ds.status==='void';
+              if(!paid&&!voided){
+                const created=new Date(j.createdDate||Date.now());
+                const due=new Date(created);due.setDate(due.getDate()+30);
+                const daysUntil=Math.floor((due-new Date())/(1000*60*60*24));
+                allBills2.push({vendor:v?.name||'Unknown',job:j.name,amount:cost,dueDate:due.toISOString().split('T')[0],daysUntil,overdue:daysUntil<0,poDoc});
+              }
+            }
+          });
+        });
+        allBills2.sort((a,b)=>a.daysUntil-b.daysUntil);
+        const totalOwed=allBills2.reduce((s,b)=>s+b.amount,0);
+        const overdueBills=allBills2.filter(b=>b.overdue);
+        const overdueAmt=overdueBills.reduce((s,b)=>s+b.amount,0);
+        const dueSoon=allBills2.filter(b=>!b.overdue&&b.daysUntil<=14);
+        let msg='## Accounts Payable Summary\n\n';
+        msg+='| Metric | Amount |\n| --- | --- |\n';
+        msg+='| Total Outstanding | $'+totalOwed.toFixed(2)+' |\n';
+        msg+='| Overdue | $'+overdueAmt.toFixed(2)+' ('+overdueBills.length+' bills) |\n';
+        msg+='| Due in 14 Days | $'+dueSoon.reduce((s,b)=>s+b.amount,0).toFixed(2)+' ('+dueSoon.length+' bills) |\n';
+        msg+='| Total Open Bills | '+allBills2.length+' |\n';
+        if(allBills2.length>0){
+          msg+='\n## Open Bills\n\n| Vendor | Job | Amount | Due Date | Status |\n| --- | --- | --- | --- | --- |\n';
+          allBills2.slice(0,20).forEach(b=>{
+            msg+='| '+b.vendor+' | '+b.job+' | $'+b.amount.toFixed(2)+' | '+b.dueDate+' | '+(b.overdue?'OVERDUE ('+Math.abs(b.daysUntil)+'d)':b.daysUntil<=14?'Due soon ('+b.daysUntil+'d)':'OK ('+b.daysUntil+'d)')+' |\n';
+          });
+        }
+        return{success:true,message:msg};
+      }
       return{error:"Unknown tool: "+toolName};
     }catch(err){return{error:"Execution error: "+err.message}}
   };
@@ -5855,7 +5961,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
       (data.content||[]).filter(b=>b.type==="web_search_tool_result").forEach(b=>{(b.content||[]).filter(r=>r.type==="web_search_result").forEach(r=>{if(r.url&&r.title)webCitations.push({url:r.url,title:r.title})})});
       if(toolBlocks.length>0){
         // Separate read-only tools (auto-execute) from write tools (require confirmation)
-        const readOnlyTools=new Set(['get_job_details','search_and_report','detect_anomalies','analyze_trends','summarize_context','recall_memory','predictive_flag','database_query','compare_quote_to_job','calculate_financials','export_data']);
+        const readOnlyTools=new Set(['get_job_details','search_and_report','detect_anomalies','analyze_trends','summarize_context','recall_memory','predictive_flag','database_query','compare_quote_to_job','calculate_financials','export_data','get_banking_summary','get_payables_summary']);
         const readTools=toolBlocks.filter(tb=>readOnlyTools.has(tb.name));
         const writeTools=toolBlocks.filter(tb=>!readOnlyTools.has(tb.name));
         // Auto-execute read-only tools and show results inline
@@ -5907,6 +6013,8 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
           if(a.name==="schedule_followup")return "Schedule follow-up: **"+(a.input.text||"")+"** due **"+(a.input.due_date||"")+"**";
           if(a.name==="calculate_financials")return "Calculate financials for **"+(a.input.job_id||"all jobs")+"**";
           if(a.name==="export_data")return "Export **"+(a.input.type||"data")+"**"+(a.input.job_id?" for **"+a.input.job_id+"**":"");
+          if(a.name==="create_transaction")return "Add "+(a.input.type||"expense")+": **$"+(a.input.amount||0)+"** -- "+(a.input.description||"transaction")+" ["+(a.input.category||"Uncategorized")+"]";
+          if(a.name==="categorize_transaction")return "Categorize **"+(a.input.transaction_description||"transaction")+"** as **"+(a.input.category||"")+"**";
           if(a.name==="update_line_item")return "Update line item: **"+(a.input.item_description||a.input.item_id||"")+"**"+(a.input.updates?" >> "+Object.entries(a.input.updates).map(([k,v])=>k+"="+v).join(", "):"");
           return a.name+"("+JSON.stringify(a.input).slice(0,60)+")";
         }).join("\n");
