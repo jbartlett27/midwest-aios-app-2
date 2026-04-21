@@ -1,9 +1,13 @@
 // ═══════════════════════════════════════════════════════════════
 // EMAIL API — Vercel Serverless Function
-// Sends document emails via Resend (free: 100 emails/day)
-// Setup: Add RESEND_API_KEY to Vercel Environment Variables
-// Get key from: https://resend.com/api-keys
+// Sends document emails via Resend
+// Domain: mwfurnishings.com (verified in Resend)
+// Setup: RESEND_API_KEY in Vercel Environment Variables
 // ═══════════════════════════════════════════════════════════════
+
+const VERIFIED_DOMAIN = 'mwfurnishings.com';
+const DEFAULT_SENDER = 'quotes@mwfurnishings.com';
+const SENDER_DISPLAY_NAME = 'Midwest Educational Furnishings';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -25,27 +29,47 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Missing to, subject, or html' });
     }
 
-    // Resend requires from to be either onboarding@resend.dev or a verified domain
-    // If user provides a custom from, use it as the reply-to and send from resend.dev
-    const userFrom = from || '';
-    const hasVerifiedDomain = process.env.RESEND_VERIFIED_DOMAIN;
-    const senderEmail = hasVerifiedDomain 
-      ? `Midwest Furnishings <${userFrom || 'noreply@' + hasVerifiedDomain}>`
-      : 'Midwest Furnishings <onboarding@resend.dev>';
+    // The user-provided "from" is the person sending (e.g. mwelter@mwfurnishings.com or lisa@mwfurnishings.com).
+    // Resend requires the actual From: header to be on the verified domain (mwfurnishings.com).
+    // Strategy:
+    //   - If the user's "from" is already on the verified domain, use it directly as the sender.
+    //   - Otherwise, send from the default sender on the verified domain and put their address in reply_to.
+    const userFrom = (from || '').trim();
+    const userFromLower = userFrom.toLowerCase();
+    const isOnVerifiedDomain = userFromLower.endsWith('@' + VERIFIED_DOMAIN);
+
+    let senderEmail;
+    let replyTo;
+
+    if (isOnVerifiedDomain) {
+      // User entered their @mwfurnishings.com address -- send from it directly
+      senderEmail = SENDER_DISPLAY_NAME + ' <' + userFrom + '>';
+      replyTo = userFrom;
+    } else if (userFrom) {
+      // User entered a non-mwfurnishings address -- send from default, reply-to user
+      senderEmail = SENDER_DISPLAY_NAME + ' <' + DEFAULT_SENDER + '>';
+      replyTo = userFrom;
+    } else {
+      // No from provided -- use default sender, no reply-to
+      senderEmail = SENDER_DISPLAY_NAME + ' <' + DEFAULT_SENDER + '>';
+      replyTo = undefined;
+    }
+
+    const payload = {
+      from: senderEmail,
+      to: Array.isArray(to) ? to : [to],
+      subject,
+      html,
+    };
+    if (replyTo) payload.reply_to = replyTo;
 
     const emailRes = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${apiKey}`,
+        'Authorization': 'Bearer ' + apiKey,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        from: senderEmail,
-        reply_to: userFrom || undefined,
-        to: Array.isArray(to) ? to : [to],
-        subject,
-        html,
-      }),
+      body: JSON.stringify(payload),
     });
 
     const data = await emailRes.json();
@@ -53,7 +77,7 @@ export default async function handler(req, res) {
     if (emailRes.ok) {
       return res.status(200).json({ success: true, id: data.id });
     } else {
-      return res.status(emailRes.status).json({ error: data.message || 'Email send failed' });
+      return res.status(emailRes.status).json({ error: data.message || data.error || 'Email send failed' });
     }
   } catch (err) {
     return res.status(500).json({ error: 'Server error: ' + err.message });
