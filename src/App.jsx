@@ -2809,14 +2809,21 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
     setEmailSending(true);
     try {
       const doc=emailModal;
-      // Use the SAME HTML as Export PDF so emails look identical to the PDF version
-      const {html:docHtml,docTitle}=buildDocHtml(doc);
       const senderName=(emailFrom||'').split('@')[0].replace(/[._-]/g,' ').replace(/\b\w/g,c=>c.toUpperCase()) || 'Midwest Educational Furnishings';
-      const intro='<div style="font-family:Arial,sans-serif;max-width:800px;margin:0 auto;padding:20px 24px 0"><p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 8px">Hello,</p><p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 8px">Please see the '+docTitle.toLowerCase()+' below'+(doc.data.docNum?' ('+doc.data.docNum+')':'')+'. Let me know if you have any questions.</p><p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 16px">Thank you,<br/>'+senderName+'</p><div style="height:1px;background:#e5e5e5;margin:8px 0 24px"></div></div>';
-      const wrapper='<div style="font-family:Arial,Helvetica,sans-serif;background:#fff;color:#111">'+intro+'<div style="max-width:800px;margin:0 auto;padding:0 24px 24px">'+docHtml+'</div></div>';
+      let wrapper;
+      if(doc.type==="reminder"){
+        // Payment reminder: simple plain-text style email, no document rendering
+        const bodyHtml=(emailBody||'').split('\n').map(l=>l.trim()===''?'<br/>':'<p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 8px">'+l.replace(/</g,'&lt;')+'</p>').join('');
+        wrapper='<div style="font-family:Arial,Helvetica,sans-serif;background:#fff;color:#111;max-width:700px;margin:0 auto;padding:24px">'+bodyHtml+'</div>';
+      } else {
+        // Document email: use the SAME HTML as Export PDF so emails look identical to the PDF version
+        const {html:docHtml,docTitle}=buildDocHtml(doc);
+        const intro='<div style="font-family:Arial,sans-serif;max-width:800px;margin:0 auto;padding:20px 24px 0"><p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 8px">Hello,</p><p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 8px">Please see the '+docTitle.toLowerCase()+' below'+(doc.data.docNum?' ('+doc.data.docNum+')':'')+'. Let me know if you have any questions.</p><p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 16px">Thank you,<br/>'+senderName+'</p><div style="height:1px;background:#e5e5e5;margin:8px 0 24px"></div></div>';
+        wrapper='<div style="font-family:Arial,Helvetica,sans-serif;background:#fff;color:#111">'+intro+'<div style="max-width:800px;margin:0 auto;padding:0 24px 24px">'+docHtml+'</div></div>';
+      }
       const resp=await fetch('/api/send-email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to:emailTo,from:emailFrom,subject:emailSubject,html:wrapper})});
       const data=await resp.json();
-      if(resp.ok){notify("Email sent to "+emailTo);if(doc.data.docNum)setDocStatus(doc.data.docNum,'sent');setEmailModal(null);setEmailTo("");setEmailSubject("")}
+      if(resp.ok){notify("Email sent to "+emailTo);if(doc.data?.docNum)setDocStatus(doc.data.docNum,'sent');setEmailModal(null);setEmailTo("");setEmailSubject("");setEmailBody("")}
       else{notify("Email error: "+(data.error||"Failed"),"error")}
     }catch(e){notify("Network error: "+e.message,"error")}
     setEmailSending(false);
