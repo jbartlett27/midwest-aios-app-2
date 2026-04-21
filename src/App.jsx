@@ -6079,6 +6079,37 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
   const addCustomCat=()=>{const n=newCatName.trim();if(!n)return;if(CATEGORIES.includes(n)){notify('Category already exists','error');return}const next=[...customCategories,n];addSop({id:'CUSTOM_FILE_CATEGORIES',title:'File Categories',cat:'Config',icon:'package',content:JSON.stringify(next),custom:true});setNewCatName('');notify('Added category: '+n)};
   const removeCustomCat=(c)=>{if(!confirm('Remove category "'+c+'"? Files using it will keep the label.'))return;const next=customCategories.filter(x=>x!==c);addSop({id:'CUSTOM_FILE_CATEGORIES',title:'File Categories',cat:'Config',icon:'package',content:JSON.stringify(next),custom:true});notify('Removed: '+c)};
 
+  // FOLDERS -- flat (no nesting). Stored in a single SOP for persistence.
+  const foldersSop=(customSops||[]).find(s=>s.id==='FILE_FOLDERS');
+  const folders=(()=>{try{return JSON.parse(foldersSop?.content||'[]')}catch{return[]}})();
+  const [currentFolder,setCurrentFolder]=useState(null); // null = All Files
+  const [showFolderEditor,setShowFolderEditor]=useState(false);
+  const [newFolderName,setNewFolderName]=useState('');
+  const [renamingFolder,setRenamingFolder]=useState(null);
+  const [renameFolderText,setRenameFolderText]=useState('');
+  const [pendingFolder,setPendingFolder]=useState(null); // folder for new uploads
+  const saveFolders=(next)=>{addSop({id:'FILE_FOLDERS',title:'File Folders',cat:'Config',icon:'package',content:JSON.stringify(next),custom:true})};
+  const addFolder=()=>{const n=newFolderName.trim();if(!n)return;if(folders.some(f=>f.name.toLowerCase()===n.toLowerCase())){notify('Folder already exists','error');return}const next=[...folders,{id:'FOLDER-'+Date.now()+'-'+Math.random().toString(36).slice(2,7),name:n,createdAt:new Date().toISOString()}];saveFolders(next);setNewFolderName('');notify('Created folder: '+n)};
+  const renameFolder=(id,newName)=>{const n=newName.trim();if(!n)return;const next=folders.map(f=>f.id===id?{...f,name:n}:f);saveFolders(next);setRenamingFolder(null);setRenameFolderText('');notify('Renamed folder')};
+  const deleteFolder=(folder)=>{
+    const filesInFolder=allFiles.filter(f=>f.folderId===folder.id);
+    if(filesInFolder.length>0&&!confirm('Delete folder "'+folder.name+'"? '+filesInFolder.length+' file'+(filesInFolder.length!==1?'s':'')+' will be moved to All Files (no folder).'))return;
+    if(filesInFolder.length===0&&!confirm('Delete empty folder "'+folder.name+'"?'))return;
+    // Move all files out of this folder first
+    filesInFolder.forEach(f=>{
+      addSop({id:f.id,title:f.name,cat:'File',icon:'package',content:JSON.stringify({...f,folderId:null,_legacy:undefined}),custom:true});
+    });
+    saveFolders(folders.filter(f=>f.id!==folder.id));
+    if(currentFolder===folder.id)setCurrentFolder(null);
+    notify('Deleted folder: '+folder.name);
+  };
+  const moveFileToFolder=(f,folderId)=>{
+    if(f._legacy){notify('Cannot move legacy historical docs','error');return}
+    addSop({id:f.id,title:f.name,cat:'File',icon:'package',content:JSON.stringify({...f,folderId:folderId||null,_legacy:undefined}),custom:true});
+    const folderName=folderId?(folders.find(x=>x.id===folderId)?.name||'folder'):'All Files';
+    notify(f.name+' >> '+folderName);
+  };
+
   // Load files from SOPs (cat: 'File') AND legacy historical docs (cat: 'HistoricalDoc')
   const allFiles=(customSops||[]).filter(s=>s.cat==='File').map(s=>{try{return{id:s.id,...JSON.parse(s.content),_legacy:false}}catch{return null}}).filter(Boolean);
   const legacyDocs=(customSops||[]).filter(s=>s.cat==='HistoricalDoc').map(s=>{try{const d=JSON.parse(s.content);const file0=(d.files&&d.files[0])||{};return{id:s.id,name:file0.name||(d.docNumber||'Historical Doc'),originalName:file0.name||(d.docNumber||'Historical Doc'),size:file0.size||0,type:file0.type||'application/octet-stream',url:file0.url||'',path:'',category:d.type==='vendor_po'?'Invoice':d.type==='customer_invoice'?'Invoice':'Other',uploadedBy:d.uploadedBy||'Legacy',uploadedAt:d.date||d.uploadedAt||new Date(0).toISOString(),version:1,parentId:null,_legacy:true,_legacyMeta:d}}catch{return null}}).filter(Boolean);
@@ -6092,6 +6123,7 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
 
   // Filter
   let filtered=latestPerGroup;
+  if(currentFolder!==null)filtered=filtered.filter(f=>f.folderId===currentFolder);
   if(catFilter!=='all')filtered=filtered.filter(f=>(f.category||'Other')===catFilter);
   if(search){const q=search.toLowerCase();filtered=filtered.filter(f=>(f.name||'').toLowerCase().includes(q)||(f.originalName||'').toLowerCase().includes(q)||(f.category||'').toLowerCase().includes(q)||(f.uploadedBy||'').toLowerCase().includes(q)||(f.tags||[]).some(t=>(t||'').toLowerCase().includes(q)))}
   // Sort
@@ -6143,13 +6175,13 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
         const tagArr=pendingTags.split(',').map(t=>t.trim()).filter(Boolean);
         addSop({id,title:file.name,cat:'File',icon:'package',content:JSON.stringify({
           name:file.name,originalName:file.name,size:file.size,type:file.type||'application/octet-stream',
-          url,path,category:pendingCat,tags:tagArr,uploadedBy:currentUser?.name||currentUser?.email||'Unknown',
+          url,path,category:pendingCat,tags:tagArr,folderId:pendingFolder||currentFolder||null,uploadedBy:currentUser?.name||currentUser?.email||'Unknown',
           uploadedAt:new Date().toISOString(),version,parentId
         }),custom:true});
         uploaded++;
       }catch(err){console.error(err);failed++}
     }
-    setUploading(false);setUploadProgress(null);setPendingFiles([]);setShowAdd(false);setPendingCat('Other');setPendingTags('');
+    setUploading(false);setUploadProgress(null);setPendingFiles([]);setShowAdd(false);setPendingCat('Other');setPendingTags('');setPendingFolder(null);
     notify(uploaded+' file'+(uploaded!==1?'s':'')+' uploaded'+(failed>0?', '+failed+' failed':''));
   };
 
@@ -6250,8 +6282,8 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
 
     {/* Toolbar */}
     <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',marginBottom:12}}>
-      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder={"Search "+totalFiles+" files..."} style={{...inputStyle,maxWidth:300,background:'#111',border:'1px solid #222',padding:'10px 16px',fontSize:13}}/>
-      <select value={sortBy+'-'+sortDir} onChange={e=>{const[s,d]=e.target.value.split('-');setSortBy(s);setSortDir(d)}} style={{...inputStyle,width:'auto',background:'#111',border:'1px solid #222',padding:'10px 16px',fontSize:13}}>
+      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder={"Search "+totalFiles+" files..."} style={{...inputStyle,maxWidth:300,background:'#111',border:'1px solid #222',padding:'10px 16px',fontSize:13,fontFamily:"'JetBrains Mono',monospace"}}/>
+      <select value={sortBy+'-'+sortDir} onChange={e=>{const[s,d]=e.target.value.split('-');setSortBy(s);setSortDir(d)}} style={{...inputStyle,width:'auto',background:'#111',border:'1px solid #222',padding:'10px 16px',fontSize:13,fontFamily:"'JetBrains Mono',monospace"}}>
         <option value="date-desc">Newest first</option>
         <option value="date-asc">Oldest first</option>
         <option value="name-asc">Name A-Z</option>
@@ -6260,11 +6292,61 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
         <option value="size-asc">Smallest first</option>
         <option value="category-asc">Category</option>
       </select>
+      <button onClick={()=>setShowFolderEditor(!showFolderEditor)} style={{padding:'10px 14px',borderRadius:8,border:'1px solid '+(showFolderEditor?'#a78bfa60':'#222'),background:showFolderEditor?'rgba(167,139,250,0.08)':'#111',color:showFolderEditor?'#a78bfa':'#c4c4c4',cursor:'pointer',fontSize:12,fontFamily:"'JetBrains Mono',monospace",fontWeight:600,whiteSpace:'nowrap'}}>{showFolderEditor?'Done':'Manage Folders'}{folders.length>0?' ('+folders.length+')':''}</button>
+      <button onClick={()=>setShowCatEditor(!showCatEditor)} style={{padding:'10px 14px',borderRadius:8,border:'1px solid '+(showCatEditor?'#a78bfa60':'#222'),background:showCatEditor?'rgba(167,139,250,0.08)':'#111',color:showCatEditor?'#a78bfa':'#c4c4c4',cursor:'pointer',fontSize:12,fontFamily:"'JetBrains Mono',monospace",fontWeight:600,whiteSpace:'nowrap'}}>{showCatEditor?'Done':'Manage Categories'}{customCategories.length>0?' ('+customCategories.length+')':''}</button>
       <div style={{marginLeft:'auto',display:'flex',gap:6}}>
         <input ref={fileRef} type="file" multiple onChange={e=>handleFileSelect(e.target.files)} style={{display:'none'}}/>
         <Btn onClick={()=>fileRef.current?.click()} style={{fontSize:12,padding:'8px 16px'}}><I n="upload" s={13}/> Upload Files</Btn>
       </div>
     </div>
+
+    {/* Manage Folders panel */}
+    {showFolderEditor&&<Card style={{padding:16,marginBottom:12,border:'1px solid rgba(167,139,250,0.2)'}}>
+      <div style={{fontSize:13,fontWeight:700,color:'#f0f0f0',marginBottom:10,fontFamily:"'JetBrains Mono',monospace"}}>FOLDERS</div>
+      <div style={{display:'flex',gap:6,marginBottom:12}}>
+        <input value={newFolderName} onChange={e=>setNewFolderName(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')addFolder()}} placeholder="New folder name (e.g. 2024 Tax Returns)" style={{...inputStyle,flex:1,background:'#0a0a0a',padding:'8px 12px',fontSize:12,fontFamily:"'JetBrains Mono',monospace"}}/>
+        <Btn onClick={addFolder} style={{fontSize:12,padding:'6px 16px'}}>Create Folder</Btn>
+      </div>
+      {folders.length===0?<div style={{fontSize:12,color:'#a3a3a3',padding:'12px',textAlign:'center',fontFamily:"'JetBrains Mono',monospace"}}>No folders yet. Create your first folder to organize files.</div>:
+      <div style={{display:'flex',flexDirection:'column',gap:6}}>{folders.map(folder=>{
+        const fileCount=allFiles.filter(f=>f.folderId===folder.id).length;
+        const isRenaming=renamingFolder===folder.id;
+        return <div key={folder.id} style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',background:'#0a0a0a',borderRadius:8,border:'1px solid #1a1a1a'}}>
+          <I n="package" s={14} color="#a78bfa"/>
+          {isRenaming?
+            <input value={renameFolderText} onChange={e=>setRenameFolderText(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')renameFolder(folder.id,renameFolderText);if(e.key==='Escape')setRenamingFolder(null)}} autoFocus style={{...inputStyle,flex:1,background:'#000',padding:'6px 10px',fontSize:12,fontFamily:"'JetBrains Mono',monospace"}}/>:
+            <span style={{flex:1,fontSize:13,color:'#e5e5e5',fontWeight:600}}>{folder.name}</span>}
+          <span style={{fontSize:11,color:'#a3a3a3',fontFamily:"'JetBrains Mono',monospace"}}>{fileCount} file{fileCount!==1?'s':''}</span>
+          {isRenaming?<>
+            <button onClick={()=>renameFolder(folder.id,renameFolderText)} style={{padding:'4px 10px',borderRadius:5,border:'1px solid #2dd4bf60',background:'rgba(45,212,191,0.08)',color:'#2dd4bf',fontSize:10,cursor:'pointer',fontFamily:"'JetBrains Mono',monospace"}}>SAVE</button>
+            <button onClick={()=>setRenamingFolder(null)} style={{padding:'4px 10px',borderRadius:5,border:'1px solid #1a1a1a',background:'transparent',color:'#a3a3a3',fontSize:10,cursor:'pointer',fontFamily:"'JetBrains Mono',monospace"}}>CANCEL</button>
+          </>:<>
+            <button onClick={()=>{setCurrentFolder(folder.id);setShowFolderEditor(false)}} style={{padding:'4px 10px',borderRadius:5,border:'1px solid #1a1a1a',background:'transparent',color:'#c4c4c4',fontSize:10,cursor:'pointer',fontFamily:"'JetBrains Mono',monospace"}}>OPEN</button>
+            <button onClick={()=>{setRenamingFolder(folder.id);setRenameFolderText(folder.name)}} style={{padding:'4px 10px',borderRadius:5,border:'1px solid #1a1a1a',background:'transparent',color:'#c4c4c4',fontSize:10,cursor:'pointer',fontFamily:"'JetBrains Mono',monospace"}}>RENAME</button>
+            <button onClick={()=>deleteFolder(folder)} style={{padding:'4px 10px',borderRadius:5,border:'1px solid #1a1a1a',background:'transparent',color:'#c4c4c4',fontSize:10,cursor:'pointer',fontFamily:"'JetBrains Mono',monospace"}} onMouseEnter={e=>{e.currentTarget.style.color='#f87171';e.currentTarget.style.borderColor='#f8717130'}} onMouseLeave={e=>{e.currentTarget.style.color='#c4c4c4';e.currentTarget.style.borderColor='#1a1a1a'}}>DELETE</button>
+          </>}
+        </div>;
+      })}</div>}
+    </Card>}
+
+    {/* Manage Categories panel */}
+    {showCatEditor&&<Card style={{padding:16,marginBottom:12,border:'1px solid rgba(167,139,250,0.2)'}}>
+      <div style={{fontSize:13,fontWeight:700,color:'#f0f0f0',marginBottom:10,fontFamily:"'JetBrains Mono',monospace"}}>CUSTOM CATEGORIES</div>
+      <div style={{display:'flex',gap:6,marginBottom:12}}>
+        <input value={newCatName} onChange={e=>setNewCatName(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')addCustomCat()}} placeholder="New category name" style={{...inputStyle,flex:1,background:'#0a0a0a',padding:'8px 12px',fontSize:12,fontFamily:"'JetBrains Mono',monospace"}}/>
+        <Btn onClick={addCustomCat} style={{fontSize:12,padding:'6px 16px'}}>Add Category</Btn>
+      </div>
+      {customCategories.length===0?<div style={{fontSize:12,color:'#a3a3a3',padding:'12px',textAlign:'center',fontFamily:"'JetBrains Mono',monospace"}}>No custom categories yet. The 12 built-in categories are always available.</div>:
+      <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>{customCategories.map(c=><span key={c} style={{display:'inline-flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:14,background:'rgba(139,92,246,0.08)',border:'1px solid rgba(139,92,246,0.25)',fontSize:11,color:'#a78bfa',fontFamily:"'JetBrains Mono',monospace"}}>{c}<button onClick={()=>removeCustomCat(c)} style={{background:'none',border:'none',color:'#a78bfa',cursor:'pointer',fontSize:14,padding:0,lineHeight:1}}>x</button></span>)}</div>}
+    </Card>}
+
+    {/* Folder breadcrumb */}
+    {currentFolder!==null&&<div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',marginBottom:12,background:'rgba(167,139,250,0.05)',border:'1px solid rgba(167,139,250,0.2)',borderRadius:10}}>
+      <button onClick={()=>setCurrentFolder(null)} style={{background:'transparent',border:'none',color:'#a78bfa',cursor:'pointer',fontSize:11,fontFamily:"'JetBrains Mono',monospace",padding:0}}>&larr; All Files</button>
+      <span style={{color:'#525252'}}>/</span>
+      <span style={{fontSize:13,fontWeight:600,color:'#f0f0f0'}}><I n="package" s={13} color="#a78bfa"/> {folders.find(fo=>fo.id===currentFolder)?.name||'Unknown folder'}</span>
+      <span style={{marginLeft:'auto',fontSize:11,color:'#c4c4c4',fontFamily:"'JetBrains Mono',monospace"}}>{filtered.length} file{filtered.length!==1?'s':''}</span>
+    </div>}
 
     {/* Drop zone */}
     <div ref={dropRef} onDrop={onDrop} onDragOver={onDragOver} onDragLeave={onDragLeave} onClick={()=>fileRef.current?.click()} style={{border:'2px dashed '+(dragOver?'#2dd4bf':'#1a1a1a'),background:dragOver?'rgba(45,212,191,0.04)':'transparent',borderRadius:12,padding:'24px 16px',textAlign:'center',cursor:'pointer',marginBottom:14,transition:'all 0.15s'}}>
@@ -6277,24 +6359,20 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
     {showAdd&&pendingFiles.length>0&&<Card style={{padding:16,marginBottom:14,border:'1px solid rgba(45,212,191,0.2)'}}>
       <div style={{fontSize:13,fontWeight:700,color:'#f0f0f0',marginBottom:12}}>Ready to upload {pendingFiles.length} file{pendingFiles.length!==1?'s':''}</div>
       <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'center',marginBottom:10}}>
-        <label style={{fontSize:11,color:'#a3a3a3'}}>Category:</label>
-        <select value={pendingCat} onChange={e=>setPendingCat(e.target.value)} style={{...inputStyle,width:'auto',background:'#0a0a0a',padding:'6px 12px',fontSize:12}}>
+        <label style={{fontSize:11,color:'#c4c4c4'}}>Category:</label>
+        <select value={pendingCat} onChange={e=>setPendingCat(e.target.value)} style={{...inputStyle,width:'auto',background:'#0a0a0a',padding:'6px 12px',fontSize:12,fontFamily:"'JetBrains Mono',monospace"}}>
           {CATEGORIES.map(c=><option key={c}>{c}</option>)}
         </select>
-        <button onClick={()=>setShowCatEditor(!showCatEditor)} style={{background:'transparent',border:'1px solid #1a1a1a',color:'#737373',cursor:'pointer',fontSize:10,fontFamily:"'JetBrains Mono',monospace",padding:'5px 10px',borderRadius:5}}>{showCatEditor?'Done':'Manage Categories'}</button>
+        <label style={{fontSize:11,color:'#c4c4c4',marginLeft:6}}>Folder:</label>
+        <select value={pendingFolder||''} onChange={e=>setPendingFolder(e.target.value||null)} style={{...inputStyle,width:'auto',background:'#0a0a0a',padding:'6px 12px',fontSize:12,fontFamily:"'JetBrains Mono',monospace"}}>
+          <option value="">-- No folder --</option>
+          {folders.map(fo=><option key={fo.id} value={fo.id}>{fo.name}</option>)}
+        </select>
       </div>
       <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'center',marginBottom:12}}>
-        <label style={{fontSize:11,color:'#a3a3a3',whiteSpace:'nowrap'}}>Tags (comma-separated):</label>
+        <label style={{fontSize:11,color:'#c4c4c4',whiteSpace:'nowrap'}}>Tags (comma-separated):</label>
         <input value={pendingTags} onChange={e=>setPendingTags(e.target.value)} placeholder="e.g. 2024, college of dupage, q3" style={{...inputStyle,flex:1,minWidth:200,background:'#0a0a0a',padding:'6px 12px',fontSize:12}}/>
       </div>
-      {showCatEditor&&<div style={{padding:'10px 12px',background:'#0a0a0a',borderRadius:8,marginBottom:12,border:'1px solid #1a1a1a'}}>
-        <div style={{fontSize:11,color:'#a3a3a3',marginBottom:8,fontWeight:600}}>Add custom category</div>
-        <div style={{display:'flex',gap:6,marginBottom:10}}>
-          <input value={newCatName} onChange={e=>setNewCatName(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')addCustomCat()}} placeholder="Custom category name" style={{...inputStyle,flex:1,background:'#000',padding:'6px 10px',fontSize:12}}/>
-          <Btn onClick={addCustomCat} style={{fontSize:11,padding:'6px 12px'}}>Add</Btn>
-        </div>
-        {customCategories.length>0&&<div style={{display:'flex',gap:6,flexWrap:'wrap'}}>{customCategories.map(c=><span key={c} style={{display:'inline-flex',alignItems:'center',gap:6,padding:'4px 10px',borderRadius:14,background:'rgba(139,92,246,0.08)',border:'1px solid rgba(139,92,246,0.25)',fontSize:11,color:'#a78bfa',fontFamily:"'JetBrains Mono',monospace"}}>{c}<button onClick={()=>removeCustomCat(c)} style={{background:'none',border:'none',color:'#a78bfa',cursor:'pointer',fontSize:14,padding:0,lineHeight:1}}>x</button></span>)}</div>}
-      </div>}
       <div style={{display:'flex',flexDirection:'column',gap:4,marginBottom:12,maxHeight:160,overflowY:'auto'}}>
         {pendingFiles.map((f,i)=>{
           const existing=allFiles.filter(af=>(af.originalName||af.name)===f.name);
@@ -6311,7 +6389,7 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
       {uploadProgress&&<div style={{marginBottom:10,padding:'8px 12px',background:'rgba(45,212,191,0.05)',borderRadius:6,fontSize:11,color:'#2dd4bf',fontFamily:"'JetBrains Mono',monospace"}}>Uploading {uploadProgress.current}/{uploadProgress.total}: {uploadProgress.name}</div>}
       <div style={{display:'flex',gap:6}}>
         <Btn onClick={doUpload} style={{fontSize:12}} disabled={uploading}>{uploading?'Uploading...':'Upload '+pendingFiles.length+' file'+(pendingFiles.length!==1?'s':'')}</Btn>
-        <Btn v="secondary" onClick={()=>{setShowAdd(false);setPendingFiles([]);setPendingCat('Other');setPendingTags('')}} style={{fontSize:12}} disabled={uploading}>Cancel</Btn>
+        <Btn v="secondary" onClick={()=>{setShowAdd(false);setPendingFiles([]);setPendingCat('Other');setPendingTags('');setPendingFolder(null)}} style={{fontSize:12}} disabled={uploading}>Cancel</Btn>
       </div>
     </Card>}
 
@@ -6325,11 +6403,11 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
     <div style={{overflowX:'auto',borderRadius:12,border:'1px solid #1a1a1a',background:'#000'}}>
       <table style={{width:'100%',borderCollapse:'collapse',minWidth:780}}>
         <thead><tr style={{background:'#050505'}}>
-          {[['name','Name',220],['category','Category',120],['size','Size',80],['uploadedBy','Uploaded By',130],['date','Date',150],['','',160]].map(([col,label,w])=>
-            <th key={label||'actions'} onClick={col?()=>handleSort(col):undefined} style={{padding:'10px 10px',textAlign:'left',fontSize:10,fontWeight:700,color:'#525252',textTransform:'uppercase',letterSpacing:1.2,cursor:col?'pointer':'default',whiteSpace:'nowrap',fontFamily:"'JetBrains Mono',monospace",minWidth:w,borderBottom:'1px solid #111'}}>{label}{sortBy===col&&<span style={{color:'#2dd4bf',marginLeft:3}}>{sortDir==='asc'?'\u25B2':'\u25BC'}</span>}</th>
+          {[['name','Name',220],['category','Category',110],['folder','Folder',130],['size','Size',80],['uploadedBy','Uploaded By',130],['date','Date',150],['','',180]].map(([col,label,w])=>
+            <th key={label||'actions'} onClick={col?()=>handleSort(col):undefined} style={{padding:'10px 10px',textAlign:'left',fontSize:10,fontWeight:700,color:'#a3a3a3',textTransform:'uppercase',letterSpacing:1.2,cursor:col?'pointer':'default',whiteSpace:'nowrap',fontFamily:"'JetBrains Mono',monospace",minWidth:w,borderBottom:'1px solid #111'}}>{label}{sortBy===col&&<span style={{color:'#2dd4bf',marginLeft:3}}>{sortDir==='asc'?'\u25B2':'\u25BC'}</span>}</th>
           )}
         </tr></thead>
-        <tbody>{filtered.length===0?<tr><td colSpan={6} style={{padding:'40px 16px',textAlign:'center',fontSize:12,color:'#333',fontFamily:"'JetBrains Mono',monospace"}}>No files{search||catFilter!=='all'?' match these filters':' yet -- upload your first file above'}</td></tr>:filtered.filter(f=>!f._legacy||isLegacyVisible).map(f=>{
+        <tbody>{filtered.length===0?<tr><td colSpan={7} style={{padding:'40px 16px',textAlign:'center',fontSize:12,color:'#a3a3a3',fontFamily:"'JetBrains Mono',monospace"}}>No files{search||catFilter!=='all'?' match these filters':' yet -- upload your first file above'}</td></tr>:filtered.filter(f=>!f._legacy||isLegacyVisible).map(f=>{
           const versions=versionsByGroup[f._legacy?'__legacy_'+f.id:groupKey(f)]||[];
           const hasVersions=versions.length>1;
           return <React.Fragment key={f.id}>
@@ -6349,21 +6427,25 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
             </td>
             <td style={{padding:'10px 10px'}}>
               {f._legacy?<span style={{padding:'3px 8px',borderRadius:4,background:'#8b5cf615',color:'#8b5cf6',fontSize:10,fontWeight:600,fontFamily:"'JetBrains Mono',monospace"}}>Legacy</span>:
-              <select value={f.category||'Other'} onChange={e=>updateCat(f,e.target.value)} style={{background:'transparent',border:'1px solid '+colorFor(f.category)+'30',color:colorFor(f.category),borderRadius:6,padding:'3px 8px',fontSize:10,fontFamily:"'JetBrains Mono',monospace",cursor:'pointer',outline:'none',fontWeight:600}}>{[...new Set([...CATEGORIES,f.category].filter(Boolean))].map(c=><option key={c} style={{background:'#111',color:'#e5e5e5'}}>{c}</option>)}</select>}
+              <select value={f.category||'Other'} onChange={e=>updateCat(f,e.target.value)} style={{background:'transparent',border:'1px solid '+colorFor(f.category)+'30',color:colorFor(f.category),borderRadius:5,padding:'2px 6px',fontSize:9,fontFamily:"'JetBrains Mono',monospace",cursor:'pointer',outline:'none',fontWeight:600}}>{[...new Set([...CATEGORIES,f.category].filter(Boolean))].map(c=><option key={c} style={{background:'#111',color:'#e5e5e5'}}>{c}</option>)}</select>}
             </td>
-            <td style={{padding:'10px 10px',fontSize:11,color:'#737373',fontFamily:"'JetBrains Mono',monospace",whiteSpace:'nowrap'}}>{fmtSize(f.size)}</td>
-            <td style={{padding:'10px 10px',fontSize:11,color:'#a3a3a3',whiteSpace:'nowrap'}}>{f.uploadedBy||'--'}</td>
-            <td style={{padding:'10px 10px',fontSize:11,color:'#737373',whiteSpace:'nowrap',fontFamily:"'JetBrains Mono',monospace"}}>{fmtDate(f.uploadedAt)}</td>
+            <td style={{padding:'10px 10px'}}>
+              {f._legacy?<span style={{fontSize:11,color:'#737373',fontFamily:"'JetBrains Mono',monospace"}}>--</span>:
+              <select value={f.folderId||''} onChange={e=>moveFileToFolder(f,e.target.value||null)} style={{background:'transparent',border:'1px solid '+(f.folderId?'#a78bfa30':'#1a1a1a'),color:f.folderId?'#a78bfa':'#a3a3a3',borderRadius:5,padding:'2px 6px',fontSize:9,fontFamily:"'JetBrains Mono',monospace",cursor:'pointer',outline:'none',fontWeight:600,maxWidth:140}}><option value="" style={{background:'#111',color:'#e5e5e5'}}>-- No folder --</option>{folders.map(fo=><option key={fo.id} value={fo.id} style={{background:'#111',color:'#e5e5e5'}}>{fo.name}</option>)}</select>}
+            </td>
+            <td style={{padding:'10px 10px',fontSize:11,color:'#c4c4c4',fontFamily:"'JetBrains Mono',monospace",whiteSpace:'nowrap'}}>{fmtSize(f.size)}</td>
+            <td style={{padding:'10px 10px',fontSize:11,color:'#c4c4c4',whiteSpace:'nowrap'}}>{f.uploadedBy||'--'}</td>
+            <td style={{padding:'10px 10px',fontSize:11,color:'#c4c4c4',whiteSpace:'nowrap',fontFamily:"'JetBrains Mono',monospace"}}>{fmtDate(f.uploadedAt)}</td>
             <td style={{padding:'10px 10px',whiteSpace:'nowrap'}}>
-              <button onClick={()=>setPreviewFile(f)} style={{background:'none',border:'1px solid #1a1a1a',color:'#737373',cursor:'pointer',fontSize:10,fontFamily:"'JetBrains Mono',monospace",padding:'4px 8px',borderRadius:5,marginRight:4,transition:'all 0.15s'}} onMouseEnter={e=>{e.currentTarget.style.color='#2dd4bf';e.currentTarget.style.borderColor='#2dd4bf30'}} onMouseLeave={e=>{e.currentTarget.style.color='#737373';e.currentTarget.style.borderColor='#1a1a1a'}}>VIEW</button>
+              <button onClick={()=>setPreviewFile(f)} style={{background:'none',border:'1px solid #1a1a1a',color:'#a3a3a3',cursor:'pointer',fontSize:10,fontFamily:"'JetBrains Mono',monospace",padding:'4px 8px',borderRadius:5,marginRight:4,transition:'all 0.15s'}} onMouseEnter={e=>{e.currentTarget.style.color='#2dd4bf';e.currentTarget.style.borderColor='#2dd4bf30'}} onMouseLeave={e=>{e.currentTarget.style.color='#a3a3a3';e.currentTarget.style.borderColor='#1a1a1a'}}>VIEW</button>
               <button onClick={()=>sendToBrain(f)} disabled={loadingBrainFile===f.id} style={{background:'none',border:'1px solid '+(loadingBrainFile===f.id?'#525252':'rgba(167,139,250,0.3)'),color:loadingBrainFile===f.id?'#525252':'#a78bfa',cursor:loadingBrainFile===f.id?'wait':'pointer',fontSize:10,fontFamily:"'JetBrains Mono',monospace",padding:'4px 8px',borderRadius:5,marginRight:4,transition:'all 0.15s'}}>{loadingBrainFile===f.id?'LOADING':'BRAIN'}</button>
-              {!f._legacy&&<button onClick={()=>{setEditTagsFor(editTagsFor===f.id?null:f.id);setTagInput((f.tags||[]).join(', '))}} style={{background:'none',border:'1px solid '+(editTagsFor===f.id?'#fbbf24':'#1a1a1a'),color:editTagsFor===f.id?'#fbbf24':'#737373',cursor:'pointer',fontSize:10,fontFamily:"'JetBrains Mono',monospace",padding:'4px 8px',borderRadius:5,marginRight:4,transition:'all 0.15s'}}>TAGS</button>}
-              {f.url&&<a href={f.url} download={f.originalName||f.name} target="_blank" rel="noopener noreferrer" style={{display:'inline-block',background:'none',border:'1px solid #1a1a1a',color:'#737373',textDecoration:'none',fontSize:10,fontFamily:"'JetBrains Mono',monospace",padding:'4px 8px',borderRadius:5,marginRight:4,transition:'all 0.15s'}} onMouseEnter={e=>{e.currentTarget.style.color='#2dd4bf';e.currentTarget.style.borderColor='#2dd4bf30'}} onMouseLeave={e=>{e.currentTarget.style.color='#737373';e.currentTarget.style.borderColor='#1a1a1a'}}>DOWNLOAD</a>}
-              <button onClick={()=>deleteFile(f)} style={{background:'none',border:'1px solid #1a1a1a',color:'#525252',cursor:'pointer',fontSize:10,fontFamily:"'JetBrains Mono',monospace",padding:'4px 8px',borderRadius:5,transition:'all 0.15s'}} onMouseEnter={e=>{e.currentTarget.style.color='#f87171';e.currentTarget.style.borderColor='#f8717130'}} onMouseLeave={e=>{e.currentTarget.style.color='#525252';e.currentTarget.style.borderColor='#1a1a1a'}}>DEL</button>
+              {!f._legacy&&<button onClick={()=>{setEditTagsFor(editTagsFor===f.id?null:f.id);setTagInput((f.tags||[]).join(', '))}} style={{background:'none',border:'1px solid '+(editTagsFor===f.id?'#fbbf24':'#1a1a1a'),color:editTagsFor===f.id?'#fbbf24':'#a3a3a3',cursor:'pointer',fontSize:10,fontFamily:"'JetBrains Mono',monospace",padding:'4px 8px',borderRadius:5,marginRight:4,transition:'all 0.15s'}}>TAGS</button>}
+              {f.url&&<a href={f.url} download={f.originalName||f.name} target="_blank" rel="noopener noreferrer" style={{display:'inline-block',background:'none',border:'1px solid #1a1a1a',color:'#a3a3a3',textDecoration:'none',fontSize:10,fontFamily:"'JetBrains Mono',monospace",padding:'4px 8px',borderRadius:5,marginRight:4,transition:'all 0.15s'}} onMouseEnter={e=>{e.currentTarget.style.color='#2dd4bf';e.currentTarget.style.borderColor='#2dd4bf30'}} onMouseLeave={e=>{e.currentTarget.style.color='#a3a3a3';e.currentTarget.style.borderColor='#1a1a1a'}}>DOWNLOAD</a>}
+              <button onClick={()=>deleteFile(f)} style={{background:'none',border:'1px solid #1a1a1a',color:'#a3a3a3',cursor:'pointer',fontSize:10,fontFamily:"'JetBrains Mono',monospace",padding:'4px 8px',borderRadius:5,transition:'all 0.15s'}} onMouseEnter={e=>{e.currentTarget.style.color='#f87171';e.currentTarget.style.borderColor='#f8717130'}} onMouseLeave={e=>{e.currentTarget.style.color='#a3a3a3';e.currentTarget.style.borderColor='#1a1a1a'}}>DEL</button>
             </td>
           </tr>
           {/* Tag editor expansion */}
-          {editTagsFor===f.id&&!f._legacy&&<tr style={{background:'#050505'}}><td colSpan={6} style={{padding:'12px 16px 16px 42px',borderBottom:'1px solid #1a1a1a'}}>
+          {editTagsFor===f.id&&!f._legacy&&<tr style={{background:'#050505'}}><td colSpan={7} style={{padding:'12px 16px 16px 42px',borderBottom:'1px solid #1a1a1a'}}>
             <div style={{fontSize:10,color:'#525252',fontFamily:"'JetBrains Mono',monospace",letterSpacing:1,marginBottom:8,textTransform:'uppercase'}}>EDIT TAGS (comma-separated)</div>
             <div style={{display:'flex',gap:6}}>
               <input value={tagInput} onChange={e=>setTagInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){updateTags(f,tagInput);setEditTagsFor(null)}}} placeholder="e.g. 2024, college of dupage, q3, urgent" style={{...inputStyle,flex:1,background:'#000',padding:'8px 12px',fontSize:12,fontFamily:"'JetBrains Mono',monospace"}} autoFocus/>
@@ -6372,7 +6454,7 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
             </div>
           </td></tr>}
           {/* Version history expansion */}
-          {showVersionsFor===f.id&&hasVersions&&!f._legacy&&<tr style={{background:'#050505'}}><td colSpan={6} style={{padding:'12px 16px 16px 42px',borderBottom:'1px solid #1a1a1a'}}>
+          {showVersionsFor===f.id&&hasVersions&&!f._legacy&&<tr style={{background:'#050505'}}><td colSpan={7} style={{padding:'12px 16px 16px 42px',borderBottom:'1px solid #1a1a1a'}}>
             <div style={{fontSize:10,color:'#525252',fontFamily:"'JetBrains Mono',monospace",letterSpacing:1,marginBottom:8,textTransform:'uppercase'}}>VERSION HISTORY</div>
             <div style={{display:'flex',flexDirection:'column',gap:4}}>
               {versions.map(v=><div key={v.id} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 12px',background:'#0a0a0a',borderRadius:6,fontSize:11}}>
