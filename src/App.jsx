@@ -4564,7 +4564,6 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     {name:"navigate_to_page",description:"Navigate to a page in the app.",input_schema:{type:"object",properties:{page:{type:"string"}},required:["page"]}},
     {name:"save_memory",description:"Save or update a persistent memory that the Brain remembers across all future conversations. Use PROACTIVELY to remember user preferences, business patterns, vendor quirks, customer preferences, seasonal patterns, key decisions, frequently asked questions. Categories: UserPreferences, BusinessPatterns, VendorIntel, CustomerIntel, Decisions, FrequentQueries, SeasonalNotes, ProcessNotes, FinancialPatterns.",input_schema:{type:"object",properties:{category:{type:"string"},content:{type:"string"},metadata:{type:"object"}},required:["category","content"]}},
     {name:"recall_memory",description:"Search saved memories. Check what you already know before answering recurring questions.",input_schema:{type:"object",properties:{query:{type:"string"}},required:["query"]}},
-    {name:"draft_email",description:"Draft a professional email with Midwest branding (Midwest Educational Furnishings, Kildeer IL, Maureen Welter). Handles collection notices, vendor followups, customer updates, delivery notices, quote followups.",input_schema:{type:"object",properties:{to:{type:"string"},subject:{type:"string"},body:{type:"string"},tone:{type:"string",description:"professional, friendly, firm, urgent"},job_id:{type:"string"},type:{type:"string",description:"collection, vendor_followup, customer_update, delivery_notice, quote_followup, general"}},required:["to","subject","body"]}},
     {name:"detect_anomalies",description:"Scan all business data for anomalies: overdue payments, stalled jobs, price mismatches, missing deliveries, margin outliers, vendor concentration risk. Returns prioritized findings.",input_schema:{type:"object",properties:{focus:{type:"string",description:"payments, deliveries, margins, vendors, all"}},required:[]}},
     {name:"analyze_trends",description:"Analyze business trends: revenue by month, vendor spend patterns, margin trends, rep performance, seasonal cycles.",input_schema:{type:"object",properties:{metric:{type:"string",description:"revenue, margins, vendor_spend, rep_performance, customer_growth"},period:{type:"string",description:"monthly, quarterly, ytd, all_time"}},required:["metric"]}},
     {name:"workflow_trigger",description:"Execute multi-step workflow automations. Examples: flag all overdue invoices and draft collection emails, find all received-but-not-invoiced items, check jobs past due and create tasks.",input_schema:{type:"object",properties:{workflow:{type:"string"},dry_run:{type:"boolean",description:"If true, preview without executing"}},required:["workflow"]}},
@@ -4875,11 +4874,6 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         if(matches.length===0)return{success:true,message:"No memories found matching '"+input.query+"'. "+brainMemory.length+" total memories stored."};
         const results=matches.map(m=>{try{const d=JSON.parse(m.content);return"["+m.title+"] "+d.text}catch{return"["+m.title+"] "+m.content}}).join("\n\n");
         return{success:true,message:"Found "+matches.length+" memories:\n\n"+results};
-      }
-      if(toolName==="draft_email"){
-        const job=input.job_id?findJob(input.job_id):null;
-        const jobCtx=job?" (Job: "+job.name+")":"";
-        return{success:true,message:"**EMAIL DRAFT**\n\n**To:** "+input.to+"\n**Subject:** "+input.subject+"\n\n"+input.body+"\n\n---\nMidwest Educational Furnishings"+jobCtx+"\nKildeer, IL | (847) 847-1865"};
       }
       if(toolName==="detect_anomalies"){
         const findings=[];const focus=(input.focus||"all").toLowerCase();
