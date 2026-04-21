@@ -1039,6 +1039,7 @@ function MidwestAIOSInner() {
 
   const [pendingCommPreview, setPendingCommPreview] = useState(null);
   const [pendingBrainFile, setPendingBrainFile] = useState(null);
+  const [pendingBrainEmail, setPendingBrainEmail] = useState(null);
   const [jobs, setJobs] = useState(INIT_JOBS);
   const [lineItems, setLineItems] = useState(INIT_LINE_ITEMS);
   const [reps, setReps] = useState(INIT_REPS);
@@ -1334,7 +1335,7 @@ function MidwestAIOSInner() {
 
   
   const visibleJobs = userRole === "sales" && userRepId ? jobs.filter(j => j.salesRep === userRepId) : jobs;
-  const ctx = {jobs:visibleJobs,allJobs:jobs,setJobs,jobNum,currentUser,userRole,userRepId,logout,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,forceDeleteVendor,forceDeleteLineItem,forceDeleteCustomer,forceDeleteRep,db,setPage:p=>{setPage(p);setMobileMenuOpen(false);window.scrollTo(0,0);const mc=document.querySelector('.main-content');if(mc)mc.scrollTop=0},viewCustomer:id=>{setPage("customer360");window._viewCustId=id;window.scrollTo(0,0)},brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter,pendingCommPreview,setPendingCommPreview,pendingBrainFile,setPendingBrainFile};
+  const ctx = {jobs:visibleJobs,allJobs:jobs,setJobs,jobNum,currentUser,userRole,userRepId,logout,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,forceDeleteVendor,forceDeleteLineItem,forceDeleteCustomer,forceDeleteRep,db,setPage:p=>{setPage(p);setMobileMenuOpen(false);window.scrollTo(0,0);const mc=document.querySelector('.main-content');if(mc)mc.scrollTop=0},viewCustomer:id=>{setPage("customer360");window._viewCustId=id;window.scrollTo(0,0)},brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter,pendingCommPreview,setPendingCommPreview,pendingBrainFile,setPendingBrainFile,pendingBrainEmail,setPendingBrainEmail};
 
   const loadingScreen = (
 <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",width:"100vw",background:"#0a0a0a",fontFamily:"'Satoshi',sans-serif"}}>
@@ -4378,11 +4379,12 @@ function NotesPage({customSops,addSop,deleteSop,jobs,reps,notify,triggerPrint}){
   return <div style={{animation:"fadeUp 0.4s"}}><Header title="Notes" sub={(customSops||[]).filter(s=>s.cat==="Notes").length+" notes saved"}/><NotesView customSops={customSops} addSop={addSop} deleteSop={deleteSop} jobs={jobs} reps={reps} notify={notify} triggerPrint={triggerPrint}/></div>;
 }
 
-function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJobItems,brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory,updateJob,addJob,updateLineItem,addLineItem,deleteLineItem,updateRep,addRep,addCustomer,updateCustomer,addVendor,updateVendor,notify,setPage,deleteJob,pendingBrainFile,setPendingBrainFile}){
+function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJobItems,brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory,updateJob,addJob,updateLineItem,addLineItem,deleteLineItem,updateRep,addRep,addCustomer,updateCustomer,addVendor,updateVendor,notify,setPage,deleteJob,pendingBrainFile,setPendingBrainFile,pendingBrainEmail,setPendingBrainEmail,currentUser}){
   const [brainFile, setBrainFile] = useState(null);
   const [brainFilePreview, setBrainFilePreview] = useState(null);
   const [brainFileContext, setBrainFileContext] = useState(null);
   const brainFileRef = React.useRef(null);
+  const [brainEmailSending, setBrainEmailSending] = useState(false);
   // Consume pending file from Files page (Read with Brain)
   useEffect(()=>{
     if(pendingBrainFile){
@@ -4581,7 +4583,9 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     {name:"create_transaction",description:"Create a banking transaction (expense or revenue) on the Financials page. Use when user says 'add an expense for $500 rent', 'log a payment of $1200 from customer', 'record a $300 office supply purchase', 'add a deposit of $5000'.",input_schema:{type:"object",properties:{description:{type:"string",description:"What the transaction is for"},amount:{type:"number",description:"Dollar amount (positive number)"},type:{type:"string",description:"expense or revenue",enum:["expense","revenue"]},category:{type:"string",description:"Category like Operating - Rent, COGS - Vendor Payments, Revenue - Product Sales, etc."},date:{type:"string",description:"Date in YYYY-MM-DD format. Defaults to today."},account:{type:"string",description:"Account name like Operating, Savings, Credit Card, Payroll. Defaults to Operating."}},required:["description","amount"]}},
     {name:"categorize_transaction",description:"Change the category on an existing banking transaction. Use when user says 'categorize the Chesapeake payment as insurance', 'change the United Airlines charge to travel', 'mark that $500 as rent'.",input_schema:{type:"object",properties:{transaction_description:{type:"string",description:"Description keywords to find the transaction"},category:{type:"string",description:"New category to assign"},date:{type:"string",description:"Date to narrow search if needed"}},required:["transaction_description","category"]}},
     {name:"get_banking_summary",description:"Get a summary of banking transactions -- totals by category, recent transactions, account balances, cash flow. Use when user says 'what did we spend this month', 'show me our expenses by category', 'what is our cash position', 'banking summary', 'how much have we spent on rent'.",input_schema:{type:"object",properties:{period:{type:"string",description:"month, quarter, ytd, year, all. Defaults to ytd."},category_filter:{type:"string",description:"Optional: filter to a specific category"}},required:[]}},
-    {name:"get_payables_summary",description:"Get accounts payable / vendor bills summary -- what is owed, what is overdue, upcoming payments. Use when user says 'what do we owe vendors', 'show overdue bills', 'AP aging', 'what bills are due this week'.",input_schema:{type:"object",properties:{},required:[]}}
+    {name:"get_payables_summary",description:"Get accounts payable / vendor bills summary -- what is owed, what is overdue, upcoming payments. Use when user says 'what do we owe vendors', 'show overdue bills', 'AP aging', 'what bills are due this week'.",input_schema:{type:"object",properties:{},required:[]}},
+    {name:"draft_email",description:"Draft an email for the user to review before sending. ALWAYS use this first when the user asks to write, draft, compose, or send an email. The user reviews the draft inline and clicks Send to actually send it. Use when user says 'draft an email to', 'write an email to', 'compose an email to', 'email maureen about', 'send an email to' (still drafts first for safety). The recipient can be specified by name (looks up customer/vendor/rep email) or direct email address.",input_schema:{type:"object",properties:{recipient_email:{type:"string",description:"Direct email address. Use this if user provides one explicitly."},customer_name:{type:"string",description:"Customer name to look up email for. Use if user references a customer."},vendor_name:{type:"string",description:"Vendor name to look up email for."},rep_name:{type:"string",description:"Sales rep name to look up email for."},subject:{type:"string",description:"Email subject line"},body:{type:"string",description:"Plain text email body. Will be formatted into a clean HTML email automatically. Use natural paragraph breaks. Sign off as the user."}},required:["subject","body"]}},
+    {name:"send_email",description:"Send an email IMMEDIATELY without showing a draft preview first. Only use this when the user explicitly says 'send right now', 'send it without showing me', or has just reviewed a draft and confirms 'send it'. Default to draft_email instead -- it is much safer. Same recipient/content schema as draft_email.",input_schema:{type:"object",properties:{recipient_email:{type:"string",description:"Direct email address."},customer_name:{type:"string",description:"Customer name to look up email for."},vendor_name:{type:"string",description:"Vendor name to look up email for."},rep_name:{type:"string",description:"Sales rep name to look up email for."},subject:{type:"string",description:"Email subject line"},body:{type:"string",description:"Plain text email body."}},required:["subject","body"]}}
   ];
 
   // Execute a tool call locally
@@ -5278,6 +5282,24 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         }
         return{success:true,message:msg};
       }
+      if(toolName==="draft_email"||toolName==="send_email"){
+        // Resolve recipient email
+        let recipient=input.recipient_email||'';
+        let recipientLabel='';
+        if(!recipient&&input.customer_name){const c=findCustomer(input.customer_name);if(c){recipient=c.email||'';recipientLabel=c.name||''}else{return{error:'Customer "'+input.customer_name+'" not found in directory.'}}}
+        if(!recipient&&input.vendor_name){const v=findVendor(input.vendor_name);if(v){recipient=v.email||'';recipientLabel=v.name||''}else{return{error:'Vendor "'+input.vendor_name+'" not found in directory.'}}}
+        if(!recipient&&input.rep_name){const r=reps.find(x=>x.name.toLowerCase().includes(input.rep_name.toLowerCase()));if(r){recipient=r.email||'';recipientLabel=r.name||''}else{return{error:'Sales rep "'+input.rep_name+'" not found.'}}}
+        if(!recipient){
+          if(input.customer_name||input.vendor_name||input.rep_name)return{error:'No email address on file for '+(recipientLabel||input.customer_name||input.vendor_name||input.rep_name)+'. Please ask the user for the email address, or have them add it in the Directory.'};
+          return{error:'No recipient. Provide recipient_email, customer_name, vendor_name, or rep_name.'};
+        }
+        const draft={to:recipient,toLabel:recipientLabel,subject:input.subject||'',body:input.body||'',from:currentUser?.email||'',autoSend:toolName==="send_email"};
+        setPendingBrainEmail(draft);
+        if(toolName==="send_email"){
+          return{success:true,message:'Email staged for '+recipient+(recipientLabel?' ('+recipientLabel+')':'')+'. The user is being shown a one-click send confirmation. Subject: "'+(input.subject||'')+'"'};
+        }
+        return{success:true,message:'Email draft prepared for '+recipient+(recipientLabel?' ('+recipientLabel+')':'')+'. The user can review, edit, and click Send. Subject: "'+(input.subject||'')+'"'};
+      }
       return{error:"Unknown tool: "+toolName};
     }catch(err){return{error:"Execution error: "+err.message}}
   };
@@ -5573,7 +5595,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
       (data.content||[]).filter(b=>b.type==="web_search_tool_result").forEach(b=>{(b.content||[]).filter(r=>r.type==="web_search_result").forEach(r=>{if(r.url&&r.title)webCitations.push({url:r.url,title:r.title})})});
       if(toolBlocks.length>0){
         // Separate read-only tools (auto-execute) from write tools (require confirmation)
-        const readOnlyTools=new Set(['get_job_details','search_and_report','detect_anomalies','analyze_trends','summarize_context','recall_memory','predictive_flag','database_query','compare_quote_to_job','calculate_financials','export_data','get_banking_summary','get_payables_summary']);
+        const readOnlyTools=new Set(['get_job_details','search_and_report','detect_anomalies','analyze_trends','summarize_context','recall_memory','predictive_flag','database_query','compare_quote_to_job','calculate_financials','export_data','get_banking_summary','get_payables_summary','draft_email','send_email']);
         const readTools=toolBlocks.filter(tb=>readOnlyTools.has(tb.name));
         const writeTools=toolBlocks.filter(tb=>!readOnlyTools.has(tb.name));
         // Auto-execute read-only tools and show results inline
@@ -5762,6 +5784,43 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         <div style={{width:6,height:6,borderRadius:"50%",background:"#2dd4bf",animation:"pulse 1s infinite 0.2s"}}/>
         <div style={{width:6,height:6,borderRadius:"50%",background:"#2dd4bf",animation:"pulse 1s infinite 0.4s"}}/></div>}
     </div>
+    {/* Brain-drafted email -- editable inline before send */}
+    {pendingBrainEmail&&<div style={{padding:"12px 16px",flexShrink:0,borderTop:"1px solid #111",background:"linear-gradient(135deg,rgba(167,139,250,0.04),rgba(45,212,191,0.03))"}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+        <div style={{width:8,height:8,borderRadius:"50%",background:"#a78bfa",animation:"pulse 1.5s infinite"}}/>
+        <span style={{fontSize:11,fontWeight:700,color:"#a78bfa",letterSpacing:0.5,fontFamily:"'JetBrains Mono',monospace"}}>EMAIL DRAFT READY</span>
+        {pendingBrainEmail.toLabel&&<span style={{fontSize:11,color:"#a3a3a3"}}>to {pendingBrainEmail.toLabel}</span>}
+        <button onClick={()=>setPendingBrainEmail(null)} style={{marginLeft:"auto",background:"transparent",border:"1px solid #1a1a1a",color:"#a3a3a3",cursor:"pointer",fontSize:10,fontFamily:"'JetBrains Mono',monospace",padding:"4px 10px",borderRadius:5}} onMouseEnter={e=>{e.currentTarget.style.color="#f87171";e.currentTarget.style.borderColor="#f8717130"}} onMouseLeave={e=>{e.currentTarget.style.color="#a3a3a3";e.currentTarget.style.borderColor="#1a1a1a"}}>DISCARD</button>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"60px 1fr",gap:6,marginBottom:6,alignItems:"center"}}>
+        <label style={{fontSize:11,color:"#c4c4c4",fontFamily:"'JetBrains Mono',monospace"}}>From:</label>
+        <input value={pendingBrainEmail.from||''} onChange={e=>setPendingBrainEmail({...pendingBrainEmail,from:e.target.value})} placeholder="your@mwfurnishings.com" style={{padding:"6px 10px",background:"#0a0a0a",border:"1px solid #1a1a1a",borderRadius:6,color:"#f0f0f0",fontSize:12,fontFamily:"inherit",outline:"none"}}/>
+        <label style={{fontSize:11,color:"#c4c4c4",fontFamily:"'JetBrains Mono',monospace"}}>To:</label>
+        <input value={pendingBrainEmail.to||''} onChange={e=>setPendingBrainEmail({...pendingBrainEmail,to:e.target.value})} placeholder="recipient@email.com" style={{padding:"6px 10px",background:"#0a0a0a",border:"1px solid #1a1a1a",borderRadius:6,color:"#f0f0f0",fontSize:12,fontFamily:"inherit",outline:"none"}}/>
+        <label style={{fontSize:11,color:"#c4c4c4",fontFamily:"'JetBrains Mono',monospace"}}>Subject:</label>
+        <input value={pendingBrainEmail.subject||''} onChange={e=>setPendingBrainEmail({...pendingBrainEmail,subject:e.target.value})} placeholder="Subject" style={{padding:"6px 10px",background:"#0a0a0a",border:"1px solid #1a1a1a",borderRadius:6,color:"#f0f0f0",fontSize:12,fontFamily:"inherit",outline:"none"}}/>
+      </div>
+      <textarea value={pendingBrainEmail.body||''} onChange={e=>setPendingBrainEmail({...pendingBrainEmail,body:e.target.value})} placeholder="Email body" rows={6} style={{width:"100%",padding:"8px 12px",background:"#0a0a0a",border:"1px solid #1a1a1a",borderRadius:6,color:"#f0f0f0",fontSize:12,fontFamily:"inherit",outline:"none",resize:"vertical",minHeight:80,boxSizing:"border-box",lineHeight:1.5}}/>
+      <div style={{display:"flex",gap:6,marginTop:8,alignItems:"center"}}>
+        <button onClick={async()=>{
+          if(!pendingBrainEmail.to||!pendingBrainEmail.subject||!pendingBrainEmail.body){notify("Fill in To, Subject, and Body","error");return}
+          if(!pendingBrainEmail.from){notify("Fill in From email address","error");return}
+          setBrainEmailSending(true);
+          try{
+            const senderName=(pendingBrainEmail.from||'').split('@')[0].replace(/[._-]/g,' ').replace(/\b\w/g,c=>c.toUpperCase())||'Midwest Educational Furnishings';
+            const bodyHtml=(pendingBrainEmail.body||'').split('\n').map(l=>l.trim()===''?'<br/>':'<p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 8px">'+l.replace(/</g,'&lt;')+'</p>').join('');
+            const wrapper='<div style="font-family:Arial,Helvetica,sans-serif;background:#fff;color:#111;max-width:700px;margin:0 auto;padding:24px">'+bodyHtml+'<div style="margin-top:16px;padding-top:12px;border-top:1px solid #e5e5e5;font-size:11px;color:#888">'+senderName+'</div></div>';
+            const resp=await fetch('/api/send-email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to:pendingBrainEmail.to,from:pendingBrainEmail.from,subject:pendingBrainEmail.subject,html:wrapper})});
+            const data=await resp.json();
+            if(resp.ok){notify("Email sent to "+pendingBrainEmail.to);setPendingBrainEmail(null)}
+            else{notify("Email error: "+(data.error||"Failed"),"error")}
+          }catch(e){notify("Network error: "+e.message,"error")}
+          setBrainEmailSending(false);
+        }} disabled={brainEmailSending} style={{padding:"8px 20px",borderRadius:10,border:"none",background:brainEmailSending?"#1a1a1a":"linear-gradient(135deg,#2dd4bf,#14b8a6)",color:brainEmailSending?"#525252":"#000",fontWeight:700,fontSize:13,cursor:brainEmailSending?"wait":"pointer",fontFamily:"inherit",boxShadow:brainEmailSending?"none":"0 4px 16px rgba(45,212,191,0.3)",transition:"all 0.2s"}}>{brainEmailSending?"Sending...":"Send Email"}</button>
+        <button onClick={()=>setPendingBrainEmail(null)} disabled={brainEmailSending} style={{padding:"8px 16px",borderRadius:10,border:"1px solid #333",background:"transparent",color:"#a3a3a3",fontSize:13,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>Cancel</button>
+        <span style={{marginLeft:"auto",fontSize:10,color:"#a3a3a3",fontFamily:"'JetBrains Mono',monospace"}}>Edit any field above before sending</span>
+      </div>
+    </div>}
     {history.length<=1&&<div style={{display:"flex",flexWrap:"wrap",gap:6,padding:"8px 16px",flexShrink:0,maxHeight:"40vh",overflowY:"auto"}}>{suggestedQueries.map(q=><button key={q} onClick={()=>{setBrainQuery(q);setTimeout(handleQuery,50)}} style={{padding:"6px 12px",borderRadius:8,border:"1px solid #1a1a1a",background:"transparent",color:"#525252",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.2s"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="#2dd4bf30";e.currentTarget.style.color="#2dd4bf"}} onMouseLeave={e=>{e.currentTarget.style.borderColor="#1a1a1a";e.currentTarget.style.color="#525252"}}>{q}</button>)}</div>}
     <div style={{display:"flex",gap:8,padding:"12px 16px",background:"#000",flexShrink:0,borderTop:"1px solid #111",alignItems:"center"}}>
       <input ref={brainFileRef} type="file" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.heic,.heif,.xls,.xlsx,.xlsm,.csv,.tsv,.txt,.json,.md,.doc,.docx,application/pdf,image/*,text/*" onChange={e=>{
