@@ -6431,7 +6431,7 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
             </td>
             <td style={{padding:'10px 10px'}}>
               {f._legacy?<span style={{fontSize:11,color:'#737373',fontFamily:"'JetBrains Mono',monospace"}}>--</span>:
-              <select value={f.folderId||''} onChange={e=>moveFileToFolder(f,e.target.value||null)} style={{background:'transparent',border:'1px solid '+(f.folderId?'#a78bfa30':'#1a1a1a'),color:f.folderId?'#a78bfa':'#a3a3a3',borderRadius:5,padding:'2px 6px',fontSize:9,fontFamily:"'JetBrains Mono',monospace",cursor:'pointer',outline:'none',fontWeight:600,maxWidth:140}}><option value="" style={{background:'#111',color:'#e5e5e5'}}>-- No folder --</option>{folders.map(fo=><option key={fo.id} value={fo.id} style={{background:'#111',color:'#e5e5e5'}}>{fo.name}</option>)}</select>}
+              <select value={f.folderId||''} onChange={e=>moveFileToFolder(f,e.target.value||null)} style={{background:'transparent',border:'1px solid '+(f.folderId?'#a78bfa30':'#1a1a1a'),color:f.folderId?'#a78bfa':'#a3a3a3',borderRadius:5,padding:'2px 6px',fontSize:9,fontFamily:"'JetBrains Mono',monospace",cursor:'pointer',outline:'none',fontWeight:600,maxWidth:110}}><option value="" style={{background:'#111',color:'#e5e5e5'}}>(none)</option>{folders.map(fo=><option key={fo.id} value={fo.id} style={{background:'#111',color:'#e5e5e5'}}>{fo.name}</option>)}</select>}
             </td>
             <td style={{padding:'10px 10px',fontSize:11,color:'#c4c4c4',fontFamily:"'JetBrains Mono',monospace",whiteSpace:'nowrap'}}>{fmtSize(f.size)}</td>
             <td style={{padding:'10px 10px',fontSize:11,color:'#c4c4c4',whiteSpace:'nowrap'}}>{f.uploadedBy||'--'}</td>
