@@ -6056,6 +6056,9 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
   const [showAdd,setShowAdd]=useState(false);
   const [pendingFiles,setPendingFiles]=useState([]);
   const [pendingCat,setPendingCat]=useState('Other');
+  const [pendingTags,setPendingTags]=useState('');
+  const [editTagsFor,setEditTagsFor]=useState(null);
+  const [tagInput,setTagInput]=useState('');
   const [previewFile,setPreviewFile]=useState(null);
   const [showHistorySection,setShowHistorySection]=useState(false);
   const [loadingBrainFile,setLoadingBrainFile]=useState(null);
@@ -6064,8 +6067,17 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
   const dropRef=React.useRef(null);
   const [dragOver,setDragOver]=useState(false);
 
-  const CATEGORIES=['QB Export','Tax Document','Bank Statement','Contract','Insurance','Invoice','Receipt','Other'];
-  const CAT_COLORS={'QB Export':'#a78bfa','Tax Document':'#f97316','Bank Statement':'#2dd4bf','Contract':'#fbbf24','Insurance':'#34d399','Invoice':'#f87171','Receipt':'#8b5cf6','Other':'#737373'};
+  const PREDEFINED_CATEGORIES=['Quote','Purchase Order','Vendor Invoice','Customer Invoice','QB Export','Tax Document','Bank Statement','Contract','Insurance','Invoice','Receipt','Other'];
+  // Custom categories saved as a single SOP for persistence to Supabase
+  const customCatSop=(customSops||[]).find(s=>s.id==='CUSTOM_FILE_CATEGORIES');
+  const customCategories=(()=>{try{return JSON.parse(customCatSop?.content||'[]')}catch{return[]}})();
+  const CATEGORIES=[...PREDEFINED_CATEGORIES,...customCategories];
+  const CAT_COLORS={'Quote':'#2dd4bf','Purchase Order':'#a78bfa','Vendor Invoice':'#f97316','Customer Invoice':'#fbbf24','QB Export':'#a78bfa','Tax Document':'#f97316','Bank Statement':'#2dd4bf','Contract':'#fbbf24','Insurance':'#34d399','Invoice':'#f87171','Receipt':'#8b5cf6','Other':'#737373'};
+  const colorFor=(c)=>CAT_COLORS[c]||'#8b5cf6';
+  const [showCatEditor,setShowCatEditor]=useState(false);
+  const [newCatName,setNewCatName]=useState('');
+  const addCustomCat=()=>{const n=newCatName.trim();if(!n)return;if(CATEGORIES.includes(n)){notify('Category already exists','error');return}const next=[...customCategories,n];addSop({id:'CUSTOM_FILE_CATEGORIES',title:'File Categories',cat:'Config',icon:'package',content:JSON.stringify(next),custom:true});setNewCatName('');notify('Added category: '+n)};
+  const removeCustomCat=(c)=>{if(!confirm('Remove category "'+c+'"? Files using it will keep the label.'))return;const next=customCategories.filter(x=>x!==c);addSop({id:'CUSTOM_FILE_CATEGORIES',title:'File Categories',cat:'Config',icon:'package',content:JSON.stringify(next),custom:true});notify('Removed: '+c)};
 
   // Load files from SOPs (cat: 'File') AND legacy historical docs (cat: 'HistoricalDoc')
   const allFiles=(customSops||[]).filter(s=>s.cat==='File').map(s=>{try{return{id:s.id,...JSON.parse(s.content),_legacy:false}}catch{return null}}).filter(Boolean);
@@ -6081,7 +6093,7 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
   // Filter
   let filtered=latestPerGroup;
   if(catFilter!=='all')filtered=filtered.filter(f=>(f.category||'Other')===catFilter);
-  if(search){const q=search.toLowerCase();filtered=filtered.filter(f=>(f.name||'').toLowerCase().includes(q)||(f.originalName||'').toLowerCase().includes(q)||(f.category||'').toLowerCase().includes(q)||(f.uploadedBy||'').toLowerCase().includes(q))}
+  if(search){const q=search.toLowerCase();filtered=filtered.filter(f=>(f.name||'').toLowerCase().includes(q)||(f.originalName||'').toLowerCase().includes(q)||(f.category||'').toLowerCase().includes(q)||(f.uploadedBy||'').toLowerCase().includes(q)||(f.tags||[]).some(t=>(t||'').toLowerCase().includes(q)))}
   // Sort
   filtered.sort((a,b)=>{let va,vb;if(sortBy==='name'){va=(a.originalName||a.name||'').toLowerCase();vb=(b.originalName||b.name||'').toLowerCase()}else if(sortBy==='size'){va=a.size||0;vb=b.size||0}else if(sortBy==='category'){va=a.category||'';vb=b.category||''}else{va=a.uploadedAt||'';vb=b.uploadedAt||''}return sortDir==='asc'?(va<vb?-1:va>vb?1:0):(va>vb?-1:va<vb?1:0)});
 
@@ -6128,15 +6140,16 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
         if(!url){failed++;continue}
         // Save metadata as SOP
         const id='FILE-'+Date.now()+'-'+Math.random().toString(36).slice(2,7);
+        const tagArr=pendingTags.split(',').map(t=>t.trim()).filter(Boolean);
         addSop({id,title:file.name,cat:'File',icon:'package',content:JSON.stringify({
           name:file.name,originalName:file.name,size:file.size,type:file.type||'application/octet-stream',
-          url,path,category:pendingCat,uploadedBy:currentUser?.name||currentUser?.email||'Unknown',
+          url,path,category:pendingCat,tags:tagArr,uploadedBy:currentUser?.name||currentUser?.email||'Unknown',
           uploadedAt:new Date().toISOString(),version,parentId
         }),custom:true});
         uploaded++;
       }catch(err){console.error(err);failed++}
     }
-    setUploading(false);setUploadProgress(null);setPendingFiles([]);setShowAdd(false);setPendingCat('Other');
+    setUploading(false);setUploadProgress(null);setPendingFiles([]);setShowAdd(false);setPendingCat('Other');setPendingTags('');
     notify(uploaded+' file'+(uploaded!==1?'s':'')+' uploaded'+(failed>0?', '+failed+' failed':''));
   };
 
@@ -6150,6 +6163,13 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
     if(f._legacy){notify('Cannot recategorize legacy historical docs','error');return}
     addSop({id:f.id,title:f.name,cat:'File',icon:'package',content:JSON.stringify({...f,category:newCat,_legacy:undefined}),custom:true});
     notify(f.name+' >> '+newCat);
+  };
+
+  const updateTags=(f,newTagsStr)=>{
+    if(f._legacy){notify('Cannot tag legacy historical docs','error');return}
+    const tagArr=newTagsStr.split(',').map(t=>t.trim()).filter(Boolean);
+    addSop({id:f.id,title:f.name,cat:'File',icon:'package',content:JSON.stringify({...f,tags:tagArr,_legacy:undefined}),custom:true});
+    notify('Tags updated for '+f.name);
   };
 
   const sendToBrain=async(f)=>{
@@ -6225,7 +6245,7 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
     {/* Category filter chips */}
     <div style={{display:'flex',gap:4,flexWrap:'wrap',marginBottom:16,overflowX:'auto',WebkitOverflowScrolling:'touch',paddingBottom:4}}>
       <button onClick={()=>setCatFilter('all')} style={{padding:'5px 12px',borderRadius:20,border:catFilter==='all'?'1px solid #2dd4bf':'1px solid #1a1a1a',background:catFilter==='all'?'#2dd4bf12':'transparent',color:catFilter==='all'?'#2dd4bf':'#525252',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:"'JetBrains Mono',monospace",whiteSpace:'nowrap',transition:'all 0.15s'}}>ALL {totalFiles}</button>
-      {CATEGORIES.map(c=><button key={c} onClick={()=>setCatFilter(catFilter===c?'all':c)} style={{padding:'5px 12px',borderRadius:20,border:'1px solid '+(catFilter===c?(CAT_COLORS[c]||'#333')+'60':'#1a1a1a'),background:catFilter===c?(CAT_COLORS[c]||'#333')+'12':'transparent',color:catFilter===c?CAT_COLORS[c]||'#f0f0f0':'#333',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:"'JetBrains Mono',monospace",whiteSpace:'nowrap',transition:'all 0.15s'}}>{c} {catCounts[c]||0}</button>)}
+      {CATEGORIES.map(c=><button key={c} onClick={()=>setCatFilter(catFilter===c?'all':c)} style={{padding:'5px 12px',borderRadius:20,border:'1px solid '+(catFilter===c?colorFor(c)+'60':'#1a1a1a'),background:catFilter===c?colorFor(c)+'12':'transparent',color:catFilter===c?colorFor(c):'#333',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:"'JetBrains Mono',monospace",whiteSpace:'nowrap',transition:'all 0.15s'}}>{c} {catCounts[c]||0}</button>)}
     </div>
 
     {/* Toolbar */}
@@ -6256,12 +6276,25 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
     {/* Pending upload preview */}
     {showAdd&&pendingFiles.length>0&&<Card style={{padding:16,marginBottom:14,border:'1px solid rgba(45,212,191,0.2)'}}>
       <div style={{fontSize:13,fontWeight:700,color:'#f0f0f0',marginBottom:12}}>Ready to upload {pendingFiles.length} file{pendingFiles.length!==1?'s':''}</div>
-      <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'center',marginBottom:12}}>
+      <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'center',marginBottom:10}}>
         <label style={{fontSize:11,color:'#a3a3a3'}}>Category:</label>
         <select value={pendingCat} onChange={e=>setPendingCat(e.target.value)} style={{...inputStyle,width:'auto',background:'#0a0a0a',padding:'6px 12px',fontSize:12}}>
           {CATEGORIES.map(c=><option key={c}>{c}</option>)}
         </select>
+        <button onClick={()=>setShowCatEditor(!showCatEditor)} style={{background:'transparent',border:'1px solid #1a1a1a',color:'#737373',cursor:'pointer',fontSize:10,fontFamily:"'JetBrains Mono',monospace",padding:'5px 10px',borderRadius:5}}>{showCatEditor?'Done':'Manage Categories'}</button>
       </div>
+      <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'center',marginBottom:12}}>
+        <label style={{fontSize:11,color:'#a3a3a3',whiteSpace:'nowrap'}}>Tags (comma-separated):</label>
+        <input value={pendingTags} onChange={e=>setPendingTags(e.target.value)} placeholder="e.g. 2024, college of dupage, q3" style={{...inputStyle,flex:1,minWidth:200,background:'#0a0a0a',padding:'6px 12px',fontSize:12}}/>
+      </div>
+      {showCatEditor&&<div style={{padding:'10px 12px',background:'#0a0a0a',borderRadius:8,marginBottom:12,border:'1px solid #1a1a1a'}}>
+        <div style={{fontSize:11,color:'#a3a3a3',marginBottom:8,fontWeight:600}}>Add custom category</div>
+        <div style={{display:'flex',gap:6,marginBottom:10}}>
+          <input value={newCatName} onChange={e=>setNewCatName(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')addCustomCat()}} placeholder="Custom category name" style={{...inputStyle,flex:1,background:'#000',padding:'6px 10px',fontSize:12}}/>
+          <Btn onClick={addCustomCat} style={{fontSize:11,padding:'6px 12px'}}>Add</Btn>
+        </div>
+        {customCategories.length>0&&<div style={{display:'flex',gap:6,flexWrap:'wrap'}}>{customCategories.map(c=><span key={c} style={{display:'inline-flex',alignItems:'center',gap:6,padding:'4px 10px',borderRadius:14,background:'rgba(139,92,246,0.08)',border:'1px solid rgba(139,92,246,0.25)',fontSize:11,color:'#a78bfa',fontFamily:"'JetBrains Mono',monospace"}}>{c}<button onClick={()=>removeCustomCat(c)} style={{background:'none',border:'none',color:'#a78bfa',cursor:'pointer',fontSize:14,padding:0,lineHeight:1}}>x</button></span>)}</div>}
+      </div>}
       <div style={{display:'flex',flexDirection:'column',gap:4,marginBottom:12,maxHeight:160,overflowY:'auto'}}>
         {pendingFiles.map((f,i)=>{
           const existing=allFiles.filter(af=>(af.originalName||af.name)===f.name);
@@ -6278,7 +6311,7 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
       {uploadProgress&&<div style={{marginBottom:10,padding:'8px 12px',background:'rgba(45,212,191,0.05)',borderRadius:6,fontSize:11,color:'#2dd4bf',fontFamily:"'JetBrains Mono',monospace"}}>Uploading {uploadProgress.current}/{uploadProgress.total}: {uploadProgress.name}</div>}
       <div style={{display:'flex',gap:6}}>
         <Btn onClick={doUpload} style={{fontSize:12}} disabled={uploading}>{uploading?'Uploading...':'Upload '+pendingFiles.length+' file'+(pendingFiles.length!==1?'s':'')}</Btn>
-        <Btn v="secondary" onClick={()=>{setShowAdd(false);setPendingFiles([]);setPendingCat('Other')}} style={{fontSize:12}} disabled={uploading}>Cancel</Btn>
+        <Btn v="secondary" onClick={()=>{setShowAdd(false);setPendingFiles([]);setPendingCat('Other');setPendingTags('')}} style={{fontSize:12}} disabled={uploading}>Cancel</Btn>
       </div>
     </Card>}
 
@@ -6310,12 +6343,13 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
                     {f._legacy?'LEGACY':'v'+(f.version||1)}
                     {hasVersions&&!f._legacy&&<button onClick={()=>setShowVersionsFor(showVersionsFor===f.id?null:f.id)} style={{background:'none',border:'none',color:'#a78bfa',cursor:'pointer',fontSize:10,fontFamily:'inherit',marginLeft:6,padding:0}}>{showVersionsFor===f.id?'hide':versions.length+' versions'}</button>}
                   </div>
+                  {(f.tags||[]).length>0&&<div style={{display:'flex',gap:3,flexWrap:'wrap',marginTop:4}}>{(f.tags||[]).slice(0,5).map(t=><span key={t} style={{padding:'1px 7px',borderRadius:10,background:'rgba(251,191,36,0.08)',border:'1px solid rgba(251,191,36,0.2)',fontSize:9,color:'#fbbf24',fontFamily:"'JetBrains Mono',monospace"}}>{t}</span>)}{(f.tags||[]).length>5&&<span style={{fontSize:9,color:'#525252',fontFamily:"'JetBrains Mono',monospace"}}>+{(f.tags||[]).length-5}</span>}</div>}
                 </div>
               </div>
             </td>
             <td style={{padding:'10px 10px'}}>
               {f._legacy?<span style={{padding:'3px 8px',borderRadius:4,background:'#8b5cf615',color:'#8b5cf6',fontSize:10,fontWeight:600,fontFamily:"'JetBrains Mono',monospace"}}>Legacy</span>:
-              <select value={f.category||'Other'} onChange={e=>updateCat(f,e.target.value)} style={{background:'transparent',border:'1px solid '+(CAT_COLORS[f.category]||'#333')+'30',color:CAT_COLORS[f.category]||'#737373',borderRadius:6,padding:'3px 8px',fontSize:10,fontFamily:"'JetBrains Mono',monospace",cursor:'pointer',outline:'none',fontWeight:600}}>{CATEGORIES.map(c=><option key={c} style={{background:'#111',color:'#e5e5e5'}}>{c}</option>)}</select>}
+              <select value={f.category||'Other'} onChange={e=>updateCat(f,e.target.value)} style={{background:'transparent',border:'1px solid '+colorFor(f.category)+'30',color:colorFor(f.category),borderRadius:6,padding:'3px 8px',fontSize:10,fontFamily:"'JetBrains Mono',monospace",cursor:'pointer',outline:'none',fontWeight:600}}>{[...new Set([...CATEGORIES,f.category].filter(Boolean))].map(c=><option key={c} style={{background:'#111',color:'#e5e5e5'}}>{c}</option>)}</select>}
             </td>
             <td style={{padding:'10px 10px',fontSize:11,color:'#737373',fontFamily:"'JetBrains Mono',monospace",whiteSpace:'nowrap'}}>{fmtSize(f.size)}</td>
             <td style={{padding:'10px 10px',fontSize:11,color:'#a3a3a3',whiteSpace:'nowrap'}}>{f.uploadedBy||'--'}</td>
@@ -6323,10 +6357,20 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
             <td style={{padding:'10px 10px',whiteSpace:'nowrap'}}>
               <button onClick={()=>setPreviewFile(f)} style={{background:'none',border:'1px solid #1a1a1a',color:'#737373',cursor:'pointer',fontSize:10,fontFamily:"'JetBrains Mono',monospace",padding:'4px 8px',borderRadius:5,marginRight:4,transition:'all 0.15s'}} onMouseEnter={e=>{e.currentTarget.style.color='#2dd4bf';e.currentTarget.style.borderColor='#2dd4bf30'}} onMouseLeave={e=>{e.currentTarget.style.color='#737373';e.currentTarget.style.borderColor='#1a1a1a'}}>VIEW</button>
               <button onClick={()=>sendToBrain(f)} disabled={loadingBrainFile===f.id} style={{background:'none',border:'1px solid '+(loadingBrainFile===f.id?'#525252':'rgba(167,139,250,0.3)'),color:loadingBrainFile===f.id?'#525252':'#a78bfa',cursor:loadingBrainFile===f.id?'wait':'pointer',fontSize:10,fontFamily:"'JetBrains Mono',monospace",padding:'4px 8px',borderRadius:5,marginRight:4,transition:'all 0.15s'}}>{loadingBrainFile===f.id?'LOADING':'BRAIN'}</button>
-              {f.url&&<a href={f.url} download={f.originalName||f.name} target="_blank" rel="noopener noreferrer" style={{display:'inline-block',background:'none',border:'1px solid #1a1a1a',color:'#737373',textDecoration:'none',fontSize:10,fontFamily:"'JetBrains Mono',monospace",padding:'4px 8px',borderRadius:5,marginRight:4,transition:'all 0.15s'}}>DL</a>}
+              {!f._legacy&&<button onClick={()=>{setEditTagsFor(editTagsFor===f.id?null:f.id);setTagInput((f.tags||[]).join(', '))}} style={{background:'none',border:'1px solid '+(editTagsFor===f.id?'#fbbf24':'#1a1a1a'),color:editTagsFor===f.id?'#fbbf24':'#737373',cursor:'pointer',fontSize:10,fontFamily:"'JetBrains Mono',monospace",padding:'4px 8px',borderRadius:5,marginRight:4,transition:'all 0.15s'}}>TAGS</button>}
+              {f.url&&<a href={f.url} download={f.originalName||f.name} target="_blank" rel="noopener noreferrer" style={{display:'inline-block',background:'none',border:'1px solid #1a1a1a',color:'#737373',textDecoration:'none',fontSize:10,fontFamily:"'JetBrains Mono',monospace",padding:'4px 8px',borderRadius:5,marginRight:4,transition:'all 0.15s'}} onMouseEnter={e=>{e.currentTarget.style.color='#2dd4bf';e.currentTarget.style.borderColor='#2dd4bf30'}} onMouseLeave={e=>{e.currentTarget.style.color='#737373';e.currentTarget.style.borderColor='#1a1a1a'}}>DOWNLOAD</a>}
               <button onClick={()=>deleteFile(f)} style={{background:'none',border:'1px solid #1a1a1a',color:'#525252',cursor:'pointer',fontSize:10,fontFamily:"'JetBrains Mono',monospace",padding:'4px 8px',borderRadius:5,transition:'all 0.15s'}} onMouseEnter={e=>{e.currentTarget.style.color='#f87171';e.currentTarget.style.borderColor='#f8717130'}} onMouseLeave={e=>{e.currentTarget.style.color='#525252';e.currentTarget.style.borderColor='#1a1a1a'}}>DEL</button>
             </td>
           </tr>
+          {/* Tag editor expansion */}
+          {editTagsFor===f.id&&!f._legacy&&<tr style={{background:'#050505'}}><td colSpan={6} style={{padding:'12px 16px 16px 42px',borderBottom:'1px solid #1a1a1a'}}>
+            <div style={{fontSize:10,color:'#525252',fontFamily:"'JetBrains Mono',monospace",letterSpacing:1,marginBottom:8,textTransform:'uppercase'}}>EDIT TAGS (comma-separated)</div>
+            <div style={{display:'flex',gap:6}}>
+              <input value={tagInput} onChange={e=>setTagInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){updateTags(f,tagInput);setEditTagsFor(null)}}} placeholder="e.g. 2024, college of dupage, q3, urgent" style={{...inputStyle,flex:1,background:'#000',padding:'8px 12px',fontSize:12,fontFamily:"'JetBrains Mono',monospace"}} autoFocus/>
+              <Btn onClick={()=>{updateTags(f,tagInput);setEditTagsFor(null)}} style={{fontSize:11,padding:'6px 14px'}}>Save</Btn>
+              <Btn v="secondary" onClick={()=>setEditTagsFor(null)} style={{fontSize:11,padding:'6px 14px'}}>Cancel</Btn>
+            </div>
+          </td></tr>}
           {/* Version history expansion */}
           {showVersionsFor===f.id&&hasVersions&&!f._legacy&&<tr style={{background:'#050505'}}><td colSpan={6} style={{padding:'12px 16px 16px 42px',borderBottom:'1px solid #1a1a1a'}}>
             <div style={{fontSize:10,color:'#525252',fontFamily:"'JetBrains Mono',monospace",letterSpacing:1,marginBottom:8,textTransform:'uppercase'}}>VERSION HISTORY</div>
