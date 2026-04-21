@@ -1038,6 +1038,7 @@ function MidwestAIOSInner() {
   useEffect(()=>{if(page==="jobs"&&window._brainNavJob){setSelectedJob(window._brainNavJob);window._brainNavJob=null}},[page]);
 
   const [pendingCommPreview, setPendingCommPreview] = useState(null);
+  const [pendingBrainFile, setPendingBrainFile] = useState(null);
   const [jobs, setJobs] = useState(INIT_JOBS);
   const [lineItems, setLineItems] = useState(INIT_LINE_ITEMS);
   const [reps, setReps] = useState(INIT_REPS);
@@ -1301,6 +1302,7 @@ function MidwestAIOSInner() {
     {id:"directory",label:"Directory",icon:"users"},
     {id:"deliveries",label:"Delivery Tracker",icon:"truck",badge:pendingDeliveries||null,badgeColor:"#fbbf24"},
     {id:"documents",label:"Documents",icon:"file",badge:pendingInvoices||null,badgeColor:"#2dd4bf"},
+    {id:"files",label:"Files",icon:"package"},
     {id:"commissions",label:"Commissions",icon:"dollar"},
     {id:"financials",label:"Financials",icon:"dollar"},
     {id:"salesportal",label:"Sales Portal",icon:"users"},
@@ -1332,7 +1334,7 @@ function MidwestAIOSInner() {
 
   
   const visibleJobs = userRole === "sales" && userRepId ? jobs.filter(j => j.salesRep === userRepId) : jobs;
-  const ctx = {jobs:visibleJobs,allJobs:jobs,setJobs,jobNum,currentUser,userRole,userRepId,logout,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,forceDeleteVendor,forceDeleteLineItem,forceDeleteCustomer,forceDeleteRep,db,setPage:p=>{setPage(p);setMobileMenuOpen(false);window.scrollTo(0,0);const mc=document.querySelector('.main-content');if(mc)mc.scrollTop=0},viewCustomer:id=>{setPage("customer360");window._viewCustId=id;window.scrollTo(0,0)},brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter,pendingCommPreview,setPendingCommPreview};
+  const ctx = {jobs:visibleJobs,allJobs:jobs,setJobs,jobNum,currentUser,userRole,userRepId,logout,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,forceDeleteVendor,forceDeleteLineItem,forceDeleteCustomer,forceDeleteRep,db,setPage:p=>{setPage(p);setMobileMenuOpen(false);window.scrollTo(0,0);const mc=document.querySelector('.main-content');if(mc)mc.scrollTop=0},viewCustomer:id=>{setPage("customer360");window._viewCustId=id;window.scrollTo(0,0)},brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter,pendingCommPreview,setPendingCommPreview,pendingBrainFile,setPendingBrainFile};
 
   const loadingScreen = (
 <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",width:"100vw",background:"#0a0a0a",fontFamily:"'Satoshi',sans-serif"}}>
@@ -1453,6 +1455,7 @@ const sharedScreen = sharedQuote ? <ShareQuotePortal quoteData={sharedQuote} onA
           {page==="commissions"&&<CommissionsPage {...ctx} onGenerateStatement={doc=>{setPendingCommPreview(doc);}} />}
           {page==="salesportal"&&<SalesPortalPage {...ctx}/>}
           {page==="prospects"&&<ProspectsPage {...ctx}/>}
+          {page==="files"&&<FilesPage {...ctx}/>}
           {page==="playbook"&&<PlaybookPage {...ctx}/>}
           {page==="customer360"&&<Customer360Page {...ctx}/>}
           {page==="tasks"&&<TasksPage {...ctx}/>}
@@ -2806,12 +2809,12 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
     setEmailSending(true);
     try {
       const doc=emailModal;
-      const isQuote=doc.type==="quote";const isPO=doc.type==="po";const isComm=doc.type==="commission";
-      const docTitle=isQuote?"Project Quote":isPO?"Purchase Order":isComm?"Commission Statement":"Invoice";
-      const name=isQuote?doc.data.customer?.name:isPO?doc.data.vendor?.name:isComm?doc.data.rep?.name:doc.data.customer?.name;
-      const rows=doc.data.items.map(i=>{const q=i.displayQty!==undefined?i.displayQty:i.qtyOrdered;const p=i.displayPrice!==undefined?i.displayPrice:i.unitPrice;return '<tr><td style="padding:8px;border-bottom:1px solid #eee">'+i.description+'</td><td style="padding:8px;text-align:right;border-bottom:1px solid #eee">'+q+'</td><td style="padding:8px;text-align:right;border-bottom:1px solid #eee">$'+p.toFixed(2)+'</td><td style="padding:8px;text-align:right;border-bottom:1px solid #eee;font-weight:bold">$'+(q*p).toFixed(2)+'</td></tr>'}).join('');
-      const html='<div style="font-family:Satoshi,Arial,sans-serif;max-width:700px;margin:0 auto"><div style="border-bottom:3px solid #2dd4bf;padding-bottom:16px;margin-bottom:20px"><h2 style="margin:0">MIDWEST EDUCATIONAL FURNISHINGS, INC.</h2><p style="color:#666;margin:4px 0 0">21191 N Valley Rd, Kildeer, IL 60047 US</p><p style="color:#666;margin:2px 0 0;font-size:12px">(847) 847-1865 - info@mwfurnishings.com</p></div><div style="display:flex;justify-content:space-between;margin-bottom:20px"><div><strong style="color:#2dd4bf;font-size:16px">'+docTitle.toUpperCase()+'</strong><br/>'+(doc.data.docNum||'')+'<br/>Date: '+new Date().toLocaleDateString()+'<br/>Job: '+doc.job.id+'</div></div><p><strong>'+(isQuote?"Prepared For":isPO?"Vendor":isComm?"Sales Rep":"Bill To")+':</strong> '+name+'</p><p><strong>Project:</strong> '+(projectNum?.(doc.job.id)||'')+ ' '+doc.job.name+'</p><table style="width:100%;border-collapse:collapse;font-size:13px;margin:20px 0"><thead><tr style="background:#f5f5f4"><th style="padding:8px;text-align:left">Description</th><th style="padding:8px;text-align:right">Qty</th><th style="padding:8px;text-align:right">Unit Price</th><th style="padding:8px;text-align:right">Total</th></tr></thead><tbody>'+rows+'</tbody><tfoot><tr style="border-top:2px solid #2dd4bf"><td colspan="3" style="padding:10px 8px;font-weight:bold;text-align:right">TOTAL</td><td style="padding:10px 8px;font-weight:bold;text-align:right;font-size:16px">$'+doc.data.total.toFixed(2)+'</td></tr></tfoot></table><p style="color:#999;font-size:11px;margin-top:30px">Sent from Midwest Educational Furnishings AIOS</p></div>';
-      const resp=await fetch('/api/send-email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to:emailTo,from:emailFrom,subject:emailSubject,html})});
+      // Use the SAME HTML as Export PDF so emails look identical to the PDF version
+      const {html:docHtml,docTitle}=buildDocHtml(doc);
+      const senderName=(emailFrom||'').split('@')[0].replace(/[._-]/g,' ').replace(/\b\w/g,c=>c.toUpperCase()) || 'Midwest Educational Furnishings';
+      const intro='<div style="font-family:Arial,sans-serif;max-width:800px;margin:0 auto;padding:20px 24px 0"><p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 8px">Hello,</p><p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 8px">Please see the '+docTitle.toLowerCase()+' below'+(doc.data.docNum?' ('+doc.data.docNum+')':'')+'. Let me know if you have any questions.</p><p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 16px">Thank you,<br/>'+senderName+'</p><div style="height:1px;background:#e5e5e5;margin:8px 0 24px"></div></div>';
+      const wrapper='<div style="font-family:Arial,Helvetica,sans-serif;background:#fff;color:#111">'+intro+'<div style="max-width:800px;margin:0 auto;padding:0 24px 24px">'+docHtml+'</div></div>';
+      const resp=await fetch('/api/send-email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to:emailTo,from:emailFrom,subject:emailSubject,html:wrapper})});
       const data=await resp.json();
       if(resp.ok){notify("Email sent to "+emailTo);if(doc.data.docNum)setDocStatus(doc.data.docNum,'sent');setEmailModal(null);setEmailTo("");setEmailSubject("")}
       else{notify("Email error: "+(data.error||"Failed"),"error")}
@@ -2826,11 +2829,11 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
   const genInvoice=(job,full)=>{const allItems=getJobItems(job.id);const items=full?allItems.filter(i=>i.qtyOrdered>0):allItems.filter(i=>i.qtyReceived>i.qtyInvoiced);const isPartial=!full&&allItems.some(i=>i.qtyOrdered>i.qtyReceived);const jobPONums=genPOs(job).map(po=>po.docNum);return {customer:customers.find(c=>c.id===job.customer),items:items.map(i=>({...i,displayQty:full?i.qtyOrdered:(i.qtyReceived-i.qtyInvoiced),displayPrice:i.unitPrice})),total:items.reduce((s,i)=>s+i.unitPrice*(full?i.qtyOrdered:(i.qtyReceived-i.qtyInvoiced)),0),job,docNum:stableNum('INV-',job.id,job.customer),isPartial,isFull:!!full,poNumbers:jobPONums}};
   const genQuote=job=>{const items=getJobItems(job.id);const customer=customers.find(c=>c.id===job.customer);const qvc=((job.docStatuses||{}).__qcv||{});const hc={netCost:true,netTotal:true,...qvc};return {customer,items:items.map(i=>({...i,displayQty:i.qtyOrdered,displayPrice:i.unitPrice})),total:items.reduce((s,i)=>s+(i.priceExtended&&i.priceExtended>0?i.priceExtended:(i.unitPrice||0)*i.qtyOrdered),0),job,docNum:stableNum('QT-',job.id,job.customer),projectNum:projectNum(job.id),hiddenCols:hc}};
 
-  const handleExportPDF=(doc)=>{
+  // Build the document HTML -- shared by handleExportPDF and sendEmail so they always look identical
+  const buildDocHtml=(doc)=>{
     const isQuote=doc.type==="quote";const isPO=doc.type==="po";const isInvoice=doc.type==="invoice";const isComm=doc.type==="commission";
     const job=doc.job||{};const customer2=customers.find(c=>c.id===job.customer)||{};
     const terms=job.terms||"Net 30";const termDays=terms.includes("15")?15:terms.includes("Receipt")?0:30;
-    // Use document date override if set, otherwise today
     const docDateKey=doc.data?.docNum||'';
     const overrideDate=docDateKey?docStatuses[docDateKey+'__date']||'':'';
     const overrideDue=docDateKey?docStatuses[docDateKey+'__due']||'':'';
@@ -2838,23 +2841,17 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
     const dueDate=overrideDue?new Date(overrideDue+'T12:00:00'):(()=>{const d=new Date(baseDate);d.setDate(d.getDate()+termDays);return d})();
     const fmtDate=d=>{if(!d)return"";const dt=new Date(d);return(dt.getMonth()+1)+"/"+dt.getDate()+"/"+dt.getFullYear()};
     const todayStr=fmtDate(baseDate);const dueDateStr=fmtDate(dueDate);
-
-    // Build description with model# and color if available
     const buildDesc=(i)=>{let d=i.modelNumber?i.modelNumber+"<br>":"";d+=(i.description||"").replace(/\n/g,"<br>");if(i.color)d+="<br>"+i.color;return d};
     const items=doc.data.items||[];
     const total=doc.data.total||0;
-
-    // Common header
     const mwHdr='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px"><div><div style="font-weight:700;font-size:14px">Midwest Educational Furnishings, Inc.</div><div style="font-size:12px;color:#444;line-height:1.6">21191 N Valley Rd<br>Kildeer, IL 60047 US<br>(847) 847-1865</div></div><div><img src="'+MW_LOGO+'" style="height:48px"/></div></div>';
-
     let html="";
-
     if(isPO){
       const vendObj=doc.data.vendor||{};
       const rows=items.map(i=>'<tr><td style="padding:10px 8px;border-bottom:1px solid #eee;vertical-align:top;white-space:pre-wrap">'+(buildDesc(i))+'</td><td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right;vertical-align:top">'+(i.displayQty||i.qtyOrdered)+'</td><td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right;vertical-align:top">'+fmt(i.displayPrice||i.unitCost)+'</td><td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right;vertical-align:top">'+fmt((i.displayQty||i.qtyOrdered)*(i.displayPrice||i.unitCost))+'</td></tr>').join('');
       html=mwHdr+'<div style="font-size:24px;font-weight:300;color:#888;letter-spacing:1;margin:24px 0 20px">Purchase Order</div><div style="display:flex;justify-content:space-between;margin-bottom:20px"><div style="flex:1"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:6px">VENDOR</div><div style="font-size:13px;line-height:1.6">'+fmtAddrHtml(vendObj.name||'',vendObj.address||''+(vendObj.phone?'<br>'+vendObj.phone:''),'')+'</div></div><div style="flex:1"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:6px">SHIP TO</div><div style="font-size:13px;line-height:1.6">'+fmtShipHtml(job.shipTo,customer2.name||'',customer2.address||'',customer2.contact||'')+'</div></div><div style="text-align:right;min-width:180px"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:6px">P.O. NO.</div><div style="font-size:18px;font-weight:700;margin-bottom:8px">'+(doc.data.docNum||'')+'</div><div style="font-size:12px;color:#888">Date: '+todayStr+'</div></div></div>'+(job.shipVia?'<div style="margin-bottom:16px;padding:10px 14px;background:#fafafa;border-radius:6px"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:4px">SHIP VIA</div><div style="font-size:13px">'+job.shipVia+'</div></div>':'')+'<div style="height:1px;background:#e5e5e5;margin-bottom:16px"></div><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="border-bottom:2px solid #e5e5e5"><th style="text-align:left;padding:8px;font-size:10px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:0.5px">DESCRIPTION</th><th style="text-align:right;padding:8px;font-size:10px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:0.5px;width:60px">QTY</th><th style="text-align:right;padding:8px;font-size:10px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:0.5px;width:90px">RATE</th><th style="text-align:right;padding:8px;font-size:10px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:0.5px;width:100px">AMOUNT</th></tr></thead><tbody>'+rows+'</tbody></table><div style="margin-top:24px;display:flex;justify-content:space-between"><div style="font-size:12px;color:#888;max-width:50%;white-space:pre-wrap">'+((job.notes||'').split('\n').filter(l=>!l.startsWith('TASK:')&&!l.startsWith('NOTE:')).join('\n').trim()||'')+'</div><div style="text-align:right"><div style="font-size:13px;color:#888;margin-bottom:4px">SUBTOTAL<span style="margin-left:40px;color:#111">'+fmt(total)+'</span></div><div style="height:1px;background:#e5e5e5;margin:8px 0"></div><div style="font-size:18px;font-weight:700">TOTAL<span style="margin-left:40px">'+fmt(total)+'</span></div></div></div>';
     } else if(isInvoice){
-            const rows=items.map(i=>{const ship=i.shippingPerUnit||0;const inst=i.installPerUnit||0;return '<tr><td style="padding:10px 8px;border-bottom:1px solid #eee;vertical-align:top;white-space:pre-wrap">'+(buildDesc(i))+'</td><td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right;vertical-align:top">'+(i.displayQty||i.qtyOrdered)+'</td><td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right;vertical-align:top">'+fmt(i.displayPrice||i.unitPrice)+'</td><td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right;vertical-align:top">'+fmt((i.displayQty||i.qtyOrdered)*(i.displayPrice||i.unitPrice))+'</td></tr>'}).join('');
+      const rows=items.map(i=>{const ship=i.shippingPerUnit||0;const inst=i.installPerUnit||0;return '<tr><td style="padding:10px 8px;border-bottom:1px solid #eee;vertical-align:top;white-space:pre-wrap">'+(buildDesc(i))+'</td><td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right;vertical-align:top">'+(i.displayQty||i.qtyOrdered)+'</td><td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right;vertical-align:top">'+fmt(i.displayPrice||i.unitPrice)+'</td><td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right;vertical-align:top">'+fmt((i.displayQty||i.qtyOrdered)*(i.displayPrice||i.unitPrice))+'</td></tr>'}).join('');
       html=mwHdr+(isProforma?'<div style="background:linear-gradient(135deg,#2e7d32,#4a7a4a);color:#fff;padding:10px 20px;border-radius:6px;text-align:center;font-size:15px;font-weight:700;letter-spacing:4px;margin-bottom:16px;text-transform:uppercase">PRO FORMA INVOICE -- FOR APPROVAL PURPOSES ONLY</div>':'')+(isCreditMemo?'<div style="background:#c0392b;color:#fff;padding:10px 20px;border-radius:6px;text-align:center;font-size:15px;font-weight:700;letter-spacing:4px;margin-bottom:16px;text-transform:uppercase">CREDIT MEMO</div>':'')+'<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px"><div style="display:flex;gap:40px"><div><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:6px">BILL TO</div><div style="font-size:13px;line-height:1.6">'+fmtAddrHtml(job.billTo||customer2.name||'',customer2.address||'',customer2.contact||'')+'</div></div><div><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:6px">SHIP TO</div><div style="font-size:13px;line-height:1.6">'+fmtShipHtml(job.shipTo,customer2.name||'',customer2.address||'',customer2.contact||'')+'</div></div></div><div style="text-align:right"><div style="font-size:24px;font-weight:300;color:'+(isCreditMemo?'#c0392b':isProforma?'#2e7d32':'#888')+';letter-spacing:1">'+(isCreditMemo?'Credit Memo':isProforma?'Pro Forma Invoice':'Invoice')+'</div><div style="font-size:14px;font-weight:600;margin-top:4px"> '+(doc.data.docNum||'')+'</div><div style="font-size:12px"><strong>DATE</strong> '+todayStr+'  <strong>TERMS</strong> '+terms+'</div><div style="font-size:12px;margin-top:4px;color:#2dd4bf"><strong>DUE DATE</strong> '+dueDateStr+'</div></div></div>'+(()=>{const poNums=[];if(job.poNumber)poNums.push('Customer PO: '+job.poNumber);const selPOs=getInvPOs(doc.data.docNum);selPOs.forEach(pn=>poNums.push(pn));return poNums.length>0?'<div style="margin:12px 0"><div style="font-weight:700;font-size:12px">P.O. NUMBER'+(poNums.length>1?'S':'')+'</div><div style="font-size:13px">'+poNums.join('<br>')+'</div></div>':''})()+'<table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:16px"><thead><tr style="border-bottom:2px solid #e5e5e5"><th style="text-align:left;padding:8px;font-size:10px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:0.5px">DESCRIPTION</th><th style="text-align:right;padding:8px;font-weight:600;color:#2dd4bf;width:60px">QTY</th><th style="text-align:right;padding:8px;font-weight:600;color:#2dd4bf;width:90px">RATE</th><th style="text-align:right;padding:8px;font-weight:600;color:#2dd4bf;width:100px">AMOUNT</th></tr></thead><tbody>'+rows+'</tbody></table><div style="margin-top:24px;text-align:right"><div style="font-size:13px;color:#666;margin-bottom:8px">Thank you for your business!</div><div style="font-size:13px;margin-bottom:4px">SUBTOTAL<span style="margin-left:40px">'+fmt(total)+'</span></div><div style="font-size:18px;font-weight:700;border-top:2px solid #e5e5e5;padding-top:8px;margin-top:8px;font-weight:700">'+(isCreditMemo?'TOTAL CREDIT':'TOTAL DUE')+'<span style="margin-left:40px;color:'+(isCreditMemo?'#e74c3c':'#111')+'">'+fmt(total)+'</span></div></div>';
     } else if(isQuote){try{
       const pdfHC2=(job.docStatuses||{}).__qcv||{};
@@ -2862,16 +2859,19 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
       const qH=qC.map(c=>'<th style="text-align:'+c.a+';padding:6px;font-weight:600;color:#2dd4bf">'+c.l+'</th>').join('');
       const qR=items.map(i=>{const ship=i.shippingPerUnit||0;const inst=i.installPerUnit||0;const qty=i.displayQty||i.qtyOrdered||0;const price=i.displayPrice||i.unitPrice||0;const lt=i.priceExtended&&i.priceExtended>0?i.priceExtended:(price)*qty;const v={tag:i.tag||"",manuf:i.manufacturer||"",model:i.modelNumber||"",description:(i.description||"").replace(/\n/g,"<br>"),color:i.color||"",qty:qty,netCost:"$"+(i.unitCost||0).toFixed(2),netTotal:"$"+((i.unitCost||0)*qty).toFixed(2),shippingEach:ship>0?"$"+ship.toFixed(2):"",shippingTotal:ship>0?"$"+(ship*qty).toFixed(2):"",installEach:inst>0?"$"+inst.toFixed(2):"",installTotal:inst>0?"$"+(inst*qty).toFixed(2):"",unitPrice:"$"+(price).toFixed(2),lineTotal:"$"+lt.toFixed(2)};return '<tr>'+qC.map(c=>'<td style="padding:6px;border-bottom:1px solid #eee;text-align:'+c.a+';'+(c.k==="lineTotal"?"font-weight:600;":"")+'">'+v[c.k]+'</td>').join('')+'</tr>'}).join('');
       html=mwHdr+'<div style="text-align:center;margin:12px 0 20px"><div style="font-size:12px;color:#666">Designing Spaces | Building Futures | WBE Certified Enterprise</div></div><div style="display:flex;justify-content:space-between;gap:16px;margin-bottom:16px"><div style="flex:1;min-width:0"><div style="font-weight:700;font-size:12px;text-transform:uppercase;margin-bottom:4px">PREPARED FOR</div><div style="font-size:13px;line-height:1.6">'+fmtAddrHtml(job.billTo||customer2.name||'',customer2.address||'',customer2.contact||'')+'</div></div><div style="flex:1;min-width:0"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:6px">SHIP TO</div><div style="font-size:13px;line-height:1.6">'+fmtShipHtml(job.shipTo,customer2.name||'',customer2.address||'',customer2.contact||'')+'</div></div><div style="text-align:right;flex-shrink:0;max-width:220px"><div style="font-size:22px;font-weight:700;margin-bottom:4px">QUOTE</div><div style="font-size:13px">'+(doc.data.docNum||'')+'</div><div style="font-size:13px;margin-top:4px">Date: '+todayStr+'</div><div style="font-size:11px;word-wrap:break-word">Project: '+(projectNum?.(job.id)||'')+ ' '+job.name+'</div>'+(job.poNumber?'<div style="font-size:13px">PO#: '+job.poNumber+'</div>':'')+'<div style="font-size:13px">Terms: '+terms+'</div></div></div><table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:16px"><thead><tr style="border-bottom:2px solid #222">'+qH+'</tr></thead><tbody>'+qR+'</tbody></table><div style="margin-top:16px;text-align:right;font-size:16px;font-weight:700">TOTAL: '+fmt(total)+'</div>'+(job.shipVia?'<div style="margin-top:8px;font-size:12px;color:#666"><strong>Ship Via:</strong> '+job.shipVia+'</div>':'')+'<div style="margin-top:24px;padding:16px;background:#f9f8f6;border-radius:8px;font-size:12px;color:#666"><strong>Terms:</strong> Quote valid for 30 days. Prices subject to manufacturer availability. Payment terms: '+terms+'.</div>';
-    }catch(e){console.error('Quote PDF error:',e);alert('Quote PDF error: '+e.message)}} else {
-      // Commission statement - full detail matching Commissions tab
+    }catch(e){console.error('Quote PDF error:',e);html='<div style="padding:40px;text-align:center;color:#c00">Quote rendering error: '+e.message+'</div>'}} else {
       const rep=doc.data.rep||{};const commJobs=jobs.filter(j=>j.salesRep===rep.id);
       const paidRev=commJobs.filter(j=>j.paymentStatus==="paid").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
       const paidComm=paidRev*rep.commissionRate;const unpaidComm=total-paidComm;
       const rows=commJobs.map(j=>{const f=getJobFinancials(j.id);const cust=customers.find(c=>c.id===j.customer);const isPaid=j.paymentStatus==="paid";const comm=f.totalRevenue*(rep.commissionRate||0);return '<tr><td style="padding:10px 8px;border-bottom:1px solid #eee">'+(j.name||'')+'</td><td style="padding:10px 8px;border-bottom:1px solid #eee">'+(cust?.name||'')+'</td><td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right">'+fmt(f.totalRevenue)+'</td><td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:center;color:'+(isPaid?'#059669':'#d97706')+'">'+(isPaid?'PAID':'PENDING')+'</td><td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right;font-weight:600">'+fmt(comm)+'</td></tr>'}).join('');
       html=mwHdr+'<div style="font-size:24px;font-weight:300;color:#888;letter-spacing:1;margin:24px 0 20px">Commission Statement</div><div style="display:flex;justify-content:space-between;margin-bottom:24px"><div><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:6px">SALES REP</div><div style="font-size:16px;font-weight:700">'+(rep.name||'')+'</div><div style="font-size:13px;color:#888">'+(rep.territory||'')+'</div><div style="font-size:13px;color:#888">Rate: '+(rep.commissionRate?((rep.commissionRate*100).toFixed(1)):'0')+'%</div></div><div style="text-align:right"><div style="font-size:12px;color:#888">Date: '+todayStr+'</div><div style="font-size:12px;color:#888">Period: Current</div>'+(doc.data.docNum?'<div style="font-size:12px;color:#888">Ref: '+doc.data.docNum+'</div>':'')+'</div></div><div style="display:flex;gap:24px;margin-bottom:24px"><div style="flex:1;padding:12px;background:#fafafa;border-radius:8px;text-align:center"><div style="font-size:11px;color:#888;text-transform:uppercase">Earned (Paid)</div><div style="font-size:18px;font-weight:700;color:#059669">'+fmt(paidComm)+'</div></div><div style="flex:1;padding:12px;background:#fafafa;border-radius:8px;text-align:center"><div style="font-size:11px;color:#888;text-transform:uppercase">Pending</div><div style="font-size:18px;font-weight:700;color:#d97706">'+fmt(unpaidComm)+'</div></div><div style="flex:1;padding:12px;background:#fafafa;border-radius:8px;text-align:center"><div style="font-size:11px;color:#888;text-transform:uppercase">Total Commission</div><div style="font-size:18px;font-weight:700">'+fmt(total)+'</div></div></div><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="border-bottom:2px solid #e5e5e5"><th style="text-align:left;padding:8px;font-size:10px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:0.5px">Job</th><th style="text-align:left;padding:8px;font-size:10px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:0.5px">Customer</th><th style="text-align:right;padding:8px;font-size:10px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:0.5px">Revenue</th><th style="text-align:center;padding:8px;font-size:10px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:0.5px">Status</th><th style="text-align:right;padding:8px;font-size:10px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:0.5px">Commission</th></tr></thead><tbody>'+rows+'</tbody></table><div style="margin-top:16px;text-align:right;border-top:2px solid #e5e5e5;padding-top:12px"><div style="font-size:18px;font-weight:700">TOTAL COMMISSION: '+fmt(total)+'</div></div>';
     }
-
     const docTitle=isPO?"Purchase Order":isInvoice?(isCreditMemo?"Credit Memo":isProforma?"Proforma Invoice":"Invoice"):isQuote?"Quote":"Commission Statement";
+    return {html,docTitle,job};
+  };
+
+  const handleExportPDF=(doc)=>{
+    const {html,docTitle,job}=buildDocHtml(doc);
     triggerPrint(docTitle+" - "+(doc.data.docNum||job.name||""),html);
     if(doc.data.docNum && !docStatuses[doc.data.docNum]) setDocStatus(doc.data.docNum,'drafted');
   };
@@ -2890,7 +2890,7 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
     <div style={{display:"flex",gap:0,alignItems:"center",marginBottom:16,padding:"10px 16px",background:"#111111",borderRadius:8,fontSize:12,overflowX:"auto",WebkitOverflowScrolling:"touch",color:"#a3a3a3"}}><span style={{color:"#2dd4bf",fontWeight:600}}>Workflow:</span><span style={{margin:"0 8px"}}>Quote</span><span style={{color:"#8a8a8a"}}>&rarr;</span><span style={{margin:"0 8px",color:"#2dd4bf"}}>Approve/Send</span><span style={{color:"#8a8a8a"}}>&rarr;</span><span style={{margin:"0 8px"}}>Purchase Orders</span><span style={{color:"#8a8a8a"}}>&rarr;</span><span style={{margin:"0 8px"}}>Draft/Send</span><span style={{color:"#8a8a8a"}}>&rarr;</span><span style={{margin:"0 8px"}}>Invoices</span><span style={{color:"#8a8a8a"}}>&rarr;</span><span style={{margin:"0 8px",color:"#34d399"}}>Mark Paid</span></div>
 
     <div className="doc-tabs" style={{display:"flex",gap:0,marginBottom:20,background:"#111111",borderRadius:12,padding:3,overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
-      {[["quotes","Quotes",totalQuotes,"#2dd4bf"],["pos","Purchase Orders",totalPOs,"#a78bfa"],["bills","Vendor Bills",totalPOs,"#f97316"],["invoices","Invoices",pendingInvJobs.length+" pending","#fbbf24"],["payments","Payments",jobs.filter(j=>j.paymentStatus!=="paid").length+" open","#34d399"],["history","History",(customSops||[]).filter(s=>s.cat==="HistoricalDoc").length,"#8b5cf6"],["commissions","Commissions",reps.filter(r=>!r.id.includes("SEED_FLAG")).length+" reps","#34d399"]].map(([id,label,count,color])=>
+      {[["quotes","Quotes",totalQuotes,"#2dd4bf"],["pos","Purchase Orders",totalPOs,"#a78bfa"],["bills","Vendor Bills",totalPOs,"#f97316"],["invoices","Invoices",pendingInvJobs.length+" pending","#fbbf24"],["payments","Payments",jobs.filter(j=>j.paymentStatus!=="paid").length+" open","#34d399"],["commissions","Commissions",reps.filter(r=>!r.id.includes("SEED_FLAG")).length+" reps","#34d399"]].map(([id,label,count,color])=>
         <button key={id} onClick={()=>setTab(id)} style={{flex:1,padding:"14px 12px",borderRadius:8,border:"none",cursor:"pointer",background:tab===id?color+"18":"transparent",color:tab===id?color:"#a3a3a3",fontSize:13,fontWeight:tab===id?700:400,fontFamily:"inherit",transition:"all 0.2s",display:"flex",flexDirection:"column",alignItems:"center",gap:4}}>
           <span>{label}</span>
           <span style={{fontSize:18,fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}>{count}</span>
@@ -3557,411 +3557,6 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
 
     {tab==="commissions"&&<div>{reps.filter(r=>!r.id.includes("SEED_FLAG")&&r.commissionRate>0).map(rep=>{const rj=jobs.filter(j=>j.salesRep===rep.id);const totalRev=rj.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const comm=totalRev*rep.commissionRate;const paidRev=rj.filter(j=>j.paymentStatus==="paid").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const paidComm=paidRev*rep.commissionRate;const unpaidComm=comm-paidComm;const docNum=stableNum('COMM-',rep.id,'stmt');return <Card key={rep.id} style={{marginBottom:10,padding:14,border:unpaidComm>0?"1px solid #d9770625":"1px solid #222222"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:10}}><div style={{flex:1}}><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}><span style={{fontSize:15,fontWeight:700,color:"#e5e5e5"}}>{rep.name}</span><Badge label={rep.tier} color="#2dd4bf"/><Badge label={pct(rep.commissionRate*100)} color="#34d399"/><StatusBadge docNum={docNum}/></div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(80px,1fr))",gap:6,fontSize:12}}><div style={{padding:"6px 10px",background:"#111111",borderRadius:6,textAlign:"center"}}><div style={{fontSize:12,color:"#a3a3a3"}}>Jobs</div><div style={{fontWeight:700,color:"#e5e5e5",fontFamily:"'JetBrains Mono',monospace"}}>{rj.length}</div></div><div style={{padding:"6px 10px",background:"#111111",borderRadius:6,textAlign:"center"}}><div style={{fontSize:12,color:"#a3a3a3"}}>Pipeline</div><div style={{fontWeight:700,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalRev)}</div></div><div style={{padding:"6px 10px",background:"#05966910",borderRadius:6,textAlign:"center"}}><div style={{fontSize:12,color:"#34d399"}}>Earned</div><div style={{fontWeight:700,color:"#34d399",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(paidComm)}</div></div><div style={{padding:"6px 10px",background:"#d9770610",borderRadius:6,textAlign:"center"}}><div style={{fontSize:12,color:"#fbbf24"}}>Pending</div><div style={{fontWeight:700,color:"#fbbf24",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(unpaidComm)}</div></div><div style={{padding:"6px 10px",background:"#2dd4bf10",borderRadius:6,textAlign:"center"}}><div style={{fontSize:12,color:"#2dd4bf"}}>Total Comm.</div><div style={{fontWeight:700,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(comm)}</div></div></div></div><div style={{display:"flex",flexDirection:"column",gap:6,marginLeft:0,marginTop:8}}><Btn onClick={()=>{const items=rj.map(j=>{const f=getJobFinancials(j.id);const isPaid=j.paymentStatus==="paid";return{description:j.name+' -- '+(customers.find(c=>c.id===j.customer)?.name||'')+' -- '+(isPaid?'PAID':'PENDING'),displayQty:1,displayPrice:f.totalRevenue*rep.commissionRate}});setPreviewDoc({type:"commission",data:{rep,items,total:comm,docNum},job:{id:'ALL',name:rep.name+' Commission Statement',notes:'Period: '+new Date().toLocaleDateString()+'\nEarned (paid jobs): '+fmt(paidComm)+'\nPending (unpaid jobs): '+fmt(unpaidComm)+'\nTotal commission: '+fmt(comm)}});setTab("preview")}}><I n="file" s={14}/> Generate Statement</Btn>{rj.length>0&&<div style={{display:"flex",gap:4}}>{["drafted","sent","approved"].map(s=><button key={s} onClick={()=>setDocStatus(docNum,s)} style={{padding:"4px 10px",borderRadius:6,flex:1,textAlign:"center",border:"1px solid "+(docStatuses[docNum]===s?"#2dd4bf":"#444"),background:docStatuses[docNum]===s?"#2dd4bf15":"transparent",color:docStatuses[docNum]===s?"#2dd4bf":"#c4c4c4",fontSize:12,fontFamily:"inherit",cursor:"pointer"}}>{s}</button>)}</div>}</div></div>{rj.length>0&&<div style={{marginTop:10}}><Bar value={paidRev} max={totalRev||1} color="#34d399" height={3}/></div>}{rj.length>0&&<div style={{marginTop:8,fontSize:12,color:"#a3a3a3"}}><strong>Jobs:</strong> {rj.map(j=>{const isPaid=j.paymentStatus==="paid";return <span key={j.id} style={{marginRight:8}}><span style={{color:isPaid?"#34d399":"#fbbf24"}}>{isPaid?"*":"o"}</span> {j.name} ({fmt(getJobFinancials(j.id).totalRevenue*rep.commissionRate)})</span>})}</div>}</Card>})}{reps.filter(r=>!r.id.includes("SEED_FLAG")&&r.commissionRate===0&&jobs.some(j=>j.salesRep===r.id)).length>0&&<Card style={{marginTop:8,opacity:0.6}}><div style={{fontSize:13,color:"#a3a3a3"}}>Team members without commission rates: {reps.filter(r=>!r.id.includes("SEED_FLAG")&&r.commissionRate===0).map(r=>r.name).join(', ')}</div></Card>}</div>}
 
-    {tab==="history"&&(()=>{
-      const allHist=(customSops||[]).filter(s=>s.cat==="HistoricalDoc").map(s=>{try{return{id:s.id,...JSON.parse(s.content)}}catch{return{id:s.id,type:'unknown',description:s.title}}}).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
-      const filtered=allHist.filter(h=>{
-        if(histType!=='all'&&h.type!==histType)return false;
-        if(!histSearch)return true;
-        const q=histSearch.toLowerCase();
-        return (h.vendor||'').toLowerCase().includes(q)||(h.customer||'').toLowerCase().includes(q)||(h.docNumber||'').toLowerCase().includes(q)||(h.description||'').toLowerCase().includes(q)||(h.job||'').toLowerCase().includes(q)||(h.notes||'').toLowerCase().includes(q)||(h.files||[]).some(f=>(f.name||'').toLowerCase().includes(q));
-      });
-      // Sort
-      const sorted=[...filtered].sort((a,b)=>{
-        if(histSort==='vendor')return (a.vendor||'').localeCompare(b.vendor||'');
-        if(histSort==='customer')return (a.customer||'').localeCompare(b.customer||'');
-        if(histSort==='amount')return (parseFloat(b.amount)||0)-(parseFloat(a.amount)||0);
-        if(histSort==='name')return (a.vendor||a.customer||'').localeCompare(b.vendor||b.customer||'');
-        if(histSort==='doc')return (a.docNumber||'').localeCompare(b.docNumber||'');
-        return (b.date||'').localeCompare(a.date||'');
-      });
-      const vendorPOs=allHist.filter(h=>h.type==='vendor_po');
-      const custInvs=allHist.filter(h=>h.type==='customer_invoice');
-      const totalPOAmt=vendorPOs.reduce((s,h)=>s+(parseFloat(h.amount)||0),0);
-      const totalInvAmt=custInvs.reduce((s,h)=>s+(parseFloat(h.amount)||0),0);
-      const docsWithFiles=allHist.filter(h=>(h.files||[]).length>0).length;
-
-      const handleHistFile=async(e)=>{const fileList=e.target?.files||e.dataTransfer?.files;if(!fileList||!fileList.length)return;
-        for(const file of Array.from(fileList)){
-          if(file.size>10*1024*1024){notify('File too large (max 10MB): '+file.name,'error');continue}
-          const reader=new FileReader();
-          const fileData=await new Promise(res=>{reader.onload=(ev)=>res(ev.target.result);reader.readAsDataURL(file)});
-          // Upload to Supabase Storage
-          let storageUrl='';
-          try{
-            const ext=file.name.split('.').pop()||'pdf';
-            const path='history/doc_'+Date.now()+'_'+Math.random().toString(36).slice(2,6)+'.'+ext;
-            const blob=await fetch(fileData).then(r=>r.blob());
-            storageUrl=await window._supabase.uploadFile('vendor-invoices',path,blob)||'';
-          }catch(e2){console.error('Storage upload:',e2)}
-          setHistForm(prev=>({...prev,files:[...(prev.files||[]),{name:file.name,size:file.size,type:file.type,data:storageUrl||fileData,uploadedAt:new Date().toISOString(),storageUrl}]}));
-          // AI scan to auto-fill form fields
-          if(!histForm.docNumber&&!histForm.vendor&&!histForm.customer){
-            notify('AI scanning '+file.name+'...');
-            try{
-              const base64=fileData.split(',')[1];
-              const mediaType=file.type||'application/pdf';
-              const isVendor=histForm.type==='vendor_po';
-              const prompt=isVendor?
-                'Extract from this vendor document: 1) vendor/company name, 2) PO or invoice number, 3) date (YYYY-MM-DD), 4) total amount (number only), 5) job/project name. Return ONLY JSON: {"vendor":"","docNumber":"","date":"","amount":"","job":"","description":""}':
-                'Extract from this customer document: 1) customer/school/org name, 2) invoice number, 3) date (YYYY-MM-DD), 4) total amount (number only), 5) job/project name. Return ONLY JSON: {"customer":"","docNumber":"","date":"","amount":"","job":"","description":""}';
-              const resp=await fetch('/api/ai-scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:base64,mediaType,prompt})});
-              if(resp.ok){
-                const data=await resp.json();
-                const text=(data.text||'').trim().replace(/```json\s*/g,'').replace(/```/g,'').trim();
-                try{
-                  const parsed=JSON.parse(text);
-                  setHistForm(prev=>({...prev,
-                    vendor:parsed.vendor||prev.vendor||'',
-                    customer:parsed.customer||prev.customer||'',
-                    docNumber:parsed.docNumber||prev.docNumber||'',
-                    date:parsed.date||prev.date||'',
-                    amount:parsed.amount||prev.amount||'',
-                    job:parsed.job||prev.job||'',
-                    description:parsed.description||prev.description||''
-                  }));
-                  notify('AI extracted: '+(parsed.vendor||parsed.customer||'')+(parsed.docNumber?' #'+parsed.docNumber:'')+(parsed.amount?' $'+parsed.amount:''));
-                }catch{}
-              }
-            }catch(err){console.error('AI scan:',err)}
-          }
-        }
-        if(histFileRef.current)histFileRef.current.value='';
-      };
-      const removeHistFile=(idx)=>{setHistForm(prev=>({...prev,files:(prev.files||[]).filter((_,i)=>i!==idx)}))};
-
-      // Bulk upload: each file becomes its own record with AI scanning + Supabase storage
-      const handleBulkUpload=async(e,bulkType)=>{
-        const fileList=e.target?.files||e.dataTransfer?.files;if(!fileList||!fileList.length)return;
-        const today=new Date().toISOString().split('T')[0];
-        let processed=0;const total=fileList.length;
-        setHistBulkCount(total);
-        notify('Processing '+total+' file'+(total!==1?'s':'')+' with AI...');
-        for(const file of Array.from(fileList)){
-          if(file.size>10*1024*1024){notify('Skipped (too large): '+file.name,'error');processed++;if(processed>=total)setHistBulkCount(0);continue}
-          const reader=new FileReader();
-          const fileData=await new Promise(res=>{reader.onload=(ev)=>res(ev.target.result);reader.readAsDataURL(file)});
-          const docName=file.name.replace(/\.[^.]+$/,'').replace(/[_-]/g,' ');
-          // Upload to Supabase Storage for persistence
-          let storageUrl='';
-          try{
-            const ext=file.name.split('.').pop()||'pdf';
-            const path='history/'+(bulkType==='vendor_po'?'po':'inv')+'_'+Date.now()+'_'+Math.random().toString(36).slice(2,6)+'.'+ext;
-            const blob=await fetch(fileData).then(r=>r.blob());
-            storageUrl=await window._supabase.uploadFile('vendor-invoices',path,blob)||'';
-          }catch(e2){console.error('Storage upload:',e2)}
-          // AI scan the document to extract info
-          let aiData={vendor:'',customer:'',docNumber:'',date:today,amount:'',job:'',description:docName};
-          try{
-            const base64=fileData.split(',')[1];
-            const mediaType=file.type||'application/pdf';
-            const prompt=bulkType==='vendor_po'?
-              'Extract from this vendor purchase order/invoice: 1) vendor/company name, 2) PO or invoice number, 3) date (YYYY-MM-DD), 4) total amount (number only), 5) any job/project name referenced. Return ONLY JSON: {"vendor":"","docNumber":"","date":"","amount":"","job":"","description":""}':
-              'Extract from this customer invoice: 1) customer/school/organization name, 2) invoice number, 3) date (YYYY-MM-DD), 4) total amount (number only), 5) any job/project name referenced. Return ONLY JSON: {"customer":"","docNumber":"","date":"","amount":"","job":"","description":""}';
-            const resp=await fetch('/api/ai-scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:base64,mediaType,prompt})});
-            if(resp.ok){
-              const data=await resp.json();
-              const text=(data.text||'').trim().replace(/```json\s*/g,'').replace(/```/g,'').trim();
-              try{const parsed=JSON.parse(text);aiData={...aiData,...parsed}}catch{}
-            }
-          }catch(aiErr){console.error('AI scan:',aiErr)}
-          const id='HIST-'+Date.now()+'-'+Math.random().toString(36).slice(2,6);
-          const record={type:bulkType,vendor:aiData.vendor||'',customer:aiData.customer||'',docNumber:aiData.docNumber||'',date:aiData.date||today,amount:aiData.amount||'',job:aiData.job||'',description:aiData.description||docName,notes:'AI-scanned upload',storageUrl,files:[{name:file.name,size:file.size,type:file.type,data:storageUrl||fileData,uploadedAt:new Date().toISOString(),storageUrl}]};
-          addSop({id,title:(bulkType==='vendor_po'?'PO':'INV')+' '+(aiData.docNumber||docName)+' - '+(aiData.vendor||aiData.customer||''),cat:'HistoricalDoc',icon:'file',content:JSON.stringify(record),custom:true});
-          processed++;
-          if(processed>=total){setHistBulkCount(0);notify(total+' file'+(total!==1?'s':'')+' scanned and uploaded as '+(bulkType==='vendor_po'?'Vendor POs':'Customer Invoices'))}
-        }
-        if(histBulkRef.current)histBulkRef.current.value='';
-      };
-
-      // Import Excel -- handles single or multiple files, all sheets in each workbook, with AI fallback and storage
-      const parseOneExcel=async(file,XLSX)=>{
-        const data=await file.arrayBuffer();
-        const wb=XLSX.read(data,{type:'array',cellDates:true});
-        let totalImported=0;
-        // Upload Excel file to Supabase Storage for persistence
-        let storageUrl='';
-        try{
-          const ext=file.name.split('.').pop()||'xlsx';
-          const path='history/excel_'+Date.now()+'_'+Math.random().toString(36).slice(2,6)+'.'+ext;
-          storageUrl=await window._supabase.uploadFile('vendor-invoices',path,new Blob([data]))||'';
-        }catch(e2){console.error('Storage upload:',e2)}
-        for(const sheetName of wb.SheetNames){
-          const ws=wb.Sheets[sheetName];
-          const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:'',raw:false});
-          if(rows.length<2)continue;
-          // Super-smart header detection: scan first 20 rows for header-like row
-          let headerIdx=-1;let colMap={};
-          for(let r=0;r<Math.min(rows.length,20);r++){
-            const row=rows[r];if(!row||!Array.isArray(row))continue;
-            const h={};
-            for(let c=0;c<row.length;c++){
-              const v=String(row[c]||'').toLowerCase().trim().replace(/[*#\s]+/g,' ').trim();
-              if(!v)continue;
-              // Date columns
-              if(/^date$|^trans.?date$|^inv.?date$|^po.?date$|^order.?date$|^payment.?date$|^billing.?date$|^due.?date$|^ship.?date$/.test(v)&&h.date===undefined)h.date=c;
-              // Type/class columns
-              else if(/^type$|^trans.?type$|^doc.?type$|^transaction.?type$|^entry.?type$/.test(v)&&h.type===undefined)h.type=c;
-              // Document number columns
-              else if(/^no\.?$|^num\.?$|^number$|^ref\.?$|^reference$|^doc.?no|^invoice.?no|^inv.?no|^po.?no|^po.?number|^check.?no|^bill.?no|^order.?no|^confirmation|^trans.?no|^receipt.?no/.test(v)&&h.docNumber===undefined)h.docNumber=c;
-              // Vendor/customer/name columns
-              else if(/^from|^to$|^from.?to$|^vendor$|^payee$|^name$|^company$|^customer$|^supplier$|^manufacturer$|^ship.?from$|^bill.?from$|^sold.?to$|^bill.?to$|^ship.?to$|^organization$|^school$|^district$|^client$|^contact$/.test(v)&&h.vendor===undefined)h.vendor=c;
-              // Description/memo columns
-              else if(/^memo$|^desc|^notes$|^detail$|^item$|^particulars$|^line.?desc|^product$|^service$|^comment$/.test(v)&&h.memo===undefined)h.memo=c;
-              // Amount columns
-              else if(/^amount$|^total$|^balance$|^debit$|^credit$|^sum$|^net$|^amt$|^gross$|^price$|^cost$|^subtotal$|^sub.?total$|^extended$|^ext.?price$|^line.?total$/.test(v)&&h.amount===undefined)h.amount=c;
-              // Status columns
-              else if(/^status$|^state$|^condition$|^paid$|^payment.?status$/.test(v)&&h.status===undefined)h.status=c;
-              // Category columns
-              else if(/^class$|^category$|^dept$|^department$|^account$|^gl.?account$|^expense.?type$|^budget.?code$|^cost.?center$|^job$|^project$/.test(v)&&h.category===undefined)h.category=c;
-              // Quantity columns
-              else if(/^qty$|^quantity$|^units$|^count$|^ordered$/.test(v)&&h.qty===undefined)h.qty=c;
-              // Unit price columns
-              else if(/^unit.?price$|^each$|^rate$|^unit.?cost$|^price.?each$/.test(v)&&h.unitPrice===undefined)h.unitPrice=c;
-            }
-            if(Object.keys(h).length>=2&&(h.date!==undefined||h.amount!==undefined||h.vendor!==undefined)){headerIdx=r;colMap=h;break}
-          }
-          // Fallback: if no header found, try treating row 0 as header with positional mapping
-          if(headerIdx<0&&rows.length>1&&rows[0]&&rows[0].length>=3){
-            headerIdx=0;
-            const row0=rows[0];
-            for(let c=0;c<row0.length;c++){
-              const v=String(row0[c]||'').toLowerCase().trim();
-              if(!colMap.date&&/date/i.test(v))colMap.date=c;
-              else if(!colMap.amount&&/\$|amount|total|balance|price|cost/i.test(v))colMap.amount=c;
-              else if(!colMap.docNumber&&/no|num|ref|inv|po/i.test(v))colMap.docNumber=c;
-              else if(!colMap.vendor&&/vendor|name|company|payee|customer|school|from|to/i.test(v))colMap.vendor=c;
-              else if(!colMap.memo&&/memo|desc|note|item|detail/i.test(v))colMap.memo=c;
-            }
-            if(Object.keys(colMap).length<2){headerIdx=-1;colMap={}}
-          }
-          // Second fallback: guess columns by content analysis if headers don't match patterns
-          if(headerIdx<0&&rows.length>3){
-            // Analyze first data rows to guess column types
-            headerIdx=0;
-            const sampleRows=rows.slice(1,Math.min(10,rows.length));
-            for(let c=0;c<(rows[0]?.length||0);c++){
-              const vals=sampleRows.map(r=>String(r?.[c]||'').trim()).filter(Boolean);
-              if(vals.length===0)continue;
-              const dateCount=vals.filter(v=>/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}$|^\d{4}-\d{2}-\d{2}$/.test(v)).length;
-              const numCount=vals.filter(v=>/^[\$\-\(\d][\d,.\$\(\)\- ]*$/.test(v)&&parseFloat(v.replace(/[$,()]/g,''))).length;
-              const textCount=vals.filter(v=>/^[A-Za-z]/.test(v)&&v.length>3).length;
-              if(dateCount>=vals.length*0.5&&colMap.date===undefined)colMap.date=c;
-              else if(numCount>=vals.length*0.6&&colMap.amount===undefined)colMap.amount=c;
-              else if(textCount>=vals.length*0.5&&colMap.vendor===undefined)colMap.vendor=c;
-              else if(textCount>=vals.length*0.4&&colMap.memo===undefined)colMap.memo=c;
-            }
-            if(Object.keys(colMap).length<2){headerIdx=-1;colMap={}}
-          }
-          if(headerIdx<0)continue;
-          for(let r=headerIdx+1;r<rows.length;r++){
-            const row=rows[r];if(!row||row.length<2)continue;
-            const g=(k)=>colMap[k]!==undefined?String(row[colMap[k]]||'').trim():'';
-            // Smart date parsing -- handles many formats
-            let dateStr='';const rawDate=colMap.date!==undefined?row[colMap.date]:'';
-            if(rawDate instanceof Date&&!isNaN(rawDate.getTime())){dateStr=rawDate.toISOString().split('T')[0]}
-            else if(typeof rawDate==='number'){const d=new Date((rawDate-25569)*86400000);if(!isNaN(d.getTime()))dateStr=d.toISOString().split('T')[0]}
-            else{const ds=String(rawDate||'').trim();if(ds){
-              let d2=new Date(ds);
-              if(isNaN(d2.getTime())){
-                // Try MM/DD/YYYY, DD/MM/YYYY, M-D-YY, etc.
-                const parts=ds.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
-                if(parts){const yr=parts[3].length===2?'20'+parts[3]:parts[3];d2=new Date(yr+'-'+parts[1].padStart(2,'0')+'-'+parts[2].padStart(2,'0'))}
-                if(isNaN(d2.getTime())){const iso=ds.match(/(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/);if(iso)d2=new Date(iso[1]+'-'+iso[2].padStart(2,'0')+'-'+iso[3].padStart(2,'0'))}
-              }
-              if(!isNaN(d2.getTime()))dateStr=d2.toISOString().split('T')[0];
-            }}
-            const typeStr=g('type').toLowerCase();
-            const docNum=g('docNumber');
-            const vendor=g('vendor');
-            const memo=g('memo');
-            const cat=g('category');
-            const rawAmt=colMap.amount!==undefined?row[colMap.amount]:'';
-            const amount=typeof rawAmt==='number'?rawAmt:parseFloat(String(rawAmt||'').replace(/[$,()]/g,'').replace(/^\((.+)\)$/,'-$1'))||0;
-            const status=g('status');
-            if(!vendor&&!docNum&&!amount&&!memo&&!dateStr)continue;
-            // Smarter type detection with more keywords
-            let recType='vendor_po';
-            if(/sale|income|deposit|customer.*pay|revenue|receivable|receipt|payment.?received/i.test(typeStr)||/sale|income|deposit|revenue/i.test(cat))recType='customer_invoice';
-            else if(/bill|purchase|expense|vendor|check|payment|credit|charge|freight|refund|wire|ach|transfer|debit/i.test(typeStr))recType='vendor_po';
-            else if(amount<0&&vendor)recType='vendor_po';
-            // Smart vendor matching -- try to match to existing vendors/customers
-            let matchedVendor=vendor;let matchedCustomer='';
-            if(vendor){
-              const vMatch=vendors.find(v=>v.name.toLowerCase()===vendor.toLowerCase()||v.name.toLowerCase().includes(vendor.toLowerCase())||vendor.toLowerCase().includes(v.name.toLowerCase()));
-              const cMatch=customers.find(c=>c.name.toLowerCase()===vendor.toLowerCase()||c.name.toLowerCase().includes(vendor.toLowerCase())||vendor.toLowerCase().includes(c.name.toLowerCase()));
-              if(cMatch&&!vMatch){recType='customer_invoice';matchedCustomer=cMatch.name;matchedVendor=''}
-              else if(vMatch){matchedVendor=vMatch.name}
-              if(recType==='customer_invoice'){matchedCustomer=matchedCustomer||vendor;matchedVendor=''}
-            }
-            const id='HIST-'+Date.now()+'-'+Math.random().toString(36).slice(2,6)+'-'+r+'-'+sheetName.slice(0,4);
-            addSop({id,title:(recType==='vendor_po'?'PO':'INV')+' '+(docNum||id)+' - '+(matchedVendor||matchedCustomer||vendor||''),cat:'HistoricalDoc',icon:'file',
-              content:JSON.stringify({type:recType,vendor:recType==='vendor_po'?(matchedVendor||vendor):'',customer:recType==='customer_invoice'?(matchedCustomer||vendor):'',
-                docNumber:docNum,date:dateStr,amount:String(Math.abs(amount)),job:cat||'',
-                description:(typeStr?typeStr.charAt(0).toUpperCase()+typeStr.slice(1)+' -- ':'')+memo,
-                notes:'Status: '+(status||'imported')+(amount<0?' (credit)':'')+(wb.SheetNames.length>1?' [Sheet: '+sheetName+']':''),
-                storageUrl,files:storageUrl?[{name:file.name,size:file.size,type:file.type,data:storageUrl,uploadedAt:new Date().toISOString(),storageUrl}]:[]}),custom:true});
-            totalImported++;
-          }
-        }
-        return totalImported;
-      };
-      const handleExcelImport=async(e)=>{
-        const files=e.target?.files;if(!files||!files.length)return;
-        try{
-          const XLSX=await import('xlsx');
-          let grandTotal=0;let failedSheets=[];
-          for(const file of Array.from(files)){
-            if(!/\.(xls|xlsx|csv|tsv)$/i.test(file.name)){notify('Skipped non-spreadsheet: '+file.name,'error');continue}
-            const count=await parseOneExcel(file,XLSX);
-            if(count===0){failedSheets.push(file)}
-            grandTotal+=count;
-          }
-          if(grandTotal>0)notify(grandTotal+' transaction'+(grandTotal!==1?'s':'')+' imported from '+files.length+' file'+(files.length!==1?'s':''));
-          if(failedSheets.length>0&&grandTotal===0){
-            // All files failed standard parsing -- try AI on first file
-            notify('Standard parser found 0 records. Trying AI assist on '+failedSheets[0].name+'...');
-            try{
-              const f=failedSheets[0];const data2=await f.arrayBuffer();const wb2=XLSX.read(data2,{type:'array'});
-              let textContent="";
-              for(const sn of wb2.SheetNames){const ws2=wb2.Sheets[sn];const rows2=XLSX.utils.sheet_to_json(ws2,{header:1,defval:""});
-                textContent+="=== Sheet: "+sn+" ===\n";rows2.slice(0,80).forEach((row,ri)=>{textContent+="Row "+ri+": "+row.map(c=>String(c||"").trim()).filter(Boolean).join(" | ")+"\n"});textContent+="\n"}
-              const r=await fetch("/api/ai-scan",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({image_data:btoa(unescape(encodeURIComponent(textContent))),media_type:"text/plain",scan_type:"general",extra_context:"This is transaction/accounting data from file: "+f.name+". Extract transactions with Date, Type, Number, Vendor/Payee, Description/Memo, Amount, Status. Return JSON with format: {\"transactions\":[{\"date\":\"\",\"type\":\"\",\"docNumber\":\"\",\"vendor\":\"\",\"memo\":\"\",\"amount\":0,\"status\":\"\"}]}"})});
-              const resp=await r.json();const text=(resp.content||[])[0]?.text||"";const clean=text.replace(/```json\s*/g,"").replace(/```\s*/g,"").trim();
-              try{const parsed3=JSON.parse(clean);const txns=parsed3.transactions||parsed3.items||[];let aiCount=0;
-                txns.forEach((t,idx)=>{
-                  if(!t.vendor&&!t.memo&&!t.amount&&!t.date)return;
-                  const id='HIST-AI-'+Date.now()+'-'+Math.random().toString(36).slice(2,6)+'-'+idx;
-                  const recType=/sale|income|deposit|revenue|receivable/i.test(t.type||'')?'customer_invoice':'vendor_po';
-                  addSop({id,title:(recType==='vendor_po'?'PO':'INV')+' '+(t.docNumber||id)+' - '+(t.vendor||''),cat:'HistoricalDoc',icon:'file',content:JSON.stringify({type:recType,vendor:recType==='vendor_po'?(t.vendor||''):'',customer:recType==='customer_invoice'?(t.vendor||''):'',docNumber:t.docNumber||'',date:t.date||'',amount:String(Math.abs(t.amount||0)),job:'',description:(t.type?t.type+' -- ':'')+t.memo,notes:'AI imported | Status: '+(t.status||'imported'),files:[]}),custom:true});
-                  aiCount++;
-                });
-                notify(aiCount+' records imported via AI from '+f.name);
-              }catch{notify('AI could not parse structured data from this file','error')}
-            }catch(err2){notify('AI assist failed: '+err2.message,'error')}
-          }else if(failedSheets.length>0){notify(failedSheets.length+' file'+(failedSheets.length>1?'s':'')+' had unrecognized format. Try uploading as PDF via Upload Quote on Job Records.')}
-        }catch(err){notify('Error reading Excel: '+err.message,'error')}
-        if(histExcelRef.current)histExcelRef.current.value='';
-        if(histBulkExcelRef.current)histBulkExcelRef.current.value='';
-      };
-
-      const saveHistRecord=()=>{
-        const editId=histAdding?.startsWith('edit-')?histAdding.replace('edit-',''):null;
-        const id=editId||'HIST-'+Date.now()+'-'+Math.random().toString(36).slice(2,6);
-        addSop({id,title:(histForm.type==='vendor_po'?'PO':'INV')+' '+(histForm.docNumber||id)+' - '+(histForm.vendor||histForm.customer||''),cat:'HistoricalDoc',icon:'file',content:JSON.stringify(histForm),custom:true});
-        notify((editId?'Record updated: ':'Record saved: ')+(histForm.docNumber||'New record'));
-        setHistForm({type:'vendor_po',vendor:'',customer:'',docNumber:'',date:'',amount:'',job:'',description:'',notes:'',files:[]});
-        setHistAdding(null);
-      };
-      const deleteHist=(id)=>{deleteSop(id);notify('Record deleted');if(histViewing?.id===id)setHistViewing(null)};
-
-      // Detail view
-      if(histViewing){const h=histViewing;return <div>
-        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16}}><button onClick={()=>setHistViewing(null)} style={{background:"none",border:"none",color:"#737373",cursor:"pointer",fontSize:13,fontFamily:"inherit"}}>&larr; Back to History</button></div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}} className="resp-grid-2">
-          <Card style={{padding:16}}>
-            <div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:8}}>{h.type==='vendor_po'?'VENDOR PURCHASE ORDER':'CUSTOMER INVOICE'}</div>
-            <div style={{fontSize:20,fontWeight:800,color:"#e5e5e5",marginBottom:4,fontFamily:"'JetBrains Mono',monospace"}}>{h.docNumber||'No Doc #'}</div>
-            <div style={{fontSize:14,color:"#a3a3a3",marginBottom:8}}>{h.vendor||h.customer||''}</div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,fontSize:12}}>
-              <div><span style={{color:"#737373"}}>Job:</span> <span style={{color:"#e5e5e5"}}>{h.job||'--'}</span></div>
-              <div><span style={{color:"#737373"}}>Date:</span> <span style={{color:"#e5e5e5"}}>{h.date||'--'}</span></div>
-              <div><span style={{color:"#737373"}}>Amount:</span> <span style={{color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace",fontWeight:700}}>{h.amount?fmt(parseFloat(h.amount)):'--'}</span></div>
-            </div>
-            {h.description&&<div style={{marginTop:8,fontSize:12,color:"#a3a3a3"}}>{h.description}</div>}
-            {h.notes&&<div style={{marginTop:4,fontSize:12,color:"#737373",fontStyle:"italic"}}>{h.notes}</div>}
-            <div style={{display:"flex",gap:8,marginTop:12}}><Btn v="secondary" style={{fontSize:11}} onClick={()=>{setHistForm({type:h.type||'vendor_po',vendor:h.vendor||'',customer:h.customer||'',docNumber:h.docNumber||'',date:h.date||'',amount:h.amount||'',job:h.job||'',description:h.description||'',notes:h.notes||'',files:h.files||[]});setHistAdding('edit-'+h.id);setHistViewing(null)}}>Edit</Btn><button onClick={()=>deleteHist(h.id)} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #f8717130",background:"transparent",color:"#f87171",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Delete</button></div>
-          </Card>
-          <Card style={{padding:16}}>
-            <div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:8}}>ATTACHED FILES ({(h.files||[]).length})</div>
-            {(h.files||[]).length===0?<div style={{padding:20,textAlign:"center",color:"#525252",fontSize:12}}>No files attached</div>:
-            <div style={{display:"flex",flexDirection:"column",gap:8}}>{(h.files||[]).map((f,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:"#0a0a0a",borderRadius:8,border:"1px solid #222"}}>
-              <div style={{width:36,height:36,borderRadius:8,background:f.type?.includes('pdf')?"#f8717112":f.type?.includes('image')?"#2dd4bf12":"#a78bfa12",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}><I n={f.type?.includes('pdf')?"file":f.type?.includes('image')?"image":"file"} s={16} color={f.type?.includes('pdf')?"#f87171":f.type?.includes('image')?"#2dd4bf":"#a78bfa"}/></div>
-              <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,color:"#e5e5e5",fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.name}</div><div style={{fontSize:11,color:"#737373"}}>{(f.size/1024).toFixed(0)} KB{f.uploadedAt?' -- '+new Date(f.uploadedAt).toLocaleDateString():''}</div></div>
-              <button onClick={()=>{const url=f.storageUrl||f.data;if(url){if(f.storageUrl){window.open(f.storageUrl,'_blank')}else{const w=window.open('','_blank');w.document.write(f.type?.includes('pdf')?'<embed src="'+f.data+'" width="100%" height="100%" type="application/pdf"/>':'<img src="'+f.data+'" style="max-width:100%"/>');w.document.title=f.name}}}} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #2dd4bf30",background:"transparent",color:"#2dd4bf",fontSize:11,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>View</button>
-            </div>)}</div>}
-          </Card>
-        </div>
-      </div>}
-
-      return <div>
-        <input ref={histBulkRef} type="file" accept=".pdf,.png,.jpg,.jpeg,.gif,.doc,.docx,.xls,.xlsx" multiple onChange={e=>handleBulkUpload(e,histType==='customer_invoice'?'customer_invoice':'vendor_po')} style={{display:"none"}}/>
-        <input ref={histExcelRef} type="file" accept=".xls,.xlsx,.csv,.tsv" multiple onChange={handleExcelImport} style={{display:"none"}}/>
-        <input ref={histBulkExcelRef} type="file" accept=".xls,.xlsx,.csv,.tsv" multiple onChange={handleExcelImport} style={{display:"none"}}/>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12,marginBottom:16}} className="resp-grid-4">
-          <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>TOTAL RECORDS</div><div style={{fontSize:22,fontWeight:800,color:"#8b5cf6",fontFamily:"'JetBrains Mono',monospace"}}>{allHist.length}</div><div style={{fontSize:11,color:"#a3a3a3",marginTop:4}}>{docsWithFiles} with files</div></Card>
-          <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>VENDOR POs</div><div style={{fontSize:22,fontWeight:800,color:"#a78bfa",fontFamily:"'JetBrains Mono',monospace"}}>{vendorPOs.length}</div><div style={{fontSize:11,color:"#a3a3a3",marginTop:4}}>{fmt(totalPOAmt)}</div></Card>
-          <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>CUSTOMER INVOICES</div><div style={{fontSize:22,fontWeight:800,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{custInvs.length}</div><div style={{fontSize:11,color:"#a3a3a3",marginTop:4}}>{fmt(totalInvAmt)}</div></Card>
-          <Card style={{padding:14,textAlign:"center",cursor:"pointer",border:"1px solid #8b5cf620"}} hover onClick={()=>{setHistForm({type:'vendor_po',vendor:'',customer:'',docNumber:'',date:'',amount:'',job:'',description:'',notes:'',files:[]});setHistAdding('new')}}><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>UPLOAD DOC</div><div style={{fontSize:22,fontWeight:800,color:"#8b5cf6"}}>+</div></Card>
-        </div>
-
-        {histBulkCount>0&&<div style={{padding:"12px 16px",background:"#8b5cf610",border:"1px solid #8b5cf625",borderRadius:8,marginBottom:12,display:"flex",alignItems:"center",gap:8}}><div style={{width:16,height:16,border:"2px solid #8b5cf6",borderTop:"2px solid transparent",borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/><span style={{fontSize:13,color:"#8b5cf6"}}>Processing {histBulkCount} files...</span></div>}
-
-        <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>
-          <input value={histSearch} onChange={e=>setHistSearch(e.target.value)} placeholder="Search vendor, customer, PO #, invoice #, file name..." style={{...inputStyle,flex:1,minWidth:200,maxWidth:400}}/>
-          <div style={{display:"flex",gap:3,background:"#111",padding:3,borderRadius:8}}>{[["all","All"],["vendor_po","Vendor POs"],["customer_invoice","Customer Invoices"]].map(([v,l])=><button key={v} onClick={()=>setHistType(v)} style={{padding:"5px 12px",borderRadius:6,border:"none",cursor:"pointer",background:histType===v?"#8b5cf6":"transparent",color:histType===v?"#000":"#737373",fontSize:11,fontWeight:histType===v?600:400,fontFamily:"inherit",transition:"all 0.15s"}}>{l}</button>)}</div>
-        </div>
-        <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
-          <span style={{fontSize:11,color:"#737373"}}>Sort:</span>
-          {[["date","Date"],["vendor","Vendor"],["customer","Customer"],["amount","Amount"],["doc","Doc #"]].map(([v,l])=><button key={v} onClick={()=>setHistSort(v)} style={{padding:"4px 10px",borderRadius:6,border:"none",cursor:"pointer",background:histSort===v?"#8b5cf620":"transparent",color:histSort===v?"#8b5cf6":"#525252",fontSize:11,fontFamily:"inherit",transition:"all 0.15s"}}>{l}</button>)}
-          <div style={{flex:1}}/>
-          <Btn onClick={()=>{setHistForm({type:'vendor_po',vendor:'',customer:'',docNumber:'',date:'',amount:'',job:'',description:'',notes:'',files:[]});setHistAdding('new')}} style={{fontSize:12}}><I n="plus" s={12}/> Single Upload</Btn>
-          <Btn v="secondary" onClick={()=>{histBulkRef.current?.click()}} style={{fontSize:12}}><I n="upload" s={12}/> Bulk Upload ({histType==='customer_invoice'?'Invoices':'POs'})</Btn>
-          <Btn v="secondary" onClick={()=>{histExcelRef.current?.click()}} style={{fontSize:12,border:"1px solid #34d39930",color:"#34d399"}}><I n="file" s={12}/> Import Excel</Btn>
-          <Btn v="secondary" onClick={()=>{histBulkExcelRef.current?.click()}} style={{fontSize:12,border:"1px solid #a78bfa30",color:"#a78bfa"}}><I n="upload" s={12}/> Bulk Import Excel</Btn>
-        </div>
-
-        {histAdding&&<Card style={{marginBottom:16,padding:20,border:"1px solid #8b5cf625"}}>
-          <div style={{fontSize:15,fontWeight:800,color:"#8b5cf6",marginBottom:14}}>{histAdding.startsWith('edit-')?'Edit Record':'Upload Historical Document'}</div>
-          <div style={{display:"flex",gap:4,marginBottom:14}}>{[["vendor_po","Vendor Purchase Order"],["customer_invoice","Customer Invoice"]].map(([v,l])=><button key={v} onClick={()=>setHistForm({...histForm,type:v})} style={{padding:"6px 14px",borderRadius:6,border:"1px solid "+(histForm.type===v?"#8b5cf6":"#333"),background:histForm.type===v?"#8b5cf615":"transparent",color:histForm.type===v?"#8b5cf6":"#737373",fontSize:12,fontFamily:"inherit",cursor:"pointer"}}>{l}</button>)}</div>
-
-          <input ref={histFileRef} type="file" accept=".pdf,.png,.jpg,.jpeg,.gif,.doc,.docx,.xls,.xlsx" multiple onChange={handleHistFile} style={{display:"none"}}/>
-          <div onClick={()=>histFileRef.current?.click()} onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor="rgba(139,92,246,0.4)";e.currentTarget.style.background="rgba(139,92,246,0.06)"}} onDragLeave={e=>{e.currentTarget.style.borderColor="rgba(139,92,246,0.15)";e.currentTarget.style.background="rgba(139,92,246,0.02)"}} onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor="rgba(139,92,246,0.15)";e.currentTarget.style.background="rgba(139,92,246,0.02)";handleHistFile(e)}} style={{textAlign:"center",padding:"24px 16px",border:"2px dashed rgba(139,92,246,0.15)",borderRadius:12,cursor:"pointer",transition:"all 0.3s",background:"rgba(139,92,246,0.02)",marginBottom:14}}>
-            <div style={{fontSize:24,marginBottom:4,color:"#8b5cf6"}}><I n="upload" s={24}/></div>
-            <div style={{fontSize:13,fontWeight:600,color:"#8b5cf6",marginBottom:4}}>Drop files here or click to browse</div>
-            <div style={{fontSize:11,color:"#737373"}}>PDF, images, Excel, Word -- max 4MB per file -- select multiple files at once</div>
-          </div>
-
-          {(histForm.files||[]).length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>{(histForm.files||[]).map((f,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:6,padding:"4px 10px",background:"#8b5cf610",border:"1px solid #8b5cf620",borderRadius:6}}>
-            <I n={f.type?.includes('pdf')?"file":f.type?.includes('image')?"image":"file"} s={12} color="#8b5cf6"/>
-            <span style={{fontSize:11,color:"#e5e5e5",maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.name}</span>
-            <span style={{fontSize:10,color:"#737373"}}>{(f.size/1024).toFixed(0)}KB</span>
-            <button onClick={()=>removeHistFile(i)} style={{background:"none",border:"none",color:"#f87171",cursor:"pointer",fontSize:12,padding:0,lineHeight:1}}>x</button>
-          </div>)}</div>}
-
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:12}}>
-            {histForm.type==='vendor_po'?<div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Vendor</label><input value={histForm.vendor} onChange={e=>setHistForm({...histForm,vendor:e.target.value})} placeholder="e.g. Smith System" list="hist-vendor-list" style={inputStyle}/><datalist id="hist-vendor-list">{vendors.map(v=><option key={v.id} value={v.name}/>)}</datalist></div>
-            :<div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Customer</label><input value={histForm.customer} onChange={e=>setHistForm({...histForm,customer:e.target.value})} placeholder="e.g. Lincoln USD" list="hist-cust-list" style={inputStyle}/><datalist id="hist-cust-list">{customers.map(c=><option key={c.id} value={c.name}/>)}</datalist></div>}
-            <div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>{histForm.type==='vendor_po'?'PO Number':'Invoice Number'}</label><input value={histForm.docNumber} onChange={e=>setHistForm({...histForm,docNumber:e.target.value})} placeholder={histForm.type==='vendor_po'?'e.g. PO-2025-0047':'e.g. INV-10377'} style={inputStyle}/></div>
-            <div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Date</label><input type="date" value={histForm.date} onChange={e=>setHistForm({...histForm,date:e.target.value})} style={inputStyle}/></div>
-            <div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Amount</label><input type="number" value={histForm.amount} onChange={e=>setHistForm({...histForm,amount:e.target.value})} placeholder="0.00" style={inputStyle}/></div>
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}} className="resp-grid-2">
-            <div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Job / Project Name</label><input value={histForm.job} onChange={e=>setHistForm({...histForm,job:e.target.value})} placeholder="e.g. Evergreen Park HS English Office" list="hist-job-list" style={inputStyle}/><datalist id="hist-job-list">{jobs.map(j=><option key={j.id} value={j.name}/>)}</datalist></div>
-            <div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Description</label><input value={histForm.description} onChange={e=>setHistForm({...histForm,description:e.target.value})} placeholder="Brief description of items or services" style={inputStyle}/></div>
-          </div>
-          <div style={{marginBottom:12}}><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Notes</label><textarea value={histForm.notes} onChange={e=>setHistForm({...histForm,notes:e.target.value})} rows={2} placeholder="Additional notes, check numbers, delivery details..." style={{...inputStyle,resize:"vertical",minHeight:40}}/></div>
-          <div style={{display:"flex",gap:8}}><Btn onClick={saveHistRecord}>Save Record</Btn><Btn v="secondary" onClick={()=>{setHistAdding(null);setHistForm({type:'vendor_po',vendor:'',customer:'',docNumber:'',date:'',amount:'',job:'',description:'',notes:'',files:[]})}}>Cancel</Btn></div>
-        </Card>}
-
-        {sorted.length===0&&!histAdding?<Card style={{padding:40,textAlign:"center"}}><div style={{fontSize:40,marginBottom:8,color:"#333"}}>+</div><div style={{fontSize:14,color:"#525252",marginBottom:12}}>{histSearch?'No records match "'+histSearch+'"':'No historical records yet. Upload vendor POs and customer invoices.'}</div><div style={{display:"flex",gap:8,justifyContent:"center"}}><Btn onClick={()=>{setHistForm({type:'vendor_po',vendor:'',customer:'',docNumber:'',date:'',amount:'',job:'',description:'',notes:'',files:[]});setHistAdding('new')}}>Single Upload</Btn><Btn v="secondary" onClick={()=>histBulkRef.current?.click()}>Bulk Upload Files</Btn></div></Card>:
-        <Card style={{padding:0,overflow:"hidden"}}>
-          <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:750}}>
-            <thead><tr style={{background:"#111111",borderBottom:"2px solid #222"}}>{["Type","Vendor / Customer","Doc #","Job / Project","Date","Files","Amount",""].map((h,i)=><th key={i} onClick={()=>{if(h==='Vendor / Customer')setHistSort(histSort==='vendor'?'customer':'vendor');else if(h==='Date')setHistSort('date');else if(h==='Amount')setHistSort('amount');else if(h==='Doc #')setHistSort('doc')}} style={{padding:"10px 8px",textAlign:i===6?"right":"left",fontWeight:600,color:["Vendor / Customer","Date","Amount","Doc #"].includes(h)?"#8b5cf6":"#a3a3a3",fontSize:11,textTransform:"uppercase",letterSpacing:0.8,whiteSpace:"nowrap",cursor:["Vendor / Customer","Date","Amount","Doc #"].includes(h)?"pointer":"default"}}>{h}{h==='Date'&&histSort==='date'?' v':''}{h==='Amount'&&histSort==='amount'?' v':''}{h==='Vendor / Customer'&&(histSort==='vendor'||histSort==='customer')?' v':''}{h==='Doc #'&&histSort==='doc'?' v':''}</th>)}</tr></thead>
-            <tbody>{sorted.map(h=><tr key={h.id} style={{borderBottom:"1px solid #111",cursor:"pointer",transition:"background 0.15s"}} onClick={()=>setHistViewing(h)} onMouseEnter={e=>{e.currentTarget.style.background="#111"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>
-              <td style={{padding:"10px 8px"}}><Badge label={h.type==='vendor_po'?'Vendor PO':'Customer Inv'} color={h.type==='vendor_po'?'#a78bfa':'#2dd4bf'}/></td>
-              <td style={{padding:"10px 8px",fontWeight:600,color:"#e5e5e5"}}>{h.vendor||h.customer||'--'}</td>
-              <td style={{padding:"10px 8px",fontFamily:"'JetBrains Mono',monospace",fontSize:11,color:h.type==='vendor_po'?'#a78bfa':'#2dd4bf'}}>{h.docNumber||'--'}</td>
-              <td style={{padding:"10px 8px",color:"#c4c4c4"}}>{h.job||'--'}</td>
-              <td style={{padding:"10px 8px",color:"#a3a3a3",whiteSpace:"nowrap"}}>{h.date||'--'}</td>
-              <td style={{padding:"10px 8px"}}>{(h.files||[]).length>0?<div style={{display:"flex",alignItems:"center",gap:4}}><I n="file" s={12} color="#8b5cf6"/><span style={{fontSize:11,color:"#8b5cf6",fontWeight:600}}>{(h.files||[]).length}</span></div>:<span style={{color:"#333"}}>--</span>}</td>
-              <td style={{padding:"10px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,color:"#f0f0f0"}}>{h.amount?fmt(parseFloat(h.amount)):''}</td>
-              <td style={{padding:"10px 8px",textAlign:"right"}} onClick={e=>e.stopPropagation()}><div style={{display:"flex",gap:4,justifyContent:"flex-end"}}><button onClick={()=>{setHistForm({type:h.type||'vendor_po',vendor:h.vendor||'',customer:h.customer||'',docNumber:h.docNumber||'',date:h.date||'',amount:h.amount||'',job:h.job||'',description:h.description||'',notes:h.notes||'',files:h.files||[]});setHistAdding('edit-'+h.id)}} style={{padding:"3px 8px",borderRadius:5,border:"1px solid #333",background:"transparent",color:"#a3a3a3",fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>Edit</button><button onClick={()=>deleteHist(h.id)} style={{padding:"3px 8px",borderRadius:5,border:"1px solid #f8717130",background:"transparent",color:"#f87171",fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>Del</button></div></td>
-            </tr>)}
-            {sorted.length>0&&<tr style={{borderTop:"2px solid #222",background:"#0a0a0a"}}><td colSpan={5} style={{padding:"10px 8px",fontWeight:700,color:"#f0f0f0"}}>{sorted.length} record{sorted.length!==1?'s':''}</td><td style={{padding:"10px 8px"}}><span style={{fontSize:11,color:"#8b5cf6"}}>{sorted.reduce((s,h)=>s+(h.files||[]).length,0)} files</span></td><td style={{padding:"10px 8px",textAlign:"right",fontWeight:800,fontFamily:"'JetBrains Mono',monospace",color:"#8b5cf6"}}>{fmt(sorted.reduce((s,h)=>s+(parseFloat(h.amount)||0),0))}</td><td/></tr>}
-            </tbody>
-          </table></div>
-        </Card>}
-      </div>})()}
 
     {tab==="preview"&&previewDoc&&<Card style={{border:"1px solid #2dd4bf30",overflow:"hidden",maxWidth:"100%"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:8}}><div style={{display:"flex",alignItems:"center",gap:12}}><div style={{fontSize:16,fontWeight:700,color:"#2dd4bf"}}>{previewDoc.type==="quote"?("PROJECT QUOTE"+(previewDoc.data.projectNum?" #"+previewDoc.data.projectNum:"")):previewDoc.type==="po"?"PURCHASE ORDER":previewDoc.type==="commission"?"COMMISSION STATEMENT":previewDoc.data?.isPartial?"PARTIAL INVOICE":isCreditMemo?"CREDIT MEMO":isProforma?"PROFORMA INVOICE":"INVOICE"}</div><StatusBadge docNum={previewDoc.data.docNum}/></div><div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{previewDoc.data.docNum&&<div style={{display:"flex",gap:4}}>{["drafted","sent","approved"].map(s=><button key={s} onClick={()=>setDocStatus(previewDoc.data.docNum,s)} style={{padding:"4px 10px",borderRadius:6,border:"1px solid "+(docStatuses[previewDoc.data.docNum]===s?"#2dd4bf":"#444"),background:docStatuses[previewDoc.data.docNum]===s?"#2dd4bf20":"transparent",color:docStatuses[previewDoc.data.docNum]===s?"#2dd4bf":"#c4c4c4",fontSize:12,fontFamily:"inherit",cursor:"pointer",textTransform:"capitalize"}}>{s}</button>)}</div>}<Btn onClick={()=>handleExportPDF(previewDoc)}><I n="download" s={14}/> Export PDF</Btn>
       {previewDoc.data.docNum&&previewDoc.type!=="commission"&&<div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -4776,11 +4371,19 @@ function NotesPage({customSops,addSop,deleteSop,jobs,reps,notify,triggerPrint}){
   return <div style={{animation:"fadeUp 0.4s"}}><Header title="Notes" sub={(customSops||[]).filter(s=>s.cat==="Notes").length+" notes saved"}/><NotesView customSops={customSops} addSop={addSop} deleteSop={deleteSop} jobs={jobs} reps={reps} notify={notify} triggerPrint={triggerPrint}/></div>;
 }
 
-function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJobItems,brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory,updateJob,addJob,updateLineItem,addLineItem,deleteLineItem,updateRep,addRep,addCustomer,updateCustomer,addVendor,updateVendor,notify,setPage,deleteJob}){
+function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJobItems,brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory,updateJob,addJob,updateLineItem,addLineItem,deleteLineItem,updateRep,addRep,addCustomer,updateCustomer,addVendor,updateVendor,notify,setPage,deleteJob,pendingBrainFile,setPendingBrainFile}){
   const [brainFile, setBrainFile] = useState(null);
   const [brainFilePreview, setBrainFilePreview] = useState(null);
   const [brainFileContext, setBrainFileContext] = useState(null);
   const brainFileRef = React.useRef(null);
+  // Consume pending file from Files page (Read with Brain)
+  useEffect(()=>{
+    if(pendingBrainFile){
+      setBrainFileContext(pendingBrainFile);
+      setPendingBrainFile(null);
+      notify('Loaded "'+pendingBrainFile.name+'" into Brain. Ask away.');
+    }
+  },[pendingBrainFile]);
   const history=brainHistory;const setHistory=setBrainHistory;
   // === BRAIN MEMORY SYSTEM ===
   const [brainMemory, setBrainMemory] = useState([]);
@@ -6436,6 +6039,335 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify}){
     <div style={{fontSize:12,color:'#525252',textAlign:'center',padding:'8px 0',fontFamily:"'JetBrains Mono',monospace"}}>{filtered.length} prospect{filtered.length!==1?'s':''}{search?' matching "'+search+'"':''}</div>
   </div>;
 }
+function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPendingBrainFile,db}){
+  const [search,setSearch]=useState('');
+  const [catFilter,setCatFilter]=useState('all');
+  const [sortBy,setSortBy]=useState('date');
+  const [sortDir,setSortDir]=useState('desc');
+  const [uploading,setUploading]=useState(false);
+  const [uploadProgress,setUploadProgress]=useState(null);
+  const [showAdd,setShowAdd]=useState(false);
+  const [pendingFiles,setPendingFiles]=useState([]);
+  const [pendingCat,setPendingCat]=useState('Other');
+  const [previewFile,setPreviewFile]=useState(null);
+  const [showHistorySection,setShowHistorySection]=useState(false);
+  const [loadingBrainFile,setLoadingBrainFile]=useState(null);
+  const [showVersionsFor,setShowVersionsFor]=useState(null);
+  const fileRef=React.useRef(null);
+  const dropRef=React.useRef(null);
+  const [dragOver,setDragOver]=useState(false);
+
+  const CATEGORIES=['QB Export','Tax Document','Bank Statement','Contract','Insurance','Invoice','Receipt','Other'];
+  const CAT_COLORS={'QB Export':'#a78bfa','Tax Document':'#f97316','Bank Statement':'#2dd4bf','Contract':'#fbbf24','Insurance':'#34d399','Invoice':'#f87171','Receipt':'#8b5cf6','Other':'#737373'};
+
+  // Load files from SOPs (cat: 'File') AND legacy historical docs (cat: 'HistoricalDoc')
+  const allFiles=(customSops||[]).filter(s=>s.cat==='File').map(s=>{try{return{id:s.id,...JSON.parse(s.content),_legacy:false}}catch{return null}}).filter(Boolean);
+  const legacyDocs=(customSops||[]).filter(s=>s.cat==='HistoricalDoc').map(s=>{try{const d=JSON.parse(s.content);const file0=(d.files&&d.files[0])||{};return{id:s.id,name:file0.name||(d.docNumber||'Historical Doc'),originalName:file0.name||(d.docNumber||'Historical Doc'),size:file0.size||0,type:file0.type||'application/octet-stream',url:file0.url||'',path:'',category:d.type==='vendor_po'?'Invoice':d.type==='customer_invoice'?'Invoice':'Other',uploadedBy:d.uploadedBy||'Legacy',uploadedAt:d.date||d.uploadedAt||new Date(0).toISOString(),version:1,parentId:null,_legacy:true,_legacyMeta:d}}catch{return null}}).filter(Boolean);
+
+  // Group files by base name (originalName) to find versions; only show latest per group in main list
+  const groupKey=(f)=>(f.parentId||f.id);
+  const grouped={};
+  [...allFiles,...legacyDocs].forEach(f=>{const k=f._legacy?'__legacy_'+f.id:groupKey(f);if(!grouped[k])grouped[k]=[];grouped[k].push(f)});
+  const latestPerGroup=Object.values(grouped).map(g=>g.sort((a,b)=>(b.version||1)-(a.version||1))[0]);
+  const versionsByGroup=Object.fromEntries(Object.entries(grouped).map(([k,g])=>[k,g.sort((a,b)=>(b.version||1)-(a.version||1))]));
+
+  // Filter
+  let filtered=latestPerGroup;
+  if(catFilter!=='all')filtered=filtered.filter(f=>(f.category||'Other')===catFilter);
+  if(search){const q=search.toLowerCase();filtered=filtered.filter(f=>(f.name||'').toLowerCase().includes(q)||(f.originalName||'').toLowerCase().includes(q)||(f.category||'').toLowerCase().includes(q)||(f.uploadedBy||'').toLowerCase().includes(q))}
+  // Sort
+  filtered.sort((a,b)=>{let va,vb;if(sortBy==='name'){va=(a.originalName||a.name||'').toLowerCase();vb=(b.originalName||b.name||'').toLowerCase()}else if(sortBy==='size'){va=a.size||0;vb=b.size||0}else if(sortBy==='category'){va=a.category||'';vb=b.category||''}else{va=a.uploadedAt||'';vb=b.uploadedAt||''}return sortDir==='asc'?(va<vb?-1:va>vb?1:0):(va>vb?-1:va<vb?1:0)});
+
+  // Stats
+  const totalFiles=latestPerGroup.length;
+  const totalSize=latestPerGroup.reduce((s,f)=>s+(f.size||0),0);
+  const catCounts={};CATEGORIES.forEach(c=>{catCounts[c]=latestPerGroup.filter(f=>(f.category||'Other')===c).length});
+
+  const fmtSize=(b)=>{if(!b||b<=0)return'--';if(b<1024)return b+' B';if(b<1048576)return(b/1024).toFixed(1)+' KB';if(b<1073741824)return(b/1048576).toFixed(1)+' MB';return(b/1073741824).toFixed(2)+' GB'};
+  const fmtDate=(d)=>{if(!d)return'--';try{const dt=new Date(d);return dt.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' '+dt.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}catch{return d}};
+  const ext=(name)=>(name||'').split('.').pop().toLowerCase();
+  const isImage=(t,n)=>(t||'').startsWith('image/')||['png','jpg','jpeg','gif','webp','svg'].includes(ext(n));
+  const isPdf=(t,n)=>(t||'').includes('pdf')||ext(n)==='pdf';
+  const isText=(t,n)=>(t||'').startsWith('text/')||['txt','csv','tsv','md','json','log'].includes(ext(n));
+
+  const handleFileSelect=(files)=>{
+    const arr=Array.from(files||[]);
+    if(arr.length===0)return;
+    const validated=[];
+    for(const f of arr){
+      if(f.size>50*1024*1024){notify(f.name+' is too large (max 50MB)','error');continue}
+      validated.push(f);
+    }
+    if(validated.length>0){setPendingFiles(validated);setShowAdd(true)}
+  };
+
+  const doUpload=async()=>{
+    if(pendingFiles.length===0)return;
+    setUploading(true);
+    let uploaded=0,failed=0;
+    for(let i=0;i<pendingFiles.length;i++){
+      const file=pendingFiles[i];
+      setUploadProgress({current:i+1,total:pendingFiles.length,name:file.name});
+      try{
+        // Versioning: find existing files with same originalName
+        const existing=allFiles.filter(f=>(f.originalName||f.name)===file.name);
+        const isVersion=existing.length>0;
+        const parentId=isVersion?(existing[0].parentId||existing[0].id):null;
+        const version=isVersion?(Math.max(...existing.map(f=>f.version||1))+1):1;
+        // Upload to storage with unique path
+        const safeName=file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+        const path='files/'+Date.now()+'-'+Math.random().toString(36).slice(2,7)+'-'+safeName;
+        const url=await db.uploadFile('vendor-invoices',path,file);
+        if(!url){failed++;continue}
+        // Save metadata as SOP
+        const id='FILE-'+Date.now()+'-'+Math.random().toString(36).slice(2,7);
+        addSop({id,title:file.name,cat:'File',icon:'package',content:JSON.stringify({
+          name:file.name,originalName:file.name,size:file.size,type:file.type||'application/octet-stream',
+          url,path,category:pendingCat,uploadedBy:currentUser?.name||currentUser?.email||'Unknown',
+          uploadedAt:new Date().toISOString(),version,parentId
+        }),custom:true});
+        uploaded++;
+      }catch(err){console.error(err);failed++}
+    }
+    setUploading(false);setUploadProgress(null);setPendingFiles([]);setShowAdd(false);setPendingCat('Other');
+    notify(uploaded+' file'+(uploaded!==1?'s':'')+' uploaded'+(failed>0?', '+failed+' failed':''));
+  };
+
+  const deleteFile=(f)=>{
+    if(!confirm('Delete "'+f.name+'"? This cannot be undone.'))return;
+    deleteSop(f.id);
+    notify('Deleted: '+f.name);
+  };
+
+  const updateCat=(f,newCat)=>{
+    if(f._legacy){notify('Cannot recategorize legacy historical docs','error');return}
+    addSop({id:f.id,title:f.name,cat:'File',icon:'package',content:JSON.stringify({...f,category:newCat,_legacy:undefined}),custom:true});
+    notify(f.name+' >> '+newCat);
+  };
+
+  const sendToBrain=async(f)=>{
+    setLoadingBrainFile(f.id);
+    try{
+      // Fetch the file
+      const r=await fetch(f.url);
+      if(!r.ok)throw new Error('Could not fetch file from storage');
+      const blob=await r.blob();
+      const isDoc=isPdf(f.type,f.name)||isImage(f.type,f.name);
+      let fileBlocks=[];let textContent='';let hasDoc=false;
+      if(isDoc){
+        const reader=new FileReader();
+        const b64=await new Promise((resolve,reject)=>{
+          reader.onload=()=>resolve(reader.result.split(',')[1]);
+          reader.onerror=()=>reject(new Error('Read failed'));
+          reader.readAsDataURL(blob);
+        });
+        if(isPdf(f.type,f.name)){
+          fileBlocks=[{type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}}];
+        }else{
+          const mt=f.type||'image/png';
+          fileBlocks=[{type:'image',source:{type:'base64',media_type:mt,data:b64}}];
+        }
+        hasDoc=true;
+      }else{
+        textContent=await blob.text();
+      }
+      setPendingBrainFile({name:f.name,content:textContent,blocks:fileBlocks,hasDoc});
+      setPage('brain');
+    }catch(err){
+      notify('Could not load file into Brain: '+err.message,'error');
+    }
+    setLoadingBrainFile(null);
+  };
+
+  const handleSort=(col)=>{if(sortBy===col)setSortDir(d=>d==='asc'?'desc':'asc');else{setSortBy(col);setSortDir('desc')}};
+
+  // Drag and drop
+  const onDrop=(e)=>{e.preventDefault();setDragOver(false);if(e.dataTransfer.files)handleFileSelect(e.dataTransfer.files)};
+  const onDragOver=(e)=>{e.preventDefault();setDragOver(true)};
+  const onDragLeave=(e)=>{e.preventDefault();setDragOver(false)};
+
+  const isLegacyVisible=showHistorySection||legacyDocs.length===0;
+
+  return <div style={{animation:'fadeUp 0.4s'}}>
+    <Header title="Files" sub={"Document repository -- "+totalFiles+" file"+(totalFiles!==1?'s':'')+", "+fmtSize(totalSize)+" total"}/>
+
+    {/* KPI Cards */}
+    <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:10,marginBottom:18}}>
+      <Card style={{padding:14,textAlign:'center'}} hover>
+        <div style={{fontSize:9,color:'#525252',fontWeight:700,letterSpacing:2,fontFamily:"'JetBrains Mono',monospace",marginBottom:6}}>TOTAL FILES</div>
+        <div style={{fontSize:'clamp(20px,4vw,28px)',fontWeight:800,color:'#2dd4bf',fontFamily:"'JetBrains Mono',monospace",lineHeight:1}}><AnimNum value={String(totalFiles)}/></div>
+      </Card>
+      <Card style={{padding:14,textAlign:'center'}} hover>
+        <div style={{fontSize:9,color:'#525252',fontWeight:700,letterSpacing:2,fontFamily:"'JetBrains Mono',monospace",marginBottom:6}}>STORAGE USED</div>
+        <div style={{fontSize:'clamp(18px,3.5vw,24px)',fontWeight:800,color:'#a78bfa',fontFamily:"'JetBrains Mono',monospace",lineHeight:1}}>{fmtSize(totalSize)}</div>
+      </Card>
+      <Card style={{padding:14,textAlign:'center'}} hover>
+        <div style={{fontSize:9,color:'#525252',fontWeight:700,letterSpacing:2,fontFamily:"'JetBrains Mono',monospace",marginBottom:6}}>QB EXPORTS</div>
+        <div style={{fontSize:'clamp(20px,4vw,28px)',fontWeight:800,color:CAT_COLORS['QB Export'],fontFamily:"'JetBrains Mono',monospace",lineHeight:1}}><AnimNum value={String(catCounts['QB Export']||0)}/></div>
+      </Card>
+      <Card style={{padding:14,textAlign:'center'}} hover>
+        <div style={{fontSize:9,color:'#525252',fontWeight:700,letterSpacing:2,fontFamily:"'JetBrains Mono',monospace",marginBottom:6}}>CONTRACTS</div>
+        <div style={{fontSize:'clamp(20px,4vw,28px)',fontWeight:800,color:CAT_COLORS['Contract'],fontFamily:"'JetBrains Mono',monospace",lineHeight:1}}><AnimNum value={String(catCounts['Contract']||0)}/></div>
+      </Card>
+      <Card style={{padding:14,textAlign:'center'}} hover>
+        <div style={{fontSize:9,color:'#525252',fontWeight:700,letterSpacing:2,fontFamily:"'JetBrains Mono',monospace",marginBottom:6}}>TAX DOCS</div>
+        <div style={{fontSize:'clamp(20px,4vw,28px)',fontWeight:800,color:CAT_COLORS['Tax Document'],fontFamily:"'JetBrains Mono',monospace",lineHeight:1}}><AnimNum value={String(catCounts['Tax Document']||0)}/></div>
+      </Card>
+    </div>
+
+    {/* Category filter chips */}
+    <div style={{display:'flex',gap:4,flexWrap:'wrap',marginBottom:16,overflowX:'auto',WebkitOverflowScrolling:'touch',paddingBottom:4}}>
+      <button onClick={()=>setCatFilter('all')} style={{padding:'5px 12px',borderRadius:20,border:catFilter==='all'?'1px solid #2dd4bf':'1px solid #1a1a1a',background:catFilter==='all'?'#2dd4bf12':'transparent',color:catFilter==='all'?'#2dd4bf':'#525252',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:"'JetBrains Mono',monospace",whiteSpace:'nowrap',transition:'all 0.15s'}}>ALL {totalFiles}</button>
+      {CATEGORIES.map(c=><button key={c} onClick={()=>setCatFilter(catFilter===c?'all':c)} style={{padding:'5px 12px',borderRadius:20,border:'1px solid '+(catFilter===c?(CAT_COLORS[c]||'#333')+'60':'#1a1a1a'),background:catFilter===c?(CAT_COLORS[c]||'#333')+'12':'transparent',color:catFilter===c?CAT_COLORS[c]||'#f0f0f0':'#333',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:"'JetBrains Mono',monospace",whiteSpace:'nowrap',transition:'all 0.15s'}}>{c} {catCounts[c]||0}</button>)}
+    </div>
+
+    {/* Toolbar */}
+    <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',marginBottom:12}}>
+      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder={"Search "+totalFiles+" files..."} style={{...inputStyle,maxWidth:300,background:'#111',border:'1px solid #222',padding:'10px 16px',fontSize:13}}/>
+      <select value={sortBy+'-'+sortDir} onChange={e=>{const[s,d]=e.target.value.split('-');setSortBy(s);setSortDir(d)}} style={{...inputStyle,width:'auto',background:'#111',border:'1px solid #222',padding:'10px 16px',fontSize:13}}>
+        <option value="date-desc">Newest first</option>
+        <option value="date-asc">Oldest first</option>
+        <option value="name-asc">Name A-Z</option>
+        <option value="name-desc">Name Z-A</option>
+        <option value="size-desc">Largest first</option>
+        <option value="size-asc">Smallest first</option>
+        <option value="category-asc">Category</option>
+      </select>
+      <div style={{marginLeft:'auto',display:'flex',gap:6}}>
+        <input ref={fileRef} type="file" multiple onChange={e=>handleFileSelect(e.target.files)} style={{display:'none'}}/>
+        <Btn onClick={()=>fileRef.current?.click()} style={{fontSize:12,padding:'8px 16px'}}><I n="upload" s={13}/> Upload Files</Btn>
+      </div>
+    </div>
+
+    {/* Drop zone */}
+    <div ref={dropRef} onDrop={onDrop} onDragOver={onDragOver} onDragLeave={onDragLeave} onClick={()=>fileRef.current?.click()} style={{border:'2px dashed '+(dragOver?'#2dd4bf':'#1a1a1a'),background:dragOver?'rgba(45,212,191,0.04)':'transparent',borderRadius:12,padding:'24px 16px',textAlign:'center',cursor:'pointer',marginBottom:14,transition:'all 0.15s'}}>
+      <I n="upload" s={24} color={dragOver?'#2dd4bf':'#333'}/>
+      <div style={{fontSize:13,color:dragOver?'#2dd4bf':'#737373',marginTop:8,fontWeight:600}}>{dragOver?'Drop files to upload':'Drop files here or click to browse'}</div>
+      <div style={{fontSize:11,color:'#525252',marginTop:4,fontFamily:"'JetBrains Mono',monospace"}}>PDF, Excel, CSV, images, anything up to 50MB</div>
+    </div>
+
+    {/* Pending upload preview */}
+    {showAdd&&pendingFiles.length>0&&<Card style={{padding:16,marginBottom:14,border:'1px solid rgba(45,212,191,0.2)'}}>
+      <div style={{fontSize:13,fontWeight:700,color:'#f0f0f0',marginBottom:12}}>Ready to upload {pendingFiles.length} file{pendingFiles.length!==1?'s':''}</div>
+      <div style={{display:'flex',gap:10,flexWrap:'wrap',alignItems:'center',marginBottom:12}}>
+        <label style={{fontSize:11,color:'#a3a3a3'}}>Category:</label>
+        <select value={pendingCat} onChange={e=>setPendingCat(e.target.value)} style={{...inputStyle,width:'auto',background:'#0a0a0a',padding:'6px 12px',fontSize:12}}>
+          {CATEGORIES.map(c=><option key={c}>{c}</option>)}
+        </select>
+      </div>
+      <div style={{display:'flex',flexDirection:'column',gap:4,marginBottom:12,maxHeight:160,overflowY:'auto'}}>
+        {pendingFiles.map((f,i)=>{
+          const existing=allFiles.filter(af=>(af.originalName||af.name)===f.name);
+          const willVersion=existing.length>0;
+          return <div key={i} style={{display:'flex',alignItems:'center',gap:8,padding:'6px 10px',background:'#0a0a0a',borderRadius:6,fontSize:12}}>
+            <I n="file" s={12} color="#737373"/>
+            <span style={{color:'#e5e5e5',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{f.name}</span>
+            <span style={{color:'#525252',fontFamily:"'JetBrains Mono',monospace",fontSize:11}}>{fmtSize(f.size)}</span>
+            {willVersion&&<span style={{padding:'2px 6px',borderRadius:4,background:'#fbbf2415',color:'#fbbf24',fontSize:10,fontWeight:600,fontFamily:"'JetBrains Mono',monospace"}}>v{Math.max(...existing.map(e=>e.version||1))+1}</span>}
+            <button onClick={()=>setPendingFiles(pendingFiles.filter((_,j)=>j!==i))} style={{background:'none',border:'none',color:'#525252',cursor:'pointer',fontSize:14,padding:'0 4px'}} title="Remove">x</button>
+          </div>;
+        })}
+      </div>
+      {uploadProgress&&<div style={{marginBottom:10,padding:'8px 12px',background:'rgba(45,212,191,0.05)',borderRadius:6,fontSize:11,color:'#2dd4bf',fontFamily:"'JetBrains Mono',monospace"}}>Uploading {uploadProgress.current}/{uploadProgress.total}: {uploadProgress.name}</div>}
+      <div style={{display:'flex',gap:6}}>
+        <Btn onClick={doUpload} style={{fontSize:12}} disabled={uploading}>{uploading?'Uploading...':'Upload '+pendingFiles.length+' file'+(pendingFiles.length!==1?'s':'')}</Btn>
+        <Btn v="secondary" onClick={()=>{setShowAdd(false);setPendingFiles([]);setPendingCat('Other')}} style={{fontSize:12}} disabled={uploading}>Cancel</Btn>
+      </div>
+    </Card>}
+
+    {/* Legacy docs notice */}
+    {legacyDocs.length>0&&<div style={{display:'flex',alignItems:'center',gap:8,padding:'10px 14px',marginBottom:12,background:'rgba(139,92,246,0.04)',border:'1px solid rgba(139,92,246,0.15)',borderRadius:10,flexWrap:'wrap'}}>
+      <span style={{fontSize:11,color:'#a78bfa',fontFamily:"'JetBrains Mono',monospace"}}>{legacyDocs.length} legacy historical document{legacyDocs.length!==1?'s':''} from old History tab</span>
+      <button onClick={()=>setShowHistorySection(!showHistorySection)} style={{padding:'4px 10px',borderRadius:6,border:'1px solid rgba(139,92,246,0.3)',background:'transparent',color:'#a78bfa',fontSize:11,cursor:'pointer',fontFamily:'inherit',marginLeft:'auto'}}>{showHistorySection?'Hide':'Show'} legacy</button>
+    </div>}
+
+    {/* Files table */}
+    <div style={{overflowX:'auto',borderRadius:12,border:'1px solid #1a1a1a',background:'#000'}}>
+      <table style={{width:'100%',borderCollapse:'collapse',minWidth:780}}>
+        <thead><tr style={{background:'#050505'}}>
+          {[['name','Name',220],['category','Category',120],['size','Size',80],['uploadedBy','Uploaded By',130],['date','Date',150],['','',160]].map(([col,label,w])=>
+            <th key={label||'actions'} onClick={col?()=>handleSort(col):undefined} style={{padding:'10px 10px',textAlign:'left',fontSize:10,fontWeight:700,color:'#525252',textTransform:'uppercase',letterSpacing:1.2,cursor:col?'pointer':'default',whiteSpace:'nowrap',fontFamily:"'JetBrains Mono',monospace",minWidth:w,borderBottom:'1px solid #111'}}>{label}{sortBy===col&&<span style={{color:'#2dd4bf',marginLeft:3}}>{sortDir==='asc'?'\u25B2':'\u25BC'}</span>}</th>
+          )}
+        </tr></thead>
+        <tbody>{filtered.length===0?<tr><td colSpan={6} style={{padding:'40px 16px',textAlign:'center',fontSize:12,color:'#333',fontFamily:"'JetBrains Mono',monospace"}}>No files{search||catFilter!=='all'?' match these filters':' yet -- upload your first file above'}</td></tr>:filtered.filter(f=>!f._legacy||isLegacyVisible).map(f=>{
+          const versions=versionsByGroup[f._legacy?'__legacy_'+f.id:groupKey(f)]||[];
+          const hasVersions=versions.length>1;
+          return <React.Fragment key={f.id}>
+          <tr style={{borderBottom:'1px solid #0a0a0a',transition:'background 0.1s',background:f._legacy?'rgba(139,92,246,0.03)':'transparent'}} onMouseEnter={e=>{e.currentTarget.style.background=f._legacy?'rgba(139,92,246,0.06)':'#050505'}} onMouseLeave={e=>{e.currentTarget.style.background=f._legacy?'rgba(139,92,246,0.03)':'transparent'}}>
+            <td style={{padding:'10px 10px'}}>
+              <div style={{display:'flex',alignItems:'center',gap:8}}>
+                <I n={isPdf(f.type,f.name)?'file':isImage(f.type,f.name)?'package':'file'} s={14} color={isPdf(f.type,f.name)?'#f87171':isImage(f.type,f.name)?'#a78bfa':'#737373'}/>
+                <div style={{minWidth:0,flex:1}}>
+                  <div style={{fontSize:12,fontWeight:600,color:'#e5e5e5',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{f.originalName||f.name}</div>
+                  <div style={{fontSize:10,color:'#525252',fontFamily:"'JetBrains Mono',monospace"}}>
+                    {f._legacy?'LEGACY':'v'+(f.version||1)}
+                    {hasVersions&&!f._legacy&&<button onClick={()=>setShowVersionsFor(showVersionsFor===f.id?null:f.id)} style={{background:'none',border:'none',color:'#a78bfa',cursor:'pointer',fontSize:10,fontFamily:'inherit',marginLeft:6,padding:0}}>{showVersionsFor===f.id?'hide':versions.length+' versions'}</button>}
+                  </div>
+                </div>
+              </div>
+            </td>
+            <td style={{padding:'10px 10px'}}>
+              {f._legacy?<span style={{padding:'3px 8px',borderRadius:4,background:'#8b5cf615',color:'#8b5cf6',fontSize:10,fontWeight:600,fontFamily:"'JetBrains Mono',monospace"}}>Legacy</span>:
+              <select value={f.category||'Other'} onChange={e=>updateCat(f,e.target.value)} style={{background:'transparent',border:'1px solid '+(CAT_COLORS[f.category]||'#333')+'30',color:CAT_COLORS[f.category]||'#737373',borderRadius:6,padding:'3px 8px',fontSize:10,fontFamily:"'JetBrains Mono',monospace",cursor:'pointer',outline:'none',fontWeight:600}}>{CATEGORIES.map(c=><option key={c} style={{background:'#111',color:'#e5e5e5'}}>{c}</option>)}</select>}
+            </td>
+            <td style={{padding:'10px 10px',fontSize:11,color:'#737373',fontFamily:"'JetBrains Mono',monospace",whiteSpace:'nowrap'}}>{fmtSize(f.size)}</td>
+            <td style={{padding:'10px 10px',fontSize:11,color:'#a3a3a3',whiteSpace:'nowrap'}}>{f.uploadedBy||'--'}</td>
+            <td style={{padding:'10px 10px',fontSize:11,color:'#737373',whiteSpace:'nowrap',fontFamily:"'JetBrains Mono',monospace"}}>{fmtDate(f.uploadedAt)}</td>
+            <td style={{padding:'10px 10px',whiteSpace:'nowrap'}}>
+              <button onClick={()=>setPreviewFile(f)} style={{background:'none',border:'1px solid #1a1a1a',color:'#737373',cursor:'pointer',fontSize:10,fontFamily:"'JetBrains Mono',monospace",padding:'4px 8px',borderRadius:5,marginRight:4,transition:'all 0.15s'}} onMouseEnter={e=>{e.currentTarget.style.color='#2dd4bf';e.currentTarget.style.borderColor='#2dd4bf30'}} onMouseLeave={e=>{e.currentTarget.style.color='#737373';e.currentTarget.style.borderColor='#1a1a1a'}}>VIEW</button>
+              <button onClick={()=>sendToBrain(f)} disabled={loadingBrainFile===f.id} style={{background:'none',border:'1px solid '+(loadingBrainFile===f.id?'#525252':'rgba(167,139,250,0.3)'),color:loadingBrainFile===f.id?'#525252':'#a78bfa',cursor:loadingBrainFile===f.id?'wait':'pointer',fontSize:10,fontFamily:"'JetBrains Mono',monospace",padding:'4px 8px',borderRadius:5,marginRight:4,transition:'all 0.15s'}}>{loadingBrainFile===f.id?'LOADING':'BRAIN'}</button>
+              {f.url&&<a href={f.url} download={f.originalName||f.name} target="_blank" rel="noopener noreferrer" style={{display:'inline-block',background:'none',border:'1px solid #1a1a1a',color:'#737373',textDecoration:'none',fontSize:10,fontFamily:"'JetBrains Mono',monospace",padding:'4px 8px',borderRadius:5,marginRight:4,transition:'all 0.15s'}}>DL</a>}
+              <button onClick={()=>deleteFile(f)} style={{background:'none',border:'1px solid #1a1a1a',color:'#525252',cursor:'pointer',fontSize:10,fontFamily:"'JetBrains Mono',monospace",padding:'4px 8px',borderRadius:5,transition:'all 0.15s'}} onMouseEnter={e=>{e.currentTarget.style.color='#f87171';e.currentTarget.style.borderColor='#f8717130'}} onMouseLeave={e=>{e.currentTarget.style.color='#525252';e.currentTarget.style.borderColor='#1a1a1a'}}>DEL</button>
+            </td>
+          </tr>
+          {/* Version history expansion */}
+          {showVersionsFor===f.id&&hasVersions&&!f._legacy&&<tr style={{background:'#050505'}}><td colSpan={6} style={{padding:'12px 16px 16px 42px',borderBottom:'1px solid #1a1a1a'}}>
+            <div style={{fontSize:10,color:'#525252',fontFamily:"'JetBrains Mono',monospace",letterSpacing:1,marginBottom:8,textTransform:'uppercase'}}>VERSION HISTORY</div>
+            <div style={{display:'flex',flexDirection:'column',gap:4}}>
+              {versions.map(v=><div key={v.id} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 12px',background:'#0a0a0a',borderRadius:6,fontSize:11}}>
+                <span style={{padding:'2px 6px',borderRadius:4,background:v.id===f.id?'#2dd4bf15':'#52525215',color:v.id===f.id?'#2dd4bf':'#737373',fontSize:10,fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}>v{v.version||1}{v.id===f.id?' CURRENT':''}</span>
+                <span style={{color:'#a3a3a3',fontFamily:"'JetBrains Mono',monospace"}}>{fmtDate(v.uploadedAt)}</span>
+                <span style={{color:'#525252',marginLeft:'auto',fontFamily:"'JetBrains Mono',monospace"}}>{fmtSize(v.size)}</span>
+                <span style={{color:'#737373'}}>{v.uploadedBy}</span>
+                {v.url&&<a href={v.url} download={v.originalName||v.name} target="_blank" rel="noopener noreferrer" style={{color:'#2dd4bf',textDecoration:'none',fontSize:10,fontFamily:"'JetBrains Mono',monospace",padding:'2px 6px'}}>DL</a>}
+                {v.id!==f.id&&<button onClick={()=>{if(confirm('Delete v'+(v.version||1)+'?'))deleteSop(v.id)}} style={{background:'none',border:'none',color:'#525252',cursor:'pointer',fontSize:10,fontFamily:"'JetBrains Mono',monospace",padding:'2px 6px'}}>DEL</button>}
+              </div>)}
+            </div>
+          </td></tr>}
+          </React.Fragment>;
+        })}</tbody>
+      </table>
+    </div>
+    <div style={{fontSize:11,color:'#525252',textAlign:'center',padding:'10px 0',fontFamily:"'JetBrains Mono',monospace"}}>{filtered.length} of {totalFiles} file{totalFiles!==1?'s':''}{search?' matching "'+search+'"':''}</div>
+
+    {/* Preview modal */}
+    {previewFile&&<div style={{position:'fixed',inset:0,zIndex:99998,display:'flex',alignItems:'center',justifyContent:'center',padding:20,animation:'fadeUp 0.15s'}}>
+      <div onClick={()=>setPreviewFile(null)} style={{position:'absolute',inset:0,background:'rgba(0,0,0,0.85)',backdropFilter:'blur(20px)'}}/>
+      <div style={{position:'relative',width:'100%',maxWidth:900,maxHeight:'90vh',background:'#0a0a0a',borderRadius:14,border:'1px solid #1a1a1a',display:'flex',flexDirection:'column',overflow:'hidden'}}>
+        <div style={{padding:'14px 18px',borderBottom:'1px solid #1a1a1a',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+          <I n={isPdf(previewFile.type,previewFile.name)?'file':isImage(previewFile.type,previewFile.name)?'package':'file'} s={16} color="#737373"/>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:13,fontWeight:700,color:'#e5e5e5',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{previewFile.originalName||previewFile.name}</div>
+            <div style={{fontSize:10,color:'#525252',fontFamily:"'JetBrains Mono',monospace"}}>{fmtSize(previewFile.size)} -- {previewFile.category||'Other'} -- {fmtDate(previewFile.uploadedAt)}</div>
+          </div>
+          <Btn v="secondary" onClick={()=>{sendToBrain(previewFile);setPreviewFile(null)}} style={{fontSize:11,padding:'6px 12px'}}>Send to Brain</Btn>
+          {previewFile.url&&<a href={previewFile.url} download={previewFile.originalName||previewFile.name} target="_blank" rel="noopener noreferrer" style={{textDecoration:'none'}}><Btn v="secondary" style={{fontSize:11,padding:'6px 12px'}}>Download</Btn></a>}
+          <button onClick={()=>setPreviewFile(null)} style={{background:'none',border:'1px solid #1a1a1a',color:'#737373',cursor:'pointer',fontSize:11,fontFamily:'inherit',padding:'6px 12px',borderRadius:6}}>Close</button>
+        </div>
+        <div style={{flex:1,overflow:'auto',background:'#000'}}>
+          {isImage(previewFile.type,previewFile.name)?<img src={previewFile.url} alt={previewFile.name} style={{display:'block',maxWidth:'100%',margin:'0 auto'}}/>:
+           isPdf(previewFile.type,previewFile.name)?<iframe src={previewFile.url} style={{width:'100%',height:'70vh',border:'none',background:'#fff'}} title={previewFile.name}/>:
+           <div style={{padding:40,textAlign:'center',color:'#737373'}}>
+             <I n="file" s={32} color="#333"/>
+             <div style={{fontSize:13,marginTop:12}}>Preview not available for this file type</div>
+             <div style={{fontSize:11,color:'#525252',marginTop:6,fontFamily:"'JetBrains Mono',monospace"}}>{(previewFile.type||'unknown')} -- click Download to open</div>
+           </div>}
+        </div>
+      </div>
+    </div>}
+  </div>;
+}
+
 function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,getJobItems,notify,triggerPrint,dateFilter,jobNum,customSops,addSop,deleteSop,...fCtx}){
   const [tab,setTab]=useState("overview");
   const now=new Date();
@@ -7097,9 +7029,9 @@ function UserMgmtPage({notify,reps,customSops,addSop,deleteSop}){
   const deleteUser=async(id)=>{if(!confirm("Delete this user?"))return;await db.deleteUser(id);setUsers(p=>p.filter(u=>u.id!==id));notify("User deleted")};
 
   const roleColor={admin:"#2dd4bf",office:"#a78bfa",sales:"#fbbf24"};
-  const allPages=["dashboard","jobs","deliveries","documents","commissions","financials","salesportal","prospects","playbook","tasks","notes","brain","exitreadiness","usermgmt"];
-  const pageLabels={dashboard:"Command Center",jobs:"Job Records",deliveries:"Delivery Tracker",documents:"Documents",commissions:"Commissions",financials:"Financials",salesportal:"Sales Portal",prospects:"Prospects",playbook:"Playbook & SOPs",tasks:"Tasks",notes:"Notes",brain:"Brain",exitreadiness:"Exit Readiness",usermgmt:"Users & Permissions"};
-  const roleDefaults={admin:allPages,office:["dashboard","jobs","deliveries","documents","salesportal","prospects","playbook","tasks","notes","brain"],sales:["dashboard","jobs","deliveries","documents","tasks","notes","brain","salesportal","prospects"]};
+  const allPages=["dashboard","jobs","deliveries","documents","files","commissions","financials","salesportal","prospects","playbook","tasks","notes","brain","exitreadiness","usermgmt"];
+  const pageLabels={dashboard:"Command Center",jobs:"Job Records",deliveries:"Delivery Tracker",documents:"Documents",files:"Files",commissions:"Commissions",financials:"Financials",salesportal:"Sales Portal",prospects:"Prospects",playbook:"Playbook & SOPs",tasks:"Tasks",notes:"Notes",brain:"Brain",exitreadiness:"Exit Readiness",usermgmt:"Users & Permissions"};
+  const roleDefaults={admin:allPages,office:["dashboard","jobs","deliveries","documents","files","salesportal","prospects","playbook","tasks","notes","brain"],sales:["dashboard","jobs","deliveries","documents","files","tasks","notes","brain","salesportal","prospects"]};
 
   const allUsersList=[
     ...users.map(u=>{const dbPages=(()=>{try{return u.pages?JSON.parse(u.pages):null}catch{return null}})();return{...u,source:"password",pages:u.pages,_pages:dbPages||roleDefaults[u.role]||roleDefaults.sales}}),
