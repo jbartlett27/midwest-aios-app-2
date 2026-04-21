@@ -5,17 +5,48 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const keys = [process.env.ANTHROPIC_API_KEY, process.env.ANTHROPIC_API_KEY_2].filter(Boolean);
+  const keys = [process.env.ANTHROPIC_API_KEY, process.env.ANTHROPIC_API_KEY_2, process.env.ANTHROPIC_API_KEY_3, process.env.ANTHROPIC_API_KEY_4].filter(Boolean);
   if (keys.length === 0) return res.status(500).json({ error: { message: 'No ANTHROPIC_API_KEY set in Vercel environment variables' } });
+
+  // Round-robin: rotate starting key so usage spreads evenly
+  if (!global._brainKeyIdx) global._brainKeyIdx = 0;
+  const startIdx = global._brainKeyIdx % keys.length;
+  global._brainKeyIdx++;
 
   try {
     const { system, messages, tools } = req.body;
     if (!messages || !Array.isArray(messages)) {
       return res.status(400).json({ error: { message: 'Messages array required' } });
     }
+
+    // Model routing: simple queries use Haiku (fast/cheap), complex use Sonnet
+    const lastMsg = messages[messages.length - 1];
+    let lastText = '';
+    if (lastMsg && lastMsg.content) {
+      if (typeof lastMsg.content === 'string') lastText = lastMsg.content;
+      else if (Array.isArray(lastMsg.content)) {
+        lastText = lastMsg.content.filter(c => c.type === 'text').map(c => c.text || '').join(' ');
+      }
+    }
+    const txt = lastText.toLowerCase().trim();
+    const wordCount = txt.split(/\s+/).filter(Boolean).length;
+    const hasAttachment = Array.isArray(lastMsg?.content) && lastMsg.content.some(c => c.type === 'document' || c.type === 'image');
+    const hasToolUse = messages.some(m => Array.isArray(m.content) && m.content.some(c => c.type === 'tool_use' || c.type === 'tool_result'));
+
+    // Complex signals -> always Sonnet
+    const complexKeywords = ['analyze','compare','strategy','strategize','exit readiness','deep dive','comprehensive','recommendation','proposal','draft','write','generate','create','build','plan','breakdown','forecast','margin','commission','reconcile','audit','investigate','research','explain why','walk me through','step by step','optimize','review','evaluate','assess','calculate','compute','financials','report','export','summary','summarize','find','search'];
+    const isComplex = hasAttachment || hasToolUse || wordCount > 25 || complexKeywords.some(k => txt.includes(k));
+
+    // Simple signals -> Haiku
+    const simpleKeywords = ['hi','hello','hey','thanks','thank you','yes','no','ok','okay','got it','cool','nice','great','what time','what day','what date','status','count','how many','total','quick','simple','list','show me','display'];
+    const isSimple = !isComplex && (wordCount <= 12 || simpleKeywords.some(k => txt === k || txt.startsWith(k+' ') || txt.endsWith(' '+k)));
+
+    const selectedModel = isSimple ? 'claude-haiku-4-5' : 'claude-sonnet-4-20250514';
+    const selectedMaxTokens = isSimple ? 2048 : 8192;
+
     const body = {
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 8192,
+      model: selectedModel,
+      max_tokens: selectedMaxTokens,
       system: system || '',
       messages,
     };
