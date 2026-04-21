@@ -5794,16 +5794,15 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         <label style={{fontSize:11,color:"#c4c4c4",fontFamily:"'JetBrains Mono',monospace"}}>Subject:</label>
         <input value={pendingBrainEmail.subject||''} onChange={e=>setPendingBrainEmail({...pendingBrainEmail,subject:e.target.value})} placeholder="Subject" style={{padding:"6px 10px",background:"#0a0a0a",border:"1px solid #1a1a1a",borderRadius:6,color:"#f0f0f0",fontSize:12,fontFamily:"inherit",outline:"none"}}/>
       </div>
-      <textarea value={pendingBrainEmail.body||''} onChange={e=>setPendingBrainEmail({...pendingBrainEmail,body:e.target.value})} placeholder="Email body" rows={6} style={{width:"100%",padding:"8px 12px",background:"#0a0a0a",border:"1px solid #1a1a1a",borderRadius:6,color:"#f0f0f0",fontSize:12,fontFamily:"inherit",outline:"none",resize:"vertical",minHeight:80,boxSizing:"border-box",lineHeight:1.5}}/>
+      <textarea value={pendingBrainEmail.body||''} onChange={e=>setPendingBrainEmail({...pendingBrainEmail,body:e.target.value})} placeholder="Email body" rows={16} style={{width:"100%",padding:"8px 12px",background:"#0a0a0a",border:"1px solid #1a1a1a",borderRadius:6,color:"#f0f0f0",fontSize:12,fontFamily:"inherit",outline:"none",resize:"vertical",minHeight:320,boxSizing:"border-box",lineHeight:1.5}}/>
       <div style={{display:"flex",gap:6,marginTop:8,alignItems:"center"}}>
         <button onClick={async()=>{
           if(!pendingBrainEmail.to||!pendingBrainEmail.subject||!pendingBrainEmail.body){notify("Fill in To, Subject, and Body","error");return}
           if(!pendingBrainEmail.from){notify("Fill in From email address","error");return}
           setBrainEmailSending(true);
           try{
-            const senderName=(pendingBrainEmail.from||'').split('@')[0].replace(/[._-]/g,' ').replace(/\b\w/g,c=>c.toUpperCase())||'Midwest Educational Furnishings';
-            const bodyHtml=(pendingBrainEmail.body||'').split('\n').map(l=>l.trim()===''?'<br/>':'<p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 8px">'+l.replace(/</g,'&lt;')+'</p>').join('');
-            const wrapper='<div style="font-family:Arial,Helvetica,sans-serif;background:#fff;color:#111;max-width:700px;margin:0 auto;padding:24px">'+bodyHtml+'<div style="margin-top:16px;padding-top:12px;border-top:1px solid #e5e5e5;font-size:11px;color:#888">'+senderName+'</div></div>';
+            const bodyHtml=(pendingBrainEmail.body||'').split('\n').map(l=>l.trim()===''?'<br/>':'<p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 8px;text-align:left">'+l.replace(/</g,'&lt;')+'</p>').join('');
+            const wrapper='<div style="font-family:Arial,Helvetica,sans-serif;background:#fff;color:#111;padding:24px;text-align:left">'+bodyHtml+'</div>';
             const resp=await fetch('/api/send-email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to:pendingBrainEmail.to,from:pendingBrainEmail.from,subject:pendingBrainEmail.subject,html:wrapper})});
             const data=await resp.json();
             if(resp.ok){notify("Email sent to "+pendingBrainEmail.to);setPendingBrainEmail(null)}
