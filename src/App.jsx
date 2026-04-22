@@ -2810,17 +2810,25 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
     setEmailSending(true);
     try {
       const doc=emailModal;
-      const senderName=(emailFrom||'').split('@')[0].replace(/[._-]/g,' ').replace(/\b\w/g,c=>c.toUpperCase()) || 'Midwest Educational Furnishings';
       let wrapper;
       if(doc.type==="reminder"){
         // Payment reminder: simple plain-text style email, no document rendering
-        const bodyHtml=(emailBody||'').split('\n').map(l=>l.trim()===''?'<br/>':'<p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 8px">'+l.replace(/</g,'&lt;')+'</p>').join('');
-        wrapper='<div style="font-family:Arial,Helvetica,sans-serif;background:#fff;color:#111;max-width:700px;margin:0 auto;padding:24px">'+bodyHtml+'</div>';
+        const bodyHtml=(emailBody||'').split('\n').map(l=>l.trim()===''?'<br/>':'<p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 8px;text-align:left">'+l.replace(/</g,'&lt;')+'</p>').join('');
+        wrapper='<div style="font-family:Arial,Helvetica,sans-serif;background:#fff;color:#111;padding:24px;text-align:left">'+bodyHtml+'</div>';
       } else {
         // Document email: use the SAME HTML as Export PDF so emails look identical to the PDF version
-        const {html:docHtml,docTitle}=buildDocHtml(doc);
-        const intro='<div style="font-family:Arial,sans-serif;max-width:800px;margin:0 auto;padding:20px 24px 0"><p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 8px">Hello,</p><p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 8px">Please see the '+docTitle.toLowerCase()+' below'+(doc.data.docNum?' ('+doc.data.docNum+')':'')+'. Let me know if you have any questions.</p><p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 16px">Thank you,<br/>'+senderName+'</p><div style="height:1px;background:#e5e5e5;margin:8px 0 24px"></div></div>';
-        wrapper='<div style="font-family:Arial,Helvetica,sans-serif;background:#fff;color:#111">'+intro+'<div style="max-width:800px;margin:0 auto;padding:0 24px 24px">'+docHtml+'</div></div>';
+        const {html:docHtml,docTitle}=buildDocHtml(doc,true);
+        // Build share link for quotes so customer can view/approve online
+        let shareLinkBlock='';
+        if(doc.type==="quote"){
+          try{
+            const shareData={docNum:doc.data.docNum,customer:doc.data.customer,items:doc.data.items,total:doc.data.total,projectNum:doc.data.projectNum,jobName:doc.job?.name,hiddenCols:doc.data.hiddenCols};
+            const shareUrl=window.location.origin+window.location.pathname+'#quote='+btoa(JSON.stringify(shareData));
+            shareLinkBlock='<p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 8px;text-align:left">You can view and approve this quote online here: <a href="'+shareUrl+'" style="color:#0891b2;text-decoration:underline">'+shareUrl+'</a></p>';
+          }catch(e){shareLinkBlock=''}
+        }
+        const intro='<div style="font-family:Arial,sans-serif;padding:20px 24px 0;text-align:left"><p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 8px;text-align:left">Hello,</p><p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 8px;text-align:left">Please see the '+docTitle.toLowerCase()+' below'+(doc.data.docNum?' ('+doc.data.docNum+')':'')+'. Let me know if you have any questions.</p>'+shareLinkBlock+'<p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 16px;text-align:left">Thank you,<br/>Midwest Educational Furnishings</p><div style="height:1px;background:#e5e5e5;margin:8px 0 24px"></div></div>';
+        wrapper='<div style="font-family:Arial,Helvetica,sans-serif;background:#fff;color:#111;text-align:left">'+intro+'<div style="padding:0 24px 24px;text-align:left">'+docHtml+'</div></div>';
       }
       const resp=await fetch('/api/send-email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to:emailTo,from:emailFrom,subject:emailSubject,html:wrapper})});
       const data=await resp.json();
@@ -2838,8 +2846,10 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
   const genQuote=job=>{const items=getJobItems(job.id);const customer=customers.find(c=>c.id===job.customer);const qvc=((job.docStatuses||{}).__qcv||{});const hc={netCost:true,netTotal:true,...qvc};return {customer,items:items.map(i=>({...i,displayQty:i.qtyOrdered,displayPrice:i.unitPrice})),total:items.reduce((s,i)=>s+(i.priceExtended&&i.priceExtended>0?i.priceExtended:(i.unitPrice||0)*i.qtyOrdered),0),job,docNum:stableNum('QT-',job.id,job.customer),projectNum:projectNum(job.id),hiddenCols:hc}};
 
   // Build the document HTML -- shared by handleExportPDF and sendEmail so they always look identical
-  const buildDocHtml=(doc)=>{
+  // When forEmail=true, use hosted logo URL instead of base64 (Gmail and other email clients strip inline base64 images)
+  const buildDocHtml=(doc,forEmail)=>{
     const isQuote=doc.type==="quote";const isPO=doc.type==="po";const isInvoice=doc.type==="invoice";const isComm=doc.type==="commission";
+    const logoSrc=forEmail?(window.location.origin+'/mw-logo.png'):MW_LOGO;
     const job=doc.job||{};const customer2=customers.find(c=>c.id===job.customer)||{};
     const terms=job.terms||"Net 30";const termDays=terms.includes("15")?15:terms.includes("Receipt")?0:30;
     const docDateKey=doc.data?.docNum||'';
@@ -2852,7 +2862,7 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
     const buildDesc=(i)=>{let d=i.modelNumber?i.modelNumber+"<br>":"";d+=(i.description||"").replace(/\n/g,"<br>");if(i.color)d+="<br>"+i.color;return d};
     const items=doc.data.items||[];
     const total=doc.data.total||0;
-    const mwHdr='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px"><div><div style="font-weight:700;font-size:14px">Midwest Educational Furnishings, Inc.</div><div style="font-size:12px;color:#444;line-height:1.6">21191 N Valley Rd<br>Kildeer, IL 60047 US<br>(847) 847-1865</div></div><div><img src="'+MW_LOGO+'" style="height:48px"/></div></div>';
+    const mwHdr='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px"><div><div style="font-weight:700;font-size:14px">Midwest Educational Furnishings, Inc.</div><div style="font-size:12px;color:#444;line-height:1.6">21191 N Valley Rd<br>Kildeer, IL 60047 US<br>(847) 847-1865</div></div><div><img src="'+logoSrc+'" style="height:48px" alt="Midwest Educational Furnishings"/></div></div>';
     let html="";
     if(isPO){
       const vendObj=doc.data.vendor||{};
@@ -4583,7 +4593,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     {name:"categorize_transaction",description:"Change the category on an existing banking transaction. Use when user says 'categorize the Chesapeake payment as insurance', 'change the United Airlines charge to travel', 'mark that $500 as rent'.",input_schema:{type:"object",properties:{transaction_description:{type:"string",description:"Description keywords to find the transaction"},category:{type:"string",description:"New category to assign"},date:{type:"string",description:"Date to narrow search if needed"}},required:["transaction_description","category"]}},
     {name:"get_banking_summary",description:"Get a summary of banking transactions -- totals by category, recent transactions, account balances, cash flow. Use when user says 'what did we spend this month', 'show me our expenses by category', 'what is our cash position', 'banking summary', 'how much have we spent on rent'.",input_schema:{type:"object",properties:{period:{type:"string",description:"month, quarter, ytd, year, all. Defaults to ytd."},category_filter:{type:"string",description:"Optional: filter to a specific category"}},required:[]}},
     {name:"get_payables_summary",description:"Get accounts payable / vendor bills summary -- what is owed, what is overdue, upcoming payments. Use when user says 'what do we owe vendors', 'show overdue bills', 'AP aging', 'what bills are due this week'.",input_schema:{type:"object",properties:{},required:[]}},
-    {name:"draft_email",description:"Draft an email for the user to review before sending. ALWAYS use this first when the user asks to write, draft, compose, or send an email. The user reviews the draft inline and clicks Send to actually send it. Use when user says 'draft an email to', 'write an email to', 'compose an email to', 'email maureen about', 'send an email to' (still drafts first for safety). The recipient can be specified by name (looks up customer/vendor/rep email) or direct email address.",input_schema:{type:"object",properties:{recipient_email:{type:"string",description:"Direct email address. Use this if user provides one explicitly."},customer_name:{type:"string",description:"Customer name to look up email for. Use if user references a customer."},vendor_name:{type:"string",description:"Vendor name to look up email for."},rep_name:{type:"string",description:"Sales rep name to look up email for."},subject:{type:"string",description:"Email subject line"},body:{type:"string",description:"Plain text email body. Will be formatted into a clean HTML email automatically. Use natural paragraph breaks. Sign off as the user."}},required:["subject","body"]}},
+    {name:"draft_email",description:"Draft an email for the user to review before sending. ALWAYS use this first when the user asks to write, draft, compose, or send an email. The user reviews the draft inline and clicks Send to actually send it. Use when user says 'draft an email to', 'write an email to', 'compose an email to', 'email maureen about', 'send an email to' (still drafts first for safety). The recipient can be specified by name (looks up customer/vendor/rep email) or direct email address.",input_schema:{type:"object",properties:{recipient_email:{type:"string",description:"Direct email address. Use this if user provides one explicitly."},customer_name:{type:"string",description:"Customer name to look up email for. Use if user references a customer."},vendor_name:{type:"string",description:"Vendor name to look up email for."},rep_name:{type:"string",description:"Sales rep name to look up email for."},subject:{type:"string",description:"Email subject line"},body:{type:"string",description:"Plain text email body. Will be formatted into a clean HTML email automatically. Use natural paragraph breaks. End with 'Best regards,' on its own line, then 'Midwest Educational Furnishings' on the next line. Do not sign with a personal name -- always sign off as the business."}},required:["subject","body"]}},
     {name:"send_email",description:"Send an email IMMEDIATELY without showing a draft preview first. Only use this when the user explicitly says 'send right now', 'send it without showing me', or has just reviewed a draft and confirms 'send it'. Default to draft_email instead -- it is much safer. Same recipient/content schema as draft_email.",input_schema:{type:"object",properties:{recipient_email:{type:"string",description:"Direct email address."},customer_name:{type:"string",description:"Customer name to look up email for."},vendor_name:{type:"string",description:"Vendor name to look up email for."},rep_name:{type:"string",description:"Sales rep name to look up email for."},subject:{type:"string",description:"Email subject line"},body:{type:"string",description:"Plain text email body."}},required:["subject","body"]}}
   ];
 
