@@ -144,14 +144,41 @@ const custFromDb = (r) => ({
   id: r.id, name: r.name, contact: r.contact || '', email: r.email || '',
   phone: r.phone || '', type: r.type || '', address: r.address || '',
 });
-const repToDb = (r) => ({
-  id: r.id, name: r.name, email: r.email || '', territory: r.territory || '',
-  commission_rate: r.commissionRate, tier: r.tier || 'Associate',
-});
-const repFromDb = (r) => ({
-  id: r.id, name: r.name, email: r.email || '', territory: r.territory || '',
-  commissionRate: Number(r.commission_rate), tier: r.tier || '',
-});
+const repToDb = (r) => {
+  // Pack roles array into the tier column when present so that multi-role
+  // selections persist without requiring a Supabase schema migration. If no
+  // roles array, fall back to the legacy tier string.
+  let tierField = r.tier || 'Associate';
+  if (Array.isArray(r.roles) && r.roles.length > 0) {
+    tierField = JSON.stringify(r.roles);
+  }
+  return {
+    id: r.id, name: r.name, email: r.email || '', territory: r.territory || '',
+    commission_rate: r.commissionRate, tier: tierField,
+  };
+};
+const repFromDb = (r) => {
+  // Unpack: if tier looks like a JSON array (starts with "["), extract the
+  // roles array and derive a human-readable display tier from the first role.
+  // Otherwise treat tier as a legacy string and let getRoles() derive roles
+  // from it (Push 1 fallback logic).
+  let roles = null;
+  let displayTier = r.tier || '';
+  if (typeof r.tier === 'string' && r.tier.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(r.tier);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        roles = parsed;
+        displayTier = parsed[0];
+      }
+    } catch {}
+  }
+  return {
+    id: r.id, name: r.name, email: r.email || '', territory: r.territory || '',
+    commissionRate: Number(r.commission_rate), tier: displayTier,
+    ...(roles ? { roles } : {}),
+  };
+};
 
 
 const sopToDb = (s) => ({
