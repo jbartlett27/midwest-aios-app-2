@@ -2836,9 +2836,8 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
             payLinkBlock='<p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 8px;text-align:left">You can pay <a href="'+payUrl+'" style="color:#0891b2;text-decoration:underline">here</a>.</p>';
           }
         }
-        const intro='<p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 8px;text-align:left;font-family:Arial,sans-serif">Hello,</p><p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 8px;text-align:left;font-family:Arial,sans-serif">Please see the '+docTitle.toLowerCase()+' below'+(doc.data.docNum?' ('+doc.data.docNum+')':'')+'. Let me know if you have any questions.</p>'+shareLinkBlock+payLinkBlock+'<p style="font-size:14px;color:#222;line-height:1.6;margin:16px 0 0;text-align:left;font-family:Arial,sans-serif">Thank you.</p>';
-        const uniqMarker='<div style="color:#ffffff;font-size:1px;line-height:1px;max-height:1px;overflow:hidden">ref:'+(doc.data.docNum||'')+':'+Date.now()+':'+Math.random().toString(36).slice(2,10)+'</div>';
-        wrapper='<table cellpadding="0" cellspacing="0" border="0" style="width:100%;background:#fff;color:#111;font-family:Arial,Helvetica,sans-serif"><tr><td style="padding:20px 24px;text-align:left">'+intro+'<div style="margin-top:20px">'+docHtml+'</div>'+uniqMarker+'</td></tr></table>';
+        const intro='<p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 8px;text-align:left;font-family:Arial,sans-serif">Hello,</p><p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 8px;text-align:left;font-family:Arial,sans-serif">Please see the '+docTitle.toLowerCase()+' below'+(doc.data.docNum?' ('+doc.data.docNum+')':'')+'. Let me know if you have any questions.</p>'+shareLinkBlock+payLinkBlock+'<p style="font-size:14px;color:#222;line-height:1.6;margin:16px 0 20px;text-align:left;font-family:Arial,sans-serif">Thank you.</p>';
+        wrapper='<div style="font-family:Arial,Helvetica,sans-serif;background:#fff;color:#111;text-align:left;padding:20px 24px">'+intro+docHtml+'</div>';
       }
       const resp=await fetch('/api/send-email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to:emailTo,from:emailFrom,subject:emailSubject,html:wrapper})});
       const data=await resp.json();
