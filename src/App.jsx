@@ -2827,7 +2827,16 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
             shareLinkBlock='<p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 8px;text-align:left">You can view and approve this quote online <a href="'+shareUrl+'" style="color:#0891b2;text-decoration:underline">here</a>.</p>';
           }catch(e){shareLinkBlock=''}
         }
-        const intro='<div style="font-family:Arial,sans-serif;padding:20px 24px 16px;text-align:left"><p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 8px;text-align:left">Hello,</p><p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 8px;text-align:left">Please see the '+docTitle.toLowerCase()+' below'+(doc.data.docNum?' ('+doc.data.docNum+')':'')+'. Let me know if you have any questions.</p>'+shareLinkBlock+'<p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 4px;text-align:left">Thank you.</p></div>';
+        // For invoices, attach the Stripe payment link if one exists (either freshly created in this session, or saved on the job)
+        let payLinkBlock='';
+        if(doc.type==="invoice"){
+          const savedStripeUrl=(doc.job?.docStatuses||{})[doc.data.docNum+"__stripe"]?.url;
+          const payUrl=stripePayUrl||savedStripeUrl||'';
+          if(payUrl){
+            payLinkBlock='<p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 8px;text-align:left">You can pay <a href="'+payUrl+'" style="color:#0891b2;text-decoration:underline">here</a>.</p>';
+          }
+        }
+        const intro='<div style="font-family:Arial,sans-serif;padding:20px 24px 16px;text-align:left"><p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 8px;text-align:left">Hello,</p><p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 8px;text-align:left">Please see the '+docTitle.toLowerCase()+' below'+(doc.data.docNum?' ('+doc.data.docNum+')':'')+'. Let me know if you have any questions.</p>'+shareLinkBlock+payLinkBlock+'<p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 4px;text-align:left">Thank you.</p></div>';
         wrapper='<div style="font-family:Arial,Helvetica,sans-serif;background:#fff;color:#111;text-align:left">'+intro+'<div style="padding:0 24px 24px;text-align:left">'+docHtml+'</div></div>';
       }
       const resp=await fetch('/api/send-email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({to:emailTo,from:emailFrom,subject:emailSubject,html:wrapper})});
