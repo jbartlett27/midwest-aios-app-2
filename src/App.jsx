@@ -5613,8 +5613,9 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         const writeTools=toolBlocks.filter(tb=>!readOnlyTools.has(tb.name));
         // Auto-execute read-only tools and show results inline
         if(readTools.length>0&&writeTools.length===0){
-          let readResults=[];
-          for(const tb of readTools){const result=await executeTool(tb.name,tb.input);readResults.push(result)}
+          // Parallel tool execution: fire all read-only tools simultaneously instead of one at a time.
+          // 5 tools that take 1s each go from 5s sequential to ~1s parallel.
+          const readResults=await Promise.all(readTools.map(tb=>executeTool(tb.name,tb.input).catch(err=>({success:false,error:'Tool '+tb.name+' failed: '+(err?.message||String(err))}))));
           const readText=readResults.map(r=>r.success?r.message:(r.error||'Error')).join('\n\n');
           setHistory(p=>[...p,{role:"assistant",content:(textBlocks?textBlocks+"\n\n":"")+readText}]);
           setAnimatingIdx(history.length+1);setTimeout(()=>setAnimatingIdx(-1),800);
