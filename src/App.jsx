@@ -2824,7 +2824,7 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           try{
             const shareData={docNum:doc.data.docNum,customer:doc.data.customer,items:doc.data.items,total:doc.data.total,projectNum:doc.data.projectNum,jobName:doc.job?.name,hiddenCols:doc.data.hiddenCols};
             const shareUrl=window.location.origin+window.location.pathname+'#quote='+btoa(JSON.stringify(shareData));
-            shareLinkBlock='<p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 8px;text-align:left">You can view and approve this quote online here: <a href="'+shareUrl+'" style="color:#0891b2;text-decoration:underline">'+shareUrl+'</a></p>';
+            shareLinkBlock='<p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 8px;text-align:left">You can view and approve this quote online <a href="'+shareUrl+'" style="color:#0891b2;text-decoration:underline">here</a>.</p>';
           }catch(e){shareLinkBlock=''}
         }
         const intro='<div style="font-family:Arial,sans-serif;padding:20px 24px 0;text-align:left"><p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 8px;text-align:left">Hello,</p><p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 8px;text-align:left">Please see the '+docTitle.toLowerCase()+' below'+(doc.data.docNum?' ('+doc.data.docNum+')':'')+'. Let me know if you have any questions.</p>'+shareLinkBlock+'<p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 16px;text-align:left">Thank you,<br/>Midwest Educational Furnishings</p><div style="height:1px;background:#e5e5e5;margin:8px 0 24px"></div></div>';
