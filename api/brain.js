@@ -44,10 +44,20 @@ export default async function handler(req, res) {
     const selectedModel = isSimple ? 'claude-haiku-4-5' : 'claude-sonnet-4-20250514';
     const selectedMaxTokens = isSimple ? 2048 : 8192;
 
+    // Prompt caching: wrap system prompt and tools with cache_control markers.
+    // Anthropic caches large repetitive context across requests; subsequent calls
+    // within ~5 min hit the cache (10x cheaper input tokens, faster response).
+    // Cache only kicks in if cached content is >= 1024 tokens for Sonnet (~4000 chars rough).
+    const sysStr = system || '';
+    const shouldCacheSystem = sysStr.length > 4000;
+    const systemBlocks = shouldCacheSystem
+      ? [{ type: 'text', text: sysStr, cache_control: { type: 'ephemeral' } }]
+      : sysStr;
+
     const body = {
       model: selectedModel,
       max_tokens: selectedMaxTokens,
-      system: system || '',
+      system: systemBlocks,
       messages,
     };
 
@@ -57,6 +67,14 @@ export default async function handler(req, res) {
       allTools.push(...tools);
     }
     allTools.push({ type: 'web_search_20250305', name: 'web_search', max_uses: 3 });
+    // Cache the tools block too -- large tool definitions are reused across every call.
+    // Mark cache_control on the LAST tool so all preceding tools are cached together.
+    if (allTools.length > 0) {
+      const totalToolsSize = JSON.stringify(allTools).length;
+      if (totalToolsSize > 4000) {
+        allTools[allTools.length - 1] = { ...allTools[allTools.length - 1], cache_control: { type: 'ephemeral' } };
+      }
+    }
     body.tools = allTools;
 
     for (let i = 0; i < keys.length; i++) {
@@ -68,7 +86,7 @@ export default async function handler(req, res) {
             'Content-Type': 'application/json',
             'x-api-key': key,
             'anthropic-version': '2023-06-01',
-            'anthropic-beta': 'pdfs-2024-09-25',
+            'anthropic-beta': 'pdfs-2024-09-25,prompt-caching-2024-07-31',
           },
           body: JSON.stringify(body),
         });
