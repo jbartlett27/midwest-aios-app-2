@@ -6619,6 +6619,9 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   const [newAcctName,setNewAcctName]=useState('');
   const [bankSearch,setBankSearch]=useState('');
   const [bankCatFilter,setBankCatFilter]=useState('all');
+  const [bankAcctFilter,setBankAcctFilter]=useState('all');
+  const [showBankAcctEditor,setShowBankAcctEditor]=useState(false);
+  const [acctNicknameDraft,setAcctNicknameDraft]=useState({});
 
   // Period presets
   const setPeriodPreset=(p)=>{setPeriod(p);const n=new Date();const y=n.getFullYear();const m=n.getMonth();if(p==="month"){const s=new Date(y,m,1);setDateFrom(s.toISOString().split("T")[0]);setDateTo(n.toISOString().split("T")[0])}else if(p==="quarter"){const qm=Math.floor(m/3)*3;setDateFrom(new Date(y,qm,1).toISOString().split("T")[0]);setDateTo(n.toISOString().split("T")[0])}else if(p==="ytd"){setDateFrom(new Date(y,0,1).toISOString().split("T")[0]);setDateTo(n.toISOString().split("T")[0])}else if(p==="year"){setDateFrom(new Date(y-1,m,n.getDate()).toISOString().split("T")[0]);setDateTo(n.toISOString().split("T")[0])}else if(p==="all"){setDateFrom("2020-01-01");setDateTo(n.toISOString().split("T")[0])}};
@@ -6913,12 +6916,23 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       const allAccounts=[...defaultAccts,...customAccts.filter(a=>!defaultAccts.includes(a))];
       const addCustomAcct=(name)=>{if(!name||allAccounts.includes(name))return;const next=[...customAccts,name];addSop({id:'CUSTOM_ACCOUNTS',title:'Custom Accounts',cat:'Settings',icon:'dollar',content:JSON.stringify(next),custom:true});notify('Account added: '+name)};
       const removeCustomAcct=(name)=>{if(defaultAccts.includes(name)){notify('Cannot remove default account');return}const next=customAccts.filter(a=>a!==name);addSop({id:'CUSTOM_ACCOUNTS',title:'Custom Accounts',cat:'Settings',icon:'dollar',content:JSON.stringify(next),custom:true});notify('Account removed: '+name)};
+      // Bank account metadata (nicknames + exclusions for Plaid-imported account IDs)
+      const bankAcctMetaRecord=(customSops||[]).find(s=>s.id==='BANK_ACCOUNT_META');
+      const bankAcctMeta=bankAcctMetaRecord?(()=>{try{return JSON.parse(bankAcctMetaRecord.content)||{}}catch{return {}}})():{};
+      const saveBankAcctMeta=(next)=>{addSop({id:'BANK_ACCOUNT_META',title:'Bank Account Settings',cat:'Settings',icon:'dollar',content:JSON.stringify(next),custom:true})};
+      const setAcctNickname=(acctId,nickname)=>{const next={...bankAcctMeta,[acctId]:{...(bankAcctMeta[acctId]||{}),nickname:nickname||''}};saveBankAcctMeta(next);notify(nickname?'Account renamed: '+nickname:'Nickname cleared')};
+      const toggleAcctExcluded=(acctId)=>{const cur=bankAcctMeta[acctId]||{};const next={...bankAcctMeta,[acctId]:{...cur,excluded:!cur.excluded}};saveBankAcctMeta(next);notify((next[acctId].excluded?'Excluded: ':'Included: ')+(cur.nickname||acctId.slice(0,12)+'...'))};
+      const acctDisplayName=(acctId)=>{if(!acctId)return '--';const m=bankAcctMeta[acctId];return m&&m.nickname?m.nickname:(acctId.length>20?acctId.slice(0,12)+'...':acctId)};
       const allTxns=manualTxns.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+      // All unique account IDs found across transactions, used by the filter dropdown and the editor panel
+      const allBankAcctIds=Array.from(new Set(allTxns.map(t=>t.account).filter(Boolean))).sort();
       const filteredBankTxns=allTxns.filter(t=>{
+        if(t.account&&bankAcctMeta[t.account]&&bankAcctMeta[t.account].excluded)return false;
+        if(bankAcctFilter!=='all'&&t.account!==bankAcctFilter)return false;
         if(bankCatFilter!=='all'&&t.category!==bankCatFilter)return false;
         if(!bankSearch)return true;
         const q=bankSearch.toLowerCase();
-        return (t.description||'').toLowerCase().includes(q)||(t.category||'').toLowerCase().includes(q)||(t.account||'').toLowerCase().includes(q)||(t.amount||'').toString().includes(q);
+        return (t.description||'').toLowerCase().includes(q)||(t.category||'').toLowerCase().includes(q)||(t.account||'').toLowerCase().includes(q)||(bankAcctMeta[t.account]?.nickname||'').toLowerCase().includes(q)||(t.amount||'').toString().includes(q);
       });
       const saveTxn=()=>{
         const id=manualEditing||'TXN-'+Date.now()+'-'+Math.random().toString(36).slice(2,6);
@@ -7072,8 +7086,10 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
         <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
           <input value={bankSearch} onChange={e=>setBankSearch(e.target.value)} placeholder="Search transactions..." style={{...inputStyle,flex:1,minWidth:200,maxWidth:300}}/>
           <select value={bankCatFilter} onChange={e=>setBankCatFilter(e.target.value)} style={{...inputStyle,width:"auto"}}><option value="all">All Categories</option>{categories.map(c=><option key={c} value={c}>{c}</option>)}</select>
+          <select value={bankAcctFilter} onChange={e=>setBankAcctFilter(e.target.value)} style={{...inputStyle,width:"auto",maxWidth:240}}><option value="all">All Accounts ({allBankAcctIds.filter(a=>!bankAcctMeta[a]?.excluded).length})</option>{allBankAcctIds.filter(a=>!bankAcctMeta[a]?.excluded).map(a=><option key={a} value={a}>{acctDisplayName(a)}</option>)}</select>
           <Btn v="secondary" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>setShowCatEditor(!showCatEditor)}><I n="tag" s={12}/> {showCatEditor?'Close':'Manage Categories'}</Btn>
           <Btn v="secondary" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>setShowAcctEditor(!showAcctEditor)}><I n="dollar" s={12}/> {showAcctEditor?'Close':'Manage Accounts'}</Btn>
+          {allBankAcctIds.length>0&&<Btn v="secondary" style={{fontSize:11,padding:"4px 10px",borderColor:Object.values(bankAcctMeta).some(m=>m.excluded)?"#a78bfa40":undefined,color:Object.values(bankAcctMeta).some(m=>m.excluded)?"#a78bfa":undefined}} onClick={()=>setShowBankAcctEditor(!showBankAcctEditor)}><I n="dollar" s={12}/> {showBankAcctEditor?'Close':'Manage Bank Accounts'} ({allBankAcctIds.length})</Btn>}
           <span style={{fontSize:11,color:"#737373"}}>{filteredBankTxns.length} transaction{filteredBankTxns.length!==1?'s':''}{customCats.length>0?' -- '+customCats.length+' custom':''}</span>
         </div>
 
@@ -7112,6 +7128,40 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
           <div style={{display:"flex",flexWrap:"wrap",gap:4}}>{defaultAccts.map(a=><span key={a} style={{padding:"3px 8px",background:"#0a0a0a",border:"1px solid #1a1a1a",borderRadius:5,fontSize:10,color:"#737373"}}>{a}</span>)}</div>
         </Card>}
 
+        {showBankAcctEditor&&<Card style={{padding:16,border:"1px solid #a78bfa20"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
+            <div style={{fontSize:14,fontWeight:700,color:"#f0f0f0"}}>Manage Bank Accounts</div>
+            <span style={{fontSize:10,color:"#737373"}}>{Object.values(bankAcctMeta).filter(m=>m.excluded).length} excluded - {allBankAcctIds.length} total</span>
+          </div>
+          <div style={{fontSize:11,color:"#a3a3a3",marginBottom:14,lineHeight:1.5}}>Bank accounts pulled in from Plaid show up here. Give each one a friendly nickname so transactions are easy to read, and exclude any account you don't want showing in this view (e.g. a personal account that got pulled in by mistake). Excluded accounts are also hidden from the KPIs and the account filter dropdown.</div>
+          {allBankAcctIds.length===0?<div style={{fontSize:12,color:"#525252",padding:"10px 0"}}>No bank accounts found. Connect Plaid to start importing transactions.</div>:
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>{allBankAcctIds.map(acctId=>{
+            const meta=bankAcctMeta[acctId]||{};
+            const txnCount=allTxns.filter(t=>t.account===acctId).length;
+            const isExcluded=!!meta.excluded;
+            const draftKey='nickname_'+acctId;
+            const draftValue=acctNicknameDraft[draftKey]!==undefined?acctNicknameDraft[draftKey]:(meta.nickname||'');
+            return <div key={acctId} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:isExcluded?"rgba(245,158,11,0.04)":"#0a0a0a",borderRadius:8,border:"1px solid "+(isExcluded?"rgba(245,158,11,0.18)":"#1a1a1a"),opacity:isExcluded?0.65:1,transition:"all 0.15s"}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                  <input
+                    value={draftValue}
+                    onChange={e=>setAcctNicknameDraft(d=>({...d,[draftKey]:e.target.value}))}
+                    onBlur={()=>{if(draftValue!==(meta.nickname||''))setAcctNickname(acctId,draftValue.trim())}}
+                    onKeyDown={e=>{if(e.key==='Enter')e.target.blur();if(e.key==='Escape'){setAcctNicknameDraft(d=>{const n={...d};delete n[draftKey];return n});e.target.blur()}}}
+                    placeholder="Add nickname (e.g. Cornerstone Operating)"
+                    style={{...inputStyle,padding:"4px 8px",fontSize:12,background:"#111",maxWidth:280}}
+                  />
+                  {isExcluded&&<span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:"rgba(245,158,11,0.12)",color:"#fbbf24",fontWeight:700,letterSpacing:0.5}}>EXCLUDED</span>}
+                </div>
+                <div style={{fontSize:10,color:"#525252",fontFamily:"'JetBrains Mono',monospace",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{acctId}</div>
+              </div>
+              <div style={{fontSize:11,color:"#737373",minWidth:70,textAlign:"right"}}>{txnCount} txn{txnCount!==1?'s':''}</div>
+              <button onClick={()=>toggleAcctExcluded(acctId)} style={{padding:"5px 12px",borderRadius:6,border:"1px solid "+(isExcluded?"rgba(45,212,191,0.4)":"rgba(245,158,11,0.4)"),background:isExcluded?"rgba(45,212,191,0.08)":"rgba(245,158,11,0.06)",color:isExcluded?"#2dd4bf":"#fbbf24",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>{isExcluded?'Include':'Exclude'}</button>
+            </div>
+          })}</div>}
+        </Card>}
+
         {txnSelected.size>0&&<div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:"#2dd4bf08",border:"1px solid #2dd4bf20",borderRadius:8}}>
           <span style={{fontSize:13,color:"#2dd4bf",fontWeight:600}}>{txnSelected.size} selected</span>
           <select onChange={e=>{if(e.target.value)bulkCategorize(e.target.value);e.target.value=''}} style={{background:"#111",border:"1px solid #222",color:"#a3a3a3",borderRadius:6,padding:"4px 8px",fontSize:11,fontFamily:"inherit",cursor:"pointer"}}><option value="">Bulk categorize...</option>{categories.map(c=><option key={c} value={c}>{c}</option>)}</select>
@@ -7128,7 +7178,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
               <td style={{padding:"8px",color:"#a3a3a3",whiteSpace:"nowrap"}}>{t.date||'--'}</td>
               <td style={{padding:"8px",color:"#e5e5e5",fontWeight:500}}>{t.description||'--'}{t.plaidId&&<span style={{fontSize:9,color:"#525252",marginLeft:4}}>bank</span>}</td>
               <td style={{padding:"8px"}}><select value={t.category||''} onChange={e=>updateCategory(t.id,e.target.value)} style={{background:"#111",border:"1px solid #222",color:(!t.category||t.category==='Uncategorized')?"#fbbf24":"#a3a3a3",borderRadius:6,padding:"3px 6px",fontSize:11,fontFamily:"inherit",cursor:"pointer"}}><option value="">Uncategorized</option>{categories.map(c=><option key={c} value={c}>{c}</option>)}</select></td>
-              <td style={{padding:"8px",color:"#737373",fontSize:11}}>{t.account||'--'}</td>
+              <td style={{padding:"8px",color:"#737373",fontSize:11}} title={t.account||''}>{acctDisplayName(t.account)}</td>
               <td style={{padding:"8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,color:t.type==='revenue'?"#34d399":"#f87171"}}>{t.type==='revenue'?'+':'-'}{fmt(parseFloat(t.amount)||0)}</td>
               <td style={{padding:"8px",textAlign:"right"}}><div style={{display:"flex",gap:4,justifyContent:"flex-end"}}><button onClick={()=>{if(isEditing){setManualEditing(null)}else{editTxn(t)}}} style={{padding:"3px 8px",borderRadius:5,border:"1px solid "+(isEditing?"#14b8a640":"#333"),background:isEditing?"#14b8a610":"transparent",color:isEditing?"#14b8a6":"#a3a3a3",fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>{isEditing?'Close':'Edit'}</button><button onClick={()=>deleteTxn(t.id)} style={{padding:"3px 8px",borderRadius:5,border:"1px solid #f8717130",background:"transparent",color:"#f87171",fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>Del</button></div></td>
             </tr>
