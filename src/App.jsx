@@ -6641,7 +6641,22 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   // Core calculations (use filteredJobs)
   // Load manual transactions from SOPs
   const manualTxns=(customSops||[]).filter(s=>s.cat==="ManualTxn").map(s=>{try{return{id:s.id,...JSON.parse(s.content)}}catch{return null}}).filter(Boolean);
-  const filteredManualTxns=manualTxns.filter(t=>{if(!t.date)return true;const d=new Date(t.date);return d>=fromD&&d<=toD});
+  // Bank account meta (nicknames + exclusions + persisted filter selection) read at component scope so
+  // ALL Financials sub-tabs (Overview, P&L, Balance Sheet, Receivables, Payables, Margins, Reports)
+  // respect the user's account choices, not just the Banking tab.
+  const _bankAcctMetaRecord=(customSops||[]).find(s=>s.id==='BANK_ACCOUNT_META');
+  const _bankAcctMetaGlobal=_bankAcctMetaRecord?(()=>{try{return JSON.parse(_bankAcctMetaRecord.content)||{}}catch{return {}}})():{};
+  const _allBankAcctIdsGlobal=Array.from(new Set(manualTxns.map(t=>t.account).filter(Boolean)));
+  const _rawSelGlobal=Array.isArray(_bankAcctMetaGlobal._filterSelection)?_bankAcctMetaGlobal._filterSelection:[];
+  const _selectedAcctIdsGlobal=_rawSelGlobal.filter(id=>_allBankAcctIdsGlobal.includes(id)&&!_bankAcctMetaGlobal[id]?.excluded);
+  const _acctFilterActiveGlobal=_selectedAcctIdsGlobal.length>0;
+  const filteredManualTxns=manualTxns.filter(t=>{
+    if(t.account&&_bankAcctMetaGlobal[t.account]&&_bankAcctMetaGlobal[t.account].excluded)return false;
+    if(_acctFilterActiveGlobal&&!_selectedAcctIdsGlobal.includes(t.account))return false;
+    if(!t.date)return true;
+    const d=new Date(t.date);
+    return d>=fromD&&d<=toD;
+  });
   const manualRevenue=filteredManualTxns.filter(t=>t.type==='revenue').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
   const manualExpenses=filteredManualTxns.filter(t=>t.type==='expense').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
   const manualAssets=filteredManualTxns.filter(t=>t.category==='asset').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
@@ -7172,7 +7187,10 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
         {showBankAcctEditor&&<Card style={{padding:16,border:"1px solid #a78bfa20"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
             <div style={{fontSize:14,fontWeight:700,color:"#f0f0f0"}}>Manage Bank Accounts</div>
-            <span style={{fontSize:10,color:"#737373"}}>{Object.values(bankAcctMeta).filter(m=>m.excluded).length} excluded - {allBankAcctIds.length} total</span>
+            <div style={{display:"flex",alignItems:"center",gap:12}}>
+              <span style={{fontSize:10,color:"#737373"}}>{Object.values(bankAcctMeta).filter(m=>m.excluded).length} excluded - {allBankAcctIds.length} total</span>
+              <button type="button" onClick={()=>setShowBankAcctEditor(false)} style={{background:"transparent",border:"1px solid #333",borderRadius:6,color:"#a3a3a3",cursor:"pointer",padding:"4px 12px",fontSize:11,fontFamily:"inherit",fontWeight:600,transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.04)";e.currentTarget.style.color="#e5e5e5";e.currentTarget.style.borderColor="#444"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent";e.currentTarget.style.color="#a3a3a3";e.currentTarget.style.borderColor="#333"}}>Close</button>
+            </div>
           </div>
           <div style={{fontSize:11,color:"#a3a3a3",marginBottom:14,lineHeight:1.5}}>Bank accounts pulled in from Plaid show up here. Give each one a friendly nickname so transactions are easy to read, and exclude any account you don't want showing in this view (e.g. a personal account that got pulled in by mistake). Excluded accounts are also hidden from the KPIs and the account filter dropdown.</div>
           {allBankAcctIds.length===0?<div style={{fontSize:12,color:"#525252",padding:"10px 0"}}>No bank accounts found. Connect Plaid to start importing transactions.</div>:
