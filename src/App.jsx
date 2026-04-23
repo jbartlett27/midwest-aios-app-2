@@ -6619,7 +6619,14 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   const [newAcctName,setNewAcctName]=useState('');
   const [bankSearch,setBankSearch]=useState('');
   const [bankCatFilter,setBankCatFilter]=useState('all');
-  const [bankAcctFilter,setBankAcctFilter]=useState('all');
+  const [acctFilterOpen,setAcctFilterOpen]=useState(false);
+  const acctFilterRef=useRef(null);
+  useEffect(()=>{
+    if(!acctFilterOpen)return;
+    const handler=(e)=>{if(acctFilterRef.current&&!acctFilterRef.current.contains(e.target))setAcctFilterOpen(false)};
+    document.addEventListener('mousedown',handler);
+    return()=>document.removeEventListener('mousedown',handler);
+  },[acctFilterOpen]);
   const [showBankAcctEditor,setShowBankAcctEditor]=useState(false);
   const [acctNicknameDraft,setAcctNicknameDraft]=useState({});
 
@@ -6926,9 +6933,17 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       const allTxns=manualTxns.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
       // All unique account IDs found across transactions, used by the filter dropdown and the editor panel
       const allBankAcctIds=Array.from(new Set(allTxns.map(t=>t.account).filter(Boolean))).sort();
+      // Persisted multi-select filter (cross-session, cross-device via Supabase)
+      // Stored under the special _filterSelection key in BANK_ACCOUNT_META so it rides on the same SOP record as nicknames/exclusions
+      const rawSel=Array.isArray(bankAcctMeta._filterSelection)?bankAcctMeta._filterSelection:[];
+      // Drop any IDs that are no longer present or are excluded -- selection is always a subset of currently visible accounts
+      const selectedAcctIds=rawSel.filter(id=>allBankAcctIds.includes(id)&&!bankAcctMeta[id]?.excluded);
+      const acctFilterActive=selectedAcctIds.length>0;
+      const setSelectedAcctIds=(nextIds)=>{const next={...bankAcctMeta,_filterSelection:nextIds};saveBankAcctMeta(next)};
+      const toggleSelectedAcct=(id)=>{const isOn=selectedAcctIds.includes(id);setSelectedAcctIds(isOn?selectedAcctIds.filter(x=>x!==id):[...selectedAcctIds,id])};
       const filteredBankTxns=allTxns.filter(t=>{
         if(t.account&&bankAcctMeta[t.account]&&bankAcctMeta[t.account].excluded)return false;
-        if(bankAcctFilter!=='all'&&t.account!==bankAcctFilter)return false;
+        if(acctFilterActive&&!selectedAcctIds.includes(t.account))return false;
         if(bankCatFilter!=='all'&&t.category!==bankCatFilter)return false;
         if(!bankSearch)return true;
         const q=bankSearch.toLowerCase();
@@ -7086,7 +7101,33 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
         <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
           <input value={bankSearch} onChange={e=>setBankSearch(e.target.value)} placeholder="Search transactions..." style={{...inputStyle,flex:1,minWidth:200,maxWidth:300}}/>
           <select value={bankCatFilter} onChange={e=>setBankCatFilter(e.target.value)} style={{...inputStyle,width:"auto"}}><option value="all">All Categories</option>{categories.map(c=><option key={c} value={c}>{c}</option>)}</select>
-          <select value={bankAcctFilter} onChange={e=>setBankAcctFilter(e.target.value)} style={{...inputStyle,width:"auto",maxWidth:240}}><option value="all">All Accounts ({allBankAcctIds.filter(a=>!bankAcctMeta[a]?.excluded).length})</option>{allBankAcctIds.filter(a=>!bankAcctMeta[a]?.excluded).map(a=><option key={a} value={a}>{acctDisplayName(a)}</option>)}</select>
+          {allBankAcctIds.length>0&&(()=>{const visibleAccts=allBankAcctIds.filter(a=>!bankAcctMeta[a]?.excluded);return <div ref={acctFilterRef} style={{position:"relative"}}>
+            <button type="button" onClick={()=>setAcctFilterOpen(!acctFilterOpen)} style={{...inputStyle,width:"auto",minWidth:180,maxWidth:260,display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,cursor:"pointer",border:"1px solid "+(acctFilterActive?"rgba(45,212,191,0.4)":"#222"),background:acctFilterActive?"rgba(45,212,191,0.06)":"#111",color:acctFilterActive?"#2dd4bf":"#c4c4c4",fontFamily:"inherit",textAlign:"left"}}>
+              <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{!acctFilterActive?"All Accounts ("+visibleAccts.length+")":selectedAcctIds.length===1?acctDisplayName(selectedAcctIds[0]):selectedAcctIds.length+" of "+visibleAccts.length+" accounts"}</span>
+              <span style={{fontSize:9,opacity:0.7,flexShrink:0}}>{acctFilterOpen?'▲':'▼'}</span>
+            </button>
+            {acctFilterOpen&&<div style={{position:"absolute",top:"calc(100% + 4px)",left:0,minWidth:280,maxWidth:360,maxHeight:380,overflowY:"auto",background:"#0a0a0a",border:"1px solid rgba(45,212,191,0.18)",borderRadius:10,zIndex:30,boxShadow:"0 12px 32px rgba(0,0,0,0.6)",padding:6}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"6px 10px 8px 10px",borderBottom:"1px solid #1a1a1a",marginBottom:4}}>
+                <span style={{fontSize:10,color:"#737373",textTransform:"uppercase",letterSpacing:0.8,fontWeight:700}}>Filter by Account</span>
+                <div style={{display:"flex",gap:8}}>
+                  <button type="button" onClick={()=>setSelectedAcctIds([])} style={{background:"none",border:"none",color:!acctFilterActive?"#2dd4bf":"#737373",fontSize:10,fontFamily:"inherit",cursor:"pointer",fontWeight:!acctFilterActive?700:400}}>All</button>
+                  <span style={{color:"#333",fontSize:10}}>·</span>
+                  <button type="button" onClick={()=>setSelectedAcctIds(visibleAccts)} style={{background:"none",border:"none",color:"#737373",fontSize:10,fontFamily:"inherit",cursor:"pointer"}}>Pick all</button>
+                </div>
+              </div>
+              {visibleAccts.map(id=>{const isOn=acctFilterActive&&selectedAcctIds.includes(id);const txnCount=allTxns.filter(t=>t.account===id).length;const meta=bankAcctMeta[id]||{};const hasNickname=!!meta.nickname;return <div key={id} onClick={()=>toggleSelectedAcct(id)} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:6,cursor:"pointer",background:isOn?"rgba(45,212,191,0.06)":"transparent",transition:"background 0.1s"}} onMouseEnter={e=>{if(!isOn)e.currentTarget.style.background="#111"}} onMouseLeave={e=>{if(!isOn)e.currentTarget.style.background="transparent"}}>
+                <div style={{width:14,height:14,borderRadius:4,border:"1.5px solid "+(isOn?"#2dd4bf":"#444"),background:isOn?"#2dd4bf":"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{isOn&&<span style={{color:"#000",fontSize:10,fontWeight:900,lineHeight:1}}>✓</span>}</div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:12,color:isOn?"#2dd4bf":"#e5e5e5",fontWeight:isOn?600:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{hasNickname?meta.nickname:<span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:11,color:"#a3a3a3"}}>{id.slice(0,16)}...</span>}</div>
+                  {hasNickname&&<div style={{fontSize:9,color:"#525252",fontFamily:"'JetBrains Mono',monospace",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{id.slice(0,20)}...</div>}
+                </div>
+                <span style={{fontSize:10,color:"#525252",flexShrink:0}}>{txnCount} txn{txnCount!==1?'s':''}</span>
+              </div>})}
+              <div style={{borderTop:"1px solid #1a1a1a",marginTop:6,padding:"8px 10px 4px 10px"}}>
+                <button type="button" onClick={()=>{setAcctFilterOpen(false);setShowBankAcctEditor(true)}} style={{background:"none",border:"none",color:"#a78bfa",fontSize:11,fontFamily:"inherit",cursor:"pointer",padding:0,fontWeight:600}}>Name accounts & manage exclusions →</button>
+              </div>
+            </div>}
+          </div>})()}
           <Btn v="secondary" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>setShowCatEditor(!showCatEditor)}><I n="tag" s={12}/> {showCatEditor?'Close':'Manage Categories'}</Btn>
           <Btn v="secondary" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>setShowAcctEditor(!showAcctEditor)}><I n="dollar" s={12}/> {showAcctEditor?'Close':'Manage Accounts'}</Btn>
           {allBankAcctIds.length>0&&<Btn v="secondary" style={{fontSize:11,padding:"4px 10px",borderColor:Object.values(bankAcctMeta).some(m=>m.excluded)?"#a78bfa40":undefined,color:Object.values(bankAcctMeta).some(m=>m.excluded)?"#a78bfa":undefined}} onClick={()=>setShowBankAcctEditor(!showBankAcctEditor)}><I n="dollar" s={12}/> {showBankAcctEditor?'Close':'Manage Bank Accounts'} ({allBankAcctIds.length})</Btn>}
