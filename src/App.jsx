@@ -6618,11 +6618,12 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   const [plaidAccessToken,setPlaidAccessToken]=useState(()=>{try{return localStorage.getItem('mw_plaid_access_token')||''}catch{return ''}});
   const [plaidBankName,setPlaidBankName]=useState(()=>{try{return localStorage.getItem('mw_plaid_bank_name')||''}catch{return ''}});
   const [plaidLoading,setPlaidLoading]=useState(false);
-  const [plaidSyncRange,setPlaidSyncRange]=useState('quarter');
+  const [plaidSyncRange,setPlaidSyncRange]=useState(()=>{try{return localStorage.getItem('mw_plaid_sync_range')||'quarter'}catch{return 'quarter'}});
   const [plaidSyncFrom,setPlaidSyncFrom]=useState('');
   const [plaidSyncTo,setPlaidSyncTo]=useState('');
   const [plaidLastSync,setPlaidLastSync]=useState(()=>{try{return localStorage.getItem('mw_plaid_last_sync')||''}catch{return ''}});
   const plaidAutoSyncRef=useRef(false);
+  const plaidLatestSyncRef=useRef(null);
   const [txnSelected,setTxnSelected]=useState(new Set());
   const [showCatEditor,setShowCatEditor]=useState(false);
   const [newCatName,setNewCatName]=useState('');
@@ -7028,7 +7029,11 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
                   const bankName=metadata?.institution?.name||'Bank';
                   localStorage.setItem('mw_plaid_bank_name',bankName);
                   setPlaidAccessToken(exData.access_token);setPlaidStatus('connected');setPlaidBankName(bankName);
-                  notify('Connected to '+bankName+'. Click Sync Transactions to import.');
+                  // Auto-pull 3 months of transactions immediately on first connect.
+                  // Reset the auto-sync ref so the hourly auto-refresh hook reseats with the new token.
+                  plaidAutoSyncRef.current=false;
+                  notify('Connected to '+bankName+'. Syncing last 3 months of transactions...');
+                  setTimeout(()=>{handlePlaidSync('quarter')},800);
                 }else{notify('Token exchange failed: '+(exData.error_message||JSON.stringify(exData.error)||'Unknown'),'error')}
               }catch(err2){notify('Exchange error: '+err2.message,'error')}
               setPlaidLoading(false);
@@ -7088,12 +7093,38 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
         setPlaidLoading(false);
       };
 
-      // Auto-sync on page load if connected and last sync was >24h ago
+      // Auto-refresh every hour while bank is connected. Sets up once per session
+      // (guarded by plaidAutoSyncRef) and uses setInterval to fire silent syncs.
+      // Also catches up immediately if last sync was more than 1 hour ago when the
+      // user lands on the Banking tab. Uses 'quarter' (3 months) as the minimum
+      // window so recent backfills are always covered.
+      // The latestSyncRef pattern ensures the interval always invokes the freshest
+      // handlePlaidSync (with up-to-date dedup sets) on each tick, avoiding stale
+      // closures that could re-import already-synced transactions.
+      plaidLatestSyncRef.current=handlePlaidSync;
       if(plaidStatus==='connected'&&plaidAccessToken&&!plaidAutoSyncRef.current){
         plaidAutoSyncRef.current=true;
         const lastSync=plaidLastSync?new Date(plaidLastSync):null;
         const hoursSince=lastSync?((Date.now()-lastSync.getTime())/3600000):999;
-        if(hoursSince>=24){setTimeout(()=>handlePlaidSync('month',true),1500)}
+        const initialRange=plaidSyncRange==='custom'?'quarter':plaidSyncRange;
+        if(hoursSince>=1){setTimeout(()=>{const fn=plaidLatestSyncRef.current;if(fn)fn(initialRange,true)},1500)}
+        // Hourly background sync. Range follows the user's selected preset (or
+        // falls back to quarter for the custom preset to avoid surprise re-pulls).
+        setInterval(()=>{
+          try{
+            const tok=localStorage.getItem('mw_plaid_access_token');
+            const stat=localStorage.getItem('mw_plaid_status');
+            if(!tok||stat!=='connected')return;
+            const lastSyncStr=localStorage.getItem('mw_plaid_last_sync');
+            const last=lastSyncStr?new Date(lastSyncStr):null;
+            const minsSince=last?((Date.now()-last.getTime())/60000):999;
+            if(minsSince<55)return;
+            const currentRange=localStorage.getItem('mw_plaid_sync_range')||'quarter';
+            const r=currentRange==='custom'?'quarter':currentRange;
+            const fn=plaidLatestSyncRef.current;
+            if(fn)fn(r,true);
+          }catch{}
+        },3600000);
       }
 
       return <div style={{display:"flex",flexDirection:"column",gap:16}}>
@@ -7112,7 +7143,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
           </div>
           {plaidStatus==='connected'&&<div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginBottom:12,padding:"8px 12px",background:"#111",borderRadius:8,border:"1px solid #222"}}>
             <span style={{fontSize:11,color:"#737373",fontWeight:600}}>Sync range:</span>
-            {[["month","1 Month"],["quarter","3 Months"],["6months","6 Months"],["year","1 Year"],["2years","2 Years"],["all","All Time"],["custom","Custom"]].map(([v,l])=><button key={v} onClick={()=>{setPlaidSyncRange(v);if(v!=='custom')handlePlaidSync(v)}} style={{padding:"4px 10px",borderRadius:6,border:"none",cursor:"pointer",background:plaidSyncRange===v?"#2dd4bf":"transparent",color:plaidSyncRange===v?"#000":"#525252",fontSize:11,fontWeight:plaidSyncRange===v?600:400,fontFamily:"inherit",transition:"all 0.15s"}}>{l}</button>)}
+            {[["month","1 Month"],["quarter","3 Months"],["6months","6 Months"],["year","1 Year"],["2years","2 Years"],["all","All Time"],["custom","Custom"]].map(([v,l])=><button key={v} onClick={()=>{setPlaidSyncRange(v);try{localStorage.setItem('mw_plaid_sync_range',v)}catch{}if(v!=='custom')handlePlaidSync(v)}} style={{padding:"4px 10px",borderRadius:6,border:"none",cursor:"pointer",background:plaidSyncRange===v?"#2dd4bf":"transparent",color:plaidSyncRange===v?"#000":"#525252",fontSize:11,fontWeight:plaidSyncRange===v?600:400,fontFamily:"inherit",transition:"all 0.15s"}}>{l}</button>)}
             {plaidSyncRange==='custom'&&<><input type="date" value={plaidSyncFrom} onChange={e=>setPlaidSyncFrom(e.target.value)} style={{padding:"3px 6px",background:"#0a0a0a",border:"1px solid #333",borderRadius:6,color:"#f0f0f0",fontSize:11,fontFamily:"inherit"}}/><span style={{color:"#525252",fontSize:11}}>to</span><input type="date" value={plaidSyncTo} onChange={e=>setPlaidSyncTo(e.target.value)} style={{padding:"3px 6px",background:"#0a0a0a",border:"1px solid #333",borderRadius:6,color:"#f0f0f0",fontSize:11,fontFamily:"inherit"}}/><Btn style={{fontSize:11,padding:"4px 10px"}} onClick={()=>handlePlaidSync('custom')}>{plaidLoading?'...':'Sync Range'}</Btn></>}
           </div>}
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10,marginBottom:12}}>
