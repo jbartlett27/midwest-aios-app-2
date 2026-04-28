@@ -1490,6 +1490,7 @@ const sharedScreen = sharedQuote ? <ShareQuotePortal quoteData={sharedQuote} onA
           {page==="files"&&<FilesPage {...ctx}/>}
           {page==="playbook"&&<PlaybookPage {...ctx}/>}
           {page==="customer360"&&<Customer360Page {...ctx}/>}
+          {page==="vendor360"&&<Vendor360Page {...ctx}/>}
           {page==="tasks"&&<TasksPage {...ctx}/>}
           {page==="notes"&&<NotesPage {...ctx}/>}
           {page==="brain"&&<BrainPage {...ctx}/>}
@@ -2615,36 +2616,63 @@ function DeliveryCalendar({jobs,lineItems,vendors,customers,getJobItems,setPage,
 // ===============================================================
 // DELIVERY TRACKER -- Real updates to state
 // ===============================================================
-function DeliveryPage({jobs,lineItems,vendors,customers,getItemStatus,getJobItems,updateLineItem,setPage,setSelectedJob,notify,jobNum}){
+function DeliveryPage({jobs,lineItems,vendors,customers,reps,userRole,userRepId,getItemStatus,getJobItems,updateLineItem,setPage,setSelectedJob,notify,jobNum}){
   const [deliveryView,setDeliveryView]=useState("tracker");
   const [delFilter,setDelFilter]=useState("pending");
   const [receiveModal,setReceiveModal]=useState(null);
   const [expandedJobs,setExpandedJobs]=useState(new Set());
   const [receiveQty,setReceiveQty]=useState("");
-  const allItems=(delFilter==="all"?lineItems:delFilter==="delivered"?lineItems.filter(i=>i.qtyReceived>=i.qtyOrdered&&i.qtyOrdered>0):lineItems.filter(i=>i.qtyReceived<i.qtyOrdered)).map(i=>({...i,jobName:jobs.find(j=>j.id===i.jobId)?.name||"",jobId:i.jobId}));
-  const partials=lineItems.filter(i=>i.qtyReceived>0&&i.qtyReceived<i.qtyOrdered);
+  const [searchQuery,setSearchQuery]=useState("");
+  const [repFilter,setRepFilter]=useState("all");
+
+  // Apply per-rep + search filters to the jobs and line items used by ALL views
+  // (tracker KPIs, tracker job groups, calendar). Sales-role users already only
+  // see their own jobs via the App-level visibleJobs filter, so the rep filter
+  // dropdown is hidden for them.
+  const isSalesRole=userRole==="sales";
+  const jobsForView=jobs.filter(j=>{
+    if(repFilter!=="all"&&j.salesRep!==repFilter)return false;
+    if(searchQuery){
+      const q=searchQuery.toLowerCase();
+      const nameMatch=(j.name||"").toLowerCase().includes(q);
+      const numMatch=jobNum?(jobNum(j.id)||"").toLowerCase().includes(q):false;
+      const custMatch=(customers.find(c=>c.id===j.customer)?.name||"").toLowerCase().includes(q);
+      if(!nameMatch&&!numMatch&&!custMatch)return false;
+    }
+    return true;
+  });
+  const visibleJobIds=new Set(jobsForView.map(j=>j.id));
+  const lineItemsForView=lineItems.filter(i=>visibleJobIds.has(i.jobId));
+  const allItems=(delFilter==="all"?lineItemsForView:delFilter==="delivered"?lineItemsForView.filter(i=>i.qtyReceived>=i.qtyOrdered&&i.qtyOrdered>0):lineItemsForView.filter(i=>i.qtyReceived<i.qtyOrdered)).map(i=>({...i,jobName:jobsForView.find(j=>j.id===i.jobId)?.name||"",jobId:i.jobId}));
+  const partials=lineItemsForView.filter(i=>i.qtyReceived>0&&i.qtyReceived<i.qtyOrdered);
 
   // Group by job
   const jobGroups={};
-  allItems.forEach(item=>{if(!jobGroups[item.jobId])jobGroups[item.jobId]={job:jobs.find(j=>j.id===item.jobId),items:[]};jobGroups[item.jobId].items.push(item)});
+  allItems.forEach(item=>{if(!jobGroups[item.jobId])jobGroups[item.jobId]={job:jobsForView.find(j=>j.id===item.jobId),items:[]};jobGroups[item.jobId].items.push(item)});
   const groupedJobs=Object.values(jobGroups).filter(g=>g.job);
 
   const handleReceive=(item)=>{const qty=parseInt(receiveQty)||0;if(qty<=0)return;const newRcv=Math.min((item||receiveModal).qtyReceived+qty,(item||receiveModal).qtyOrdered);updateLineItem((item||receiveModal).id,{qtyReceived:newRcv,deliveryDate:new Date().toISOString().split("T")[0]});notify(`Logged ${qty} units received`);setReceiveModal(null);setReceiveQty("")};
   const completeAll=(jobItems)=>{jobItems.forEach(item=>{updateLineItem(item.id,{qtyReceived:item.qtyOrdered,deliveryDate:new Date().toISOString().split("T")[0]})});notify(`All ${jobItems.length} items marked complete`)};
 
   return <div style={{animation:"fadeUp 0.4s"}}><Header title="Deliveries" sub="Track shipments and plan receiving"/>
-    <div style={{display:"flex",gap:12,marginBottom:20,alignItems:"center",flexWrap:"wrap"}}><div style={{display:"flex",gap:0,background:"#111111",padding:4,borderRadius:10,width:"fit-content"}}>{[["tracker","Delivery Tracker"],["calendar","Calendar View"]].map(([id,label])=><button key={id} onClick={()=>setDeliveryView(id)} style={{padding:"8px 18px",borderRadius:8,border:"none",cursor:"pointer",background:deliveryView===id?"#2dd4bf":"transparent",color:deliveryView===id?"#000000":"#c4c4c4",fontSize:13,fontWeight:deliveryView===id?600:400,fontFamily:"inherit"}}>{label}</button>)}</div>{deliveryView==="tracker"&&<div style={{display:"flex",gap:0,background:"#111111",padding:4,borderRadius:10}}>{[["pending","Pending"],["delivered","Delivered"],["all","All"]].map(([id,label])=><button key={id} onClick={()=>setDelFilter(id)} style={{padding:"6px 14px",borderRadius:6,border:"none",cursor:"pointer",background:delFilter===id?"#a78bfa":"transparent",color:delFilter===id?"#000":"#c4c4c4",fontSize:12,fontWeight:delFilter===id?600:400,fontFamily:"inherit"}}>{label}</button>)}</div>}</div>
-    {deliveryView==="calendar"&&<DeliveryCalendar jobs={jobs} lineItems={lineItems} vendors={vendors} customers={customers} getJobItems={getJobItems} setPage={setPage} setSelectedJob={setSelectedJob} notify={notify}/>}
+    <div style={{display:"flex",gap:12,marginBottom:20,alignItems:"center",flexWrap:"wrap"}}>
+      <div style={{display:"flex",gap:0,background:"#111111",padding:4,borderRadius:10,width:"fit-content"}}>{[["tracker","Delivery Tracker"],["calendar","Calendar View"]].map(([id,label])=><button key={id} onClick={()=>setDeliveryView(id)} style={{padding:"8px 18px",borderRadius:8,border:"none",cursor:"pointer",background:deliveryView===id?"#2dd4bf":"transparent",color:deliveryView===id?"#000000":"#c4c4c4",fontSize:13,fontWeight:deliveryView===id?600:400,fontFamily:"inherit"}}>{label}</button>)}</div>
+      {deliveryView==="tracker"&&<div style={{display:"flex",gap:0,background:"#111111",padding:4,borderRadius:10}}>{[["pending","Pending"],["delivered","Delivered"],["all","All"]].map(([id,label])=><button key={id} onClick={()=>setDelFilter(id)} style={{padding:"6px 14px",borderRadius:6,border:"none",cursor:"pointer",background:delFilter===id?"#a78bfa":"transparent",color:delFilter===id?"#000":"#c4c4c4",fontSize:12,fontWeight:delFilter===id?600:400,fontFamily:"inherit"}}>{label}</button>)}</div>}
+      <input type="text" value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} placeholder="Search by job name, number, or customer..." style={{padding:"8px 12px",background:"#0a0a0a",border:"1px solid #222",borderRadius:8,color:"#f0f0f0",fontSize:12,fontFamily:"inherit",minWidth:240,flex:"0 1 280px"}}/>
+      {!isSalesRole&&reps&&reps.filter(r=>!r.id.includes("SEED_FLAG")&&isSalesRep(r)).length>0&&<select value={repFilter} onChange={e=>setRepFilter(e.target.value)} style={{padding:"8px 12px",background:"#0a0a0a",border:"1px solid #222",borderRadius:8,color:"#f0f0f0",fontSize:12,fontFamily:"inherit",cursor:"pointer",minWidth:170}}><option value="all">All Sales Reps</option>{reps.filter(r=>!r.id.includes("SEED_FLAG")&&isSalesRep(r)).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select>}
+      {(searchQuery||repFilter!=="all")&&<button onClick={()=>{setSearchQuery("");setRepFilter("all")}} style={{padding:"6px 12px",background:"transparent",border:"1px solid #333",borderRadius:8,color:"#a3a3a3",fontSize:11,fontFamily:"inherit",cursor:"pointer",fontWeight:600}} title="Clear search and filters">Clear</button>}
+    </div>
+    {deliveryView==="calendar"&&<DeliveryCalendar jobs={jobsForView} lineItems={lineItemsForView} vendors={vendors} customers={customers} getJobItems={getJobItems} setPage={setPage} setSelectedJob={setSelectedJob} notify={notify}/>}
     {deliveryView==="tracker"&&<>
     <div className="resp-grid-4" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:14,marginBottom:24}}>
       <StatCard label="Pending Delivery" value={allItems.length} sub="line items" icon="truck" color="#fbbf24"/>
       <StatCard label="Partial Shipments" value={partials.length} sub="in progress" icon="package" color="#a78bfa"/>
-      <StatCard label="Total Ordered" value={fmtN(lineItems.reduce((s,i)=>s+i.qtyOrdered,0))} sub="units" icon="package" color="#525252"/>
-      <StatCard label="Total Received" value={fmtN(lineItems.reduce((s,i)=>s+i.qtyReceived,0))} sub="units" icon="check" color="#34d399"/>
+      <StatCard label="Total Ordered" value={fmtN(lineItemsForView.reduce((s,i)=>s+i.qtyOrdered,0))} sub="units" icon="package" color="#525252"/>
+      <StatCard label="Total Received" value={fmtN(lineItemsForView.reduce((s,i)=>s+i.qtyReceived,0))} sub="units" icon="check" color="#34d399"/>
     </div>
     {/* Inline receive is now handled per-row in the table below */}
 
-    {groupedJobs.length===0&&<Card style={{textAlign:"center",padding:40}}><div style={{fontSize:16,color:"#34d399",fontWeight:600,marginBottom:4}}>{delFilter==="pending"?"All deliveries complete":delFilter==="delivered"?"No delivered items yet":"No items found"}</div><div style={{fontSize:13,color:"#a3a3a3"}}>{delFilter==="pending"?"No outstanding items across any job.":"Try a different filter."}</div></Card>}
+    {groupedJobs.length===0&&<Card style={{textAlign:"center",padding:40}}><div style={{fontSize:16,color:"#34d399",fontWeight:600,marginBottom:4}}>{(searchQuery||repFilter!=="all")?"No matching jobs":delFilter==="pending"?"All deliveries complete":delFilter==="delivered"?"No delivered items yet":"No items found"}</div><div style={{fontSize:13,color:"#a3a3a3"}}>{(searchQuery||repFilter!=="all")?"Try a different search term or rep filter.":delFilter==="pending"?"No outstanding items across any job.":"Try a different filter."}</div></Card>}
 
     {groupedJobs.map(({job,items})=>{
       const totalOut=items.reduce((s,i)=>s+i.qtyOrdered-i.qtyReceived,0);
@@ -3011,10 +3039,12 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
         const vendorAddrHtml=vendorAddr.split('\n').filter(Boolean).join('<br>');
         const today=new Date();const mm=String(today.getMonth()+1).padStart(2,'0');const dd=String(today.getDate()).padStart(2,'0');const yyyy=today.getFullYear();
         const dateStr=mm+'/'+dd+'/'+yyyy;
-        // Auto-generate check number
-        const allCheckNums=Object.values(docStatuses).filter(v=>v&&typeof v==='object'&&v.checkNum&&v.checkNum!=='____').map(v=>parseInt(v.checkNum)).filter(n=>!isNaN(n)&&n>=1116);
+        // Auto-generate check number. Floor is 1127 -- the next check number
+        // in Maureen's physical checkbook sequence. Filters out any historic
+        // values below this floor and walks forward to the next unused number.
+        const allCheckNums=Object.values(docStatuses).filter(v=>v&&typeof v==='object'&&v.checkNum&&v.checkNum!=='____').map(v=>parseInt(v.checkNum)).filter(n=>!isNaN(n)&&n>=1127);
         const usedSet=new Set(allCheckNums);
-        let nextCheck=allCheckNums.length>0?Math.max(...allCheckNums)+1:1116;
+        let nextCheck=allCheckNums.length>0?Math.max(...allCheckNums)+1:1127;
         while(usedSet.has(nextCheck))nextCheck++;
         const checkNo=String(nextCheck);
         const amtDollars=Math.floor(totalCost);const amtCents=Math.round((totalCost-amtDollars)*100);
@@ -3113,15 +3143,19 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
           const today=new Date();const mm=String(today.getMonth()+1).padStart(2,'0');const dd=String(today.getDate()).padStart(2,'0');const yyyy=today.getFullYear();
           const dateStr=mm+'/'+dd+'/'+yyyy;
           let checkNo=billCheckNum&&billCheckNum.trim()&&billCheckNum.trim()!=='____'?billCheckNum.trim():'';
-          const allCheckNums=Object.values(docStatuses).filter(v=>v&&typeof v==='object'&&v.checkNum&&v.checkNum!=='____').map(v=>parseInt(v.checkNum)).filter(n=>!isNaN(n)&&n>=1116);
+          // Build the used-check set EXCLUDING this bill's own currently saved
+          // checkNum so re-printing the same bill reuses its number rather than
+          // burning a new one (which would leave the old number orphaned).
+          const ownDocNum=bill2.billDocNum;
+          const allCheckNums=Object.entries(docStatuses).filter(([k,v])=>k!==ownDocNum&&v&&typeof v==='object'&&v.checkNum&&v.checkNum!=='____').map(([k,v])=>parseInt(v.checkNum)).filter(n=>!isNaN(n)&&n>=1127);
           const usedSet=new Set(allCheckNums);
           if(checkNo){
-            // Validate manually entered check number is not a duplicate
+            // Validate manually entered check number is not a duplicate of ANOTHER bill
             const num=parseInt(checkNo);
             if(!isNaN(num)&&usedSet.has(num)){notify('Check #'+checkNo+' already used. Assigning next available number.','error');checkNo=''}
           }
           if(!checkNo){
-            let nextCheck=allCheckNums.length>0?Math.max(...allCheckNums)+1:1116;
+            let nextCheck=allCheckNums.length>0?Math.max(...allCheckNums)+1:1127;
             while(usedSet.has(nextCheck))nextCheck++;
             checkNo=String(nextCheck);
             setBillCheckNum(checkNo);
@@ -3819,17 +3853,23 @@ function CommissionsPage({jobs,reps,customers,updateRep,addRep,deleteRep,getJobF
 // ===============================================================
 // SALES PORTAL
 // ===============================================================
-function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobItems,vendors,setPage,setSelectedJob,updateJob,notify,addSop,deleteSop,customSops,triggerPrint,jobNum}){
-  const [activeRep,setActiveRep]=useState("overview");
+function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobItems,vendors,setPage,setSelectedJob,updateJob,notify,addSop,deleteSop,customSops,triggerPrint,jobNum,userRole,userRepId}){
+  // Sales-role users only ever see their own tab. Default activeRep to their
+  // rep id so they land directly on their own portal instead of the global Overview.
+  const isSalesRole=userRole==="sales"&&!!userRepId;
+  const [activeRep,setActiveRep]=useState(isSalesRole?userRepId:"overview");
   const [crmTab,setCrmTab]=useState("pipeline");
   const [noteText,setNoteText]=useState("");
   const [taskText,setTaskText]=useState("");
   const [taskDue,setTaskDue]=useState("");
   const [repDetail,setRepDetail]=useState(null);
 
-  const isOverview=activeRep==="overview";
-  const rep=reps.find(r=>r.id===activeRep)||reps.filter(isSalesRep)[0]||reps[0];
-  const rj=isOverview?jobs:jobs.filter(j=>j.salesRep===activeRep);
+  // Sales-role users can never enter Overview mode -- coerce 'overview' to their own rep id
+  // in case state somehow gets out of sync (e.g. stale state, manual intervention).
+  const effectiveActiveRep=isSalesRole?(activeRep==="overview"?userRepId:activeRep):activeRep;
+  const isOverview=effectiveActiveRep==="overview";
+  const rep=reps.find(r=>r.id===effectiveActiveRep)||reps.filter(isSalesRep)[0]||reps[0];
+  const rj=isOverview?jobs:jobs.filter(j=>j.salesRep===effectiveActiveRep);
   const totalRev=rj.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
   const paidRev=rj.filter(j=>j.paymentStatus==="paid").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
   const totalCost=rj.reduce((s,j)=>s+getJobFinancials(j.id).totalCost,0);
@@ -3862,10 +3902,10 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
   const kpi=(label,value,color)=><div style={{textAlign:"center",padding:"14px 10px",background:"#0a0a0a",borderRadius:10,flex:"1 1 100px"}}><div style={{fontSize:22,fontWeight:800,color:color||"#f0f0f0",fontFamily:"'JetBrains Mono',monospace",letterSpacing:-1}}><AnimNum value={String(value)}/></div><div style={{fontSize:11,color:"#9a9a9a",marginTop:2}}>{label}</div></div>;
 
   return <div style={{animation:"fadeUp 0.4s"}}><Header title="Sales Portal" sub="Pipeline management, CRM, and team performance"/>
-    {/* Rep selector */}
+    {/* Rep selector. Sales-role users see only their own tab. */}
     <div style={{display:"flex",gap:6,marginBottom:20,flexWrap:"wrap",overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
-      <button onClick={()=>setActiveRep("overview")} style={{padding:"8px 16px",borderRadius:8,cursor:"pointer",background:isOverview?"#2dd4bf":"#111",color:isOverview?"#000":"#737373",fontSize:13,fontWeight:isOverview?600:400,fontFamily:"inherit",border:isOverview?"none":"1px solid rgba(255,255,255,0.06)",whiteSpace:"nowrap",flexShrink:0}}>Overview</button>
-      {reps.filter(r=>!r.id.includes("SEED_FLAG")&&isSalesRep(r)).map(r=><button key={r.id} onClick={()=>setActiveRep(r.id)} style={{padding:"8px 16px",borderRadius:8,cursor:"pointer",background:activeRep===r.id?"#2dd4bf":"#111",color:activeRep===r.id?"#000":"#737373",fontSize:13,fontWeight:activeRep===r.id?600:400,fontFamily:"inherit",border:activeRep===r.id?"none":"1px solid rgba(255,255,255,0.06)",whiteSpace:"nowrap",flexShrink:0}}>{r.name}</button>)}
+      {!isSalesRole&&<button onClick={()=>setActiveRep("overview")} style={{padding:"8px 16px",borderRadius:8,cursor:"pointer",background:isOverview?"#2dd4bf":"#111",color:isOverview?"#000":"#737373",fontSize:13,fontWeight:isOverview?600:400,fontFamily:"inherit",border:isOverview?"none":"1px solid rgba(255,255,255,0.06)",whiteSpace:"nowrap",flexShrink:0}}>Overview</button>}
+      {reps.filter(r=>!r.id.includes("SEED_FLAG")&&isSalesRep(r)&&(!isSalesRole||r.id===userRepId)).map(r=><button key={r.id} onClick={()=>setActiveRep(r.id)} style={{padding:"8px 16px",borderRadius:8,cursor:"pointer",background:activeRep===r.id?"#2dd4bf":"#111",color:activeRep===r.id?"#000":"#737373",fontSize:13,fontWeight:activeRep===r.id?600:400,fontFamily:"inherit",border:activeRep===r.id?"none":"1px solid rgba(255,255,255,0.06)",whiteSpace:"nowrap",flexShrink:0}}>{r.name}</button>)}
     </div>
 
     {/* Hero stats */}
@@ -4094,6 +4134,144 @@ function Customer360Page({jobs,lineItems,vendors,customers,reps,getJobFinancials
         {topVendors.length===0?<div style={{fontSize:13,color:"#737373",padding:"12px 0"}}>No vendor data yet.</div>:
         topVendors.map(([name,spend])=>{
           const max=topVendors[0][1]||1;
+          return <div key={name} style={{marginBottom:14}}>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+              <span style={{fontSize:13,color:"#c4c4c4"}}>{name}</span>
+              <span style={{fontSize:13,fontWeight:700,color:"#a78bfa",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(spend)}</span>
+            </div>
+            <div style={{height:5,background:"rgba(255,255,255,0.04)",borderRadius:3,overflow:"hidden"}}>
+              <div style={{height:"100%",width:(spend/max*100)+"%",background:"linear-gradient(90deg,#a78bfa,#2dd4bf)",borderRadius:3}}/>
+            </div>
+          </div>
+        })}
+      </Card>
+    </div>
+
+    {totalOrdered>0&&<Card style={{marginBottom:28}}>
+      <div style={{fontSize:15,fontWeight:700,color:"#f0f0f0",marginBottom:16}}>Delivery Progress</div>
+      <div className="resp-grid-3" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:16,marginBottom:20,textAlign:"center"}}>
+        <div><div style={{fontSize:32,fontWeight:800,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{totalOrdered>0?Math.round(totalReceived/totalOrdered*100):0}%</div><div style={{fontSize:13,color:"#9a9a9a"}}>Received</div></div>
+        <div><div style={{fontSize:32,fontWeight:800,color:"#fbbf24",fontFamily:"'JetBrains Mono',monospace"}}>{(totalOrdered-totalReceived).toLocaleString()}</div><div style={{fontSize:13,color:"#9a9a9a"}}>Pending</div></div>
+        <div><div style={{fontSize:32,fontWeight:800,color:"#a78bfa",fontFamily:"'JetBrains Mono',monospace"}}>{totalOrdered.toLocaleString()}</div><div style={{fontSize:13,color:"#9a9a9a"}}>Total Units</div></div>
+      </div>
+      <div style={{height:10,background:"rgba(255,255,255,0.04)",borderRadius:5,overflow:"hidden"}}>
+        <div style={{height:"100%",width:(totalReceived/totalOrdered*100)+"%",background:"linear-gradient(90deg,#2dd4bf,#34d399)",borderRadius:5,transition:"width 1.5s ease"}}/>
+      </div>
+    </Card>}
+
+    <Card><div style={{fontSize:15,fontWeight:700,color:"#f0f0f0",marginBottom:14}}>Activity Timeline</div>
+      {allActivities.length===0?<div style={{fontSize:13,color:"#737373",padding:"12px 0"}}>No activity recorded yet. Changes to jobs will appear here.</div>:
+      allActivities.map((a,i)=><div key={i} style={{display:"flex",gap:14,padding:"12px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+        <div style={{width:10,height:10,borderRadius:"50%",background:a.type==="edit"?"#2dd4bf":"#a78bfa",marginTop:4,flexShrink:0}}/>
+        <div style={{flex:1}}>
+          <div style={{fontSize:13,color:"#e5e5e5",lineHeight:1.5}}>{a.fields?a.fields.map(f=>f.field+" changed from \""+String(f.from||"empty")+"\" to \""+String(f.to)+"\"").join(", "):a.type}</div>
+          <div style={{fontSize:12,color:"#9a9a9a",marginTop:2}}>{a.jobName} | {new Date(a.time).toLocaleDateString()} {new Date(a.time).toLocaleTimeString()}</div>{a.user&&<div style={{fontSize:11,color:"#2dd4bf",marginTop:2}}>{a.user}</div>}
+        </div>
+      </div>)}
+    </Card>
+  </div>;
+}
+
+
+// ===============================================================
+// VENDOR 360 -- Full profile page mirroring Customer360Page
+// ===============================================================
+function Vendor360Page({jobs,lineItems,vendors,customers,reps,getJobFinancials,getJobItems,setPage,setSelectedJob,notify,updateVendor,jobNum}){
+  const vendorId=window._viewVendorId||vendors[0]?.id;
+  const vend=vendors.find(v=>v.id===vendorId);
+  if(!vend) return <div style={{animation:"fadeUp 0.4s"}}><Header title="Vendor Profile" sub="Select a vendor from the Directory"/><Card style={{textAlign:"center",padding:40}}><div style={{color:"#737373",fontSize:14}}>No vendor selected. Go to Directory and click a vendor name.</div></Card></div>;
+
+  // Spend = OUR cost spent with this vendor (unitCost * qtyOrdered).
+  // Revenue = what WE charged customers for this vendor's items (unitPrice * qtyOrdered).
+  // Margin = (revenue - spend) / revenue.
+  const vItems=lineItems.filter(i=>i.vendor===vendorId);
+  const jobIdSet=new Set(vItems.map(i=>i.jobId));
+  const vJobs=jobs.filter(j=>jobIdSet.has(j.id));
+  const totalSpend=vItems.reduce((s,i)=>s+(i.unitCost||0)*(i.qtyOrdered||0),0);
+  const totalRevenue=vItems.reduce((s,i)=>s+(i.unitPrice||0)*(i.qtyOrdered||0),0);
+  const avgMargin=totalRevenue>0?(1-totalSpend/totalRevenue)*100:0;
+  const avgJobSize=vJobs.length>0?totalSpend/vJobs.length:0;
+  const paidJobs=vJobs.filter(j=>j.paymentStatus==="paid");
+  const paymentScore=vJobs.length>0?Math.round(paidJobs.length/Math.max(vJobs.filter(j=>j.phase!=="Quoting").length,1)*100):0;
+  const totalItems=vItems.length;
+  const totalOrdered=vItems.reduce((s,i)=>s+(i.qtyOrdered||0),0);
+  const totalReceived=vItems.reduce((s,i)=>s+(i.qtyReceived||0),0);
+  // Top customers by spend on this vendor's items
+  const customerSpend={};
+  vItems.forEach(i=>{const j=jobs.find(jj=>jj.id===i.jobId);if(!j)return;const c=customers.find(cc=>cc.id===j.customer);if(c){customerSpend[c.name]=(customerSpend[c.name]||0)+(i.unitCost||0)*(i.qtyOrdered||0)}});
+  const topCustomers=Object.entries(customerSpend).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  const allActivities=vJobs.flatMap(j=>(j.auditTrail||[]).map(a=>({...a,jobName:(jobNum?.(j.id)||"")+" "+j.name,jobId:j.id}))).sort((a,b)=>new Date(b.time)-new Date(a.time)).slice(0,20);
+  const [editing,setEditing]=useState(false);
+  const [editForm,setEditForm]=useState({...vend});
+
+  const kpiStyle={textAlign:"center",padding:"18px 14px",background:"#0a0a0a",borderRadius:12,border:"1px solid rgba(255,255,255,0.04)"};
+  const kpiVal=(v,c)=>({fontSize:28,fontWeight:800,color:c||"#f0f0f0",fontFamily:"'JetBrains Mono',monospace",letterSpacing:-1,lineHeight:1.1,marginBottom:4});
+  const kpiLabel={fontSize:12,color:"#9a9a9a",fontWeight:500,letterSpacing:0.5};
+
+  return <div style={{animation:"fadeUp 0.4s"}}>
+    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:20}}>
+      <span onClick={()=>setPage("directory")} style={{color:"#9a9a9a",cursor:"pointer",fontSize:14,transition:"color 0.15s"}} onMouseEnter={e=>e.currentTarget.style.color="#2dd4bf"} onMouseLeave={e=>e.currentTarget.style.color="#9a9a9a"}>Directory</span>
+      <span style={{color:"#525252",fontSize:14}}>/</span>
+      <span style={{color:"#f0f0f0",fontSize:14,fontWeight:600}}>{vend.name}</span>
+    </div>
+
+    <Card style={{marginBottom:28,background:"linear-gradient(135deg,rgba(45,212,191,0.04),rgba(167,139,250,0.04))",border:"1px solid rgba(45,212,191,0.12)"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:16}}>
+        <div>
+          <div style={{fontSize:28,fontWeight:800,color:"#f0f0f0",marginBottom:8,letterSpacing:-0.5}}>{vend.name}</div>
+          <div style={{fontSize:14,color:"#c4c4c4",marginBottom:4}}>{vend.contact}{vend.email?" | "+vend.email:""}{vend.phone?" | "+vend.phone:""}</div>
+          <div style={{fontSize:13,color:"#9a9a9a"}}>{vend.category||"--"}{vend.address?" | "+vend.address:""}{vend.discountRate?" | Discount: "+((vend.discountType==="reciprocal"&&vend.reciprocalTiers)?vend.reciprocalTiers:((vend.discountRate*100).toFixed(0)+"%")):""}</div>
+        </div>
+        <Btn v="secondary" onClick={()=>{setEditing(!editing);setEditForm({...vend})}}><I n="edit" s={14}/> Edit</Btn>
+      </div>
+    </Card>
+
+    {editing&&<Card style={{marginBottom:20,border:"1px solid #2dd4bf30"}}><div style={{fontSize:15,fontWeight:700,marginBottom:14,color:"#2dd4bf"}}>Edit Vendor</div>
+      <div className="resp-grid-4" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12,marginBottom:14}}>
+        <div><label style={{fontSize:12,color:"#9a9a9a",display:"block",marginBottom:4}}>Name</label><input value={editForm.name} onChange={e=>setEditForm({...editForm,name:e.target.value})} style={inputStyle}/></div>
+        <div><label style={{fontSize:12,color:"#9a9a9a",display:"block",marginBottom:4}}>Contact</label><input value={editForm.contact||""} onChange={e=>setEditForm({...editForm,contact:e.target.value})} style={inputStyle}/></div>
+        <div><label style={{fontSize:12,color:"#9a9a9a",display:"block",marginBottom:4}}>Email</label><input value={editForm.email||""} onChange={e=>setEditForm({...editForm,email:e.target.value})} style={inputStyle}/></div>
+        <div><label style={{fontSize:12,color:"#9a9a9a",display:"block",marginBottom:4}}>Phone</label><input value={editForm.phone||""} onChange={e=>setEditForm({...editForm,phone:e.target.value})} style={inputStyle}/></div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12,marginBottom:14}}>
+        <div><label style={{fontSize:12,color:"#9a9a9a",display:"block",marginBottom:4}}>Category</label><input value={editForm.category||""} onChange={e=>setEditForm({...editForm,category:e.target.value})} style={inputStyle}/></div>
+        <div><label style={{fontSize:12,color:"#9a9a9a",display:"block",marginBottom:4}}>Address</label><input value={editForm.address||""} onChange={e=>setEditForm({...editForm,address:e.target.value})} style={inputStyle}/></div>
+      </div>
+      <div style={{display:"flex",gap:8}}><Btn onClick={()=>{updateVendor(vendorId,editForm);setEditing(false);notify("Vendor updated")}}>Save</Btn><Btn v="secondary" onClick={()=>setEditing(false)}>Cancel</Btn></div>
+    </Card>}
+
+    <div className="resp-grid-4" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:14,marginBottom:28}}>
+      <div style={kpiStyle}><div style={kpiVal(0,"#2dd4bf")}>{fmt(totalSpend)}</div><div style={kpiLabel}>Lifetime Spend</div></div>
+      <div style={kpiStyle}><div style={kpiVal(0,"#a78bfa")}>{vJobs.length}</div><div style={kpiLabel}>Total Jobs</div></div>
+      <div style={kpiStyle}><div style={kpiVal(0,"#34d399")}>{fmt(avgJobSize)}</div><div style={kpiLabel}>Avg Job Size</div></div>
+      <div style={kpiStyle}><div style={kpiVal(0,avgMargin>=30?"#34d399":avgMargin>=20?"#fbbf24":"#f87171")}>{avgMargin.toFixed(1)}%</div><div style={kpiLabel}>Avg Margin</div></div>
+      <div style={kpiStyle}><div style={kpiVal(0,paymentScore>=80?"#34d399":paymentScore>=50?"#fbbf24":"#f87171")}>{paymentScore}%</div><div style={{...kpiLabel}}>{paidJobs.length} of {vJobs.filter(j=>j.phase!=="Quoting").length} paid</div></div>
+      <div style={kpiStyle}><div style={kpiVal(0,"#e5e5e5")}>{totalItems}</div><div style={kpiLabel}>Line Items</div></div>
+    </div>
+
+    <div className="resp-grid-2" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(300px,1fr))",gap:20,marginBottom:28}}>
+      <Card><div style={{fontSize:15,fontWeight:700,color:"#f0f0f0",marginBottom:14}}>Jobs ({vJobs.length})</div>
+        {vJobs.length===0?<div style={{fontSize:13,color:"#737373",padding:"12px 0"}}>No jobs yet for this vendor.</div>:
+        vJobs.sort((a,b)=>new Date(b.createdDate)-new Date(a.createdDate)).map(j=>{
+          const f=getJobFinancials(j.id);
+          const jSpend=vItems.filter(i=>i.jobId===j.id).reduce((s,i)=>s+(i.unitCost||0)*(i.qtyOrdered||0),0);
+          return <div key={j.id} onClick={()=>{setSelectedJob(j.id);setPage("jobs")}} className="hover-lift" style={{padding:"14px 16px",background:"#0a0a0a",borderRadius:10,cursor:"pointer",marginBottom:10,border:"1px solid rgba(255,255,255,0.04)",transition:"all 0.2s"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+              <span style={{fontSize:14,fontWeight:600,color:"#f0f0f0"}}><span style={{fontFamily:"'JetBrains Mono',monospace",color:"#525252",fontSize:11,marginRight:6}}>{jobNum(j.id)}</span>{j.name}</span>
+              <span style={{fontSize:14,fontWeight:700,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(jSpend)}</span>
+            </div>
+            <div style={{display:"flex",gap:6,alignItems:"center"}}>
+              <Badge label={j.phase} color={statusColor(j.phase)}/>
+              <Badge label={j.paymentStatus} color={statusColor(j.paymentStatus)}/>
+              <span style={{fontSize:12,color:"#9a9a9a",marginLeft:"auto"}}>{j.createdDate}</span>
+            </div>
+          </div>
+        })}
+      </Card>
+      <Card><div style={{fontSize:15,fontWeight:700,color:"#f0f0f0",marginBottom:14}}>Customer Spend Breakdown</div>
+        {topCustomers.length===0?<div style={{fontSize:13,color:"#737373",padding:"12px 0"}}>No customer data yet.</div>:
+        topCustomers.map(([name,spend])=>{
+          const max=topCustomers[0][1]||1;
           return <div key={name} style={{marginBottom:14}}>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
               <span style={{fontSize:13,color:"#c4c4c4"}}>{name}</span>
@@ -7570,6 +7748,7 @@ const [tab,setTab]=useState("vendors");
   const [selected,setSelected]=useState(new Set());
   const [bulkAction,setBulkAction]=useState(null);
   const [custDetail,setCustDetail]=useState(null);
+  const [vendorDetail,setVendorDetail]=useState(null);
 
   const startEdit=(item)=>{if(editId===item.id){setEditId(null);setForm({});return}setEditId(item.id);setForm({...item,roles:Array.isArray(item.roles)&&item.roles.length>0?item.roles:getRoles(item)});setAdding(false);setSelected(new Set())};
   const startAdd=()=>{setAdding(true);setEditId(null);setSelected(new Set());
@@ -7663,9 +7842,96 @@ const [tab,setTab]=useState("vendors");
     </Card>
   };
 
+  // Inline vendor analytics panel -- mirrors CustAnalytics structure but scoped
+  // to line items where i.vendor === vend.id. "Spend" here is OUR cost (unitCost*qtyOrdered).
+  const VendorAnalytics=({vend})=>{
+    const vItems=lineItems.filter(i=>i.vendor===vend.id);
+    const jobIdSet=new Set(vItems.map(i=>i.jobId));
+    const vJobs=jobs.filter(j=>jobIdSet.has(j.id));
+    const totalSpend=vItems.reduce((s,i)=>s+(i.unitCost||0)*(i.qtyOrdered||0),0);
+    const totalRevenue=vItems.reduce((s,i)=>s+(i.unitPrice||0)*(i.qtyOrdered||0),0);
+    const avgMargin=totalRevenue>0?(1-totalSpend/totalRevenue)*100:0;
+    const totalItems=vItems.length;
+    const totalOrdered=vItems.reduce((s,i)=>s+(i.qtyOrdered||0),0);
+    const totalReceived=vItems.reduce((s,i)=>s+(i.qtyReceived||0),0);
+    const paidJobs=vJobs.filter(j=>j.paymentStatus==="paid").length;
+    const activeJobs=vJobs.filter(j=>j.phase!=="Complete"&&j.phase!=="Quoting").length;
+    // Customer breakdown -- top customers by our cost spend on this vendor's items
+    const cSpend={};
+    vItems.forEach(i=>{const j=jobs.find(jj=>jj.id===i.jobId);if(!j)return;const c=customers.find(cc=>cc.id===j.customer);if(c)cSpend[c.name]=(cSpend[c.name]||0)+(i.unitCost||0)*(i.qtyOrdered||0)});
+    const topC=Object.entries(cSpend).sort((a,b)=>b[1]-a[1]).slice(0,4);
+    return <Card style={{marginBottom:16,border:"1px solid rgba(45,212,191,0.12)",background:"linear-gradient(180deg,rgba(45,212,191,0.02),transparent)"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+        <div><div style={{fontSize:18,fontWeight:800,color:"#f0f0f0"}}>{vend.name}</div><div style={{fontSize:12,color:"#737373"}}>{vend.contact} {vend.email?" | "+vend.email:""} {vend.phone?" | "+vend.phone:""}{vend.category?" | "+vend.category:""}</div></div>
+        <div style={{display:"flex",gap:8}}><Btn v="ghost" style={{fontSize:12}} onClick={()=>{window._viewVendorId=vend.id;setPage("vendor360")}}>Full Profile</Btn><Btn v="secondary" style={{fontSize:12}} onClick={()=>setVendorDetail(null)}>Close</Btn></div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(100px,1fr))",gap:12,marginBottom:16}}>
+        <div style={{textAlign:"center",padding:12,background:"#0a0a0a",borderRadius:10}}><div style={{fontSize:20,fontWeight:700,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalSpend)}</div><div style={{fontSize:10,color:"#737373"}}>Lifetime Spend</div></div>
+        <div style={{textAlign:"center",padding:12,background:"#0a0a0a",borderRadius:10}}><div style={{fontSize:20,fontWeight:700,color:"#a78bfa",fontFamily:"'JetBrains Mono',monospace"}}>{vJobs.length}</div><div style={{fontSize:10,color:"#737373"}}>Total Jobs</div></div>
+        <div style={{textAlign:"center",padding:12,background:"#0a0a0a",borderRadius:10}}><div style={{fontSize:20,fontWeight:700,color:avgMargin>=30?"#34d399":avgMargin>=20?"#fbbf24":"#f87171",fontFamily:"'JetBrains Mono',monospace"}}>{avgMargin.toFixed(1)}%</div><div style={{fontSize:10,color:"#737373"}}>Avg Margin</div></div>
+        <div style={{textAlign:"center",padding:12,background:"#0a0a0a",borderRadius:10}}><div style={{fontSize:20,fontWeight:700,color:"#fbbf24",fontFamily:"'JetBrains Mono',monospace"}}>{activeJobs}</div><div style={{fontSize:10,color:"#737373"}}>Active</div></div>
+        <div style={{textAlign:"center",padding:12,background:"#0a0a0a",borderRadius:10}}><div style={{fontSize:20,fontWeight:700,color:"#34d399",fontFamily:"'JetBrains Mono',monospace"}}>{paidJobs}/{vJobs.filter(j=>j.phase!=="Quoting").length||1}</div><div style={{fontSize:10,color:"#737373"}}>Paid</div></div>
+        <div style={{textAlign:"center",padding:12,background:"#0a0a0a",borderRadius:10}}><div style={{fontSize:20,fontWeight:700,color:"#e5e5e5",fontFamily:"'JetBrains Mono',monospace"}}>{totalItems}</div><div style={{fontSize:10,color:"#737373"}}>Line Items</div></div>
+      </div>
+      {vJobs.length>0&&<div style={{marginBottom:12}}><div style={{fontSize:12,fontWeight:600,color:"#a3a3a3",marginBottom:8}}>Jobs</div>{vJobs.sort((a,b)=>new Date(b.createdDate)-new Date(a.createdDate)).map(j=>{const f=getJobFinancials(j.id);const jSpend=vItems.filter(i=>i.jobId===j.id).reduce((s,i)=>s+(i.unitCost||0)*(i.qtyOrdered||0),0);return <div key={j.id} onClick={()=>{setPage("jobs")}} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px",background:"#0a0a0a",borderRadius:8,marginBottom:4,cursor:"pointer"}} onMouseEnter={e=>e.currentTarget.style.background="#111"} onMouseLeave={e=>e.currentTarget.style.background="#0a0a0a"}><div><span style={{fontSize:12,fontWeight:600,color:"#e5e5e5"}}>{j.name}</span><span style={{fontSize:11,color:"#525252",marginLeft:8}}>{j.createdDate}</span></div><div style={{display:"flex",gap:8,alignItems:"center"}}><Badge label={j.phase} color={statusColor(j.phase)}/><span style={{fontSize:12,fontWeight:600,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(jSpend)}</span></div></div>})}</div>}
+      {topC.length>0&&<div><div style={{fontSize:12,fontWeight:600,color:"#a3a3a3",marginBottom:8}}>Top Customers</div>{topC.map(([n,s])=><div key={n} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:12}}><span style={{color:"#c4c4c4"}}>{n}</span><span style={{color:"#a78bfa",fontFamily:"'JetBrains Mono',monospace",fontWeight:600}}>{fmt(s)}</span></div>)}</div>}
+      {totalOrdered>0&&<div style={{marginTop:12}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#737373",marginBottom:3}}><span>Delivery Progress</span><span>{totalReceived}/{totalOrdered} units</span></div><div style={{height:6,background:"#111",borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:(totalReceived/totalOrdered*100)+"%",background:"linear-gradient(90deg,#2dd4bf,#34d399)",borderRadius:3}}/></div></div>}
+    </Card>
+  };
+
   // CSV Upload for vendors/customers/reps
   const csvUploadRef=React.useRef(null);
-  const [csvPreview,setCsvPreview]=useState(null); // {rows:[{...}], tab, dupeCount, newCount}
+  const enrichUploadRef=React.useRef(null);
+  const [csvPreview,setCsvPreview]=useState(null); // {rows:[{...,_action,_existingId,_changes}], tab, dupeCount, newCount, enrichCount}
+  const [enrichLoading,setEnrichLoading]=useState(false);
+
+  // Heuristic field validator -- detects when CSV columns hold the wrong kind of
+  // data (e.g. an email in the phone column, an address in the name column) and
+  // moves the value to the right field. Run on every parsed row before dedupe.
+  const looksLikeEmail=(v)=>typeof v==='string'&&/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim());
+  const looksLikePhone=(v)=>{if(typeof v!=='string')return false;const digits=v.replace(/\D/g,'');return digits.length>=7&&digits.length<=15&&!looksLikeEmail(v)};
+  const looksLikeAddress=(v)=>typeof v==='string'&&v.length>5&&(/\d+\s+\S+\s+(st|street|ave|avenue|rd|road|blvd|boulevard|dr|drive|ln|lane|way|ct|court|pkwy|parkway|pl|place|hwy|highway|cir|terrace|ter)/i.test(v)||/,\s*[A-Z]{2}\s*\d{5}/.test(v));
+  const looksLikePersonName=(v)=>typeof v==='string'&&!looksLikeEmail(v)&&!looksLikePhone(v)&&!looksLikeAddress(v)&&v.trim().split(/\s+/).length>=1&&v.length<60;
+  const validateAndFixRow=(row)=>{
+    // Build a working copy and normalize string-y values
+    const r={...row};
+    Object.keys(r).forEach(k=>{if(typeof r[k]==='string')r[k]=r[k].trim()});
+    // Pool of all string values for cross-field rescue
+    const all=Object.entries(r).filter(([,v])=>typeof v==='string'&&v.length>0);
+    // Email field correction
+    if(r.email&&!looksLikeEmail(r.email)){
+      // Look for an email anywhere else and swap
+      const found=all.find(([k,v])=>k!=='email'&&looksLikeEmail(v));
+      if(found){const [k,v]=found;const old=r.email;r.email=v;r[k]=old}else{r.email=''}
+    }
+    // If email blank, look for one in any unstructured field
+    if(!r.email){
+      const found=all.find(([k,v])=>looksLikeEmail(v)&&k!=='name');
+      if(found){r.email=found[1];r[found[0]]=''}
+    }
+    // Phone field correction
+    if(r.phone&&!looksLikePhone(r.phone)){
+      const found=all.find(([k,v])=>k!=='phone'&&looksLikePhone(v)&&!looksLikeEmail(v));
+      if(found){const [k,v]=found;const old=r.phone;r.phone=v;r[k]=old}else{r.phone=''}
+    }
+    if(!r.phone){
+      const found=all.find(([k,v])=>looksLikePhone(v)&&!looksLikeEmail(v)&&k!=='name'&&k!=='address');
+      if(found){r.phone=found[1];r[found[0]]=''}
+    }
+    // Address field correction -- be conservative, only swap if address slot looks
+    // wrong AND another field clearly contains an address
+    if(r.address&&!looksLikeAddress(r.address)&&r.address.length<10){
+      const found=all.find(([k,v])=>k!=='address'&&looksLikeAddress(v));
+      if(found){const [k,v]=found;const old=r.address;r.address=v;r[k]=old}
+    }
+    // Name field -- if it looks like an email or address, try to find a real name
+    if(r.name&&(looksLikeEmail(r.name)||looksLikeAddress(r.name)||looksLikePhone(r.name))){
+      const found=all.find(([k,v])=>k!=='name'&&looksLikePersonName(v)&&v!==r.contact);
+      if(found){const [k,v]=found;const old=r.name;r.name=v;r[k]=old}
+    }
+    return r;
+  };
+
   const handleCsvUpload=async(file)=>{
     if(!file)return;
     try{
@@ -7676,51 +7942,143 @@ const [tab,setTab]=useState("vendors");
       const splitRow=(line)=>{if(sep==='\t')return line.split('\t').map(v=>v.trim().replace(/^"|"$/g,''));const vals=[];let cur='';let inQ=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"')inQ=!inQ;else if(c===sep&&!inQ){vals.push(cur.trim().replace(/^"|"$/g,''));cur=''}else cur+=c}vals.push(cur.trim().replace(/^"|"$/g,''));return vals};
       const headers=splitRow(lines[0]).map(h=>h.toLowerCase().replace(/['"]/g,''));
       const rows=lines.slice(1).map(line=>{const vals=splitRow(line);const obj={};headers.forEach((h,i)=>{obj[h]=vals[i]||''});return obj});
-      let previewRows=[];let dupeCount=0;
-      if(tab==='vendors'){
-        rows.forEach(r=>{
-          const name=r.name||r.company||r.vendor||r['company name']||r['vendor name']||'';if(!name)return;
-          const isDupe=vendors.find(v=>v.name.toLowerCase()===name.toLowerCase());
-          if(isDupe){dupeCount++;return}
-          previewRows.push({_include:true,name,contact:r.contact||r['contact person']||'',email:r.email||'',phone:r.phone||r.telephone||'',category:r.category||r.type||'',address:r.address||[r.street,r.city,r.state,r.zip].filter(Boolean).join(', ')||'',discountRate:parseFloat(r['discount rate']||r.discount||'0')/100||0});
-        });
-      }else if(tab==='customers'){
-        rows.forEach(r=>{
-          const name=r.name||r.company||r.customer||r['organization']||r['company name']||r['customer name']||r['school']||r['school name']||r['district']||'';if(!name)return;
-          const isDupe=customers.find(c=>c.name.toLowerCase()===name.toLowerCase());
-          if(isDupe){dupeCount++;return}
-          previewRows.push({_include:true,name,contact:r.contact||r['contact person']||r['contact name']||'',email:r.email||'',phone:r.phone||r.telephone||'',type:r.type||r.category||'K-12 District',address:r.address||[r.street,r.city,r.state,r.zip].filter(Boolean).join(', ')||''});
-        });
-      }else if(tab==='reps'){
-        rows.forEach(r=>{
-          const name=r.name||r['rep name']||r['sales rep']||r['full name']||'';if(!name)return;
-          const isDupe=reps.find(rep=>rep.name.toLowerCase()===name.toLowerCase());
-          if(isDupe){dupeCount++;return}
-          previewRows.push({_include:true,name,email:r.email||'',territory:r.territory||r.region||r.area||'',commissionRate:parseFloat(r['commission rate']||r.commission||r.rate||'5')/100||0.05,tier:r.tier||r.level||'Associate'});
-        });
-      }
-      if(previewRows.length===0){notify('No new records found'+(dupeCount>0?' ('+dupeCount+' duplicates skipped)':''),'error');if(csvUploadRef.current)csvUploadRef.current.value='';return}
-      setCsvPreview({rows:previewRows,tab,dupeCount});
-      notify(previewRows.length+' new records ready for review'+(dupeCount>0?' ('+dupeCount+' duplicates filtered)':''));
+      ingestParsedRows(rows);
     }catch(e){notify('Error reading CSV: '+e.message,'error')}
     if(csvUploadRef.current)csvUploadRef.current.value='';
+    if(enrichUploadRef.current)enrichUploadRef.current.value='';
   };
+
+  // PDF / image directory ingestion via Claude Vision (/api/ai-scan).
+  // Sends the file as base64 and asks Claude to extract a JSON array of vendor
+  // or customer records with the field categorization we need.
+  const handlePdfUpload=async(file)=>{
+    if(!file)return;
+    setEnrichLoading(true);
+    try{
+      const b64=await new Promise((res,rej)=>{const fr=new FileReader();fr.onload=()=>{const result=fr.result;const comma=result.indexOf(',');res(comma>=0?result.slice(comma+1):result)};fr.onerror=()=>rej(new Error('Failed to read file'));fr.readAsDataURL(file)});
+      const mediaType=file.type||(file.name.toLowerCase().endsWith('.pdf')?'application/pdf':'image/jpeg');
+      const tabLabel=tab==='vendors'?'vendors (suppliers, manufacturers, contractors)':tab==='customers'?'customers (schools, districts, organizations)':'sales reps (team members)';
+      const fieldList=tab==='vendors'?'name (company), contact (person), email, phone, category (e.g. Furniture, Seating, AV), address':tab==='customers'?'name (organization), contact (person), email, phone, type (K-12 District, University, Government, Private, Non-Profit), address':'name, email, territory, tier (Associate, Mid-Level, Senior), commissionRate (decimal, e.g. 0.05 for 5%)';
+      const extra='You are extracting '+tabLabel+' records from this document for a furniture dealer business directory. Read carefully and return a JSON object with one key "records" containing an array. Each record must have these fields: '+fieldList+'. Be very strict about field categorization: emails contain @, phones are digit sequences, addresses contain a street number plus street type, names are organization or person names. Never put an email in the phone field, never put a phone in the address field, never put an address in the name field. If a field is not present, return an empty string for it. Skip rows that are headers, totals, or non-record rows. Return ONLY the JSON object, no markdown, no commentary.';
+      const r=await fetch('/api/ai-scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image_data:b64,media_type:mediaType,scan_type:'directory_extract',extra_context:extra})});
+      const resp=await r.json();
+      if(!r.ok||resp.error){notify('AI extraction failed: '+(resp.error||'unknown error'),'error');setEnrichLoading(false);if(enrichUploadRef.current)enrichUploadRef.current.value='';return}
+      const text=(resp.content||[])[0]?.text||'';
+      const clean=text.replace(/```json\s*/g,'').replace(/```\s*/g,'').trim();
+      let aiData;try{aiData=JSON.parse(clean)}catch{notify('AI returned unparseable response','error');setEnrichLoading(false);if(enrichUploadRef.current)enrichUploadRef.current.value='';return}
+      const rec=aiData.records||aiData.rows||aiData.items||[];
+      if(!Array.isArray(rec)||rec.length===0){notify('No records found in document','error');setEnrichLoading(false);if(enrichUploadRef.current)enrichUploadRef.current.value='';return}
+      ingestParsedRows(rec);
+    }catch(e){notify('Error processing file: '+e.message,'error')}
+    setEnrichLoading(false);
+    if(enrichUploadRef.current)enrichUploadRef.current.value='';
+  };
+
+  // Common ingestion path -- runs validation, dedupe, and enrichment-vs-new
+  // classification on a parsed array of rows from either CSV or PDF.
+  const ingestParsedRows=(rows)=>{
+    let previewRows=[];let newCount=0;let enrichCount=0;
+    if(tab==='vendors'){
+      rows.forEach(r=>{
+        const fixed=validateAndFixRow({name:r.name||r.company||r.vendor||r['company name']||r['vendor name']||'',contact:r.contact||r['contact person']||r['contact name']||'',email:r.email||'',phone:r.phone||r.telephone||'',category:r.category||r.type||'',address:r.address||[r.street,r.city,r.state,r.zip].filter(Boolean).join(', ')||'',discountRate:parseFloat(r['discount rate']||r.discount||'0')/100||0});
+        if(!fixed.name)return;
+        const existing=vendors.find(v=>v.name.toLowerCase()===fixed.name.toLowerCase());
+        if(existing){
+          // Compute which fields would be enriched (only fill in empty existing ones)
+          const changes={};
+          ['contact','email','phone','category','address'].forEach(f=>{if(!existing[f]&&fixed[f])changes[f]=fixed[f]});
+          if(fixed.discountRate&&!existing.discountRate)changes.discountRate=fixed.discountRate;
+          if(Object.keys(changes).length===0)return; // nothing to add
+          previewRows.push({_include:true,_action:'enrich',_existingId:existing.id,_changes:changes,...fixed});
+          enrichCount++;
+        }else{
+          previewRows.push({_include:true,_action:'new',...fixed});
+          newCount++;
+        }
+      });
+    }else if(tab==='customers'){
+      rows.forEach(r=>{
+        const fixed=validateAndFixRow({name:r.name||r.company||r.customer||r['organization']||r['company name']||r['customer name']||r['school']||r['school name']||r['district']||'',contact:r.contact||r['contact person']||r['contact name']||'',email:r.email||'',phone:r.phone||r.telephone||'',type:r.type||r.category||'K-12 District',address:r.address||[r.street,r.city,r.state,r.zip].filter(Boolean).join(', ')||''});
+        if(!fixed.name)return;
+        const existing=customers.find(c=>c.name.toLowerCase()===fixed.name.toLowerCase());
+        if(existing){
+          const changes={};
+          ['contact','email','phone','type','address'].forEach(f=>{if(!existing[f]&&fixed[f])changes[f]=fixed[f]});
+          if(Object.keys(changes).length===0)return;
+          previewRows.push({_include:true,_action:'enrich',_existingId:existing.id,_changes:changes,...fixed});
+          enrichCount++;
+        }else{
+          previewRows.push({_include:true,_action:'new',...fixed});
+          newCount++;
+        }
+      });
+    }else if(tab==='reps'){
+      rows.forEach(r=>{
+        const fixed=validateAndFixRow({name:r.name||r['rep name']||r['sales rep']||r['full name']||'',email:r.email||'',territory:r.territory||r.region||r.area||'',commissionRate:parseFloat(r['commission rate']||r.commission||r.rate||'5')/100||0.05,tier:r.tier||r.level||'Associate'});
+        if(!fixed.name)return;
+        const existing=reps.find(rep=>rep.name.toLowerCase()===fixed.name.toLowerCase());
+        if(existing){
+          const changes={};
+          ['email','territory','tier'].forEach(f=>{if(!existing[f]&&fixed[f])changes[f]=fixed[f]});
+          if(fixed.commissionRate&&!existing.commissionRate)changes.commissionRate=fixed.commissionRate;
+          if(Object.keys(changes).length===0)return;
+          previewRows.push({_include:true,_action:'enrich',_existingId:existing.id,_changes:changes,...fixed});
+          enrichCount++;
+        }else{
+          previewRows.push({_include:true,_action:'new',...fixed});
+          newCount++;
+        }
+      });
+    }
+    if(previewRows.length===0){notify('No new or enrichable records found','error');return}
+    setCsvPreview({rows:previewRows,tab,newCount,enrichCount,dupeCount:0});
+    notify(previewRows.length+' records ready: '+newCount+' new, '+enrichCount+' enrichments');
+  };
+
   const csvPreviewUpdate=(idx,field,value)=>{setCsvPreview(prev=>{if(!prev)return prev;const rows=[...prev.rows];rows[idx]={...rows[idx],[field]:value};return{...prev,rows}})};
   const csvPreviewToggle=(idx)=>{setCsvPreview(prev=>{if(!prev)return prev;const rows=[...prev.rows];rows[idx]={...rows[idx],_include:!rows[idx]._include};return{...prev,rows}})};
   const csvPreviewConfirm=()=>{
     if(!csvPreview)return;
     const selected=csvPreview.rows.filter(r=>r._include);
-    let count=0;
-    if(csvPreview.tab==='vendors'){selected.forEach(r=>{const {_include,...data}=r;addVendor(data);count++})}
-    else if(csvPreview.tab==='customers'){selected.forEach(r=>{const {_include,...data}=r;addCustomer(data);count++})}
-    else if(csvPreview.tab==='reps'){selected.forEach(r=>{const {_include,...data}=r;addRep({...data,commissionRate:parseFloat(data.commissionRate)||0.05});count++})}
-    notify(count+' '+(csvPreview.tab==='vendors'?'vendors':csvPreview.tab==='customers'?'customers':'sales reps')+' imported');
+    let newCount=0;let enrichCount=0;
+    if(csvPreview.tab==='vendors'){selected.forEach(r=>{const {_include,_action,_existingId,_changes,...data}=r;if(_action==='enrich'&&_existingId){updateVendor(_existingId,_changes||{});enrichCount++}else{addVendor(data);newCount++}})}
+    else if(csvPreview.tab==='customers'){selected.forEach(r=>{const {_include,_action,_existingId,_changes,...data}=r;if(_action==='enrich'&&_existingId){updateCustomer(_existingId,_changes||{});enrichCount++}else{addCustomer(data);newCount++}})}
+    else if(csvPreview.tab==='reps'){selected.forEach(r=>{const {_include,_action,_existingId,_changes,...data}=r;if(_action==='enrich'&&_existingId){updateRep(_existingId,_changes||{});enrichCount++}else{addRep({...data,commissionRate:parseFloat(data.commissionRate)||0.05});newCount++}})}
+    const label=csvPreview.tab==='vendors'?'vendors':csvPreview.tab==='customers'?'customers':'sales reps';
+    const parts=[];if(newCount>0)parts.push(newCount+' new');if(enrichCount>0)parts.push(enrichCount+' enriched');
+    notify(parts.join(', ')+' '+label+' saved');
     setCsvPreview(null);
   };
 
-  return <div style={{animation:"fadeUp 0.4s"}}><Header title="Directory" sub="Manage all vendors, customers, and team members -- edit, add, sort" action={<div style={{display:"flex",gap:8}}><input ref={csvUploadRef} type="file" accept=".csv,.tsv" onChange={e=>{if(e.target.files[0])handleCsvUpload(e.target.files[0])}} style={{display:"none"}}/><Btn v="secondary" onClick={()=>csvUploadRef.current?.click()}><I n="upload" s={14}/> Upload CSV</Btn><Btn onClick={startAdd}><I n="plus" s={14}/> Add {tab==="vendors"?"Vendor":tab==="customers"?"Customer":"Team Member"}</Btn></div>}/>
+  // CSV Export -- download the current tab's list as a .csv file
+  const exportCsv=()=>{
+    const data=tab==='vendors'?vendors:tab==='customers'?customers:reps;
+    if(!data||data.length===0){notify('Nothing to export','error');return}
+    const cols=tab==='vendors'?['name','contact','email','phone','category','address','discountRate']:tab==='customers'?['name','contact','email','phone','type','address']:['name','email','territory','tier','commissionRate'];
+    const escape=(v)=>{if(v===undefined||v===null)return '';const s=String(v);if(s.includes(',')||s.includes('"')||s.includes('\n'))return '"'+s.replace(/"/g,'""')+'"';return s};
+    const lines=[cols.join(',')];
+    data.forEach(r=>{lines.push(cols.map(c=>escape(r[c])).join(','))});
+    const csv=lines.join('\n');
+    const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    const stamp=new Date().toISOString().slice(0,10);
+    a.href=url;a.download='midwest-'+tab+'-'+stamp+'.csv';
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    notify('Exported '+data.length+' '+tab+' to CSV');
+  };
+
+  return <div style={{animation:"fadeUp 0.4s"}}><Header title="Directory" sub="Manage all vendors, customers, and team members -- edit, add, sort" action={<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+      <input ref={csvUploadRef} type="file" accept=".csv,.tsv" onChange={e=>{if(e.target.files[0])handleCsvUpload(e.target.files[0])}} style={{display:"none"}}/>
+      <input ref={enrichUploadRef} type="file" accept=".csv,.tsv,.pdf,image/*" onChange={e=>{const f=e.target.files[0];if(!f)return;const ext=f.name.toLowerCase().split('.').pop();if(ext==='csv'||ext==='tsv')handleCsvUpload(f);else handlePdfUpload(f)}} style={{display:"none"}}/>
+      <Btn v="secondary" onClick={()=>csvUploadRef.current?.click()}><I n="upload" s={14}/> Upload CSV</Btn>
+      <Btn v="secondary" onClick={()=>enrichUploadRef.current?.click()} disabled={enrichLoading}><I n="brain" s={14}/> {enrichLoading?'Reading...':'Enrich (CSV/PDF)'}</Btn>
+      <Btn v="secondary" onClick={exportCsv}><I n="download" s={14}/> Export CSV</Btn>
+      <Btn onClick={startAdd}><I n="plus" s={14}/> Add {tab==="vendors"?"Vendor":tab==="customers"?"Customer":"Team Member"}</Btn>
+    </div>}/>
     <div style={{display:"flex",gap:12,marginBottom:20,alignItems:"center",flexWrap:"wrap"}}>
-      <div style={{display:"flex",gap:4,background:"#111111",padding:4,borderRadius:10}}>{[["vendors","Vendors ("+vendors.length+")"],["customers","Customers ("+customers.length+")"],["reps","Team ("+reps.length+")"]].map(([id,label])=><button key={id} onClick={()=>{setTab(id);setEditId(null);setAdding(false);setSort("name");setDirSearch("");setSelected(new Set());setCustDetail(null)}} style={{padding:"8px 16px",borderRadius:8,border:"none",cursor:"pointer",background:tab===id?"#2dd4bf":"transparent",color:tab===id?"#000000":"#525252",fontSize:13,fontWeight:tab===id?600:400,fontFamily:"inherit"}}>{label}</button>)}</div>
+      <div style={{display:"flex",gap:4,background:"#111111",padding:4,borderRadius:10}}>{[["vendors","Vendors ("+vendors.length+")"],["customers","Customers ("+customers.length+")"],["reps","Team ("+reps.length+")"]].map(([id,label])=><button key={id} onClick={()=>{setTab(id);setEditId(null);setAdding(false);setSort("name");setDirSearch("");setSelected(new Set());setCustDetail(null);setVendorDetail(null)}} style={{padding:"8px 16px",borderRadius:8,border:"none",cursor:"pointer",background:tab===id?"#2dd4bf":"transparent",color:tab===id?"#000000":"#525252",fontSize:13,fontWeight:tab===id?600:400,fontFamily:"inherit"}}>{label}</button>)}</div>
       <input value={dirSearch} onChange={e=>setDirSearch(e.target.value)} placeholder={"Search "+tab+"..."} style={{...inputStyle,maxWidth:260,background:"#111111",border:"1px solid #222222",padding:"8px 14px"}}/>
     </div>
 
@@ -7742,31 +8100,32 @@ const [tab,setTab]=useState("vendors");
       <div style={{display:"flex",gap:8}}><Btn onClick={save}>Add</Btn><Btn v="secondary" onClick={cancel}>Cancel</Btn></div>
     </Card>}
 
-    {/* CSV Import Preview */}
+    {/* Import & Enrichment Preview */}
     {csvPreview&&<Card style={{marginBottom:20,border:"1px solid rgba(45,212,191,0.2)"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-        <div style={{fontSize:16,fontWeight:800,color:"#2dd4bf"}}>CSV Import Preview</div>
+        <div style={{fontSize:16,fontWeight:800,color:"#2dd4bf"}}>Import & Enrichment Preview</div>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
-          {csvPreview.dupeCount>0&&<span style={{fontSize:11,color:"#737373"}}>{csvPreview.dupeCount} duplicates filtered</span>}
           <Btn v="secondary" style={{fontSize:12,padding:"4px 10px"}} onClick={()=>setCsvPreview(null)}>Cancel</Btn>
         </div>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:12,marginBottom:16}}>
-        <div style={{padding:12,background:"#0a0a0a",borderRadius:10,textAlign:"center"}}><div style={{fontSize:10,color:"#737373",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>New Records</div><div style={{fontSize:22,fontWeight:700,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{csvPreview.rows.filter(r=>r._include).length}</div></div>
+        <div style={{padding:12,background:"#0a0a0a",borderRadius:10,textAlign:"center"}}><div style={{fontSize:10,color:"#737373",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>New Records</div><div style={{fontSize:22,fontWeight:700,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{csvPreview.rows.filter(r=>r._include&&r._action!=='enrich').length}</div></div>
+        <div style={{padding:12,background:"#0a0a0a",borderRadius:10,textAlign:"center"}}><div style={{fontSize:10,color:"#737373",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Enrichments</div><div style={{fontSize:22,fontWeight:700,color:"#fbbf24",fontFamily:"'JetBrains Mono',monospace"}}>{csvPreview.rows.filter(r=>r._include&&r._action==='enrich').length}</div></div>
         <div style={{padding:12,background:"#0a0a0a",borderRadius:10,textAlign:"center"}}><div style={{fontSize:10,color:"#737373",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Total Parsed</div><div style={{fontSize:22,fontWeight:700,color:"#a78bfa",fontFamily:"'JetBrains Mono',monospace"}}>{csvPreview.rows.length}</div></div>
-        <div style={{padding:12,background:"#0a0a0a",borderRadius:10,textAlign:"center"}}><div style={{fontSize:10,color:"#737373",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Duplicates Skipped</div><div style={{fontSize:22,fontWeight:700,color:"#fbbf24",fontFamily:"'JetBrains Mono',monospace"}}>{csvPreview.dupeCount}</div></div>
         <div style={{padding:12,background:"#0a0a0a",borderRadius:10,textAlign:"center"}}><div style={{fontSize:10,color:"#737373",textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Type</div><div style={{fontSize:16,fontWeight:700,color:"#e5e5e5"}}>{csvPreview.tab==='vendors'?'Vendors':csvPreview.tab==='customers'?'Customers':'Sales Reps'}</div></div>
       </div>
       <div style={{overflowX:"auto",maxHeight:360,borderRadius:8,border:"1px solid rgba(255,255,255,0.04)",marginBottom:16}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:11,minWidth:csvPreview.tab==='reps'?500:700}}>
           <thead><tr style={{background:"#0a0a0a",position:"sticky",top:0}}>
             <th style={{padding:"5px 6px",width:32}}/>
+            <th style={{padding:"5px 6px",width:80,textAlign:"left",fontWeight:600,color:"#525252",fontSize:10,textTransform:"uppercase",letterSpacing:0.5}}>Action</th>
             {csvPreview.tab==='vendors'&&["Name","Contact","Email","Phone","Category","Address","Discount %"].map(h=><th key={h} style={{padding:"5px 6px",textAlign:"left",fontWeight:600,color:"#525252",fontSize:10,textTransform:"uppercase",letterSpacing:0.5}}>{h}</th>)}
             {csvPreview.tab==='customers'&&["Name","Contact","Email","Phone","Type","Address"].map(h=><th key={h} style={{padding:"5px 6px",textAlign:"left",fontWeight:600,color:"#525252",fontSize:10,textTransform:"uppercase",letterSpacing:0.5}}>{h}</th>)}
             {csvPreview.tab==='reps'&&["Name","Email","Territory","Tier","Rate %"].map(h=><th key={h} style={{padding:"5px 6px",textAlign:"left",fontWeight:600,color:"#525252",fontSize:10,textTransform:"uppercase",letterSpacing:0.5}}>{h}</th>)}
           </tr></thead>
-          <tbody>{csvPreview.rows.map((r,idx)=><tr key={idx} style={{borderBottom:"1px solid rgba(255,255,255,0.02)",opacity:r._include?1:0.35,transition:"opacity 0.15s"}}>
+          <tbody>{csvPreview.rows.map((r,idx)=><tr key={idx} style={{borderBottom:"1px solid rgba(255,255,255,0.02)",opacity:r._include?1:0.35,transition:"opacity 0.15s",background:r._action==='enrich'?"rgba(251,191,36,0.04)":"transparent"}}>
             <td style={{padding:"4px 6px",textAlign:"center"}}><input type="checkbox" checked={r._include} onChange={()=>csvPreviewToggle(idx)} style={{accentColor:"#2dd4bf",cursor:"pointer"}}/></td>
+            <td style={{padding:"4px 6px"}}><span style={{fontSize:10,fontWeight:700,padding:"2px 6px",borderRadius:4,background:r._action==='enrich'?"rgba(251,191,36,0.15)":"rgba(45,212,191,0.15)",color:r._action==='enrich'?"#fbbf24":"#2dd4bf",textTransform:"uppercase",letterSpacing:0.5,whiteSpace:"nowrap"}} title={r._action==='enrich'&&r._changes?'Will fill empty fields: '+Object.keys(r._changes).join(', '):'New record'}>{r._action==='enrich'?'enrich':'new'}</span></td>
             {csvPreview.tab==='vendors'&&<>
               <td style={{padding:"4px 6px"}}><input value={r.name} onChange={e=>csvPreviewUpdate(idx,'name',e.target.value)} style={{background:"transparent",border:"1px solid transparent",borderRadius:4,padding:"2px 4px",color:"#e5e5e5",fontSize:11,width:"100%",fontFamily:"inherit",outline:"none"}} onFocus={e=>e.target.style.borderColor='rgba(45,212,191,0.3)'} onBlur={e=>e.target.style.borderColor='transparent'}/></td>
               <td style={{padding:"4px 6px"}}><input value={r.contact} onChange={e=>csvPreviewUpdate(idx,'contact',e.target.value)} style={{background:"transparent",border:"1px solid transparent",borderRadius:4,padding:"2px 4px",color:"#9a9a9a",fontSize:11,width:"100%",fontFamily:"inherit",outline:"none"}} onFocus={e=>e.target.style.borderColor='rgba(45,212,191,0.3)'} onBlur={e=>e.target.style.borderColor='transparent'}/></td>
@@ -7795,12 +8154,15 @@ const [tab,setTab]=useState("vendors");
         </table>
       </div>
       <Btn onClick={csvPreviewConfirm} style={{width:"100%",justifyContent:"center",padding:"12px",fontSize:14}}>
-        Import {csvPreview.rows.filter(r=>r._include).length} {csvPreview.tab==='vendors'?'Vendors':csvPreview.tab==='customers'?'Customers':'Sales Reps'}
+        {(()=>{const sel=csvPreview.rows.filter(r=>r._include);const newC=sel.filter(r=>r._action!=='enrich').length;const enC=sel.filter(r=>r._action==='enrich').length;const lbl=csvPreview.tab==='vendors'?'Vendors':csvPreview.tab==='customers'?'Customers':'Sales Reps';if(newC>0&&enC>0)return 'Save '+newC+' new + '+enC+' enriched '+lbl;if(enC>0)return 'Enrich '+enC+' '+lbl;return 'Import '+newC+' '+lbl})()}
       </Btn>
     </Card>}
 
     {/* Customer analytics panel */}
     {custDetail&&tab==="customers"&&<CustAnalytics cust={custDetail}/>}
+
+    {/* Vendor analytics panel */}
+    {vendorDetail&&tab==="vendors"&&<VendorAnalytics vend={vendorDetail}/>}
 
     {/* Sort + Select All */}
     <div style={{marginBottom:8,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
@@ -7828,7 +8190,7 @@ const [tab,setTab]=useState("vendors");
       return <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}><thead><tr>{headers.map((h,i)=><th key={i} style={{padding:"10px 8px",textAlign:"left",fontSize:11,fontWeight:600,color:"#737373",borderBottom:"1px solid #222",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead><tbody>
         {filteredList.map(r=><React.Fragment key={r.id}>
           <tr style={{transition:"background 0.15s",background:editId===r.id?"#0a0a0a":"transparent"}} onMouseEnter={e=>{if(editId!==r.id)e.currentTarget.style.background="#0a0a0a"}} onMouseLeave={e=>{if(editId!==r.id)e.currentTarget.style.background="transparent"}}>
-            {tab==="vendors"&&<><td style={{padding:"10px 8px",borderBottom:"1px solid #111"}}><Check checked={selected.has(r.id)} onChange={()=>toggleSelect(r.id)}/></td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",fontWeight:600,color:"#e5e5e5"}}>{r.name}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}}>{r.contact}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#2dd4bf"}}>{r.email}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}}>{r.phone}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}}>{r.category}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",fontSize:11,color:"#737373",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis"}}>{r.address||"--"}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",fontFamily:"'JetBrains Mono',monospace",color:"#34d399",fontWeight:600}}>{r.discountRate?((r.discountType==="reciprocal"&&r.reciprocalTiers)?r.reciprocalTiers:((r.discountRate*100).toFixed(0)+"%")):"--"}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111"}}><Btn v="ghost" style={{fontSize:12,padding:"3px 8px"}} onClick={e=>{e.stopPropagation();startEdit(r)}}>{editId===r.id?"Close":"Edit"}</Btn></td></>}
+            {tab==="vendors"&&<><td style={{padding:"10px 8px",borderBottom:"1px solid #111"}}><Check checked={selected.has(r.id)} onChange={()=>toggleSelect(r.id)}/></td><td style={{padding:"10px 8px",borderBottom:"1px solid #111"}}><span onClick={e=>{e.stopPropagation();setVendorDetail(vendorDetail?.id===r.id?null:r)}} style={{fontWeight:600,color:"#2dd4bf",cursor:"pointer"}}>{r.name}</span></td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}}>{r.contact}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#2dd4bf"}}>{r.email}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}}>{r.phone}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}}>{r.category}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",fontSize:11,color:"#737373",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis"}}>{r.address||"--"}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",fontFamily:"'JetBrains Mono',monospace",color:"#34d399",fontWeight:600}}>{r.discountRate?((r.discountType==="reciprocal"&&r.reciprocalTiers)?r.reciprocalTiers:((r.discountRate*100).toFixed(0)+"%")):"--"}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111"}}><Btn v="ghost" style={{fontSize:12,padding:"3px 8px"}} onClick={e=>{e.stopPropagation();startEdit(r)}}>{editId===r.id?"Close":"Edit"}</Btn></td></>}
             {tab==="customers"&&<><td style={{padding:"10px 8px",borderBottom:"1px solid #111"}}><Check checked={selected.has(r.id)} onChange={()=>toggleSelect(r.id)}/></td><td style={{padding:"10px 8px",borderBottom:"1px solid #111"}}><span onClick={e=>{e.stopPropagation();setCustDetail(custDetail?.id===r.id?null:r)}} style={{fontWeight:600,color:"#2dd4bf",cursor:"pointer"}}>{r.name}</span></td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}}>{r.contact}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#2dd4bf"}}>{r.email}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}}>{r.phone}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111"}}><Badge label={r.type||"--"} color="#a78bfa"/></td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",fontSize:12,color:"#c4c4c4"}}>{r.address||"--"}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111"}}><Btn v="ghost" style={{fontSize:12,padding:"3px 8px"}} onClick={e=>{e.stopPropagation();startEdit(r)}}>{editId===r.id?"Close":"Edit"}</Btn></td></>}
             {tab==="reps"&&<><td style={{padding:"10px 8px",borderBottom:"1px solid #111"}}><Check checked={selected.has(r.id)} onChange={()=>toggleSelect(r.id)}/></td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",fontWeight:600,color:"#e5e5e5"}}>{r.name}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#2dd4bf"}}>{r.email}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}}>{r.territory}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111"}}><div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{getRoles(r).map(role=><Badge key={role} label={role} color={role==="Owner"?"#fbbf24":role==="Sales"?"#2dd4bf":"#8b5cf6"}/>)}</div></td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",fontFamily:"'JetBrains Mono',monospace",color:"#2dd4bf"}}>{(r.commissionRate*100).toFixed(1)}%</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111"}}><Btn v="ghost" style={{fontSize:12,padding:"3px 8px"}} onClick={e=>{e.stopPropagation();startEdit(r)}}>{editId===r.id?"Close":"Edit"}</Btn></td></>}
           </tr>
