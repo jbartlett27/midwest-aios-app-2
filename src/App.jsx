@@ -3228,14 +3228,17 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
         const vendorAddrHtml=vendorAddr.split('\n').filter(Boolean).join('<br>');
         const today=new Date();const mm=String(today.getMonth()+1).padStart(2,'0');const dd=String(today.getDate()).padStart(2,'0');const yyyy=today.getFullYear();
         const dateStr=mm+'/'+dd+'/'+yyyy;
-        // Auto-generate check number. Floor is 1127. Uses localStorage high-water
-        // mark to survive React state races -- the printed number is always strictly
-        // greater than every previously printed number, no duplicates ever.
-        const allCheckNums=Object.values(docStatuses).filter(v=>v&&typeof v==='object'&&v.checkNum&&v.checkNum!=='____').map(v=>parseInt(v.checkNum)).filter(n=>!isNaN(n)&&n>=1127);
+        // Auto-generate check number. Maureen's checkbook lives in [1127, 9999].
+        // Anything outside that range in stored data is legacy/test pollution and is
+        // ignored. Uses localStorage high-water mark to survive React state races.
+        const CHECK_MIN=1127;
+        const CHECK_MAX=9999;
+        const inRange=(n)=>!isNaN(n)&&n>=CHECK_MIN&&n<=CHECK_MAX;
+        const allCheckNums=Object.values(docStatuses).filter(v=>v&&typeof v==='object'&&v.checkNum&&v.checkNum!=='____').map(v=>parseInt(v.checkNum)).filter(inRange);
         const usedSet=new Set(allCheckNums);
-        let highWater=0;try{highWater=parseInt(localStorage.getItem('mw_check_high_water')||'0')||0}catch{}
+        let highWater=0;try{const hw=parseInt(localStorage.getItem('mw_check_high_water')||'0')||0;highWater=(hw>=CHECK_MIN&&hw<=CHECK_MAX)?hw:0;if(hw>CHECK_MAX){localStorage.removeItem('mw_check_high_water')}}catch{}
         const scannedMax=allCheckNums.length>0?Math.max(...allCheckNums):0;
-        let nextCheck=Math.max(highWater+1,scannedMax+1,1127);
+        let nextCheck=Math.max(highWater+1,scannedMax+1,CHECK_MIN);
         while(usedSet.has(nextCheck))nextCheck++;
         const checkNo=String(nextCheck);
         try{localStorage.setItem('mw_check_high_water',String(nextCheck))}catch{}
@@ -3340,20 +3343,27 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
           // (2) Otherwise, auto-assign the next sequential number, with a high-water
           //     mark stored in localStorage that survives React state races.
           // The auto-computed number is the MAX of: (scanned max + 1), (high-water + 1), 1127.
+          // Maureen's physical checkbook starts at 1127 and will never exceed ~9999.
+          // Anything outside [1127, 9999] in stored data is legacy/test-pollution
+          // (e.g. 767498) and must be ignored when computing the next number.
+          const CHECK_MIN=1127;
+          const CHECK_MAX=9999;
+          const inRange=(n)=>!isNaN(n)&&n>=CHECK_MIN&&n<=CHECK_MAX;
           const ownDocNum=bill2.billDocNum;
           const ownStored=docStatuses[ownDocNum];
           const ownStoredCheckNum=(ownStored&&typeof ownStored==='object'&&ownStored.checkNum&&ownStored.checkNum!=='____')?parseInt(ownStored.checkNum):NaN;
-          const usedByOthers=Object.entries(docStatuses).filter(([k,v])=>k!==ownDocNum&&v&&typeof v==='object'&&v.checkNum&&v.checkNum!=='____').map(([k,v])=>parseInt(v.checkNum)).filter(n=>!isNaN(n)&&n>=1127);
+          const usedByOthers=Object.entries(docStatuses).filter(([k,v])=>k!==ownDocNum&&v&&typeof v==='object'&&v.checkNum&&v.checkNum!=='____').map(([k,v])=>parseInt(v.checkNum)).filter(inRange);
           const usedSet=new Set(usedByOthers);
+          // Drop any stale localStorage high-water mark above CHECK_MAX (legacy pollution).
+          let highWater=0;try{const hw=parseInt(localStorage.getItem('mw_check_high_water')||'0')||0;highWater=(hw>=CHECK_MIN&&hw<=CHECK_MAX)?hw:0;if(hw>CHECK_MAX){localStorage.removeItem('mw_check_high_water')}}catch{}
           let checkNo;
-          if(!isNaN(ownStoredCheckNum)&&ownStoredCheckNum>=1127&&!usedSet.has(ownStoredCheckNum)){
-            // Reprint: reuse this bill's own previously assigned number
+          if(inRange(ownStoredCheckNum)&&!usedSet.has(ownStoredCheckNum)){
+            // Reprint: reuse this bill's own previously assigned (in-range) number
             checkNo=String(ownStoredCheckNum);
           }else{
-            // First print: high-water-mark + scan + 1127 floor
-            let highWater=0;try{highWater=parseInt(localStorage.getItem('mw_check_high_water')||'0')||0}catch{}
+            // First print: scan in-range numbers + high-water + 1127 floor
             const scannedMax=usedByOthers.length>0?Math.max(...usedByOthers):0;
-            let nextCheck=Math.max(highWater+1,scannedMax+1,1127);
+            let nextCheck=Math.max(highWater+1,scannedMax+1,CHECK_MIN);
             while(usedSet.has(nextCheck))nextCheck++;
             checkNo=String(nextCheck);
             // Bump high-water mark IMMEDIATELY so any subsequent print (even before
