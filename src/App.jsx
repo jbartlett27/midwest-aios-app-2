@@ -1317,6 +1317,112 @@ function MidwestAIOSInner() {
   }, [appReady, currentUser?.id]);
 
 
+  // App-scope Plaid auto-sync. This runs regardless of which page the user
+  // is viewing, ensuring transactions stay current even if she never opens
+  // the Banking tab. The FinancialsPage-scoped auto-sync still handles UI
+  // feedback when she IS on Banking; both share the same 12-min throttle
+  // through localStorage.mw_plaid_last_sync, so they never double-fire.
+  useEffect(() => {
+    if (!appReady) return;
+    let cancelled = false;
+
+    const runSilentSync = async () => {
+      if (cancelled) return;
+      try {
+        const tok = localStorage.getItem("mw_plaid_access_token");
+        const stat = localStorage.getItem("mw_plaid_status");
+        if (!tok || stat !== "connected") return;
+        // Throttle: skip if last sync was less than 12 min ago.
+        const lastStr = localStorage.getItem("mw_plaid_last_sync") || "";
+        const last = lastStr ? new Date(lastStr) : null;
+        const minsSince = last ? ((Date.now() - last.getTime()) / 60000) : 999;
+        if (minsSince < 12) return;
+        // Determine sync window. Default to quarter (3 months) for catch-up.
+        const range = (localStorage.getItem("mw_plaid_sync_range") || "quarter");
+        const useRange = (range === "custom" || range === "all") ? "quarter" : range;
+        const now = new Date();
+        const endPad = new Date(now); endPad.setDate(endPad.getDate() + 2);
+        const endDate = endPad.toISOString().split("T")[0];
+        let startDate;
+        if (useRange === "month") { const d = new Date(now); d.setMonth(d.getMonth() - 1); startDate = d.toISOString().split("T")[0]; }
+        else if (useRange === "6months") { const d = new Date(now); d.setMonth(d.getMonth() - 6); startDate = d.toISOString().split("T")[0]; }
+        else if (useRange === "year") { const d = new Date(now); d.setFullYear(d.getFullYear() - 1); startDate = d.toISOString().split("T")[0]; }
+        else if (useRange === "2years") { const d = new Date(now); d.setFullYear(d.getFullYear() - 2); startDate = d.toISOString().split("T")[0]; }
+        else { const d = new Date(now); d.setMonth(d.getMonth() - 3); startDate = d.toISOString().split("T")[0]; }
+        // Overlap startDate backward by 14 days from last sync to catch late-posted transactions.
+        if (lastStr) {
+          try {
+            const overlap = new Date(lastStr); overlap.setDate(overlap.getDate() - 14);
+            const overlapStr = overlap.toISOString().split("T")[0];
+            if (overlapStr < startDate) startDate = overlapStr;
+          } catch {}
+        }
+        const r = await fetch("/api/plaid-transactions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ access_token: tok, start_date: startDate, end_date: endDate })
+        });
+        if (cancelled) return;
+        const data = await r.json();
+        if (!r.ok || data.error_code || data.error) {
+          // Silent failure: persist the error to localStorage so the Banking tab
+          // can surface it whenever the user lands there (no toast for silent runs).
+          try { localStorage.setItem("mw_plaid_sync_error", data.error_message || data.error?.message || data.error || "Sync failed"); } catch {}
+          return;
+        }
+        try { localStorage.removeItem("mw_plaid_sync_error"); } catch {}
+        const txns = data.added || data.transactions || [];
+        if (cancelled) return;
+        // Build dedup sets fresh from current customSops state via setCustomSops
+        // updater (lets us read the latest value without depending on closure).
+        setCustomSops(prev => {
+          if (cancelled) return prev;
+          const manualTxns = (prev || []).filter(s => s.cat === "ManualTxn").map(s => { try { return { id: s.id, ...JSON.parse(s.content) }; } catch { return null; } }).filter(Boolean);
+          const existingPlaidIds = new Set(manualTxns.filter(mt => mt.plaidId).map(mt => mt.plaidId));
+          const existingHashes = new Set(manualTxns.map(mt => (mt.date || "") + "|" + (mt.amount || "") + "|" + (mt.description || "").slice(0, 12).toLowerCase()));
+          const additions = [];
+          let imported = 0;
+          for (const t of txns) {
+            if (t.transaction_id && existingPlaidIds.has(t.transaction_id)) continue;
+            const hash = (t.date || "") + "|" + String(Math.abs(t.amount || 0).toFixed(2)) + "|" + (t.name || t.merchant_name || "").slice(0, 12).toLowerCase();
+            if (existingHashes.has(hash)) continue;
+            if (t.transaction_id) existingPlaidIds.add(t.transaction_id);
+            existingHashes.add(hash);
+            const id = "TXN-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6) + "-" + imported;
+            const isDebit = t.amount > 0;
+            const sopRecord = {
+              id, title: t.name || t.merchant_name || "Bank transaction", cat: "ManualTxn", icon: "dollar",
+              content: JSON.stringify({
+                date: t.date || "", description: t.name || t.merchant_name || "",
+                category: t.personal_finance_category?.primary || "Uncategorized",
+                amount: String(Math.abs(t.amount).toFixed(2)),
+                type: isDebit ? "expense" : "revenue", account: t.account_id || "Operating",
+                plaidId: t.transaction_id, plaidCategory: t.category?.join(" > ") || ""
+              }), custom: true
+            };
+            additions.push(sopRecord);
+            // Persist to Supabase via db.saveSop (fire-and-forget, same pattern as addSop).
+            try { db.deleteSop(sopRecord.id).then(() => db.saveSop(sopRecord)).catch(() => {}); } catch {}
+            imported++;
+          }
+          if (additions.length === 0) return prev;
+          return [...prev, ...additions];
+        });
+        const syncTime = new Date().toISOString();
+        try { localStorage.setItem("mw_plaid_last_sync", syncTime); } catch {}
+      } catch (err) {
+        try { localStorage.setItem("mw_plaid_sync_error", err.message || "Network error"); } catch {}
+      }
+    };
+
+    // Fire immediately on app mount if last sync was > 5 min ago.
+    const initialTimer = setTimeout(runSilentSync, 2000);
+    // Then every 15 minutes regardless of which page is active.
+    const intervalId = setInterval(runSilentSync, 900000);
+    return () => { cancelled = true; clearTimeout(initialTimer); clearInterval(intervalId); };
+  }, [appReady]);
+
+
   // --- DERIVED COMPUTATIONS ----------------------------------
   const getJobItems = jobId => { const filtered = []; for (let i = 0; i < lineItems.length; i++) { if (lineItems[i].jobId === jobId) filtered.push(lineItems[i]); } return filtered; };
   const getJobFinancials = jobId => {
@@ -7251,7 +7357,10 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   // failed. Cleared on the next successful sync. Without this, silent failures were
   // invisible to the user.
   const [plaidSyncing,setPlaidSyncing]=useState(false);
-  const [plaidSyncError,setPlaidSyncError]=useState('');
+  // Initialize from localStorage so errors logged by the App-scope auto-sync
+  // (which doesn't have access to this setter) are surfaced as soon as the
+  // Banking tab mounts. Cleared on next successful sync.
+  const [plaidSyncError,setPlaidSyncError]=useState(()=>{try{return localStorage.getItem('mw_plaid_sync_error')||''}catch{return ''}});
   // Tick state forces a re-render every minute so the "X mins ago" relative-time
   // display under Last Sync stays accurate without requiring user interaction.
   const [,setNowTick]=useState(0);
