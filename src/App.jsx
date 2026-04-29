@@ -3220,14 +3220,17 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
         const vendorAddrHtml=vendorAddr.split('\n').filter(Boolean).join('<br>');
         const today=new Date();const mm=String(today.getMonth()+1).padStart(2,'0');const dd=String(today.getDate()).padStart(2,'0');const yyyy=today.getFullYear();
         const dateStr=mm+'/'+dd+'/'+yyyy;
-        // Auto-generate check number. Floor is 1127 -- the next check number
-        // in Maureen's physical checkbook sequence. Filters out any historic
-        // values below this floor and walks forward to the next unused number.
+        // Auto-generate check number. Floor is 1127. Uses localStorage high-water
+        // mark to survive React state races -- the printed number is always strictly
+        // greater than every previously printed number, no duplicates ever.
         const allCheckNums=Object.values(docStatuses).filter(v=>v&&typeof v==='object'&&v.checkNum&&v.checkNum!=='____').map(v=>parseInt(v.checkNum)).filter(n=>!isNaN(n)&&n>=1127);
         const usedSet=new Set(allCheckNums);
-        let nextCheck=allCheckNums.length>0?Math.max(...allCheckNums)+1:1127;
+        let highWater=0;try{highWater=parseInt(localStorage.getItem('mw_check_high_water')||'0')||0}catch{}
+        const scannedMax=allCheckNums.length>0?Math.max(...allCheckNums):0;
+        let nextCheck=Math.max(highWater+1,scannedMax+1,1127);
         while(usedSet.has(nextCheck))nextCheck++;
         const checkNo=String(nextCheck);
+        try{localStorage.setItem('mw_check_high_water',String(nextCheck))}catch{}
         const amtDollars=Math.floor(totalCost);const amtCents=Math.round((totalCost-amtDollars)*100);
         const amtWords=(()=>{const ones=['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];const tens=['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];const convert=(n)=>{if(n<20)return ones[n];if(n<100)return tens[Math.floor(n/10)]+(n%10?' '+ones[n%10]:'');if(n<1000)return ones[Math.floor(n/100)]+' Hundred'+(n%100?' '+convert(n%100):'');if(n<1000000)return convert(Math.floor(n/1000))+' Thousand'+(n%1000?' '+convert(n%1000):'');return String(n)};return convert(amtDollars)+' and '+String(amtCents).padStart(2,'0')+'/100'})();
         const amtFmt=totalCost.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -3325,11 +3328,10 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
           const today=new Date();const mm=String(today.getMonth()+1).padStart(2,'0');const dd=String(today.getDate()).padStart(2,'0');const yyyy=today.getFullYear();
           const dateStr=mm+'/'+dd+'/'+yyyy;
           // Strict check-number assignment per spec:
-          // (1) If this bill already has a saved checkNum >=1127, reuse it (reprint case).
-          // (2) Otherwise, auto-assign the next sequential number starting from 1127,
-          //     skipping any numbers already used by other bills. Never trust the
-          //     input field's unsaved value -- the printed number must always be
-          //     unique across all bills, count up one at a time, and floor at 1127.
+          // (1) If this bill already has a saved checkNum >=1127, reuse it (reprint).
+          // (2) Otherwise, auto-assign the next sequential number, with a high-water
+          //     mark stored in localStorage that survives React state races.
+          // The auto-computed number is the MAX of: (scanned max + 1), (high-water + 1), 1127.
           const ownDocNum=bill2.billDocNum;
           const ownStored=docStatuses[ownDocNum];
           const ownStoredCheckNum=(ownStored&&typeof ownStored==='object'&&ownStored.checkNum&&ownStored.checkNum!=='____')?parseInt(ownStored.checkNum):NaN;
@@ -3340,10 +3342,15 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
             // Reprint: reuse this bill's own previously assigned number
             checkNo=String(ownStoredCheckNum);
           }else{
-            // First print (or invalid stored number): assign the next sequential
-            let nextCheck=usedByOthers.length>0?Math.max(...usedByOthers)+1:1127;
+            // First print: high-water-mark + scan + 1127 floor
+            let highWater=0;try{highWater=parseInt(localStorage.getItem('mw_check_high_water')||'0')||0}catch{}
+            const scannedMax=usedByOthers.length>0?Math.max(...usedByOthers):0;
+            let nextCheck=Math.max(highWater+1,scannedMax+1,1127);
             while(usedSet.has(nextCheck))nextCheck++;
             checkNo=String(nextCheck);
+            // Bump high-water mark IMMEDIATELY so any subsequent print (even before
+            // React state updates) gets the next number, not the same one.
+            try{localStorage.setItem('mw_check_high_water',String(nextCheck))}catch{}
           }
           setBillCheckNum(checkNo);
           const costVal=Number(bill2.cost)||0;
@@ -3544,7 +3551,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
             <div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:12,fontFamily:"'JetBrains Mono',monospace"}}>Payment Details</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:12,marginBottom:12}} className="resp-grid-2">
               <div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Vendor Invoice #</label><input value={billInvNum} onChange={e=>setBillInvNum(e.target.value)} placeholder="e.g. INV-6216112" style={inputStyle}/></div>
-              <div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Check # / Payment Ref</label><input value={billCheckNum} onChange={e=>setBillCheckNum(e.target.value)} placeholder="e.g. Check #8842" style={inputStyle}/></div>
+              <div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Check # / Payment Ref</label><input value={billCheckNum} onChange={e=>setBillCheckNum(e.target.value)} placeholder="Auto-assigned on Print" style={inputStyle}/></div>
               <div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Payment Date</label><input type="date" value={billPayDate} onChange={e=>setBillPayDate(e.target.value)} style={inputStyle}/></div>
               <div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Memo</label><input value={billMemo} onChange={e=>setBillMemo(e.target.value)} placeholder="Notes..." style={inputStyle}/></div>
             </div>
