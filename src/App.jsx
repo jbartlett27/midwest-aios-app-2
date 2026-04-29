@@ -3905,7 +3905,7 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
 
   const kpi=(label,value,color)=><div style={{textAlign:"center",padding:"14px 10px",background:"#0a0a0a",borderRadius:10,flex:"1 1 100px"}}><div style={{fontSize:22,fontWeight:800,color:color||"#f0f0f0",fontFamily:"'JetBrains Mono',monospace",letterSpacing:-1}}><AnimNum value={String(value)}/></div><div style={{fontSize:11,color:"#9a9a9a",marginTop:2}}>{label}</div></div>;
 
-  return <div style={{animation:"fadeUp 0.4s"}}><Header title="Sales Portal" sub="Pipeline management, CRM, and team performance"/>
+  return <div style={{animation:"fadeUp 0.4s"}}><Header title="Sales Portal" sub={isSalesRole?"Your pipeline, CRM, and activity":"Pipeline management, CRM, and team performance"}/>
     {/* Rep selector. Sales-role users see only their own tab. */}
     <div style={{display:"flex",gap:6,marginBottom:20,flexWrap:"wrap",overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
       {!isSalesRole&&<button onClick={()=>setActiveRep("overview")} style={{padding:"8px 16px",borderRadius:8,cursor:"pointer",background:isOverview?"#2dd4bf":"#111",color:isOverview?"#000":"#737373",fontSize:13,fontWeight:isOverview?600:400,fontFamily:"inherit",border:isOverview?"none":"1px solid rgba(255,255,255,0.06)",whiteSpace:"nowrap",flexShrink:0}}>Overview</button>}
@@ -3926,9 +3926,9 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
       </div>
     </Card>
 
-    {/* CRM Tabs */}
+    {/* CRM Tabs. Sales-role users do not see the Team tab -- they only see their own work. */}
     <div className="doc-tabs" style={{display:"flex",gap:0,marginBottom:20,background:"#111",borderRadius:10,padding:3,overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
-      {[["pipeline","Pipeline"],["activity","Activity Feed"],["tasks","Tasks"],["notes","Notes"],["team","Team"]].map(([id,label])=>
+      {[["pipeline","Pipeline"],["activity","Activity Feed"],["tasks","Tasks"],["notes","Notes"],["team","Team"]].filter(([id])=>!isSalesRole||id!=="team").map(([id,label])=>
         <button key={id} onClick={()=>setCrmTab(id)} style={{padding:"10px 18px",borderRadius:8,border:"none",cursor:"pointer",background:crmTab===id?"#2dd4bf":"transparent",color:crmTab===id?"#000":"#737373",fontSize:13,fontWeight:crmTab===id?600:400,fontFamily:"inherit",whiteSpace:"nowrap",flexShrink:0}}>{label}</button>
       )}
     </div>
@@ -3971,8 +3971,9 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
     {/* NOTES */}
     {crmTab==="notes"&&<NotesView customSops={customSops} addSop={addSop} deleteSop={deleteSop} jobs={rj} reps={reps} notify={notify} triggerPrint={triggerPrint}/>}
 
-    {/* TEAM */}
-    {crmTab==="team"&&!repDetail&&<Card>
+    {/* TEAM. Hidden entirely from sales-role users -- defense in depth even though
+        the Team tab button is filtered out for them above. */}
+    {crmTab==="team"&&!repDetail&&!isSalesRole&&<Card>
       <div style={{fontSize:15,fontWeight:700,color:"#f0f0f0",marginBottom:14}}>Team Directory</div>
       {reps.filter(r=>!r.id.includes("SEED_FLAG")&&isSalesRep(r)).map(r=>{const rJobs=jobs.filter(j=>j.salesRep===r.id);const rv=rJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const pRev=rJobs.filter(j=>j.paymentStatus==="paid").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const comm=rv*(r.commissionRate||0);const costTotal=rJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalCost,0);const margin=rv>0?(1-costTotal/rv)*100:0;return <div key={r.id} onClick={()=>setRepDetail(r)} className="hover-lift" style={{display:"flex",alignItems:"center",gap:14,padding:"16px",background:"#0a0a0a",borderRadius:12,marginBottom:10,cursor:"pointer",border:"1px solid rgba(255,255,255,0.04)",transition:"all 0.2s"}}>
         <div style={{width:48,height:48,borderRadius:12,background:"linear-gradient(135deg,rgba(45,212,191,0.12),rgba(167,139,250,0.12))",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontWeight:800,color:"#2dd4bf",flexShrink:0}}>{r.name.split(" ").map(n=>n[0]).join("")}</div>
@@ -3985,8 +3986,8 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
       </div>})}
     </Card>}
 
-    {/* REP PROFILE PAGE */}
-    {crmTab==="team"&&repDetail&&(()=>{
+    {/* REP PROFILE PAGE. Hidden from sales-role users. */}
+    {crmTab==="team"&&repDetail&&!isSalesRole&&(()=>{
       const r=repDetail;const rJobs=jobs.filter(j=>j.salesRep===r.id);
       const rv=rJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
       const costTotal=rJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalCost,0);
