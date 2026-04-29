@@ -4361,7 +4361,7 @@ function Customer360Page({jobs,lineItems,vendors,customers,reps,getJobFinancials
           </div>
         })}
       </Card>
-      <Card><div style={{fontSize:15,fontWeight:700,color:"#f0f0f0",marginBottom:14}}>Vendor Spend Breakdown</div>
+      <Card><div style={{fontSize:15,fontWeight:700,color:"#f0f0f0",marginBottom:14}}>Customer Spend Breakdown</div>
         {topVendors.length===0?<div style={{fontSize:13,color:"#737373",padding:"12px 0"}}>No vendor data yet.</div>:
         topVendors.map(([name,spend])=>{
           const max=topVendors[0][1]||1;
