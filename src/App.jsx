@@ -7714,7 +7714,12 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
         if(!plaidAccessToken){if(!silent)notify('No access token. Reconnect bank.','error');return}
         setPlaidLoading(true);setPlaidSyncing(true);
         const range=rangeOverride||plaidSyncRange;
-        const n=new Date();let startDate,endDate=n.toISOString().split('T')[0];
+        const n=new Date();
+        // Pad endDate to today + 2 days. Plaid sometimes reports pending or
+        // recently-posted transactions with future-looking effective dates;
+        // a 2-day forward window guarantees we capture them.
+        const endPad=new Date(n);endPad.setDate(endPad.getDate()+2);
+        let startDate,endDate=endPad.toISOString().split('T')[0];
         if(range==='custom'&&plaidSyncFrom){startDate=plaidSyncFrom;endDate=plaidSyncTo||endDate}
         else if(range==='month'){const d=new Date(n);d.setMonth(d.getMonth()-1);startDate=d.toISOString().split('T')[0]}
         else if(range==='quarter'){const d=new Date(n);d.setMonth(d.getMonth()-3);startDate=d.toISOString().split('T')[0]}
@@ -7723,6 +7728,20 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
         else if(range==='2years'){const d=new Date(n);d.setFullYear(d.getFullYear()-2);startDate=d.toISOString().split('T')[0]}
         else if(range==='all'){startDate='2020-01-01'}
         else{const d=new Date(n);d.setMonth(d.getMonth()-3);startDate=d.toISOString().split('T')[0]}
+        // For silent (auto) syncs and non-custom ranges, expand the window backward
+        // to overlap the prior sync by 14 days. This guarantees that any transaction
+        // posted retroactively after the last sync window's endDate gets caught.
+        // Dedup (plaidId + date|amount|desc-hash) prevents duplicates from overlap.
+        if(silent&&range!=='custom'&&range!=='all'){
+          try{
+            const lastStr=plaidLastSync||localStorage.getItem('mw_plaid_last_sync')||'';
+            if(lastStr){
+              const overlap=new Date(lastStr);overlap.setDate(overlap.getDate()-14);
+              const overlapStr=overlap.toISOString().split('T')[0];
+              if(overlapStr<startDate)startDate=overlapStr;
+            }
+          }catch{}
+        }
         try{
           const r=await fetch('/api/plaid-transactions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({access_token:plaidAccessToken,start_date:startDate,end_date:endDate})});
           const data=await r.json();
@@ -7777,11 +7796,16 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       if(plaidStatus==='connected'&&plaidAccessToken&&!plaidAutoSyncRef.current){
         plaidAutoSyncRef.current=true;
         const lastSync=plaidLastSync?new Date(plaidLastSync):null;
-        const hoursSince=lastSync?((Date.now()-lastSync.getTime())/3600000):999;
+        // Catch-up sync on Banking tab mount: fire immediately if last sync
+        // was more than 5 minutes ago. This keeps the displayed transactions
+        // current the moment the user lands on the page, not just hourly.
+        const minsSinceMount=lastSync?((Date.now()-lastSync.getTime())/60000):999;
         const initialRange=plaidSyncRange==='custom'?'quarter':plaidSyncRange;
-        if(hoursSince>=1){setTimeout(()=>{const fn=plaidLatestSyncRef.current;if(fn)fn(initialRange,true)},1500)}
-        // Hourly background sync. Range follows the user's selected preset (or
+        if(minsSinceMount>=5){setTimeout(()=>{const fn=plaidLatestSyncRef.current;if(fn)fn(initialRange,true)},1500)}
+        // 15-minute background sync. Range follows the user's selected preset (or
         // falls back to quarter for the custom preset to avoid surprise re-pulls).
+        // The 12-minute throttle prevents overlapping fires while still allowing the
+        // 15-minute cadence to consistently catch new transactions through the day.
         setInterval(()=>{
           try{
             const tok=localStorage.getItem('mw_plaid_access_token');
@@ -7790,13 +7814,13 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
             const lastSyncStr=localStorage.getItem('mw_plaid_last_sync');
             const last=lastSyncStr?new Date(lastSyncStr):null;
             const minsSince=last?((Date.now()-last.getTime())/60000):999;
-            if(minsSince<55)return;
+            if(minsSince<12)return;
             const currentRange=localStorage.getItem('mw_plaid_sync_range')||'quarter';
             const r=currentRange==='custom'?'quarter':currentRange;
             const fn=plaidLatestSyncRef.current;
             if(fn)fn(r,true);
           }catch{}
-        },3600000);
+        },900000);
       }
 
 
