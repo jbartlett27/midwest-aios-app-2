@@ -3142,24 +3142,28 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
           try{
           const today=new Date();const mm=String(today.getMonth()+1).padStart(2,'0');const dd=String(today.getDate()).padStart(2,'0');const yyyy=today.getFullYear();
           const dateStr=mm+'/'+dd+'/'+yyyy;
-          let checkNo=billCheckNum&&billCheckNum.trim()&&billCheckNum.trim()!=='____'?billCheckNum.trim():'';
-          // Build the used-check set EXCLUDING this bill's own currently saved
-          // checkNum so re-printing the same bill reuses its number rather than
-          // burning a new one (which would leave the old number orphaned).
+          // Strict check-number assignment per spec:
+          // (1) If this bill already has a saved checkNum >=1127, reuse it (reprint case).
+          // (2) Otherwise, auto-assign the next sequential number starting from 1127,
+          //     skipping any numbers already used by other bills. Never trust the
+          //     input field's unsaved value -- the printed number must always be
+          //     unique across all bills, count up one at a time, and floor at 1127.
           const ownDocNum=bill2.billDocNum;
-          const allCheckNums=Object.entries(docStatuses).filter(([k,v])=>k!==ownDocNum&&v&&typeof v==='object'&&v.checkNum&&v.checkNum!=='____').map(([k,v])=>parseInt(v.checkNum)).filter(n=>!isNaN(n)&&n>=1127);
-          const usedSet=new Set(allCheckNums);
-          if(checkNo){
-            // Validate manually entered check number is not a duplicate of ANOTHER bill
-            const num=parseInt(checkNo);
-            if(!isNaN(num)&&usedSet.has(num)){notify('Check #'+checkNo+' already used. Assigning next available number.','error');checkNo=''}
-          }
-          if(!checkNo){
-            let nextCheck=allCheckNums.length>0?Math.max(...allCheckNums)+1:1127;
+          const ownStored=docStatuses[ownDocNum];
+          const ownStoredCheckNum=(ownStored&&typeof ownStored==='object'&&ownStored.checkNum&&ownStored.checkNum!=='____')?parseInt(ownStored.checkNum):NaN;
+          const usedByOthers=Object.entries(docStatuses).filter(([k,v])=>k!==ownDocNum&&v&&typeof v==='object'&&v.checkNum&&v.checkNum!=='____').map(([k,v])=>parseInt(v.checkNum)).filter(n=>!isNaN(n)&&n>=1127);
+          const usedSet=new Set(usedByOthers);
+          let checkNo;
+          if(!isNaN(ownStoredCheckNum)&&ownStoredCheckNum>=1127&&!usedSet.has(ownStoredCheckNum)){
+            // Reprint: reuse this bill's own previously assigned number
+            checkNo=String(ownStoredCheckNum);
+          }else{
+            // First print (or invalid stored number): assign the next sequential
+            let nextCheck=usedByOthers.length>0?Math.max(...usedByOthers)+1:1127;
             while(usedSet.has(nextCheck))nextCheck++;
             checkNo=String(nextCheck);
-            setBillCheckNum(checkNo);
           }
+          setBillCheckNum(checkNo);
           const costVal=Number(bill2.cost)||0;
           const amtDollars=Math.floor(costVal);const amtCents=Math.round((costVal-amtDollars)*100);
           const amtWords=(()=>{const ones=['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];const tens=['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
@@ -6847,6 +6851,17 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   const [plaidSyncFrom,setPlaidSyncFrom]=useState('');
   const [plaidSyncTo,setPlaidSyncTo]=useState('');
   const [plaidLastSync,setPlaidLastSync]=useState(()=>{try{return localStorage.getItem('mw_plaid_last_sync')||''}catch{return ''}});
+  // plaidSyncing: true during any Plaid sync (silent or manual). Surfaces a visible
+  // indicator so the user can see that the hourly auto-sync is actually firing.
+  // plaidSyncError: persistent error message from the most recent silent sync that
+  // failed. Cleared on the next successful sync. Without this, silent failures were
+  // invisible to the user.
+  const [plaidSyncing,setPlaidSyncing]=useState(false);
+  const [plaidSyncError,setPlaidSyncError]=useState('');
+  // Tick state forces a re-render every minute so the "X mins ago" relative-time
+  // display under Last Sync stays accurate without requiring user interaction.
+  const [,setNowTick]=useState(0);
+  useEffect(()=>{const id=setInterval(()=>setNowTick(t=>t+1),60000);return()=>clearInterval(id)},[]);
   const plaidAutoSyncRef=useRef(false);
   const plaidLatestSyncRef=useRef(null);
   const [txnSelected,setTxnSelected]=useState(new Set());
@@ -7273,11 +7288,11 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       // Plaid sync handler
       // Build dedup set once: plaidIds + fallback hashes for all existing transactions
       const existingPlaidIds=new Set(manualTxns.filter(mt=>mt.plaidId).map(mt=>mt.plaidId));
-      const existingHashes=new Set(manualTxns.map(mt=>(mt.date||'')+'|'+(mt.amount||'')+'|'+(mt.description||'').slice(0,5).toLowerCase()));
+      const existingHashes=new Set(manualTxns.map(mt=>(mt.date||'')+'|'+(mt.amount||'')+'|'+(mt.description||'').slice(0,12).toLowerCase()));
 
       const handlePlaidSync=async(rangeOverride,silent)=>{
         if(!plaidAccessToken){if(!silent)notify('No access token. Reconnect bank.','error');return}
-        setPlaidLoading(true);
+        setPlaidLoading(true);setPlaidSyncing(true);
         const range=rangeOverride||plaidSyncRange;
         const n=new Date();let startDate,endDate=n.toISOString().split('T')[0];
         if(range==='custom'&&plaidSyncFrom){startDate=plaidSyncFrom;endDate=plaidSyncTo||endDate}
@@ -7291,14 +7306,21 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
         try{
           const r=await fetch('/api/plaid-transactions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({access_token:plaidAccessToken,start_date:startDate,end_date:endDate})});
           const data=await r.json();
-          if(!r.ok||data.error_code||data.error){if(!silent)notify('Plaid: '+(data.error_message||data.error?.message||data.error||'Sync failed'),'error');setPlaidLoading(false);return}
+          if(!r.ok||data.error_code||data.error){
+            const errMsg=data.error_message||data.error?.message||data.error||'Sync failed';
+            setPlaidSyncError(errMsg);
+            if(!silent)notify('Plaid: '+errMsg,'error');
+            setPlaidLoading(false);setPlaidSyncing(false);return;
+          }
           const txns=data.added||data.transactions||[];
           let imported=0;let skipped=0;
           txns.forEach(t=>{
             // Smart dedup: check Plaid transaction ID first
             if(t.transaction_id&&existingPlaidIds.has(t.transaction_id)){skipped++;return}
-            // Fallback dedup: check date+amount+description hash
-            const hash=(t.date||'')+'|'+String(Math.abs(t.amount||0).toFixed(2))+'|'+(t.name||t.merchant_name||'').slice(0,5).toLowerCase();
+            // Fallback dedup: stricter 12-char description prefix to avoid collapsing
+            // distinct same-day same-amount transactions (e.g., two separate Amazon
+            // purchases) into a single record.
+            const hash=(t.date||'')+'|'+String(Math.abs(t.amount||0).toFixed(2))+'|'+(t.name||t.merchant_name||'').slice(0,12).toLowerCase();
             if(existingHashes.has(hash)){skipped++;return}
             // Mark as seen for this sync batch
             if(t.transaction_id)existingPlaidIds.add(t.transaction_id);
@@ -7313,9 +7335,13 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
           });
           const syncTime=new Date().toISOString();
           localStorage.setItem('mw_plaid_last_sync',syncTime);setPlaidLastSync(syncTime);
+          setPlaidSyncError('');
           if(!silent||imported>0)notify(imported+' new'+(skipped>0?', '+skipped+' skipped (already in system)':'')+' ('+startDate+' to '+endDate+')');
-        }catch(err){if(!silent)notify('Sync error: '+err.message,'error')}
-        setPlaidLoading(false);
+        }catch(err){
+          setPlaidSyncError(err.message||'Network error');
+          if(!silent)notify('Sync error: '+err.message,'error');
+        }
+        setPlaidLoading(false);setPlaidSyncing(false);
       };
 
       // Auto-refresh every hour while bank is connected. Sets up once per session
@@ -7363,13 +7389,40 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
         <Card style={{padding:16}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
             <div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>{manualEditing?'Edit Transaction':'Add Transaction'}</div>
-            {plaidStatus==='connected'&&<div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}><div style={{width:8,height:8,borderRadius:"50%",background:"#34d399",boxShadow:"0 0 6px #34d39960"}}/><span style={{fontSize:11,color:"#34d399",fontWeight:600}}>{plaidBankName||'Bank'} connected</span>{plaidLastSync&&<span style={{fontSize:10,color:"#525252"}}>Last sync: {new Date(plaidLastSync).toLocaleDateString()} {new Date(plaidLastSync).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}</span>}<Btn v="secondary" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>handlePlaidSync()}>{plaidLoading?'Syncing...':'Sync'}</Btn><Btn v="secondary" style={{fontSize:11,padding:"4px 10px",color:"#f87171",border:"1px solid #f8717130"}} onClick={()=>{localStorage.removeItem('mw_plaid_access_token');localStorage.removeItem('mw_plaid_status');localStorage.removeItem('mw_plaid_bank_name');localStorage.removeItem('mw_plaid_last_sync');setPlaidAccessToken('');setPlaidStatus('disconnected');setPlaidBankName('');setPlaidLastSync('');notify('Bank disconnected')}}>Disconnect</Btn></div>}
+            {plaidStatus==='connected'&&<div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              <div style={{width:8,height:8,borderRadius:"50%",background:plaidSyncing?"#fbbf24":(plaidSyncError?"#f87171":"#34d399"),boxShadow:plaidSyncing?"0 0 6px #fbbf2480":(plaidSyncError?"0 0 6px #f8717180":"0 0 6px #34d39960"),animation:plaidSyncing?"pulse 1.2s ease-in-out infinite":"none"}}/>
+              <span style={{fontSize:11,color:plaidSyncing?"#fbbf24":(plaidSyncError?"#f87171":"#34d399"),fontWeight:600}}>
+                {plaidSyncing?'Syncing...':plaidSyncError?'Sync error':(plaidBankName||'Bank')+' connected'}
+              </span>
+              {plaidLastSync&&!plaidSyncing&&(()=>{
+                const last=new Date(plaidLastSync);const diffMs=Date.now()-last.getTime();const diffMin=Math.floor(diffMs/60000);
+                const rel=diffMin<1?'just now':diffMin<60?diffMin+' min'+(diffMin!==1?'s':'')+' ago':diffMin<1440?Math.floor(diffMin/60)+'h '+(diffMin%60)+'m ago':Math.floor(diffMin/1440)+'d ago';
+                return <span style={{fontSize:10,color:"#525252"}} title={last.toLocaleString()}>Last sync: {rel}</span>;
+              })()}
+              {plaidSyncError&&<span style={{fontSize:10,color:"#f87171",background:"#f8717115",padding:"2px 8px",borderRadius:4}} title={plaidSyncError}>{plaidSyncError.length>40?plaidSyncError.slice(0,40)+'...':plaidSyncError}</span>}
+              <Btn v="secondary" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>handlePlaidSync()}>{plaidLoading?'Syncing...':'Sync Now'}</Btn>
+              <Btn v="secondary" style={{fontSize:11,padding:"4px 10px",color:"#f87171",border:"1px solid #f8717130"}} onClick={()=>{localStorage.removeItem('mw_plaid_access_token');localStorage.removeItem('mw_plaid_status');localStorage.removeItem('mw_plaid_bank_name');localStorage.removeItem('mw_plaid_last_sync');setPlaidAccessToken('');setPlaidStatus('disconnected');setPlaidBankName('');setPlaidLastSync('');setPlaidSyncError('');plaidAutoSyncRef.current=false;notify('Bank disconnected')}}>Disconnect</Btn>
+            </div>}
             {plaidStatus!=='connected'&&<div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:8,height:8,borderRadius:"50%",background:"#525252"}}/><span style={{fontSize:11,color:"#525252"}}>Bank not connected</span><Btn v="secondary" style={{fontSize:11,padding:"4px 10px"}} onClick={handlePlaidConnect}>{plaidLoading?'Loading...':'Connect Bank (Plaid)'}</Btn></div>}
           </div>
           {plaidStatus==='connected'&&<div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginBottom:12,padding:"8px 12px",background:"#111",borderRadius:8,border:"1px solid #222"}}>
             <span style={{fontSize:11,color:"#737373",fontWeight:600}}>Sync range:</span>
             {[["month","1 Month"],["quarter","3 Months"],["6months","6 Months"],["year","1 Year"],["2years","2 Years"],["all","All Time"],["custom","Custom"]].map(([v,l])=><button key={v} onClick={()=>{setPlaidSyncRange(v);try{localStorage.setItem('mw_plaid_sync_range',v)}catch{}if(v!=='custom')handlePlaidSync(v)}} style={{padding:"4px 10px",borderRadius:6,border:"none",cursor:"pointer",background:plaidSyncRange===v?"#2dd4bf":"transparent",color:plaidSyncRange===v?"#000":"#525252",fontSize:11,fontWeight:plaidSyncRange===v?600:400,fontFamily:"inherit",transition:"all 0.15s"}}>{l}</button>)}
             {plaidSyncRange==='custom'&&<><input type="date" value={plaidSyncFrom} onChange={e=>setPlaidSyncFrom(e.target.value)} style={{padding:"3px 6px",background:"#0a0a0a",border:"1px solid #333",borderRadius:6,color:"#f0f0f0",fontSize:11,fontFamily:"inherit"}}/><span style={{color:"#525252",fontSize:11}}>to</span><input type="date" value={plaidSyncTo} onChange={e=>setPlaidSyncTo(e.target.value)} style={{padding:"3px 6px",background:"#0a0a0a",border:"1px solid #333",borderRadius:6,color:"#f0f0f0",fontSize:11,fontFamily:"inherit"}}/><Btn style={{fontSize:11,padding:"4px 10px"}} onClick={()=>handlePlaidSync('custom')}>{plaidLoading?'...':'Sync Range'}</Btn></>}
+            {/* Range preview: shows the exact start/end dates that will be requested for the selected preset. Auto-refresh hourly indicator on the right. */}
+            {(()=>{
+              const n=new Date();const endDate=n.toISOString().split('T')[0];let startDate;
+              if(plaidSyncRange==='custom'){startDate=plaidSyncFrom||'(pick start date)'}
+              else if(plaidSyncRange==='month'){const d=new Date(n);d.setMonth(d.getMonth()-1);startDate=d.toISOString().split('T')[0]}
+              else if(plaidSyncRange==='quarter'){const d=new Date(n);d.setMonth(d.getMonth()-3);startDate=d.toISOString().split('T')[0]}
+              else if(plaidSyncRange==='6months'){const d=new Date(n);d.setMonth(d.getMonth()-6);startDate=d.toISOString().split('T')[0]}
+              else if(plaidSyncRange==='year'){const d=new Date(n);d.setFullYear(d.getFullYear()-1);startDate=d.toISOString().split('T')[0]}
+              else if(plaidSyncRange==='2years'){const d=new Date(n);d.setFullYear(d.getFullYear()-2);startDate=d.toISOString().split('T')[0]}
+              else if(plaidSyncRange==='all'){startDate='2020-01-01'}
+              else{const d=new Date(n);d.setMonth(d.getMonth()-3);startDate=d.toISOString().split('T')[0]}
+              const e=plaidSyncRange==='custom'&&plaidSyncTo?plaidSyncTo:endDate;
+              return <span style={{fontSize:10,color:"#525252",marginLeft:"auto",fontFamily:"'JetBrains Mono',monospace"}}>{startDate} to {e} -- auto-refresh every 1 hr</span>;
+            })()}
           </div>}
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10,marginBottom:12}}>
             <div><label style={{fontSize:11,color:"#a3a3a3",display:"block",marginBottom:3}}>Date</label><input type="date" value={manualForm.date} onChange={e=>setManualForm({...manualForm,date:e.target.value})} style={inputStyle}/></div>
