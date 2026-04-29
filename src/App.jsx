@@ -3251,7 +3251,7 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
         // Anything outside that range in stored data is legacy/test pollution and is
         // ignored. Uses localStorage high-water mark to survive React state races.
         const CHECK_MIN=1127;
-        const CHECK_MAX=9999;
+        const CHECK_MAX=1999;
         const inRange=(n)=>!isNaN(n)&&n>=CHECK_MIN&&n<=CHECK_MAX;
         const allCheckNums=Object.values(docStatuses).filter(v=>v&&typeof v==='object'&&v.checkNum&&v.checkNum!=='____').map(v=>parseInt(v.checkNum)).filter(inRange);
         const usedSet=new Set(allCheckNums);
@@ -3366,7 +3366,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
           // Anything outside [1127, 9999] in stored data is legacy/test-pollution
           // (e.g. 767498) and must be ignored when computing the next number.
           const CHECK_MIN=1127;
-          const CHECK_MAX=9999;
+          const CHECK_MAX=1999;
           const inRange=(n)=>!isNaN(n)&&n>=CHECK_MIN&&n<=CHECK_MAX;
           const ownDocNum=bill2.billDocNum;
           const ownStored=docStatuses[ownDocNum];
