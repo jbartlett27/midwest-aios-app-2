@@ -2361,18 +2361,26 @@ function DiscInput({initial,onCommit,style}){
 }
 // ShipToInput -- locally controlled textarea for line-item ship-to override.
 // Local state prevents external re-renders (audit-trail setJobs, parent state updates,
-// realtime sync) from clobbering keystrokes. Commits to onCommit on blur and on a
-// 600ms debounced timer while typing. Re-syncs from prop only when not focused so
-// updates from other clients still flow in.
+// realtime sync) from clobbering keystrokes. Commits to onCommit on blur, on a 600ms
+// debounced timer while typing, AND on unmount (so clicking Done or outside the row
+// flushes any pending value before the textarea is destroyed). Re-syncs from prop
+// only when not focused so updates from other clients still flow in.
 function ShipToInput({initial,onCommit,style,placeholder,rows}){
   const [val,setVal]=useState(initial||"");
   const focusedRef=useRef(false);
   const timerRef=useRef(null);
+  const valRef=useRef(initial||"");
+  const lastCommittedRef=useRef(initial||"");
+  const onCommitRef=useRef(onCommit);
+  useEffect(()=>{onCommitRef.current=onCommit},[onCommit]);
   // Re-seed from prop only when not focused; never overwrite the user mid-typing.
-  useEffect(()=>{if(!focusedRef.current)setVal(initial||"")},[initial]);
-  const flush=(v)=>{if(timerRef.current){clearTimeout(timerRef.current);timerRef.current=null}onCommit(v)};
-  const scheduleCommit=(v)=>{if(timerRef.current)clearTimeout(timerRef.current);timerRef.current=setTimeout(()=>{timerRef.current=null;onCommit(v)},600)};
-  return <textarea value={val} rows={rows||3} placeholder={placeholder} onFocus={()=>{focusedRef.current=true}} onBlur={()=>{focusedRef.current=false;flush(val)}} onClick={e=>e.stopPropagation()} onMouseDown={e=>e.stopPropagation()} onChange={e=>{const v=e.target.value;setVal(v);scheduleCommit(v)}} style={style}/>;
+  useEffect(()=>{if(!focusedRef.current){setVal(initial||"");valRef.current=initial||"";lastCommittedRef.current=initial||""}},[initial]);
+  // Unmount cleanup: flush any pending value so clicking Done (which unmounts the
+  // editing fragment) never loses keystrokes.
+  useEffect(()=>{return()=>{if(timerRef.current){clearTimeout(timerRef.current);timerRef.current=null}if(valRef.current!==lastCommittedRef.current){try{onCommitRef.current(valRef.current)}catch{}}}},[]);
+  const flush=(v)=>{if(timerRef.current){clearTimeout(timerRef.current);timerRef.current=null}lastCommittedRef.current=v;onCommit(v)};
+  const scheduleCommit=(v)=>{if(timerRef.current)clearTimeout(timerRef.current);timerRef.current=setTimeout(()=>{timerRef.current=null;lastCommittedRef.current=v;onCommit(v)},600)};
+  return <textarea value={val} rows={rows||3} placeholder={placeholder} onFocus={()=>{focusedRef.current=true}} onBlur={()=>{focusedRef.current=false;flush(val)}} onClick={e=>e.stopPropagation()} onMouseDown={e=>e.stopPropagation()} onChange={e=>{const v=e.target.value;setVal(v);valRef.current=v;scheduleCommit(v)}} style={style}/>;
 }
 function QuoteColToggle({job, updateJob}){
   const rawQvc = (job.docStatuses||{}).__qcv || {};
