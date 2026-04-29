@@ -3,6 +3,7 @@ import { db } from "./supabase.js";
 window._supabase=db;
 import { useUser, useClerk, SignIn, UserButton, useAuth } from "@clerk/clerk-react";
 
+
 const DEFAULT_SOPS=[
     {id:"company-overview",cat:"Company",title:"Company Overview & Mission",icon:"shield",content:"MIDWEST EDUCATIONAL FURNISHINGS, INC.\nFull-service school furniture and equipment for K-12 districts and universities.\n\nMISSION\nTo enhance and improve learning experiences for students of all ages by providing full-service school furniture and equipment solutions that create inspiring, functional, and adaptable learning environments.\n\nWHAT WE DO\n- Design Consultation and Space Planning\n- Budgeting and Product Selection\n- Product Specification from 160 manufacturer partners\n- Project Management from quote to installation\n- Delivery Coordination and Installation Oversight\n\nWHO WE SERVE\nK-12 school districts (primary) and universities across the Midwest and beyond. Facilities directors, superintendents, purchasing managers, and project managers.\n\nTHE BUSINESS MODEL\nMidwest is a purchasing agent. We sit between the manufacturer and the school district. Revenue is generated on the margin between dealer cost (after vendor discount) and customer price. We do not manufacture or warehouse inventory.\n\nSCALE\n14+ years in operation. 160 manufacturer partners. Primarily IL and WI territory with national reach through rep network. Small founder-operated team. Busy season May through September aligned to school calendar."},
     {id:"brand-voice",cat:"Company",title:"Brand Voice & Communication",icon:"send",content:"PERSONALITY\nIf Midwest were a person, they would be the most reliable contractor you have ever worked with. Direct, warm, confident, practical, can-do, professional without being stiff.\n\nVOICE GUIDELINES\n- Say the thing. Get to the point. Lean toward solutions.\n- No corporate filler. No hedging. No apologetic language.\n- Warm but efficient. Friendly but professional.\n\nON BRAND EXAMPLES\n- \"We can get that spec to you by end of day.\"\n- \"Here is what I recommend for that space.\"\n- \"We will figure it out.\"\n\nOFF BRAND EXAMPLES\n- \"We would like to take this opportunity to thank you.\"\n- \"Per our last conversation, please find attached...\"\n- \"I am sorry to bother you but...\"\n\nBRAND PHRASES\n- We will figure it out.\n- A small company that does big things.\n- Things are going to happen. It is how you handle it."},
@@ -20,6 +21,7 @@ const DEFAULT_SOPS=[
     {id:"seasonal",cat:"Strategic",title:"Seasonal Planning & Capacity",icon:"chart",content:"SEASONAL PLANNING\nTHE SCHOOL CALENDAR DRIVES EVERYTHING.\n\nJANUARY THROUGH APRIL\n- Quoting season. Districts plan budgets.\n- Focus: respond to RFPs, build relationships, spec products.\n- Longest lead time items should be identified early.\n\nMAY THROUGH JUNE\n- Ordering season. Budgets approved, POs issued.\n- Focus: get orders to manufacturers ASAP.\n- Confirm delivery dates with every vendor.\n\nJUNE THROUGH AUGUST\n- Delivery and installation. CRITICAL WINDOW.\n- Focus: coordinate deliveries, manage partial shipments.\n- Invoice immediately upon receipt.\n- 60-70% of annual revenue books in this period.\n\nSEPTEMBER\n- HARD DEADLINE. School starts.\n- All furniture must be installed and rooms ready.\n- Escalate any outstanding deliveries.\n\nOCTOBER THROUGH DECEMBER\n- Slower period. Collections focus.\n- Review overdue payments.\n- Plan next year's strategy.\n- Update vendor relationships and discount rates."},
   ];
 
+
 class ErrorBoundary extends React.Component {
   constructor(props){super(props);this.state={hasError:false,error:null}}
   static getDerivedStateFromError(error){return {hasError:true,error}}
@@ -27,25 +29,34 @@ class ErrorBoundary extends React.Component {
 }
 import{BarChart,Bar as RBar,XAxis,YAxis,Tooltip,ResponsiveContainer,LineChart,Line,PieChart,Pie,Cell}from"recharts";
 
+
 const Bar = ({value,max,color,height=6,style={}})=><div style={{width:"100%",background:"#222",borderRadius:height/2,overflow:"hidden",height,...style}}><div style={{width:max>0?(value/max*100)+"%":"0%",height:"100%",background:color||"#2dd4bf",borderRadius:height/2,transition:"width 0.4s ease"}}/></div>;
 const fmtShipJsx=(raw)=>{if(!raw)return '';if(raw.includes('\n'))return raw.split('\n').map((l,i)=><React.Fragment key={i}>{i>0&&<br/>}{l}</React.Fragment>);const parts=raw.split(',').map(s=>s.trim()).filter(Boolean);if(parts.length>=3){const last=parts[parts.length-1];if(/[A-Z]{2}\s+\d{5}/.test(last)){const merged=[...parts.slice(0,-2),parts[parts.length-2]+', '+last];return merged.map((p,i)=><React.Fragment key={i}>{i>0&&<br/>}{p}</React.Fragment>)}return parts.map((p,i)=><React.Fragment key={i}>{i>0&&<br/>}{p}</React.Fragment>)}if(parts.length===2&&/[A-Z]{2}\s+\d{5}/.test(parts[1]))return <>{parts[0]}<br/>{parts[1]}</>;return raw};
 const fmtAddrJsx=(addr)=>{if(!addr)return null;if(addr.includes('\n'))return addr.split('\n').map((l,i)=><React.Fragment key={i}>{i>0&&<br/>}{l}</React.Fragment>);const parts=addr.split(',').map(s=>s.trim()).filter(Boolean);if(parts.length>=3){const last=parts[parts.length-1];if(/[A-Z]{2}\s+\d{5}/.test(last)){const merged=[...parts.slice(0,-2),parts[parts.length-2]+', '+last];return merged.map((p,i)=><React.Fragment key={i}>{i>0&&<br/>}{p}</React.Fragment>)}return parts.map((p,i)=><React.Fragment key={i}>{i>0&&<br/>}{p}</React.Fragment>)}if(parts.length===2&&/[A-Z]{2}\s+\d{5}/.test(parts[1]))return <>{parts[0]}<br/>{parts[1]}</>;return addr};
 const fmtAddrHtml=(name,address,contact)=>{let lines=[];if(name)lines.push(name);if(address){let a=address||'';if(a.includes('\n')){a=a.replace(/\n/g,'<br>')}else{const parts=a.split(',').map(s=>s.trim()).filter(Boolean);if(parts.length>=3){const last=parts[parts.length-1];if(/[A-Z]{2}\s+\d{5}/.test(last)){const merged=[...parts.slice(0,-2),parts[parts.length-2]+', '+last];a=merged.join('<br>')}else{a=parts.join('<br>')}}else if(parts.length===2&&/[A-Z]{2}\s+\d{5}/.test(parts[1])){a=parts[0]+'<br>'+parts[1]}}lines.push(a)}if(contact&&!lines.some(l=>l.toLowerCase().includes('attn')))lines.push('Attn: '+contact);return lines.join('<br>')};
 const fmtShipHtml=(shipTo,custName,custAddr,custContact)=>{if(shipTo){if(shipTo.includes('\n'))return shipTo.replace(/\n/g,'<br>');const parts=shipTo.split(',').map(s=>s.trim()).filter(Boolean);if(parts.length>=3){const last=parts[parts.length-1];if(/[A-Z]{2}\s+\d{5}/.test(last)){const merged=[...parts.slice(0,-2),parts[parts.length-2]+', '+last];return merged.join('<br>')}return parts.join('<br>')}if(parts.length===2&&/[A-Z]{2}\s+\d{5}/.test(parts[1]))return parts[0]+'<br>'+parts[1];return shipTo}return fmtAddrHtml(custName,custAddr,custContact)};
 
+
 const Btn = ({children,onClick,v,style={},...props})=>{const base={padding:"8px 16px",borderRadius:10,border:"none",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"'Satoshi',sans-serif",transition:"all 0.15s",display:"inline-flex",alignItems:"center",gap:6};const variants={primary:{...base,background:"#2dd4bf",color:"#000"},secondary:{...base,background:"transparent",border:"1px solid #333",color:"#c4c4c4"},ghost:{...base,background:"transparent",color:"#a3a3a3",padding:"6px 12px"},danger:{...base,background:"rgba(248,113,113,0.1)",color:"#f87171",border:"1px solid rgba(248,113,113,0.2)"}};const s=variants[v]||variants.primary;return <button onClick={onClick} style={{...s,...style}} {...props}>{children}</button>};
+
 
 const Header = ({title,sub,action})=><div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,flexWrap:"wrap",gap:12}}><div><div style={{fontSize:18,fontWeight:800,color:"#f0f0f0"}}>{title}</div>{sub&&<div style={{fontSize:13,color:"#737373",marginTop:2}}>{sub}</div>}</div>{action&&<div style={{flexShrink:0}}>{action}</div>}</div>;
 
+
 const Card = ({children,style={},hover,onClick})=><div onClick={onClick} style={{background:"#111111",borderRadius:14,padding:"16px 22px",border:"1px solid rgba(255,255,255,0.04)",transition:"all 0.2s",...style,...(hover?{cursor:"pointer"}:{})}} onMouseEnter={hover?e=>{e.currentTarget.style.borderColor="rgba(45,212,191,0.12)";e.currentTarget.style.transform="translateY(-1px)"}:undefined} onMouseLeave={hover?e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.04)";e.currentTarget.style.transform="translateY(0)"}:undefined}>{children}</div>;
+
 
 const Badge = ({label,color})=><span style={{fontSize:11,fontWeight:600,color:color||"#a3a3a3",padding:"2px 8px",borderRadius:6,background:(color||"#a3a3a3")+"15",whiteSpace:"nowrap"}}>{label}</span>;
 
+
 const StatCard = ({label,value,sub,color})=><Card style={{padding:16,textAlign:"center"}} hover><span style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2}}>{label}</span><div style={{fontSize:"clamp(22px,5vw,36px)",fontWeight:800,color:color||"#f0f0f0",fontFamily:"'JetBrains Mono',monospace",letterSpacing:-1,lineHeight:1,margin:"8px 0 6px"}}>{value}</div>{sub&&<div style={{fontSize:12,color:"#a3a3a3"}}>{sub}</div>}</Card>;
+
 
 const Tbl = ({columns,data,onRowClick})=><div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}><thead><tr>{columns.map((c,i)=><th key={i} style={{padding:"10px 8px",textAlign:"left",fontSize:11,fontWeight:600,color:"#737373",borderBottom:"1px solid #222",whiteSpace:"nowrap"}}>{c.header}</th>)}</tr></thead><tbody>{(data||[]).map((r,i)=><tr key={r.id||i} onClick={onRowClick?()=>onRowClick(r):undefined} style={{cursor:onRowClick?"pointer":"default",transition:"background 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.background="#0a0a0a"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>{columns.map((c,j)=><td key={j} style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}}>{c.render?c.render(r):r[c.key]}</td>)}</tr>)}</tbody></table></div>;
 
+
 const Check = ({checked,onChange,size=16})=><div onClick={e=>{e.stopPropagation();onChange?.(!checked)}} style={{width:size,height:size,borderRadius:4,border:"1px solid "+(checked?"#2dd4bf":"#444"),background:checked?"#2dd4bf":"transparent",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"all 0.15s",flexShrink:0}}>{checked&&<span style={{color:"#000",fontSize:size-4,lineHeight:1}}>&#10003;</span>}</div>;
+
 
 const CustomerPicker = ({value, onChange, customers, onAddNew}) => {
   const [open, setOpen] = useState(false);
@@ -67,7 +78,9 @@ const CustomerPicker = ({value, onChange, customers, onAddNew}) => {
   </div>;
 };
 
+
 const CheckMinus = ({checked,onChange,size=16})=><div onClick={e=>{e.stopPropagation();onChange?.(!checked)}} style={{width:size,height:size,borderRadius:4,border:"1px solid "+(checked?"#a78bfa":"#444"),background:checked?"#a78bfa":"transparent",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"all 0.15s",flexShrink:0}}>{checked&&<span style={{color:"#000",fontSize:size-4,lineHeight:1}}>&#8722;</span>}</div>;
+
 
 function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendors,customers,setCustomers,reps,setReps,notify,addJob,addLineItem,addVendor,addCustomer,addRep}){
   const [mode,setMode]=useState(null);
@@ -93,6 +106,7 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
   const [aiScanType,setAiScanType]=useState("general");
   const [aiFile,setAiFile]=useState(null);
 
+
   const validate=(val,type)=>{
     if(type==="text")return val&&val.trim().length>=2;
     if(type==="email")return !val||/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)||val==="";
@@ -101,6 +115,7 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
     if(type==="required")return val&&val.trim().length>=1;
     return true;
   };
+
 
   const parseExcel=async(f)=>{
     try{
@@ -195,6 +210,7 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
     }catch(err){notify("Error reading file: "+err.message,"error")}
   };
 
+
   // AI verification runs alongside every quote upload
   const runAiVerify=async(f,wb,XLSX,standardItems)=>{
     setAiScanning(true);
@@ -270,6 +286,7 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
     }
   };
 
+
   const MAPS={
     vendors:{fields:["name","contact","email","phone","category","address"],labels:["Company Name*","Contact","Email","Phone","Category","Address"],types:["text","text","email","phone","text","text"],
       guesses:{name:["vendor","company","name"],contact:["contact","person","rep"],email:["email","mail"],phone:["phone","tel"],category:["category","type"],address:["address","location"]}},
@@ -278,6 +295,7 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
     reps:{fields:["name","email","territory","commissionRate","tier"],labels:["Name*","Email","Territory","Commission %","Tier"],types:["text","email","text","number","text"],
       guesses:{name:["name","rep","salesperson"],email:["email"],territory:["territory","region"],commissionRate:["rate","commission","%"],tier:["tier","level"]}}
   };
+
 
   const autoMap=(headers)=>{
     const map=MAPS[target];if(!map)return;
@@ -290,11 +308,13 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
     setColMap(mapping);
   };
 
+
   const handleFile=(e)=>{
     const f=e.target.files[0];if(!f)return;setFile(f);
     if(mode==="quote"){parseExcel(f)}
     else{parseCSV(f)}
   };
+
 
   const handleDiAiChat = async (query) => {
     if (!query.trim() || !parsed) return;
@@ -364,6 +384,7 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
     setImporting(false);
   };
 
+
   const importCSV=async()=>{
     if(!csvData||importing)return;setImporting(true);
     const map=MAPS[target];const errs=[];let imported=0;
@@ -397,7 +418,9 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
     setImporting(false);
   };
 
+
   const reset=()=>{setDiAiChat([]);setDiAiStatus(null);setMode(null);setStep("upload");setFile(null);setParsed(null);setCsvData(null);setColMap({});setDone(null);setErrors([]);setJobName("");setAiResult(null);setAiFile(null);if(fileRef.current)fileRef.current.value="";if(aiFileRef.current)aiFileRef.current.value=""};
+
 
   // AI Document Scanning
   const handleAiScan=async(f,scanType)=>{
@@ -480,9 +503,11 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
     notify(ct+" vendors imported");setDone({type:"AI Vendor Scan",count:ct});setMode(null);
   };
 
+
   const selCount=parsed?parsed.items.filter(i=>selectedSheets[i.sheet]).length:0;
   const selCost=parsed?parsed.items.filter(i=>selectedSheets[i.sheet]).reduce((s,i)=>s+(i.unitCost*i.qtyOrdered),0):0;
   const selRev=parsed?parsed.items.filter(i=>selectedSheets[i.sheet]).reduce((s,i)=>s+((i.unitPrice||0)*i.qtyOrdered),0):0;
+
 
   const dropZone=(label,sub,accept,onClick)=><div onClick={onClick} onDragOver={e=>{e.preventDefault();e.currentTarget.style.borderColor="rgba(45,212,191,0.4)"}} onDragLeave={e=>{e.currentTarget.style.borderColor="rgba(45,212,191,0.12)"}} onDrop={e=>{e.preventDefault();e.currentTarget.style.borderColor="rgba(45,212,191,0.12)";const f=e.dataTransfer.files[0];if(f){if(fileRef.current){const dt=new DataTransfer();dt.items.add(f);fileRef.current.files=dt.files}setFile(f);if(mode==="quote")parseExcel(f);else parseCSV(f)}}} style={{textAlign:"center",padding:"48px 32px",border:"2px dashed rgba(45,212,191,0.12)",borderRadius:16,cursor:"pointer",transition:"all 0.3s",background:"rgba(45,212,191,0.02)"}}>
     <div style={{width:56,height:56,borderRadius:16,background:"rgba(45,212,191,0.08)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px",transition:"transform 0.2s"}}><I n="download" s={24}/></div>
@@ -491,6 +516,7 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
     <input ref={fileRef} type="file" accept={accept} onChange={handleFile} style={{display:"none"}}/>
     <Btn v="secondary" onClick={e=>{e.stopPropagation();fileRef.current?.click()}} style={{fontSize:13}}>Choose File</Btn>
   </div>;
+
 
   // MODE SELECTION
   if(!mode&&!done)return <div style={{animation:"fadeUp 0.4s"}}>
@@ -523,6 +549,7 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
     </Card>
   </div>;
 
+
   // SUCCESS SCREEN
   if(done)return <div style={{animation:"fadeUp 0.4s"}}>
     <Header title="Data Import" sub="Import complete"/>
@@ -538,6 +565,7 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
       <div style={{display:"flex",gap:10,justifyContent:"center"}}><Btn onClick={reset}>Import More</Btn><Btn v="secondary" onClick={reset}>Done</Btn></div>
     </Card>
   </div>;
+
 
   // AI DOCUMENT SCAN FLOW
   if(mode==="ai")return <div style={{animation:"fadeUp 0.4s"}}>
@@ -596,6 +624,7 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
     </Card>}
   </div>;
 
+
   // EXCEL QUOTE FLOW
   if(mode==="quote")return <div style={{animation:"fadeUp 0.4s"}}>
     <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:20}}>
@@ -604,7 +633,9 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
       <span style={{color:"#f0f0f0",fontWeight:600,fontSize:13}}>Excel Quote Upload</span>
     </div>
 
+
     {step==="upload"&&dropZone("Drop Excel quote here or click to browse","Supports .xls and .xlsx from Lisa's quote spreadsheets",".xls,.xlsx",()=>fileRef.current?.click())}
+
 
     {step==="config"&&parsed&&<div style={{display:"flex",flexDirection:"column",gap:16}}>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12}} className="resp-grid-4">
@@ -676,6 +707,7 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
       </div>
     </div>}
 
+
     {/* AI Assist review step for Excel quotes */}
     {step==="ai_review"&&aiResult&&aiResult.items&&<div style={{display:"flex",flexDirection:"column",gap:16}}>
       <Card style={{border:"1px solid rgba(251,191,36,0.15)",padding:20}}>
@@ -706,6 +738,7 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
     </div>}
   </div>;
 
+
   // CSV IMPORT FLOW
   if(mode==="csv")return <div style={{animation:"fadeUp 0.4s"}}>
     <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:20}}>
@@ -713,6 +746,7 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
       <span style={{color:"#333"}}>/</span>
       <span style={{color:"#f0f0f0",fontWeight:600,fontSize:13}}>Import {target.charAt(0).toUpperCase()+target.slice(1)}</span>
     </div>
+
 
     {step==="upload"&&<>
       <div style={{display:"flex",gap:6,marginBottom:16}}>{["vendors","customers","reps"].map(t=><button key={t} onClick={()=>setTarget(t)} style={{padding:"8px 18px",borderRadius:8,border:"none",cursor:"pointer",background:target===t?"#2dd4bf":"#111",color:target===t?"#000":"#737373",fontSize:13,fontWeight:target===t?600:400,fontFamily:"inherit"}}>{t.charAt(0).toUpperCase()+t.slice(1)}</button>)}</div>
@@ -723,6 +757,7 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
         <div style={{fontSize:12,color:"#525252",marginTop:8}}>Columns are auto-detected by name. Required fields marked with *</div>
       </Card>
     </>}
+
 
     {step==="map"&&csvData&&<Card>
       <div style={{fontSize:16,fontWeight:700,color:"#f0f0f0",marginBottom:4}}>Map Columns</div>
@@ -759,17 +794,23 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
     </Card>}
   </div>;
 
+
   return null;
 }
 
 
+
+
 const MW_LOGO = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAANwAAAB9CAYAAADJGg3KAAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAAGYktHRAD/AP8A/6C9p5MAAG0GSURBVHja7b13gCVXcS/8qzrndPcNk2c2KwckgggGLBBZ2AaDn42JNslgMMkBB2w/+/EceOazH88JvwfGYMBywBiMwSBHCQwCBEKIKJTzrjZOnhu6+5yq74/TfefO7GyStLsCqaB1Z2fuvd0n1Kn0qyq66AVPwb0iknv3+fsjKQMAhAgqBIChSrBkUHT7F+a33P2e0Os/1DvcNfXQM19aaPkVtQAxA4ZARLDWggFoELACUN3wTkPXiRseAJBASCAIKIocaeqQOAOnBOMFWiqMGHQX/H/becfi+7yE6anp1kcnt7Z+niztFaiWXlTAYGvA1gFMAMWhqCpUQ3w97B7hEzn0k07m1Ieedu++gU7oXjn+NMRsAEBgAAQKAeVC57X57rmP6PzKFik9EHS02+39lG1me10ju4YNgSyrs5ZUFVAFAauv9yciBRhgQ2i3W4AKKARQqXBs0cqS8bk9nbfuvG3xj4i5zWRkcbF7fpHrTzPr1Xnpb4UxcGkCsgZEXB0qWv0//kxEiKM/1D65383McaUHGe7gAUEovkIZSkDoFhPl7OIHi7mVX9XSW3JWOXFQa0hEKV/uPFdDODWZGPlckia94ANUlYaZ7f60rQgCUCVbCBApkbIFSkEjsUiMefQd1y38/dy+/IVZmloNqr70IDJYWuhk83P5y0fHm1nWblyeNRqIZ4siHjIAKhYDKXQw8AcZDniQ4daSMoTiQa1ggAzEy8Xdnfs+3t25/4lSBFYiRTAo+iVCUFJVkKr6XvHIYmnlhWD6dJImSyDyUKmZrWbh+wmtHgLECqOMMi/RtE737+q+4Otf3PP3oQhnMJil9GqYySUZgg/VOAjLy/0n2pQuarfbX9Ygc0HD4NsJBBiqflKAHpRwNT3IcBUJuDqNCaKEMvcIvfL1vYXlv+nvnpuS4C0nqTpKOfeh0pY4biYCSBWh8KO+138NgEXj3FUghMpEIaq23SFoeBJPwA6MDFCJYIgPGB9JJ3bfsfyne+9c/v3UcVNKYVZSjgYsRDwxGMRMgFBijKHgz+qv9F4cGF8wzLNQeDZxHuOA4330sGbqgwx3bPTdznAabbSa2RQMgmt255Y/NnfjHT+rC91EVZmtBZOFF1DIA0iYiA2BwSAiZlZnDIkP3F9YflYo8ke40fZnYLgTz3kFVVvwaGb1vh2kYK1/Jo6SSJE4i4YzZ33nmj0f7cyVP5q5BFpKFFABMMQkQdDvlcQsZAxRYg0RK6kEKvv9Vn9x5WXsEiSN7HOiqpZowGYYej0hQ72f0/c0w2nlGdxwmytH1ZEZSgSogSGGqn3m/K27PtbZeeAiC2OYDYyJ7y3ykkgzuM07yI1Nky9LQvBgA7LMXJYFQvAwxIog56wsLDxvZGzsm8q4g0CV/lk7Yw7aaUf69zGsSSViWKMpuuaGAiIGAWAllL3wk1+78rb/kL6epqUHgsCxAYNgKB5DExOOpmaaVOYliYCYlZgVpARSUAjBlt3e49XLD6dpemnhfQeqlc5aey7X7pM4Ffc36/b40/csw60uaPWYRPFRCRWzKYg42mogsBDSQD+768bbPkB92UoB0KCAV5AC4gUQwuiTnoWtb/wfmPjRl6P50O9DecNl8N0+up0OlJSsMaQAfL9P2isnfaf7/Pb4iBDoC8JUO8GVNt5pR/u7teOqroMUV1JEBgOAACKJYyUAMBMmuD++9ms3/970WMuiVFhmICjEezhmGAae+dwZvOHXzsKLXnkqTj+7gb1397E8X2IwlRAwGKJwZZ6fkq90X6aqV1lr72SiGCqAAsSomU51rQZ91HL/e4C+ZxluDbMNHbBUuQuICKrRMcJKp/T2zP7d3hvueBP3fBIKD4IBCWBFQQKkSRMTL/w5jLz+NyFjUwhJC9i6A1te/Gb4+X0obv8GDAHGORJfkkBBzMRA0ptfvtgpHu3S5N+VOa8erRY864//o2Y6Gv6ig/4Y42xgjUxBgKjAGOZWmj2yO9f5zC3fuuNpRafkouvRbmawTMhSBw0BWcb4mV8+Cz/52tMxszlFmhHOv2ASj33iKHbv7OPOW1bgDEOq8EecZ4L3vq1ef0pVCmL7eSbAsIlumg2dJw8y3LHR/ZThamIQQggoCg9mA2YTT2YFlBitrH3Rga/deHk+u/wo9cGEno8qJhtYcmC2cEmG0V9/D5ovfynQGd79BF+UmLn42XCbzsbKV/4DveUDsM0WEufIOQcYIvWKYmnl3OV98y8an5r4ajC0j4gCMOQ1XzerOIKKeThmU4TqtZJwrFUQPmD5QOfFe27Z/6GF3UtbWIkzZ9FIHYp+CULAgd0rOP+CcfzPP3woHnvRJPK8gA8ezISyDGg0GRc9YxPaowbXfHkW4gVKDAJDQTDEYFXqdnrPQNAfYGM/RYqOMQwBwIYhEsDMlWR+MPB9bHQ/Zbh6Q3L1KhJAxLDWwhoHKRXLuw68bfGmu/7CWjsa8oKCCMhyVH+SDAGEsUc8Ee23/w3cWedDVwpEB0QkawzSLEO+3IPbfjbaj/9B6Pxe9HffCrBBUInKHjMCEeB1Ynn/7E+PzkyveIOrGTTwpW/AeIcycGh4jDT8M9EA+aOqgAhACjYKBk8t3r3yjv23L7yNAzcT61i8wDIjsQZMBCkDfvK1Z+HXf/88TM+kABTGEoiAsixBRNGeJcH2U5t46g9txtevOoDl+QKM6LHV6t6JcbSytLS13+29zGXpTeLDjc4YeBW4xCFKNn5ASTfge5zh6g0ZN4pDPIcN4DHVnV364Mru2TeE+WXjezlM4uImdRbBMIIGTPz46zHy6l+HaY+ASQeOh8FFBBGBEqAkSDefiuaTngsQoX/9VyDxD1AwQRDDzULoHJh/+tTU1KMC8G9E1GemgU200VBwOGlXO2FqZtPKVpIYhA6lR9Hz5+6+ce6Klf3dJ40124mBZSkDmo0Gym4foQyYnHJ43a+chR976Q5YG/21RACYYawBGwYTI6jC+xLGAmecPY4nPG0L9u8tcMO1+6KP11goCN1+jixJOHjf6iwsvZRdklrmy03lpGK2eIDxGoDvcYYDAGKK6o4qGAY+9xfO3T132cq+5SeSWLB1UBUUnS40SxAYsJu2YuZ1v4vmk56NZHS02tR08PfXap0KoIQQcigY6fmPgzvr4QiLc/Bzc5AggIJYiUBMqqCF/XOnLSwsvKTZbn2dnLlz8L2HGM4Gf4o+oPpgYQXBACRQIaioalDqLvTffODO+Q/5TjGSmTQTLwQRMAhFnkNCwBnntPHGXzsHT3vWZjBTPHgISNIM3nssLMzB+wBiRggBREDWSNDt9jEyBlz4lBlMTU7j29csYG72AFySotFoIC89sYJJNOS9/pNF8EOtVvtTFEIHtoLMDQLjDwy6dwx3PwYuDxgOBgBQ9kt0DnT+19Kexb/Kl4oxDRSXWxmiABoOQoT2Y56OmTf9b6TnPxYmS7Gq+vDge9eqQRJhTfFmkfnYwG0+FY3HPRP+xpuQ3/xtEBuwTRHDW0qqatnrRL648mpyZt62si8TyFRfs5FtRrVnU9cMs5bkDGKNaBkv6vOyja7877137PmfVKqMNkczQ0yd5WVoAFJr4UXxgpduw5t/52yccc4IirxcHZUIlpeX4FUxMjKBxCWIYY/IcKqC0dE2ZmfnYazicRdtwbnnz2DXbQ3cdcedUAUSayGqsDZhEtVQlKcsLy2/fGRs7CYJ/gYyBuAYcrm/Htz3Nd1zhjvBzHbwRj/07wWIqiMIpAQtdKp7oPPJxbvnXun7HkwGBowQBBIEnLaBtIWJ//bTmHn922A3bYJIxA5G1bF2aW90Eld4QdXIbPGhQMxIt0ygfeYTwUkTxa3Xor+yCIXCWAcGCKoIQVEs956tITwiG21dQUo9Jeiwu3/d+NZIO2WiQThAgLIotLvYPb87u3zVwu65p4W+L9Ika4TSk4aAdrMBEWDTtgQveu3peOmbzgALwGSgCuR5H8wWAMGrRgbjqKH6IMj7PTiXoNFooZ/3YQxDRLG4uIDzL5jA4540jaIzjW989QYY65A4B1EBsyECICG0l+YXfjxNGy2FXm5crVrSA4Lp7hnDnQRmW091nI2IKud3PHilRvcroiHf8xcu3L3/ss7c0qNVFNY4sBJEFBoE2ifYzWdj+qVvxvhzXw5JDbx4EHOls/GQSDmY6ZSqeB/VmQVaQ3cROgFoNDH91KfAbH0k8q99BvAFpN8DBwUTkzAgqiK5f1hvpffSxvjI1wi4g5iIiFQr+w5VHLGKYZEyUYRQEcUQh6Ls5+gurvxqd27lr/OFzlQoPUkQJ4UnxwZQxcpygXPOG8NLXn86nvljW1HmJSwxvPcgIjiXAVAIAdYkSJIU0GirEhGsS6ItFzxUJD4XMax1mJtbwMi44MnP3I7zzn08Pv/pa6EgWGMgqlDi6giDWV5aenII4eL2xNi/KKETF/qBwHAPOyUO9FiuE0zrT/k6cKpEYCJSgImItAorMxsnZRjt7l/8jbtvuPUS6foxFYnKpYaYtkUF8p13YfNLXofpF70S2eOeAsksBAGkDEW0y4Y9gRvmbpGuBnIjGnjoWeOpnecefOopaD3yIjTKHGb2bmivAyuAgsmrwnuRot9r79u//5Vpkrq0kX1RmAIZ0jpYJ/UrY1XBJIKoUt4vRnoLy3+4cmDxzbLSb8GLMogdWbLGQX2ANYTnv2w7fuG3z8Z5Dx+FLwUOBgSK4ZLBs0d1m4e8jgDAGh0nzPE9zLWaHX+fuAQiBqI5tp3ZxWOfOI2vfHEBy0s5EGOACAoy8ZhAyMvTeisrP2Gs3UeGb2Q2/nud6cypDzv1ZD/DEelQrmMmIiUigKWWPAZMRPa0/u7ZT+79zq0vSdkBSrCVkQ4pUSzshRvfjB0//w60nv5CmLPOgyQmxq8kSot63UkBoqiebkSKjaX9AMVVMS3Ew05ugb3gQlBrFHbfLviFWZhQQohoRYSIDU2MjmvZzb9vZXH58WmzcZVN3IIOZ68OeSWJCCqgPC8eWiz1Ls9nl54VOoWjABARUxWTJgJOP3MEv/b28/CcF2xHt1fAWQNWBmkcwZrRKQ8O1ph+G5ly1RFV37+OpQ2vFQOVk2pmc4bnvGgbluYDbr+5CyaCIYIQx6RcAKEMo72VlecYELGzn2NrlYZQKd9rdL9nOF2XKT3877jVWQFQCAFaBNdf7L6ks+vAx/pzS2cZZk9MbAwjiEDhEVaW0Trvcdjy83+E9kXPhR9pInDtbawhYJHhVmNchw7O6iE2xuCQIK3C2wRFACUJzHmPBp9yFmxnCUt33QzrczSzjHySouznxKKWvZxZdHsvVdHPqaG7iVh1gIuM9lrez7Eyt/S6/r6Fj8lCb0p6gUmiBVjzqHOERzxyAv/zjx6Ohz5yEt1OiXYrg/gwYKIhgxBDox66huKaHIMr0UkzPDer762XSAJgDPB9F01jZkuCr31pASI6pHgTOIb+bXe5e6GW4Xk2SS4V6LJLEqjK91yc7n7NcLpBWYJhQDLDQAlgNmRAqV/q/XZ+YPkPfKfXJo9Cq2TIMgSIepKywNgP/CS2/dK7YU89B8ESpLK4RBWGCCQ6iLERmcMzmx5ZxY6MW29qGmiCZtsZMOdfACotentvRZr3kDlHPQJ86YlUIblvhE7/NVp6Y9P0syZ1ymygPqC/0Jnq7pn74Mre+V+UldKREiEoqyii6isABD/846fhV37vPDSbFr1eAecsiqKoxja0mfXIiI8176dVZljzNdHlGCU8Aypx7Kee3cRjnziF267LMDe3sMYTS6owbGze62/tr3Re3Eyzu0vId4y1WtvF3yt0v2a4mjZiPAAIAEQUoe9PKRe7n8jnVn4y9EoSL15FEgCmLAsWlKSNBjb99P/CzMv+OzRtIpAiiNQVASJDSGWrgCqw7VHQkRhuyO6LzswYDIco7MgU2o9+LJLRcSzefgPC3rsxSpbgkojKJ0LwQUPun0KKHySiXVoE7S92n13OLn/IrxRP2jK9mRYXl8hxwiKK4BllEXD6WZvxxl99OF706h2VN0khIijLsgo667rD5FglybAqGdXLyp+zdr1qxDgrJmcSPPNHR7B75wpuvn4ZhhnEBGVGhasGBYwuLSy9wIEnyLnLjDPyveTBvF8z3Hp1Yth5Eryi6OfgUl6wfNOuf+runnsohJSJRb24EAIA0lJypGc9grb/2vsx+qTnQXwB0YAAHSoLsArAZUQc5dE/5GE2gvKGEJFagqoqTNZAdv4j4Wa2o7f7Tsj+XXAQcJJUXkgmKNTnxY58vvPSfH7l58rl3vNC7ie0DLq4tEREhoy1KMo4jsc9cRt+7e3n4wlP3xSD2wIIolcWYBBphWVc5+A5VtI6kfXQn61t2doBYyzhGT+8BY0m4cufO1DNhUKZYRDxloYI3ZXO92lRPoeMudIlbj/x94akO6kMp2t8AYdetOF4FHM0yPNejpXZxXcv7537PRQyRtZ5AkCiFkCI20opefKzaMsvvhuthzwMvtdFCJUrGxXOslaLBulbBnqE5xl+Lj3sJqBDbuMB+FgFRVA0z3gItjzqInT378bSrtuQeF8zHcXoMJGWglCUpEEIysRsyLqEjDEoco9my+G5zz8Dv/Q752F0LKqQ4gX9fg4VoNkaRVnkEAloNtvAsLtE76GtdJgDZzhFimK0HKSKxcUcD3vUBE49o4nbb+lgYbaEZUUgivGd6GjikJfby37+XAJ22Sy5ntnoaib5dyfdbyTcmnw1rJVmg4c1MTGyLPxj+sudj5crvedQHpyCclJ1IOIyL1As96k1PR5mLjwHm97+cUiwVPbyKst5rROgdoKvPgfWGCVHXFzdQN1RxuGYbe3NohtRIAgjExj9/ovRTJtY3H0jluYOoNlsAmoQBQURkYnygmJwQwTwPmBktIEXv/JReN2vnY6iX0BVoBolG5NBCIIDBw4gazTRbo6gzgoanHn3lOGGnCsREVZ5OJU3RGwRAYkzABPOPm8UD3nYKPo9j1tv7MLyqppb270adMzn5QtL789MsuSLxpgSoEBHMb33RzppDDeQbhXIduCoQJQ8xGsZw3sP8cHkveIV/YWlvysWO6drpyQVAUBWAQoaEFjhzj6XRl/9W5h43duRH1iJeZCDREitgBlrkeoDN7uuVpxa76EbeC7XuMEjrApKWP3f0Hg2uNbMw6DihyCIh7cWfMaZyM48DyPicdc3voM0bYDXaL41lCvOlQ+KzVvb+NnfPBVEGpEdg/tofC8R0jSJz8wxlYar8R6Nw+So1rKek9pu3UD61S5/BkED4ZxzN+PR378dzbbilpt3YWm+gDG1s6qqYBEEWoYLoHhyqz3yWWPNgfgV+l0n7U66Srk+vSQqgnUedpxyawzUY8v+3Xv/eHnf3O+WCx1H/ZJiYmnEeogqeSkx/rQX4pTf/Gu0HnIBdfcvEhse3Gv4PjVDrap2uoYhakf+MBPVtJ7p1j7/xoy1MUlkNw2VgFEwBMZlaGzagfQhD0d6xz7M33wtklY7qmTEg0uIwcagyBXTmzL88PO3waVACJGNmXiQ4QBgkIMmUhVoBQH3AWjo0OM+WPrXhYVqL2lZehD18diLtuHsc7bjrjv3YNedCxERVNnSxlhYYqwsLe9YmJt7ubF2Z5Zl3wKR0WhDftcYdyeV4Wqo0qqaF415NiYCgYUgXqFleEx3Yfn9C3v2P9cUQUx0fQ941Ysnciltfe3/hy2vfCvADOn3Y3HTyljfmAkIh617Ur1nQwzn4D/3YNxD0me10I7AkIJJYBCQkEHSnsTpT3w6stYE5r55Ncq8BLEZSH9VIIgg7wmyhsMjvm8cE1MOWaMK9ptKite4N107D/WBd3ylxCrTDTto1iKHgF6nh7MfOo6LnnI+lpeXcO03b0OWtOGSFEVRQESRuhQ+L7OF2YXnEeOskZH2FUScSxyffjdIu5PLcOt2rDEM5xwIBsEL+t0codt/xb6duz+xuG/+FFMVjSSY6LhXQJKUsoc/kbb/0ruo/bgfBHwAxKOX92GNqVbiEHjMgzEWGz/lIRby3jBd/QTxNIj1RogEDEUKIFVFJgFsGduf+hQ0Np2BlVtvQuh2q3SjClsJYGwixR23LeD2m7o49awM518whjyXWNqgzmTYoGhPjGWu/nx8FlkOCzwHornAzPBFQNbweMJTz8Cpp8/gK1/+JhZmc4yPTkKhKIoC1lhYY2h5YelhRemf3Gw2PmuMXYzhTr3fM91JY7gBdKpaDGMMrHUgE5mtM7c0s3Jg4c+Khe5bi06fuQpIs1ZsSkSl5Gg/+cdo+1v+gprbTyMtAnyZo/SCdprBozLCD2ui3HOGO6qPH4ZidoGAKICgcKTIVJFCkVCAY0ViBKa3gunTmjjnR5+GXVd9E35hBaoRYMzMsM6g0bS4/ZYlfPlzc2i1Hc44pw1nY5oND8cC121+qqTf8WO4w9tZdR+GEALKsoS1DsyKHWcanHnONPbvW8Suu+ZhTQqiKh9PCcYYXppb2F7kxRsbjcbNaZpeDyJWiBy9Sn/i6eRJuErVAcdUlsrpBikE+ULnYd25xcuKpd5T815BNTTKVKgDJoIy0cjP/Ba2veQ3KHhPOoAzEQwD/cIjzZJoomzkSVx9kCM96CEX7x479la/AdGpIbAcIsNBkBKQMpCSIKWAjHI4KuAQ8H3PeTpum98D/vodKFIDrmrRGsNIM0beD/jiZ/bh1ht6eMIzpmCYB4H9g+OaOL4SrsoqOdJ3O+dgrUWe5yiKAkDMVDj19BE87onnYm5uFtdfexecbUXPawVYMGSo1+2hu9x9rnN2utFsXEEx7V3vr0bdyZNwVZo9jIl2iRJ8v0TnwMIreweWPpV3ign1FSpDaYD0pwCMPPTxmHj7h2n0gmcQ0oSYDYLEMtwMArFB1kjgZcgjcI8Zbj0io/rtvdmfWqM0CAQBI4ARkKgiZUEKIIHAkcJSCacFmDyYA8QoHv/QC7D8iM3ALXvQ7S+jPmjK0sNagyRJsPfuPq750hxOO6OBmc0N0KBcXhzPoIgPji+z1Wt9uH2Q5znKskSSJGDmyFAAjHFIkgJPftp5mN40jquvug5SpnAuQVF4EDEMDJV5YTpLy4+H0ovaIyOXGaL5yiWkIAWDh2Bk94UpcM/pxDFcHZuqKjwBBHY21sBIEnDuJ5Z2z/5xvtD9raLvmZQGLnCgkgOUYftPvh7Nl/13JJt2EBGzilRgYyLSAK3KjwfRiOGtGldA6or6w3WAeS1G9xCXYrB88bPHoIINxxYHH8Yw6FlA8LAQOA7IDCOFICGFQ4mMBJZ8JQEFLgR443Haaafi/Fc9C9/518uwMLtQhVd0AAzwPuD2W2bx9S8tY3zC4YxzRwZupmHGOy777ijzJQdhmCFAQ/37+m/RV1ziIedP4KKnPAr793Zw2817YF0CX1bmCDN5H6i71G1J4V/aarW/Y425WTSqn4NKDvUSaB2KohPOfMeV4QYxHt0gHmVtwsaFbqkpJ82z9l13y6V+qfdDKkSQ2lbj6GlkC05HMP2Tv4TR578Zpj0KVWJVJYrBKULlHCCqegQQQasGE3WNjmqZh65jGg1W8wHr6zC2QhVfVFVQkPhvqVm3Kn2uAMPDUomUBJkBUghSFiTqkVGAQQ4mDwsPiwADgTMKyx5Jfxk/9LQLMbZ5Et/46jdiGk2Vpe3YIE0SdHoBn/mX3bjum4t4xGPHMTbWABAZ0xhGYhNc9qm78fnLZnHqmS1kjXsRkyO5x5jHg2zL9fFKBcYmBE965g7M7nW47ut9iArKMgdZE3PzlGx3ecXtu3vPjxfd/pmbZqYu8ySeYmyENrTt+MSKuuPKcBEOwUxEVSUAGqgzKmAREvX6xr1fvfafZLm32dqEDAhBqgRItvC9EukpZ2Pzz/0hWk94LkrfRZBgVANDJQoIVBKDVvuSDcodHFfaWN2sQdARLOyRFwVK7xFE4p4EYlYCCSwVSNmjxYomAw0SJPDItIShsmK2MoYLSOCgMOxhUcChhEeBredvxdOf/wx86fKrQH0PEUHiXAwgK5AXOQ7sLXH1F+Zw2pktbN3RQmVA4+/ecxs++Gd34L/+bQ+6HcUTnzF1Dxb6njNatU8O+vkge7OyNpvtFM994SloNBnf+Moimi1Grx+z1ZMkhWHDTMTq5aFL84s/Ojo5fhU5u4d0oMcPMjiGYiUnYK9EOr4MB6NEpMxMQcQaYy0zi3gl9Zha2j37tqXbd71VOn1mExv6SYg6ty9zhFIw+cwXY/pnfg+Ncx5OosLKxJGZmKBC8eeT6ZHa4NSk+sBgJEmKNE2RJg0YyxVcKYCDh1FBygVGnKLNhJQARwGZFFGNJA+Gh2GBpQALgeUSFh4ED4MAYwNcApgEeObzL8aenXfhlmtuQqORgpkGDhURxeJCgc/9xwGMTVg89IIJ/O/fvA7/8P7b4b1gfKKBzdsSPPkHZu7BFNw7F8VGIPWDqNKSfOnhA3DB943j7PNHcetNc5ify+GcRQiCEAREhojY5v3+dH9x5aVJlixTklzNNQpgVcscrNeJouPGcHXMp0rD5yRJVXzgUATWUh+zcNvuj0svf5bPvWGuY0oKZgMhBdImZl77Nky/4lcQGg0ECMEw+eAp2neBSHmQRnPy3MAbqZURIB0bgTiwNTCWYZ2FyxK4RgrXaIDTDJldQpM8miIxHIAACw+DAkwBTAGGBJYUhgJsxXyOPZwJcDaAKMCQAlTgCU97FNJM8O2v3o7u8jJUFWnmEEI5UKSvuXIBl31yD66+ci+ajQzMcZ0efeEIHnPh5DEO/95rEke3dqtmQD8v4UvBKWeM4gnPGMPiosd3vjGHsgxwzkJEEKSAcwlLWbrlucVnEzCTjbUvZ5CAavODVr/6BBFd9MInHb8vh4ExhtI0016vl8Cj6MwtvWlh1/4/Mso2FKVSrIUDVUEoc5T9Dkaf/KOYec3vwm05NdpfEeLDQMzs9t4TYxWKdSxOjPueVjGZ8aCPGzBRxfy/fAiSL0IDoGUBLQtI0QfyHjSU8MiRbN2OC1/8AliTwBHDqIfVEoY8mAIsSZRw8HAssChgyMNSAcclLAIIAYYCmD0y5zEzMYpbv/Jt/Nn//Ahuue4unLLjVMzNLcUy5MxVKMFU9qUZOC7e/D/Px1OfNYljSoM5UQynPHCiAICSgUkIWYMg5PGh992Bv/jDm+E9kCRcBfxDhV4iJQ299uaJm6fP2P48IbldNahWXprYh/zE7JbjrFJGNbHMS2LlqZX9C3+9vHful0Puudvtk2FTELEqiJljDcPxp/4otrz+7bBbdkARIPE0MoSI1o11MZiKMsCaWM7t5OZK0WqmAwBrDbJmhqWvfgZ3/8mr0PnqF9D75hXofvtL6F//FeQ3fQ3927+N4s7rUNx2M5avvQ7TDz0fk+eegcWlOTScAWsAk0bpxlpJN4nSDZEJLUVmYxIY9RGDSR4cPIqii8mxNn7ghx+HMl/G1758a0TxWDMIcg/MFyCGXSzhmT+yGVtPyY5x+Pd+3o9Wwq15H8ek2rIU+ELwiMeN4fFPnsJ131jC/r05XEIYGxuryv4ZYmNdsdKdWN43+6Z0tLXosvSqiKCu+5CfGDq+YQEBirzkvFc8cWHX/n/K51eeXPY9ytIjtQ4AWFWZK/fs6FN+BNOveivs9tPQ7y0hiJLhqC1JBRKKFbgZxpjKUchDgZWTwXQ0yPUSKHxZwHCClas+heUv/SfSbAzGOJC1YGNAxlR1QSwsWdipTbjwDa9FGTxslsCpwiFiKi0UhiO20rLAagyQW6okmkZHCsPDVE6VJAGAAAuFczme8ISzsWlziu98Y29VIwSrnlblCNAmQnvE4dnP34yJqfQYh3/iGC6+N/6LQVBSBB8wP7+INMlw+tmjOP2cJq7/1hIO7O1D1KPZbAEhIKgCho3v59SbX/rhtN2cSZuNfw1SJeCdIDrurUtE5Gc7cwtX9BaWzut1ehpCKFPrgjGuNMbAOaciAI9PYfTpL0R26mnwRQ+NZpvS1HGvLBBUUIRioFJIna2Nk48pGGwWJli2SNNmTJC941awG0Wouo8OAs3MIGbYxMG2TsFpb3wZbOIw6hKMs0WGKnivqKRXxWAanSgGHlxJNIaANHYrJXiQlCj7fRj1AJUQERS9Ps45bwb9XrmaooS6tJ8Mst6zBmN03J3UuTz6OQcGkVRmTEyOQ1XRWSwwPZXg+y+aQSM1MCBI6QHDsMQgJbhGy0Ct7r3+9jfO3bXnGhV5uJ7ATWSP55crCYzl+aSRzZqWTK+UHa9KBoAAQkRGiZjIKIitEluIQe1oicgRthAC1TlbcbINFBHsG7fQyWO6QbZD3WJRGVJ6FLt2AeriJh+kBBGk5s/E4Yl/+cdoLS7BEkDBDxxHIKlsNw9GGSUdQkSLVKgUIwImrX7nK0kXYMgjdmMLYCg+94XP4ZI/uRFlWaLZSIAwVPVMVgv+jIw5TE7HjjnfDRRx7KuBcu8DkiRBq51CAkF1qG6mVK2kSWCIgYShQpjdc6A/Pj254IlISU7IwI+7hGNj/ro9OXpeY3r0a+3xEeOcKSQ2HCXVoCKiZAzC0hytfPZjKHfuhk1T0+/3OfcBDZsgMRbOuWoCq05kpCdNidyIoh3AEAF0pYAszFc8aOo3VMHmCL1KshSLN9yAkalJJMyQ4BHKAtAAQ4DlHIYKOFawViEAjcxnoWCKTFj/21TezcH7NYDg8U+X3IbF+QJZkiIUHkB0UEX4VHxeZmBmS4L2iDuGXL6TR6qKYf7Ie3lsJpkBV18xj8sv3YO8H2CMi0WbKjLCpZa+x16otXX6tzafffoTCsZdJ3IPHTcbblVKK0DUM43kPcyUsdDTxXuIKJkq+zcmeip1bvkG+313cHLO45C0x8gAFFRIlaJKUFc0VEGv149OAKCShSersUhd27EKgxDD796F+U/+BUg9iKmq9FzBkIghIWBpbj8OXHkVOnvnMHbm6ej3uhgbGwUkwJluhHGRVOgSD4cYIrAcYKiMqiUFGA0xOG5KWPYwKKM9hwCG4EPvuxpp4qKLd6i4bW2/QRTbdoziJa8+BZu2NIc8KUc7/BNkw63DyNUag7WM0bEM45MpPnrJbfjTt92I5cUC7XYagQYKSAhgUYiUxo40Ftqnbf1RTt0Hk2ZqYmwJcqKqgh1XlXJ1dmLfsnSy/RvM/HUi+tPuUmczRFhVhaBRvRGPucs+DF/k2PSq34bddhq4jnFXFaJCLLWAxDFCKCNq5WgX7ThSnZDATCjn7kbZmUXaaIJikH5QoTmEAAWj2ZqECuPGz/wXVhZX8Jy3/Qq8L2AM4MjAVIHtiDQJFQQsQrx44CipnCcDj2WEflnyYC1gWPD77/p+3HHjAfQ7AVu3tDExPhodThAoBC7xmN6cVlJvCAp3fySSqt5lVOEZgpHRFvbuXsaf/O7t+I9P7MPifB9pZkFk4PMeiAiOCV4KtE/dcmljZvxnwXoHNx2oKBQxz/n4q3r1EI5XHG5Q/3+4D4AymA2K+c4Z/dnlD/WXuo8LpVfSAEigoCC2CYiIgnXY9KrfxsQPvxJFv1flfsVkRdKqRABFj9/JjsMBqDIeAGsTLPzL32Pn//kZjGzeDil6SFOHsLIIJYOgFuwSEBmIEkIZYrxyZgrNJ34fXvrTL4d1fYDyGGsjrSRchHiZmukGnskab1nAUswqiCGDGL9zHGCpD8dllTGgB9c8qtYoVNhTuT/G4dZRWZbYfsoovvT5OfzOL34T+/b00Gik6PeLgYOKVeB9AZcYjF9w9hutNe8GK3FqVMsCMJWGJXqfjONo6IRlC/BQHRHbaCww0wdDCEnZ7z+x7HUMmLnuBAowaZ6jc9WnIXt2IT39oUhGJmIgEwCg0Aq2BKoL05wsqoPeda3/gP4N30D+9U+DmiMwC7vQfNVb0H7re0Fpgvw//wVmfCZ6fyQGZ7UsoCsLWLn5Oiwu343THnsmnPVgKqPTpIJ5merVcjkIihMqzCWXlcOkgGGF4RKWa0dKAaqCwKQVOGcoE2I1I+IY047uo016rAyXNQzGJxw+8aG78Pa3fAeLC4LgBcyMLMvQ7XYjnjSzaE6P3tQ6fctLiPUfKGUiJhXxoNRBRcEnkNmA4w7tWvtvIoJUBYJsIxVN7RXpSPvKfG7+uVKERpKlsUNoFcy2LsPK9V9F8c3Pw+44Bzy1BcHn0Kp0AjHjoJLdayi65A/d221tTZV7ONLqv6ugWzmwG93rvoKQFxh9/qvQePVvgrIG3BOeDPPQp6P83L9CJVSOC63aGSvIe6zcdTdu+tJX8OQfeBpKF9XEdOC1LGG4AHO0z5g0Mll9oYjwL1pFqhh4EAsMqt5Ch7BVTiqzDTUP2WjPDFPwirIQ/Pk7bsZH/+pOLMx5QBU2NVFdV0WWJSASJBPNSzefd8ozYXEDWZBKUOVYblFDAA9UZ7pPbNGjGu/xhHYdVD5taAIFsfJUp+9tszV+xty3r317udR5AbONnjMyUKXYF54IkjYx+aLXYuJH3wBYRijruJwd3Ct+d6Xnr5vA1WfhQz7f+mc9OuKDPpMEoHfXHTA7tsEnBBUP4Rg/dEro3bkb/b96J5avuRytjFCWPQQpYwY2A4XmEAh++Td/ETsufAh6LsBSAWN7EWlS2fgGkdEYJRIUYPTj+6iy8yhEpwtVIQRSrMdUDOKZdAy2230oEQZeXKx184NkTY6cVl2Ndt25jHf+7k346pcPoNlsRK3CVM/NcYwmMRjbNPrG9szou7mRIkCphKhKdKAMqkHr6r1OFJ3QjO/h1IuqvBkSZ8VLuUCGPwFVI8xPjsFtQDRaE5Ytys4K9n/1anTvugFj01uQbd4GsK1iSRWMbJBYSQdtrAH0terHjaN0fx/5PQf/PRCAsVEADBaNbaGq9wZSuJEWzLnnIpuawPx3rsDiwjyyNAObGB5I2SA1Fld+9kosLyxj+3ktmCxH5gwco2KeSsqhjBKtStdh6leMFj2VsaSLrB5ANMRk1fMObLY6zeZE9QfUVRzqME5ykMZFBswGKoAvMlz9+Q7e/6fX4zvfWkSWZlASWGsioxkCOQZSvt6O2OfZJn9MEwPYOOcx51QrKBcG7bJWSyaeGDopDIdqaqNapQBEybCYzH2RnP03Ifx48CEjYogGdHuxze1YI0F5561YuuGbsGzRPPUcBNdcjcmoIrbYrrvwxjqXJAIddisPn5yDdI0jP/NGtKZvxXo1miPkiwEYiVCk2CIKMCNjoNMejuYZFyDsuxXF/D6wNUBZQryA2CBf7mLnjV3c/M3deNSTTkPWshDvAQgaiYFIBWLWPqxGxmMqIzNGIFwMghMwiAusds8asuHuXT7bvdgRg3mLlbvqPnxaFZWKxYW6SyP463dfi7/8s6uxOB/jmKIB7CzIEtQSNKGubdlPNqYaL2pOtm5sjDaVUksBgrqLUh05WstsJzacdLwTUA9ZGLWGFAUJUAGcs0gaqU+y5G4w/6OKP8eH8oxQenbGVrEjQmYs/P49WL7+62hKgbD9IQj9EuxslFqm6u9WVbKoJZ2CByc7QKubbs3SH3ocG9Hwqbzm98Cg8nEVpo+qTgXmju0CAE4StM54OBpnPwY6txvF/p1gEUivgElSqHGwLsHSvh6u+Mg3MbOjjdMetgkkAl+UsE7gtAeHAgYliH2VOSBV7E/j3blW1dY+7mrn1pMH/FZVGGORpU0cOLAfqopmswkRgbUW131d8Ee/cwU+f9keWNeCEBCgYGshJKJWgm06bY43frM92f7Fxniz4zKnaii2OdaqxoJWVQSGme0kjP3k9xaoAq3OWVhrwNaKtTwLpn9wzgXD/MSyLI2IEDRAJCBLUriyxNJ3vgm94waYcx4BnpxB1eMpojqqKsWxTW9VH6NWX9aoMRgU0zkUHV7K0SF/E09QoBYxohID+FWNFYNYBbm1/VQk289DOn0Kilu/BQoeJm2s5gaywhclvvVft6Ezt4JHXHRKlfVdwlEPjBKMAkAAs1aZBjSQbDVAeePHP0mAgUF59dg/vJ/3MDo6CmstiABrHf7pb+/AB/7vdbjtxg5skoCsgTABCSFYgbKQbZtrx7eMPyMba1yWNJ0XMyiGAVVVqtR5kkMc/g80hqsBvTXuDVAQG1hnxabJF0bHx/6zzHs/knd7DVLEbG9RWGNAoYDfvxvh2quhk5vhzj4PJFUAd6j/NBkD65LKLlyVrmue4zAsd6wMt+FnqJZ2WoGTIzcU/RxZ2gC1p9E451FonH4Bul//NLToI22OoCgKMAPNZgKSgFuu2YnrPnsLLnjqaWi0PRx1YKgPlRLWSsVwtBpzI6pKxx+K4U6SdKPVRiIiijRNwcwYHWug3w34wDtvxd+9907cftvdGBsfhzLFOqOO4BHgrWB6x+T7xjeN/HTScreTgQ/RbKgKelfMphprvdD9Y/wntUze4KqR9INKTQpE960Kya7xiYmPW2POXZhfOE1FmJhINYJVQ+HhF+dQfOFfIN0O7MMeB04bIAmowwvMBqEKlotI7IVb3WbQO4COM8Mh2nRVcXEQFKIEY2xUfiWA2KJ96plgtVi+6j/gJSBtJEAVAmAAScqY3bOCK/7x2zjtzGnsOC1gpOWwstzD1NQIJHhUkNPVKl2Myn7c6EFPHqqkbjJijEFZBDTbFrfdtIw/+I3r8J+fvBuNpkOSJOj3+4BhcGbQDTk0KbHjjC1vGN88+rYAWZYYzawWgyKzVQWV1lebPtnjP+kSTg/T/IKqpg9COpc2G38L0nZneelJqbGaJikVeQ4fPBQeKgHhms/C33YdzCMuhNk8CeS+SrePpfSiU0WwxnQ5iuYb94ThNvrcaiORoU1APOjbLWUeUSj9LjrXXI5yfhbqLMbGxpH3I3a0LAqkiYP3Hld9+lY0minOPHcEjWaMQ9XFcbiugx5neXW81b/jQXfius9s2AtwqKHKyFiKf//4bvz2m7+N225awvhEC0VRQIPAWAaMoks5sjF72ylnb/9+13SfLstSwyB0DwJYYstoXq23eaTOQA80hht2z69KuEhV7SvEMIEgazQun56e+k8VeX6e5wYQDkEi0MQC1Goi3HEDup/+CHDKubDnPASSl1Dxq906B6tTNXis7bd7vPEO/7lDFcipmQwU+4sTCBQUzjoUt34bi5//OEwjBTGj1+vBWgPRqEp7X4KY0ekWuObKA7jumz084rFj2LRlBD6UMGwrxlvNeavvWcuBWDD3xC71cIei+mq3G5jbn+Ov//w2/O177sDKcgnnDIKPqCLVAJAiWI+Z0ze9b+tpW35CWXeHEIakGsDKEnmH1x2gR1jXBzrD1aRat6xabUjBrAgadprMfRSM88B0iqoYYiFOmlBfQFIHLrso/uPDkE4X9jFPASVNYGUZBMC4DDZJYQRgHyqXOB+S4VYZ9FAXHdXfuc4oqL2UtQoNQikBzlh0HWPHXddh7x+9Hr2iD88CUgYkFjQtywISAogZhhlZlmKk2cS3rrkVV/zXnciaI3jIw7ajkTGcZXjvoaGSIlzZrkJgBiybqngQBrHM+35pD0aJBPGwluESQqtl8dl/n8MH/t91+PSle9BZFqRZgix1VViAYBJVO2qLmXO2/kR7qvkHgbXwIbKaiMCAlImEKKrmB6/jgwy3bsBrmWyYYiSgRo3EEuYmSaCG500j+RvbSJfZuGcHItH+MiFxgLOx/nwoUX79CoRbvg17wYVwp2wFdz1IFaKABccCojKUV7ehWnvEARxheLTx7wgR8W4MxlyGUg0a37gCu/7g1ch9iZIFRbcAUcwkFx8DaFol4JIllCLolH1snZmBn1f816dvwsoK4RGPOh1pQyChGGRHSwCsqwsIMVxqUeYePvjjplaKSOXeZ/hSwQZIUwfrFDtv7+Of/34nPvS+m7HzVkKZM6xjEKKt7VJG4L66yfSb7dOnftiMp19UUZIyDDpTRmdIDDAOGpYcNJQHGW7dgI8mFyrGrRSxu6dhC0ocxKVfMe2xz4SVpSeSoQkKJaO/BGEDchmo0YTeeSP8lz8NM3MGzEPOA3sCi4CzDFwXIQpVvK5mhOFbH/nhjuLxN1IrCUaBYnEZY+0m5v/1o9jzhz+Dvi/gWdBd7iJ1Di5JAENImhlsI5m1WbrTpjYTAlEEcNNKv0M2dZhMxvHtr+3BV796F7afsglTUxZjkwwoI889RID2qEMIwPJSDpsQDB8/vTKi9hW9roexUZo2Ww5z+wt86H134aN/tROz+3LkeYnJyTFYQwjqAfIoTK/cdM7WD6Sb2y+jltuFUlS9DrrAkq6aA0yDjgEPMtwR6RhO19X6IVEaWssaQHfZrTs+QN2lR2Jh/5lgZqMBsA7sEqhLIQfuRvjyZdBeCfvwJ4FHHLRXQm3VSAQAhdptuZbp7kuGW9tlNYYFko7HHR/5IJb+7OfRo4ACHnmvQGIZqoA1Bkm7iWxm9K3NbeMvTqfaf0TWfEa9XOS7+aR4VessZc2MCvVIwNh32yL+679uwfT0Dpz7MAtfClwSVfOFuRwuYTQadk0H2vueItKl2ykwvamFNLNIUsZVV8zhT373Jlz9hUUwWRARms0Gup1lJJmFa7CEpOhsPXvLqzHi3qGZK6QM0FLr4NoqqGD19UGGO2o6RnVmlekYag2MYUVnybupTX9nxsYWsLjwA6Rg9R5UlFC2oOYIkJcov30lwh3XARPbgKnNgDXVVxmQMkikCpjXKJGjeqKjfm6NLUvB1sIUHr3bvoU73/JU5Dd8FmilVYJMVI6MsRAAozNT+9x487npdOsSO97w3HCWLe+H0l+L6hYJ4YKEnYYykE0tlaFAEEXmU1z5hV1YmC/w6CeMg1nR7wVkFaNlDRdtt+OSbBqD6SJAo2mhANKM8cl/uBt/8js345YblmAtYWQkg7GMouzDJQZdv1w2Z7Ivn3nBmS/tWX95z5exx7cXxOK/Q+Bm1IxWdz59kOGOju6h/UBQsCqYANNoKBc5U9b+spnZ9llaWX6K9rsTZFJiAcgHoDkCKUsU374Sxa3fRJiahm47E4Zt9NoZjiHpKoRQNwQ5mic5umHSAPPJ1mLxyk/hrj98FazUSBcCGwtjYhMOmyQw7eTSmdO2PMeOJDfDGY8ggBcBk+fUlslY69+Ms/u7Sys/ZIyVsl+wMlOrnaHvPUJe4Nbrclzx6QM4/xFj2HZqE0yEZstiZbmAsdExdW95bm2KUwy4ixD6/RVMTk1g790d/MF/vwEffv9dEAGS1MA5BoQQpITNDArT606eOv7Bse0Tr+tKcRsnaRUz1eg4OhizqmudbQ8y3NHRPWU4IsSilRQlk3WK4ImAO83m7X9J2ehjdGnpbIBJg8IvzQImgUxMIhzYjeLmbyAUOdzMNGx7EhrbHg2Yjo+a6Y7sNImFYgMIDOn1sOuPX4/9f/2/4VwsBTBom4TYnDBrNdGaar1xZNPkL0nTrpAlrxJiaokIoApjWE1ifSC5amxm4hNFL3962c8nWImLEChxDGVGp9NHZz7gskv3Y/O2DGed10ZnpUTWMDE1Ru+7kgpaoVpCIBgHjE46fO2qBbz916/Hlz+7H81WElOtREBQJJlFYAnIpDtz+sxPN6ZH/jAQ+qUCeZ4jdSkMzKA5ytCc1sym9RzfI4Y7CbC271qGY6DKmK7MLhKQMXDWkUookDb+zrbHV0RwofbzVCrAsJABtUfgFw+g92//CDPVQrbpNNDIJJRrprNQEZijYjoCggxSXAxVveRQpcXwKrJEmXHnf/9v6HznizAKcDoCU8GsjWGYCOC+ybazl6RjrX8wDVdVGBZo1f6qKsYZg/iqYOcgFPY2x1ofcUky7ovyUUW/4OADWRvbOItGtfmLn9mHXbfnOPehIxifTOFDCfUEIGCwMas+fmzoiIxYQ+QEQBBB6XOoGLTHBEsLgi9eVuBXX/NVFLkgcQaqAYYJWZrAh4CSBdy2V86cNvVsO9q4slAVUSiB1FmnAKuEoDQ0ciLSSqIO9eK4Bwx3kjCkJ53h6B5cazD6Wrv1I06x9EUFpFDl1HyJrP2KCB5vREcRgiEVBAjINYBWArr66/B3fh1pqw07PgVKWxEgSwYa4klMOgR4HkrnWW0YGIPzzNFBrYZg2FSfZbgQ0Pnyv2PvO38R+be+AlsKqDEGyxmMWhgySJsZ0pHGp9xo41lJO7uOMxszCgbfr2suqlJrmAhMBp61a1N7KTFuUcWzxIuFKikCVGNCLxS49aYDuPPWJbRH2pjZ3EDSIIgYVCUqY6kFqrGeddoTVxjzta8AIajE0oAUweJpluHu2zJ89K924/3v+jomJ8egPsTvkvid/TyHGUlyHnHvaUy0XsAtOyc6aNEa9wUZIFRMUcdJiaqfh/9NOqi+vRFvHe+cvmOkk85w94TWz2tQjdWxRKpGjhLrgVAJTvU21xx5v9rWI6koz9OyqOpYKGAb4GaC4q7bsHLFx4GsCTcxDdMeB6wBGQeKFUex2n1+tRSBaoBK7XlExO4lLgKL8hy2NQK/7y7sfc+vY/Zj/xfkS7iRCQg7kAq48LBs4dqJJuONN7mR7JddK805NdWequBXANZuxiGnTpXdzswQQ7AN9620lX7SWvP9/W5vU1GU1MgSKn0BXwhmpjdjz64erv7yDUiSBGeeOwJjFbHLL0dnjXisdAIaqYsZF4cIjAcEqBK8lGi1GhhpbcbXv5Tjnb//ZVz+n7dgfHQcnZUOnLEIRYAiwFiLbLp9R3PT6OvSRvIubmbeJgm01gTqgiuhHuHGSJ1DpX3d3+m7kuHW05opX3eCEUBsxZss+bAmI/sQ/JOQ5xmFmDMWiADXQBBF5/OfQliZhZuYQjaxCdxIoNYgSOVMqU5/UHVYV4WAyDAsEShJgTJEFbHdwvJn/hl3/9kvIL/+GhAlQNGFSZuwSQbqLYESQjLauiGbbD7PjaT/ZJtWbeqqvm71xlqtuBmxj9jgtK4TWzkWV3K8zzbcR5I03cwB5y8uLtnEWWqPNtBdyZGmTZCO4AufuxY7byVc+NRpTE4nWFkuUOQe1lm02xlWOn1I8DBmbUuwQeImGbAlNBoNqMzgk/+wG3/6+5/D3Tv7mJmcxPLyMqQo4XMPm1oQM5Lp9udHTp95LrFerc74JEsAqmuTRul5qBKjh2rW+N1E3xMMdxREbAJshquRTX0VQZ6keT4BX0KCB9iAXQY0Wshv+gbKa78E024jmdgMbo6AHEM19h1jFWhdXaxytLDmoKQJKgowJdCiwIEPvRMH/u4PEGYPgFwCmzRBaQOyvA/aXwKPtJDNbLq0OTPy3GS8cZNrGOXEbJjOqkeVkV3VLFEGMYEM9zkz/9xoNW5TL08PZUggysYBGhi9Xg5fONx1a47P/cc+nHJGEw975Di8J4goyrKIPe3Mas2RNdA7BogFjXQKe+5o4Z1/8GV86IPXgKkBYwlLC4uYmphE2SthEwMVQfv06Xc0No/9pC+LbjLaggGpVIAGAlWm6aGLCX03SrT19EBhOKAK29gk3Ibm2AeJ+Bzp989H6YkkxAxp58CNFqizhKXLPgxyBsnEZtjxzdCEoOQQJIAr+KUCMAnDuTaktww2GfJdt2Hvu38N85/6AFgNkuYEDDug7IOKZbBRoJkimdr8C8nUyK8kbddhF4GjNGhVvNoyWaqaCEe9z0gqYHK0c8jxtyZnJj7Dxj601+ls0qCu01sCqcHo6BiWl1YwdyDHZ//9ALKGwfc/eRJFLvBe4JyL1WV0nRrHsZXW1KYGvvLZFG/79X/D1V/eiWazhW5vBaoBYyNjWFheQWukDSLcMXr2pp+2I9n/JQNjEovQK8DNRLlSxWMFsw0Xbc3rdzs9kBguEims8zll7Y9S0pwjoqdS6R3VMR9jAZeBkhS9q6+E9PaDRsfhJreBGhbCDqGuZwiFcw1wrwtwipXPfgy73/UrKK7/GkxzFOyaMRE0lCDKAZRwU1PXNU8/40W2Zf+BDQUgxLpVIlW+3nDAabUk67Htt0rFZIaxFnDm7uZI8+PMZmZxbuGxqpAkMVQWAdZZGENQIXz+sgO467YuHvm4cew4tY28L9CAyqNXpxZ5GKvImozL/2U//s/vXI2FuQIuSSAagcmNRgveK3q9HlpTo1dMnL3l2dywXzWJYRDFytmjTYTSq3oZVKU+aKm+x5gNeCAyXD1wG2Ab2VeSRvvf2CZP5+CnEAIQPAQUHRvOoHfDtSj33wpqZHCbdsA0GoCx8ApQENh+H35+DvMffzfmPvr/UB64G5yMwjXGQKGElj2w9kFG0dh+6qXJls1PZxN22kbirVHwUHLoQTljTDHOCFRFkI6FFMYQDFkECfAa+mkr+9To2Nh18PLUPC8SQJmUybkq+M+Kb149jztu6WJ6c4ptO0bgyz6UbFWnpcTMpgksLvTwh2+9EZe8+07s3rMf7XYTsSa9ot0eRVEG5EXRm942/SftzRMvpZR7rpWS+FjZ2bQySOnBitgpig6Ks33PqJDr6QHLcADARmAyuzttNN6HtLEZoo/WoiQpPQCFJwOTWKzsuhP+1msBE2A3nQFuj4CsiS7062/Cgb9+Oxav+GeYIodrT8T9018EJwbWeJBRNM88943JzPgvMZVCifFMAWRi1wGuY2uIm41N7FHAw55JHHtbXI214WLmN8W6mEkjubY91v4UgR7fWe5sJigxEcV+5AZJyth5ew83X7eMbqfAuQ8fg2fAWwXU4kuX78I733YjvnLFApSBrJHA+6KyaQ2CAFkz3Tu2ZfwN2fjIn9mWZTECLQPIGpjUAkFAopA6+QHrDhp8b0m1YXpgMxwzQELs2Bvn/l2YOyp8kXjvKEjlISSkNoXv5eh+/RrYO66H0z6ScgG45Trsu+T/Ir/j2+C8hLoE5AtY9uDMQfuzcBOj3xp5+KN/kDNcCuQwCQMa65QwYnKlVnG12gO59mSvY3D3LGYZNMS6LpVrIkAQSA4YY/7Gh7AZKo8jhWci0thuD8YylmZL3HrDMr79jR6Sse3Ie6P423fdive949vYdWcXjaYFVKAk8Bo9ljYxPTOafL45NfLjI+OjX9RMB2XVBVodIgyRgaqssfYKfU9LtWE6rpWXvxuoWlwiGGgwNl/qn9uf636yWFg8I5QCJSDUfQO6PYReDpNmMKNtICgkLwHDcM0RhO4chAQ2ZXDoIN1+6nvs1h2/ZI0WJrUeoQ8pu6AkMiaFAkB05fMhSwHcc0TEGo+fYRAMKp6CBoH0Qhq6xfOW9i78SW+xM5nZpiVllD6nWKrAwBpFs+VgmNHv5SgKD2McwApBQCAgMMCZk3Q0/f+aEyO/lbUbxGwgEqr42iGfT0jrNI3vXak2TA94hgOGmI4ICGz6S77dW+z9aTG//PIy98SKNY39AEDzHL4oYVwCcg4oO3BjoyDJVfzCcuP0c36luf2U94I8FAUQctg0BRtC6HWAyp6JYF9zrI98VHRQZTJrYm8mAEocoXFFMKEv2/pL3Q939i88Lu+UxpId1MblEhWI2AMGsNbCJrG3gyLAOy7tSLqYTTRemrYbnybHsdI0UWRyOjRETFWFIcNFoL/n6QGtUq4nVQUZqE05J2P/PQjmSh8uYuZEh+LMTBQdEllSIUz6SMcnoGEZbP1No4984jPMxMh/oFwGWQ9ID4YUMAbsI9Ilqk51+bboBTzuJDqowEyxZgWMNZpkyZJLk08GxhKRPlFFjAaAIMQJYFMXwR8qAMcAe4DAK8FNZJ8a3Tb+4tbU6NdsEitDqwrIcFVJ+dBEREoPHF4D8CDDbUjEIJuSd43ka62x9sdg+Sk+yJQqmJhhSGGIqzLiJbhhEcr9yLZse2f74Y9+NXF5B6MAOId05sBpBpOkQHcF6gVsHAgOynwi2Gzt2ICqLCHAFKFcpQYoaafZalyRNps3eQ1Pzst+Q4VIVaoMGYJNLQKA3JcwqcPoptY7WptG39iYaM4b6yAhlj8gYyJj4oipPw8y3IMUiYjIJSbY1C64RvJhTsy2PBTn+15hRAkheIiUoNQro9NpnnH2W5Ltp/w+o1jklIBiCVzmsO1RoN+BdjswSQPEFlADJRMBwlRLt+O78daEHCopHaWdgCl2MoIhkMG1JnMfS9PkcT74reLFmJSRNBIqQ+zR0J5ozk/sGHlee2bkfbZhtC57wMwx4A4MJRwd9kh5kOEepEiqERBsnQlg6Svrx0xqOmroCb3FTsqOwVrCjtCNow992HNpfOwTLN1A0gOKLjiLdVe0uwJmCzYptPBgTsGGIxQRdSeb4890G3n/GDH0YFxUbcvSQ1SQZMmCS90HfJBGKMonSRBaWS5QlIEmt7Y/evqjNv3E2HT7mn4ZIEoQrjMIqgTbNXVSHmS4YXrAM9yhsHvDf9MqoGWM+VLaTj/dHhvd0c17S83pib+dOuvUVwQOt5OUYBVQ3dcsKCh4sHUA2xhrYxeTa4JEoDFVLv+6Qfh9zHRH8vrVjKFBEDRUki5Cy4QCslb26bGpkatMwls4pQNjm9v/qz098luqNBeIxVijIFYRUokQGSUiZeY6b20VXb3BxThO9fnux/SglxJHbsxYZykPficGNlj00QM5C0BAETZxcIWuquEgaVUqYPCH2F+6bhR/MsZY98Kux0akEFRxMlU4U9UEDQJDtjogahKyjqOEExl4ccmYgWeSNujhsMEzPaCYzp7sBzjZdDRZzQf9jgPKynFS18wUra0WAWvs8FrJj9XPkQxKb9MJZDbgYKldM8WaStcaM9NNFYUfvNfwAEy9Gh1h9aXE8MKw2igCGar0/CCtpQc8wx0NbcgUVFVFrnCAA9lVMdQhqz1WUuJkne33NLi8EaxMN6iVfqIOkO9WOsHV5b+3SE9Wb7UH6buWHmS4B+lBOoH0gGe4BwJ+70G6/9CDNhweZLp7S/fYLvwesfeOZfwPeAn3ID1IJ5IeZLgH6UE6gfSgSokHVaJ7Sw/0eTiW8T+gJdxGyJBjoQdtvwcm3ZvM9Ae0hHugn8wP0rHRoVpjHws9oBhufVWsBxnuQTpaGpZo66XboWpqbkQPKIarqVYlj2Wijg8Jvtu0+o3bJx/63+vpoD7uR/j3yaaNehnUV53CdSyq5X3CcKR8MMxJ+fAtgY7096MgITlM8Z0Nbjnc3VT54Jof6ybungCbj+Hph+YPhyyBV2cYHC8Y2eHufcTPrjv1h39/qPlaD6Je//OxUtwDwH19cB2O0TYa/9GO4SCGsza2pA0hDBaDBzj4oS8VhVbpg4YBDbFHmHWxOpRqTNlYN/lGRYJ1DiGEY2K6QZqMD0gbGYpQVB1WDk3rW9QCiEV0FHBI0C27QFpVFKENUiErKWjWTew93SAiMVdOSJCQQRlixx/l4ZaM1a1hYgPGqoxc3s2RttLBPIRSIAjHfMKuJ+Msin4Otgak8RmJ6GAmrAsDYXUeiDmetUQQGspIGEzfeunFsQx79T4RAYnEvXCUFO8lq2OW1RdT7dd6R/HQZ4bX7WjmS2spxlS1L9vgQCE5qOXDhiDvof1iy5XixykxH3POwLjY8nZ1Aji2gaKhGwkBXDcdXG3KrqqxpoWJrZZiP7UAww7d5e7U6OTYM/rd/idUEY55g4iCmODLcqLMvTYnmgs2t1XfschEg0llBQ+k12qav5AM+pOpwFx/7Y0j207bJuKMkAGMIRCRBcCqWorIiogYw4bIUMmoDhiRwY6KG/MYJI8oNASMjDcf40N5je9KVZTcrM0cIIEixDSXarGKTh8GfK5tJLNkeBakQKgY4B4W/VIiWMvolnkrCcm2vi9vYo6NIZk55sUSDSp9rd9E3nuCR+LzQkbGRjNVqPeeAJD3Hs45OOdgrUUIAX3fhwDeGNMzMddOdUitP5qDLFS1PKEMktgy2bKbEh+e01vqTgFAY7Q9y5Yu9d7PDjr9VLU/Ixsefs1iV1pAwROxBhljWIKuHo5xfYqiAAAkia2akhwsvetXu3Dn3Ienz9n8rFDK5WnqoBLgvYcxBr4IsbeXxrytJHMocz/YuDXjhBCAEBMaYztZRtLM0O90IarWd/K3zC7tOzsZST7hGhmKooStGtpHKXm4E06gQVH0chTd/N/yTv/M0Zn2DwG4Jk7OwZJpQ7sg1guvvlLeZEPyNirQ3/mtO4gN2MTEyViKVdWHEG4Rke+ce945/0lt9x9iwlzpi5jGXKlGqhpLCxwl06mGif5c792z1+97/vbHbf9+RbgGsFX/udVDo07xsZYgYbAe71rau/yG1qb2K10jucSY2JFmTXPKI95f16hKbAl5nkMKee6u627++8aWkXdlUyNvAivACZh4HbNFBq97IOR5Lvlc92Mre+efOdfI5kmhQUUtW/XeD+7JTGBrwI7RGG+9Lx1p/LaxrKpKYFVjju7EkCp/MBQh1pMRfYwsl7/Wv3vpRb7bh0sTAMBSfjdsM7uzuW38UjfeeCuTmSWq94UMxn9oBhdoINiAF9zyrZveYUNkwLXmy2rSrrUWIIX3ftAeeT2jDRiuWOxg9tb9fz9z9uYfEh+u8RIAIYgqrHPwRQkyMdHSFwHWWpRluUYtqPROMBswGJzGE9KQQa/T/5HZW2Z/tbW59S9wVGgAstEmxAtsUqmvsjHD1cmdpS+Rr/TQ2788kXfz8eK0fPUUPgbtrtpwqSrlrDQqIm1fFMogVSNg5lCNKRUfZkTkwuu/dt0rm+3GXRNbpj7Smh59BwizXoMoVplOcXTxPOPsPBHNL+1ewfje5dfa0eQNZEzVYTR+BzNHdZ4I9UakENAcHblpcdddQJBXjWwfv8S2LNiYI6rkwxtr2OYQEYQiwARF98DiL/T7BcYaybJ1DsbZwfvqQ3Q9W4cQKrNCW6qaQHRMot4GgUB9GBwW1lpw4pC4DDYxaZIl1hhT+lAcc00JKT2KvES+WLzAL+Yfok5uSUMnGWtfmky0ZgGA5jvnFsudixdu3v2GqTO3X4jx5CVs6ca6/Kfq0XmoGTgDQHrIuVVABcjzbmQmawaFbw/F0FYE6O5fGl9uJH8/csrk90N0HqpQBiQEUNWMzxiHUHoUIcA5B+993GwCGGPA1iDv9eHaKQwIZb9AmfsL52/e8/7+4rKfPHWaKzVk4N3xKoMWTYfbLCQK8XHxQrWIbOtU/mNZLkBVPQAHAAJ9/6mPPuO3yTCM45rhVERIvJ4tXh/em195WW+he9GtN9/2Fr1JX/6Ix17wM8GESxUk96TG3ei20feu7Fl5zcKdS6/ZcsHW9wb4axQGRAbW2oENNfS8ccMyX5Jk6ZuX9s1d1No0+goVueRI9zqcQ0NVIV6gRXjK8r75J0ydNnNg6pTNf1qqAKE+nGIZCNJV263+bFSPAUBs0nLl+PbJ19hG8gliHjeJAyBRqjHDGAMRQREPty4Ar6ykQkrHsIAqhBAC8k5+cbnY+xARgUbTd0+eMv1W18xmi34OAGhtGUfe61/Yv2vhXcsHlh+dSfPv08nGD9jUzoIBFFqZHwQ+VE86AxTWvOOMC8/7MyKKjSLXzWVlXZ2566prryCib21/3PnPCrx6AIoqFAFKq/dg1QCTGCzsPHDG4l1z7x6oiaUfnLrG0KDOBUQHp1Zsai8wLvbDto0E6iUWoSn81P7rd15SFsV40mqoiCAxyRojX1URDnPADZ/Mxlm4LIVLElhrD9qUR7VgqzU0CIiFTY2zu4zjXcy8C4b3wPBeGN7Dlj7PCf95c7p9cXNT+went8983jm35dqvfPsfjfLbQMr3xHmiwDWNqfQfe70eOoudFzAnLniFcy4uksigYnE95yYy4lxr0+hfiiD0l7o/LqF2bB3eO7ee2YbrmJR5ge7Cyi8AjMbU6F8KZHftlBjWJOtiQ8POBxEAQVBKgFhmkya7rEtWmHknguz0ud8pPuxU1Z0wvJOZd5Jil/cyH4qgUoqSHHuzbfEKne+/G6UiHW+9Y+sjTnujaaezggCTGpjUQFSRtZpfmnrYqT8Apq/19yw/uujkb2bL4Ep613c+XCl2QOYDyW7PstubsLuwYXdu/Oqr8btL9nPee2IQ9u6/e3dPeru98buDDbvJym4yvNsQ77Zsdhvi3UxkYJwBO4vO7vnnr+xbfPdgc4rCGBM9P3Vpbo5tdkMIMCZ2XCnzEmwNQr+EiMAXZXvurtkPF73inKzdWmhPjsJLgIgga7cGThkigqWjc+caEyVAkiSo7K1j3uyDTT+kV4sP0eMnUQ1SH4AgCEFrSZw3xlv/2do0/oMz52z7HZMYd8OXrn8LB7wNx+iL1srAbm5qvpeZMb9z9rXiwxbrGDBRlSzLEkD0Fq//uE3t+1qjrf29A8s/JEX5Q6Gykw7FdBvFyJg5qokB0IALD+w78OPZVDtvjjf+NFTeadWqow9kQyk5kHCxkaKqqokHM4MsgR3DphbgSq0K8dRna+BSC5NZUBLfe7T2GwCY6J29WDrFGS4ztzXHmu+IdpNANcClKVyaAuQRpITCz2ZTrT8JuaLcn79CFVPG8WAMh9tDA6+mD6BSIYWACgUVCuTxZ84VlAtJvwCXAbYvoOUiXl0P7Xlov0ToFwj9ApKXYEoYvlcsTJ+16Y0uSzF/54HX9Be6rwVi8RhBPEVrdS5JEigJQumrjigMtoy81x+47Zf3LLytP7tycWti5Evj26ffWpYlWTYKgMp+jkajgaIooirKR7dn6wmoN8R9QSIeRa+Pop+j7JXwfQ/f9yh7JcpejpDHg4FBcM70snb22zPnbHsZp8bd9KWb3mKEngM6ekxdtB0InNjLs7H0H4sVP14s5K93ztlq8w6ueiOa2qZjhqruGdkxcUm/30d/OX/NwEDfwI47yA2uMVzDzNEpowrJ/StUFSMTI3/JxuwGCCRRhT94jg92RKkI8pU+8k7ssxBtT7OqxYjCFyWKfokyL2IDEYkdWuvwwDGDD/Ly4mK+g2S0cTks5qkyT5gtin4fRb8/eIYyBKTt9BI3ln6t6OSn5gv9c1adQAwDqg6Wg+du8CpxXUgVEFlzxbCGrn5HqQh5iNph4SGljz0khi6GKLKR5jic+ejUOZt/AgBmb937Li3CC8gLDDHKsoRBlEbeF0jTxuoDVYEPZiZVRdkt3ra8e/HNrpV2Jk+beaGIzFbePw3VQLrdLrJmA+rDEWMw9Ub03qMoCpRlOVTW7d6Dh22awGYJXMOBMgPKDGxm4RopXGph2Qw8TwxCkrm/nTln28/bLHXf+fL1f6E+bD7a54jvY5RBMLK5+VHDjAN3HXilgBNAQJbgnFtjV4gIatc5O5as3Xhva6SFlT0LLyDBY9bPQ81o9bzVjDZA19QFWwPOzbv5G7IsQ2Oi/Se1JIr35TXfNcx0VJXQrL2p0f61g5ASaYCGgLJfIuQevl8iFCXUK6QUiFd4v3qw6DGuYVmWExoUNnXX1A6mUHqID4PeDxoEGiRucMcY2Tb6JYwmkFLP9d38mEDra9ZhaG7XzHMdNhvMiw6YNdaJx+Bnrm/caDcnKLMfnT5v6zsAxYEbd38IzjwmX+kPOqGUEmCMQ1mWSFvpKvfHU17F68sXbt//myazmDxt5qdCCDvJwKsqq6qmVcCbmVH081W78CgGrUFiI7+DNvCx0/A9a4ZXHrJvKHpIo/CV+HPlibSW0Ww33t0ebf1rK23OdA/0fvtYn4WEYJrpR5vNxjXLc0ubu/PLbxABWRvtVGYeqJb14SIhIHEpyPDOkR1Tf97rduF75Ws0CK+//2AjBKxR3+uNUeal6a/0frHX6eKMs896FxtzU1ShaeDBW3OtD9tQPNVJFRklSLiKvaoiKEV1td50Q2oszKpUUR/vh4BK4h7FhRg7dKmDdqPEhCi0DoQzDV7BUV21iUMy3njr9odsn7ZJcglyBlVB/BptRMoHXRCq6mrSGom3Zr9W8VKFRckM4fp3MYYJpkoexWaaSgBzHQ8jIE0dspHmb8ycveUfy7LEvmt3/r0ynamFH+j/vpfH4Hge4NIEbAiq6pj5orlb9/4ZEdHY9olfAPAJmCj1nDNkjNGiKAZBUF+U0HuBZbyvGvfVqrJIvGLPgBCRMpDYMQZx8qj6mRm+Od58e6M1Yvbvmn0xgDOP5plW/x6lTnO6+Q5ixcrdi28Mhc/id8fN4MsyMn6lcg+kuqGQtbJ3Z41Gvjzf+WnJ/UztADjo/pWUUyZEz2EM+fleubWzd+kniQyE8GENGByew5tqmOlibXZZLfOnChWC9x5SRukV59FDKNrcVDMa4oFW2+u1p1lKf0wqpQAYm568ptcC7AF/sfQ8pDok6vGDh7ywInGzq86Wwc+y48pjSIO/H8npVH/XkZ5LhhAuh4PKcR1Xcy52PGFmjJ4684bxrVPXLB9YOGNp59yHmA18XkSPWeJQdvsgw7BsUBYexpjtB27e8xEp/Vhz0+hfcOLeKQRBEE2SBEIgKb2KCNVB9fr0Oxo6foDWerJl6LW66iKtFD2xxKvMYJ1B2so+32hl10C01Zvv/6Dy2gDnoSiqdbGmozT4o1M7Nn175cDCqcVy/8eKXkHexw2rAhhERqkZqShzWGtJRG4bPWXyE53ZRVd2/c9pwEG2MMFUwfSIyIhBYYKU3vSX8zf1Fvqjo+Njl3oTPqckVQ84HahlA1XoMGtA1UZjZpjEgFMHaxNYy7G98JBzi1adLAOI27HC0lgZLku/ipZDv+g/P/SKF0B1AEkLpYcvyoGDj6tnGA5PDK/9UcXihtqUrb8Gc1MBsAAaSOL1a15fHLGCEc4lAIxjEGR+dOvET4zOTCys7Fl4THe28+4QBKHwqzptXqKIRuHo3K37/iL0w9bGVPu/GuPN1wHCgAROa5gYI89jjMSmCUIIaLSaR+UwOXHo8YrpqGa2ANWANeXvTZRNxAyXWrDj9yZJYuZ3zz/zWJISLTMEgGukGN089ncAsHj33BuLlV7m84LUr6pw1trYXgqD4LgKSZm1W//Q7/TLYr7z+lD4M0lXD4T6da20i7/vr/RHe/PLL3POwWXuT47kmF8PU1q/HqywYIKxEcIV+8LZ1Q1WMZZyVGnXS9FjYbjKaXbN5NaZd3QSD7/c/5As9l7hizAAC1hrK0ajgVOOmUEGGHZw1bbqic5O4NrzV7twV5EFeuvE2Zte4popFnYdeE3olm8v8wIICiVG3svRX+mgc6D7t0uzC89IxxrXTu2YeT5bY+pB14u5MrcAgOCyqNZkWbYmrHBP6LhkW9OqpDsUCrzG5nHGyNrpdwTKIQ+POBRy/lDPbojA1iJrNf6iOTl6y8qBpScVnfLFUDUxsM+o3f6xF7kibTUjzIstik7+VGbW7kp3Kl/pv0a8umGpQayDzeZ9QJHnkeHmu6/IV4odI9vHPytMn8EAJ3jow++w/QGC2FB65IvdC7rznYcVy73HFEVxoao+WQhPF9Gni+iTiOgMY2L4qV7zWuIdy6ZXVTRbrd/gyeb7Zmdnse/2PX+1eNfsZflS/xdDKefW9n6Ze/S7PfT7/ai+Suz/gHUH470Bo98TsqRAWS1smjn0VnqwSVI/zOXjp0//xNzN+z60sGv2LRM7pq8Jpf+ohADfKxF65dtX5lee0xof2dfePPJyTuxS5jLtrawIC4GcQW+lFzcN4omTZA5BIwrhvqL7lvlk3WtU/3iAhK+6l8Z407URpGtaACaIaH6AjjlC2gYRRZe/6Ep70+gly3vmfyfv5C/PxhofZms8ELMvvPeou5BnzRRLs30w+NyVA3OvGRsbS8vS+3wpf3nazn7XOC6HJW2NmBMf4OGhXtv95e5PMQOt6bE/9L5/SBfxkWxRICIp0kYW+isdLO9d/NPS58H3SmVrWUQIPmjZzeGaKTU3j/5Ka2b0j9JWFtVNHHtIoGYOIsLUlpk3cOKuCYu9/1F0ehd351cuttb+kWunX0ua6aVJK73UpMmXrItOCzY8OIR0nZQ9kcQiAik9siwZ4ONqz1ZssUQfHdsx+Q7xgv5890OqdPHK7ApE5LWdpeW3sDPl6I6pnwLTtwJE2LJCo1cmVDCwLMvAlQTVULVogt7ngz5URu6hqZ742hkwMHtXF7lGzGPtabgatJUSJFtZubHRBjkcVS7lkDTTjzSnRpfzueVnFN38aWzIqeqqrYso5XxRwhiDzoHlN/c7eSMbbbyr2W5cWSx1t+Yr/Z/yXg4ae9zUjFB6LO9benXo+0dlk+3PGYdPJlk6GN+hcr6G53UjCgixI6PBjWztVeTsVS6zV6bN5AvJSPbFdLT5haTdvDZpJLuttSCJLZaFjt3xteb5iDA1PfnemTO3PWb8rM2vbG8a/QcR31net/Do+Z0H/sfS3YtX9udXLvMr/VeEfongffRAHtP+OLrHql7XdTXZmGwoApJGhrI6DpkZQaTCKMbPm8z+xsiWiYnegeXXLN514N2U8Dv6K8W7gmVs2jb95qD+8izJgoggX+5Ez5oqVBTWMVySRKO/1wcsIUsaq3Gi+2LEh5i8Na5yHN5miCdn/TmuWnoSSGMKjjFRNQteYNXENlVcQAhOmeZDCEsDsPGQlDuaREuTmDvGtoz96a7v3PGbyXz39a2Jkf8KoSxdI4OqopQIOOj3+7DGTq3smntF0rAY2TT+/zrziw8XH56wsn/5zWk7+wgZzK7el6oDjgHRpLd3/k0AMLpp9IPgCh1Ih8cPH0nSqWrHphZjmydfDeALvp8zO45ZFwQWr2waLiRZUsZ1CPEPJADXc6IbOhvqORyez+H2YTHvVGdbY61LRiZGLtEztk6V3fw5vaXuhfN7Z5+zcufSxdbai5sTI68YmR55Y2hlN7o0ua8P+noCjwrBEbtM8xBur8qHq22BNE2Rpg20Jsbe4LL0c71O77R8qf8u8kCz3fodbmV/Toa9qiqJwoegqBw5xCBVBfkSEA/1YW3PsCqOce+HXOvnUrVakoMv4GD3Etbr8Ku2zKDhPRNQOTlUIs4wqMJLQF70Hmsdk0vNgaIousMOgfX23Ea2YP1eNqbIRhrvMant5Qsrz0Ih5yOmCQ08fUrRS9efXfk56Zat1tT4h2HpBjfa+Ac33rpRVvrndFd6zw2+ir/5yj6iiETJV4qXlP3yjLSdfcOMZv9M1gy8xHWMSInXXGCz8cYcYkJWNoYd0mZqk0ZiRyfGJWs2QrPd8mkzKxvjWZE0bAnya0MKG8S0NroUYaAKxtBWZZ9WFokhCwHDCxAIs9xKL2ltGn/jWQ8/51EPf9wFP+PV31Qs9y4uForLWknr3DoovsFWOHiYCsiRBeEhJdxGmgMPewqHo+pxszHYWpjUImmlGNk68aLm+MgtxAww/3trvP0HzIA1jCAliXqAhBQhThhrjG+VvjppUcW3wr0ur7B+YOtfj009ojUpMquHFQ+QEGVZQkhgRxsILOjsW7LLS50z00YK10xuACDrPW9HKtmgqmBUWeAGi+Pbp/4u7/WxuG/xdYlL0zzPoQTYRhWKSezk0s17f84lBulo831CsEk7S9LR9D1EkOJA56ekwmOuRUCwLWeXf84SXGPzyF8Zy7PGDCVUbrAxjtYBVI9jwLRYDa4cHI9aDbuI+KNymGx0YA2cQ3HSD/6QIeQW8500vPf07zvvEalxl4ZeccrN1974rnrb3YdS7tgk3KEmcPUdBJs4uIZDOprNNqZabxzfMX11a9P489iYmBq20efqp6lhLcBBuLUTabQeFVC1QjRQlS4z/Lda/XVpzHgI/cKXy/0fgISQZO6fh+2tw9Hwe2rp5b2HqPYnNk2+26TWLe458HIrfA6JVtEdA1Wgt2/pdWXuJ5qbJz8uvfwzZFBQYkoy+Lt0emSxXOg8yfeKn5AhuBwzI1/qPaHs5I91o83ZZCS7JAwFxO+JLbNGVa/QFLUUliGExZHjrEfO5SOKanHwMcYWylUQxvr5XDfTMMYgy9Ji5jGnP7/X6852V1Yu5qD3dcvfY7LhVvsIHuLB67CB+BDR3q30s66dPLkx3vC2aUGO6XAZz4NT/z4e5THNyBGYbe1UVK+6+m/v4yKT4WiHxjTbRxSL3ecZY9Qk9p/q7zrWQ4SIEKQEDCsl5pvtmdGP97s9Xty3+ILEJqkSIXT7MMZM9O9a+EnjmNxk42NRXVQyzhrbSJbTyeZ7AVB/tvNTQISCVZ5gLudWflZEkM2M/jk5M1tnbOMeMtyG80irr/U1/Pt7s24hRBB0KEr4XlHl4R3FgS0Kr6JFURRjD936iWazCVJ+DJ3E1uJ8pD+KjzCsGg1uiEGGB0fokebzuMTL7gUd3kO1MdOxrsvh63sUnfK3nXMg1g/YxC0c6b7DRv9Gf7PWIojQ6Mz4n9vMYXbX3lc42BEKgrJXIF/svqzo5A9rbZ24GsCHTOJEVdVaDmo4N5n743SydVd///LTpJSnSxlR+b7vn9xf6b3QWj7gxtK/IiJwFEmDIjn3FR2FvXPMawXEPUiiCGV4e77S/3LRzx8zLOWO+HkR7Rf5bKWlTN2XYz5WWvPEwyfGWjAsxYRDqXBrokM2mR7Z+LwfMN362hKHnoZ1Np8oYBhSBGiIyI/+voU39O4+8LxsrNltTI2+37h4AB2rdBvUubAWhhQBqpza/2jPjP7nyuLSlrJTvs53SiAA3Z0LvwyAmqdM/x4AhiUla7QIHjYxziXJYrZp5C8kL41f6v0iAoBS0J1d+iX16tOZsb9nY24bXpP7Yl1YY4x1vTdW6N6bDOvVeVU9M1/uPabo9L+vLhx1OKYbnl9flFMVwGN2GFh8omnDp40Vmwg6gAlpVV9kNVa1Hp5zOMN7+D33Fd0TaNBGnweinclryggQpELXD+wcIqgXFEu9C/O57v8hw9SYHPlVm9qvH80YD1XmYDh8YK2FAmiMt/6XTayZ33fgl6VXoljpvyBf6OzIptvfgMG/JiNZCVvBphTKzEGM5m6k8QHTzor+vuUfAHAe5zi3d2Dpudayb24deR+AoKogriuw6WEl7/rnP2hNDzOncV6pQt8DsQLcKqqFYXA0fobBHFkDVb087+YoO5WEO0Iicu2USdN0qtfrXVgx502HLyB0fGnDEVOV9ESMiB90DHZVNq+huGCDfvJy2JPinni97kvaALdHgwmX1ZJ6IjLIQ1tdDBowYqPRhA38ipVbZy/Pu71mOtm+hC3e7ZIkvzfjGg4hWEaF7LdfHts2/fWFhcUUhf+5/uzKTwEwbqr55yEEmMxpDcqt0m7EGGPZ8Xxj08j78l7fUam/FDr9N/X7fXZTrQ+zM9cCUKyrmcKKDWNg69fvkM9ebRMNAAJEROqfB3lp4hVaBkCUSMEahJjZoAp9HG5uhp/BOHMrIMhX+i+A6plcpY1FRpKqCF5UxYh0kByaJMlztO/PdZm7SYxeGUPMdGzVi+4jOiiPX6AxllXpuUwVEgOV04kGBUFQZ6dtpFLWTBgrftWTVk2gRm5dD4Pa4FvW/ZtXc5/WLcjhIFQAQCJQVqhqDMiKIAQlGwAtBKWWEKdkHIOsIRP95lR0eqXvFtv3H1j4rXyp9zKjaDTbjUsakyOvImvARCpqSDXcU6bTGj1fx93EWTRGs9/vLXU/WnaLd/jlbpqMNb9pm8nfGMO+rnsCRIdC7bAjotyNZe9Cy/3sXTfe9qrU2Y7JLJKJ1jtEEaCyutFU1xZwUj6EPX54h5hl2KCKsJKLkCiYIXWyq/r4XKrxkGMmMswBKlnCHGq75AgHtk0MVAkuSy9vTY9d0zuw8pg9N+56y9SO6TeIJbjEwBhDeZ5TUEWSJIAoFWUhIrjgzlvv+LOGJLY1OfIHgXWhLmCliHVtnDE4Udxn69gJEJ0DojFLeNWle4gn4ZigB2x8Ag7KQA4knFZqBI6plmI96QOv19BiD/52FBCqgYsZ4omMDRCID1ZLb0IJSAEE4x1bY5lZmHmbV3lEPrfynO7++ZerwjVbWTmyZfyN2UjjPTCDQykm3BzGIVI/56FouFJXYhlqLSRxnxoZH7mju9LZIT6gderkP7M1HU6clr0czLVKGBCUYIwJZBguS28Y2TL+cX/37I91V7pj28457WPJaOM6+KAwXKclxzoj90LZMMZA2QNkMygQumUJEg3MkEEJwVDD4qIuxF6ZWZWUaXSkNCqriJHDEFsTpSQDo1smfsP3y39b2b/4mtS5ebHyP9rT45KONbWROIIGkJB2l7raWVx5Zr+f/3mSU7s50vy3bKL1l1RlLtR4ixOtcVkhieDculqxMjEPJR0qdKNTLkqtI6c3GGMQrCIYQppW2QG0WufwKGwHgmF1zqFLEisoY5DOTkfGC6z5LgBwxNxVEpSh+DGaLS8M3g/HCAnAFIBRVeUAhU0ctzePXdqYHPktYnwdQ+oxrRH7kY7RPiAi0jpTo845NN4XYP3DUPp3trZM3m1T+17bSDiUZSxLOnzQiCLEsudEligZaby/NT3yI2WZ29bk6P/RMsQcTdIqm7m2w48iVHaIcvTWGNgsw9137c1N9Hx+DEAP609oWuusEpKEm+lca9pfzMxzAHSQ5HsYYkuQQqFMl49tm3hj3uu/a2Hv/Ftc0z3NGPNBWHw2TdMOEU3l/f5Z+WLnOfli75UsJK128yo73X6Bc+4gryzjWHbQxhQoXnWt1MOp4dZHN1M9uQN5FwvPAIcPTh5cIHT9XCsTPAsMCyi1ClMN8KgOFgZQFUV1DoEFofbY15KjguId6pisg7JD5IlhPZUQ4oaCzwLErHfYCsleY81t2UTzypEt43/Jhm5UVa2/q7KfNNqwdI+FRS2h16iVBFjnMDLW/uDdexZ+a2zT5k+a1N2pREApUEOrdTPqBw6xPCEAYkufykaaX5q2W6jb712ZZGlU7ZWiao1jPNnX2XhEABnAGgJEWBQIeTEDwNDQF6sKClPvE1Q5lwrrtAkyQREITEeF7lNVsCWUuQen7r2Tp83M77tl99vR1Scs7Vr4/pW9ywqIVk4uNaDAQNloZx+wM+1fcVnapaoC3TAQg+6DEIE3HpYN2Bklc/ikWnr2C5/9MCVwbstvqSpBEI9bAFp5JVUPPSN6CI/JgMtFWw2xZwdD+/tF7261rHXd+qMgUlWE0ivKgHbWOh9AUhj5FpEKEEs46DGIlLgheKRBze1KYntOtKpGqiEEaBBVL12oLrKiR4iGCFXoZzKsa08wWVPoc/0mOcpnGoxhgFhRRmdxBdILP5uONz6fjDS+GUovrFQV3aoZbtVrzPEYY++9LXP/I1KKMc5+2GQObCyMrr1nfD3amVtLoQx1/uSpZHjCOZsLwWDNUUpI6pol1ZSABAKIst4gqirqoZEOea/hv4kIfN/DJg5lN5/wRfkS3yt/qL/UfbzPi1EYXkobya3tmbH/Ms30b9mYO9jZbp31rSGWgiCp+2IcviBVoIMLwK5772QSaAegvJL3vmEcR6FSYyfXDev/BwccpEH3z4JgAAAAAElFTkSuQmCC";
+
+
 
 
 // ===============================================================
 // MIDWEST EDUCATIONAL FURNISHINGS -- AI OPERATING SYSTEM v2
 // Full Mutable State - PDF Export - QB Integration Guide
 // ===============================================================
+
 
 const INIT_VENDORS = [
   { id: "V001", name: "Smith System", contact: "Sales Dept", email: "info@smithsystem.com", phone: "(800) 328-1061", category: "Collaborative Tables", address: "1714 E 14th St, Plano, TX 75074", discountRate: 0, discountType: "percentage", discountNotes: "" },
@@ -804,12 +845,14 @@ const INIT_VENDORS = [
   { id: "V030", name: "Joy Carpets", contact: "Sales Dept", email: "info@joycarpets.com", phone: "(800) 645-2787", category: "Carpets & Rugs", address: "Fort Oglethorpe, GA 30742", discountRate: 0, discountType: "percentage", discountNotes: "" },
 ];
 
+
 const INIT_CUSTOMERS = [
   { id: "C001", name: "Naperville CUSD 203", contact: "Facilities Director", email: "facilities@naperville203.org", phone: "(630) 420-6300", type: "K-12 District", address: "203 W Hillside Rd, Naperville, IL 60540" },
   { id: "C002", name: "Elmhurst CUSD 205", contact: "Purchasing Dept", email: "purchasing@elmhurst205.org", phone: "(630) 617-2300", type: "K-12 District", address: "162 S York St, Elmhurst, IL 60126" },
   { id: "C003", name: "Milwaukee Public Schools", contact: "Procurement Office", email: "procurement@milwaukee.k12.wi.us", phone: "(414) 475-8001", type: "K-12 District", address: "5225 W Vliet St, Milwaukee, WI 53208" },
   { id: "C004", name: "College of DuPage", contact: "Facilities & Planning", email: "facilities@cod.edu", phone: "(630) 942-2800", type: "Community College", address: "425 Fawell Blvd, Glen Ellyn, IL 60137" },
 ];
+
 
 // Team member role helpers -- Push 1 groundwork.
 // getRoles returns a normalized roles array for a team member. If the member has
@@ -830,6 +873,7 @@ function getRoles(member){
 }
 function isSalesRep(member){return getRoles(member).includes("Sales");}
 
+
 // Deterministic 6-char hash of a ship-to address string. Used to disambiguate
 // PO doc numbers when a single job/vendor combination has line items going to
 // multiple distinct shipping addresses. Returns empty string for empty/blank
@@ -842,6 +886,7 @@ function shipKey(s){
   return Math.abs(h).toString(36).slice(0,6).toUpperCase();
 }
 
+
 const INIT_REPS = [
   { id: "S001", name: "Dave Welter", email: "dwelter@mwfurnishings.com", territory: "Illinois & Wisconsin", commissionRate: 0, tier: "Owner", roles: ["Owner"] },
   { id: "S002", name: "Maureen Welter", email: "mwelter@mwfurnishings.com", territory: "Illinois & Wisconsin", commissionRate: 0, tier: "Owner", roles: ["Owner"] },
@@ -850,6 +895,7 @@ const INIT_REPS = [
   { id: "S005", name: "Jim Lindner", email: "jlindner@mwfurnishings.com", territory: "Wisconsin", commissionRate: 0.06, tier: "Regional Sales Manager", roles: ["Sales"], salesTier: "Regional Sales Manager" },
   { id: "S006", name: "Jackie Biller", email: "jbiller@mwfurnishings.com", territory: "Wisconsin", commissionRate: 0.05, tier: "Sales Development Manager", roles: ["Sales"], salesTier: "Sales Development Manager" },
 ];
+
 
 const INIT_LINE_ITEMS = [
   { id: "LI001", jobId: "JOB-2026-001", description: "Virco 9000 Series Student Chair (Navy)", vendor: "V001", tag: "", manufacturer: "", modelNumber: "9000-NVY", color: "Navy", unitCost: 78.50, unitPrice: 118.00, qtyOrdered: 240, qtyReceived: 240, qtyInvoiced: 240, poDate: "2026-01-20", deliveryDate: "2026-03-15", invoiceDate: "2026-03-20" },
@@ -871,6 +917,7 @@ const INIT_LINE_ITEMS = [
   { id: "LI017", jobId: "JOB-2026-004", description: "Haskell Fuzion Instructor Station", vendor: "V003", unitCost: 1250.00, unitPrice: 1875.00, qtyOrdered: 4, qtyReceived: 0, qtyInvoiced: 0, poDate: "", deliveryDate: "", invoiceDate: "" },
 ];
 
+
 const INIT_JOBS = [
   { id: "JOB-2026-001", name: "Lincoln USD Summer Refresh", customer: "C001", salesRep: "S001", phase: "Invoiced", createdDate: "2026-01-15", startDate: "2026-01-20", endDate: "2026-05-28", dueDate: "2026-06-01", notes: "Full classroom furniture refresh for 12 elementary classrooms. Summer install window.", paymentStatus: "paid", terms: "Net 30", poNumber: "", shipTo: "", shipVia: "", billTo: "", orderNotes: "", docStatuses: {}, activities: [] },
   { id: "JOB-2026-002", name: "Midwest Tech STEM Lab Build-Out", customer: "C002", salesRep: "S001", phase: "In Progress", createdDate: "2026-02-03", startDate: "2026-02-10", endDate: "", dueDate: "2026-07-15", notes: "New STEM lab + library media center. Multi-vendor job -- partial shipments expected.", paymentStatus: "partial", terms: "Net 30", poNumber: "", shipTo: "", shipVia: "", billTo: "", orderNotes: "", docStatuses: {}, activities: [] },
@@ -878,11 +925,13 @@ const INIT_JOBS = [
   { id: "JOB-2026-004", name: "Heritage Academy New Classroom Wing", customer: "C004", salesRep: "S003", phase: "Quoting", createdDate: "2026-03-05", startDate: "", endDate: "", dueDate: "2026-09-01", notes: "Brand new wing -- 4 classrooms, 1 media room. Awaiting final budget approval from board.", paymentStatus: "unpaid", terms: "Net 30", poNumber: "", shipTo: "", shipVia: "", billTo: "", orderNotes: "", docStatuses: {}, activities: [] },
 ];
 
+
 // --- ICONS ---------------------------------------------------
 const I = ({ n, s = 18 }) => {
   const d = { dashboard: "M3 3h7v7H3zm11 0h7v7h-7zM3 14h7v7H3zm11 0h7v7h-7z", briefcase: "M2 7h20v14H2zM8 7V5a2 2 0 012-2h4a2 2 0 012 2v2", truck: "M1 3h15v13H1zM16 8h4l3 3v5h-7zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z", dollar: "M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6", users: "M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75", chart: "M18 20V10M12 20V4M6 20v-6", check: "M20 6L9 17l-5-5", alert: "M12 2a10 10 0 100 20 10 10 0 000-20zM12 8v4M12 16h.01", file: "M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6", send: "M22 2L11 13M22 2l-7 20-4-9-9-4z", plus: "M12 5v14M5 12h14", close: "M18 6L6 18M6 6l12 12", receipt: "M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1zM8 6h8M8 10h8M8 14h5", shield: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z", brain: "M9.5 2A5.5 5.5 0 004 7.5c0 1.5.5 2.8 1.3 3.8A5 5 0 004 14.5 5.5 5.5 0 009.5 20h1V2zM14.5 2A5.5 5.5 0 0120 7.5c0 1.5-.5 2.8-1.3 3.8A5 5 0 0120 14.5 5.5 5.5 0 0114.5 20h-1V2z", package: "M16.5 9.4l-9-5.19M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12", edit: "M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4z", settings: "M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z", download: "M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3", book: "M4 19.5A2.5 2.5 0 016.5 17H20M4 19.5A2.5 2.5 0 004 17V5a2.5 2.5 0 012.5-2.5H20v15H6.5", target: "M12 22a10 10 0 100-20 10 10 0 000 20zM12 18a6 6 0 100-12 6 6 0 000 12zM12 14a2 2 0 100-4 2 2 0 000 4z", upload: "M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12", search: "M11 19a8 8 0 100-16 8 8 0 000 16zM21 21l-4.35-4.35", "external-link": "M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3" };
   return <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={d[n]||""}/></svg>;
 };
+
 
 // --- UTILS ---------------------------------------------------
 const fmt = n => new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(n);
@@ -898,7 +947,9 @@ const exportCSV = (headers, rows, filename) => {
 const statusColor = s => ({complete:"#34d399",paid:"#34d399",invoiced:"#34d399",partial:"#fbbf24","in progress":"#fbbf24",received:"#a78bfa",ordered:"#525252",not_started:"#525252",unpaid:"#f87171",quoting:"#8b5cf6"}[s?.toLowerCase()]||"#525252");
 const inputStyle = {width:"100%",padding:"11px 14px",background:"#0a0a0a",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,color:"#d4d4d4",fontSize:13,outline:"none",fontFamily:"inherit"};
 
+
 // --- SHARED COMPONENTS ---------------------------------------
+
 
 function usePrintOverlay() {
   const triggerPrint = (title, html) => {
@@ -957,9 +1008,11 @@ function usePrintOverlay() {
   return { triggerPrint, PrintOverlay };
 }
 
+
 // ===============================================================
 // MAIN APP -- Supabase-backed with Auth
 // ===============================================================
+
 
 // --- CONFIRM DIALOG ------------------------------------------
 function useConfirm() {
@@ -982,6 +1035,8 @@ function useConfirm() {
   };
   return { confirm, ConfirmDialog };
 }
+
+
 
 
 // ===============================================================
@@ -1023,9 +1078,12 @@ function ShareQuotePortal({quoteData,onApprove}){
 }
 
 
+
+
 function MidwestAIOSInner() {
   // Shared quote portal - check URL hash on load
   const [sharedQuote,setSharedQuote]=useState(()=>{try{const h=window.location.hash;if(h.startsWith("#quote=")){return JSON.parse(atob(h.slice(7)))}return null}catch{return null}});
+
 
   // Auth state
   const [currentUser, setCurrentUser] = useState(()=>{try{return JSON.parse(sessionStorage.getItem("mw_user"))}catch{return null}});
@@ -1065,8 +1123,10 @@ function MidwestAIOSInner() {
   const userRepId = currentUser?.rep_id || null;
   const logout = () => { setCurrentUser(null); sessionStorage.removeItem("mw_user"); if(clerkEnabled&&clerkAuth.isSignedIn)clerkSignOut().catch(()=>{}); };
 
+
   const [page, setPage] = useState("dashboard");
   useEffect(()=>{if(page==="jobs"&&window._brainNavJob){setSelectedJob(window._brainNavJob);window._brainNavJob=null}},[page]);
+
 
   const [pendingCommPreview, setPendingCommPreview] = useState(null);
   const [pendingBrainFile, setPendingBrainFile] = useState(null);
@@ -1101,6 +1161,7 @@ function MidwestAIOSInner() {
   const [brainLoading, setBrainLoading] = useState(false);
   const [brainHistory, setBrainHistory] = useState([{role:"system",content:"Welcome to the Midwest Brain. I'm connected to Claude Sonnet 4.6 and have access to all your live data -- jobs, vendors, customers, deliveries, financials, SOPs, notes, and tasks. Ask me anything."}]);
 
+
   const [dbStatus, setDbStatus] = useState("connecting");
   const [appReady, setAppReady] = useState(false);
   const { triggerPrint, PrintOverlay } = usePrintOverlay();
@@ -1108,8 +1169,10 @@ function MidwestAIOSInner() {
   const [globalSearch, setGlobalSearch] = useState("");
   const [dateFilter, setDateFilter] = useState(()=>{try{return sessionStorage.getItem("mw_date_filter")||"all"}catch{return "all"}}); // all, month, quarter, ytd
 
+
   useEffect(()=>{try{sessionStorage.setItem("mw_date_filter",dateFilter)}catch{}},[dateFilter]);
   const notify = (msg, type="success") => { setNotification({msg,type}); setTimeout(()=>setNotification(null),3500); };
+
 
   // --- LOAD FROM SUPABASE ON MOUNT ---------------------------
   useEffect(() => {
@@ -1146,6 +1209,7 @@ function MidwestAIOSInner() {
           if (fresh.sops) setCustomSops(fresh.sops);
         }
 
+
         setDbStatus("connected");
         setAppReady(true);
       } catch (e) {
@@ -1157,6 +1221,7 @@ function MidwestAIOSInner() {
     loadFromDb();
   }, []);
 
+
   // Force re-fetch ALL data from Supabase (ensures consistency between users)
   const syncAll=async()=>{
     try{
@@ -1166,6 +1231,9 @@ function MidwestAIOSInner() {
       notify("Data synced -- "+(d.lineItems||[]).length+" line items, "+(d.jobs||[]).length+" jobs");
     }catch(e){notify("Sync error: "+e.message,"error")}
   };
+
+
+
 
 
 
@@ -1180,6 +1248,7 @@ function MidwestAIOSInner() {
     // Track this user's presence
     db.trackPresence(currentUser);
     const presenceInterval = setInterval(() => db.trackPresence(currentUser), 30000);
+
 
     // Subscribe to table changes from OTHER users
     const unsubs = [];
@@ -1243,8 +1312,10 @@ function MidwestAIOSInner() {
       } catch {}
     }));
 
+
     return () => { unsubs.forEach(fn => fn()); clearInterval(presenceInterval); db.disconnectRealtime(); setRealtimeStatus("off"); };
   }, [appReady, currentUser?.id]);
+
 
   // --- DERIVED COMPUTATIONS ----------------------------------
   const getJobItems = jobId => { const filtered = []; for (let i = 0; i < lineItems.length; i++) { if (lineItems[i].jobId === jobId) filtered.push(lineItems[i]); } return filtered; };
@@ -1266,6 +1337,7 @@ function MidwestAIOSInner() {
   };
   const getJobPOStatus = jobId => { const items=getJobItems(jobId); if(!items.length) return "not_started"; return items.every(i=>i.qtyReceived>=i.qtyOrdered)?"complete":items.some(i=>i.qtyReceived>0)?"partial":"ordered"; };
   const getJobInvStatus = jobId => { const items=getJobItems(jobId); if(!items.length) return "not_started"; return items.every(i=>i.qtyInvoiced>=i.qtyOrdered)?"complete":items.some(i=>i.qtyInvoiced>0)?"partial":"not_started"; };
+
 
   // --- MUTATORS (update state + save to Supabase) ------------
   const updateLineItem = (id, u) => {
@@ -1323,10 +1395,12 @@ function MidwestAIOSInner() {
   const deleteVendor = async (id) => { if (!await confirm("Delete this vendor? Line items will be unlinked.")) return; setVendors(p => p.filter(v => v.id !== id)); db.deleteVendor(id); };
   const forceDeleteVendor = (id) => { setVendors(p => p.filter(v => v.id !== id)); db.deleteVendor(id); };
 
+
   // Badge counts for sidebar
   const pendingDeliveries = lineItems.filter(i=>i.qtyReceived<i.qtyOrdered).length;
   const pendingInvoices = lineItems.filter(i=>i.qtyReceived>i.qtyInvoiced).length;
   const overdueCount = jobs.filter(j=>j.dueDate&&new Date(j.dueDate)<new Date()&&j.phase!=="Complete"&&j.paymentStatus!=="paid").length;
+
 
   const navItems = [
     {id:"dashboard",label:"Command Center",icon:"dashboard",badge:overdueCount>0?overdueCount:null,badgeColor:"#f87171"},
@@ -1344,6 +1418,7 @@ function MidwestAIOSInner() {
     {id:"notes",label:"Notes",icon:"file"},
     {id:"brain",label:"Brain",icon:"brain"},
     {id:"exitready",label:"Exit Readiness",icon:"shield"},
+
 
     {id:"usermgmt",label:"Users & Permissions",icon:"shield"},
   ].filter(item => {
@@ -1364,9 +1439,11 @@ function MidwestAIOSInner() {
     return true;
   });
 
+
   
   const visibleJobs = userRole === "sales" && userRepId ? jobs.filter(j => j.salesRep === userRepId) : jobs;
   const ctx = {jobs:visibleJobs,allJobs:jobs,setJobs,jobNum,currentUser,userRole,userRepId,logout,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,forceDeleteVendor,forceDeleteLineItem,forceDeleteCustomer,forceDeleteRep,db,setPage:p=>{setPage(p);setMobileMenuOpen(false);window.scrollTo(0,0);const mc=document.querySelector('.main-content');if(mc)mc.scrollTop=0},viewCustomer:id=>{setPage("customer360");window._viewCustId=id;window.scrollTo(0,0)},brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter,pendingCommPreview,setPendingCommPreview,pendingBrainFile,setPendingBrainFile,pendingBrainEmail,setPendingBrainEmail};
+
 
   const loadingScreen = (
 <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",width:"100vw",background:"#0a0a0a",fontFamily:"'Satoshi',sans-serif"}}>
@@ -1380,6 +1457,8 @@ function MidwestAIOSInner() {
       </div>
     </div>
   );
+
+
 
 
   // Login screen
@@ -1415,13 +1494,16 @@ function MidwestAIOSInner() {
         </div></>
       }
 
+
     </div>
   </div>;
+
 
 const sharedScreen = sharedQuote ? <ShareQuotePortal quoteData={sharedQuote} onApprove={()=>setSharedQuote({...sharedQuote,approved:true})}/> : null;
   if (sharedScreen) return sharedScreen;
   if (!appReady) return loadingScreen;
   if (!currentUser) return loginScreen;
+
 
   return (
     <div style={{display:"flex",height:"100vh",width:"100vw",fontFamily:"'Satoshi','Satoshi',sans-serif",background:"#000000",color:"#d4d4d4",overflow:"hidden"}}>
@@ -1431,9 +1513,11 @@ const sharedScreen = sharedQuote ? <ShareQuotePortal quoteData={sharedQuote} onA
       <PrintOverlay />
       <ConfirmDialog />
 
+
       {/* Mobile hamburger */}
       {!mobileMenuOpen&&<div className="mobile-menu-btn" style={{display:"none",position:"fixed",bottom:16,left:"50%",transform:"translateX(-50%)",zIndex:10001,background:"rgba(10,10,10,0.25)",border:"1px solid rgba(255,255,255,0.2)",borderRadius:28,padding:"8px 6px",backdropFilter:"blur(6px) saturate(250%) brightness(1.2) contrast(1.1)",WebkitBackdropFilter:"blur(6px) saturate(250%) brightness(1.2) contrast(1.1)",boxShadow:"0 8px 40px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -1px 0 rgba(255,255,255,0.04)"}}><div style={{display:"flex",gap:2}}>{[{id:"dashboard",icon:"dashboard",l:"Home"},{id:"jobs",icon:"briefcase",l:"Jobs"},{id:"documents",icon:"file",l:"Docs"},{id:"deliveries",icon:"truck",l:"Track"},{id:"brain",icon:"brain",l:"AI"}].map(t=><button key={t.id} onClick={()=>{setPage(t.id);setSelectedJob(null);window.scrollTo(0,0);const mc=document.querySelector('.main-content');if(mc)mc.scrollTop=0}} style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:1,padding:"7px 13px",borderRadius:20,border:"none",background:page===t.id?"rgba(45,212,191,0.2)":"transparent",color:page===t.id?"#2dd4bf":"#636363",cursor:"pointer",fontFamily:"'Satoshi',sans-serif",fontSize:9,fontWeight:page===t.id?700:400,lineHeight:1,transition:"all 0.15s ease-out",transform:page===t.id?"scale(1.1)":"scale(1)",transformOrigin:"center center",boxShadow:page===t.id?"0 4px 14px rgba(45,212,191,0.2)":"none"}}><I n={t.icon} s={18}/>{t.l}</button>)}<button onClick={()=>setMobileMenuOpen(true)} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2,padding:"6px 14px",borderRadius:20,border:"none",background:"transparent",color:"#525252",cursor:"pointer",fontFamily:"'Satoshi',sans-serif",fontSize:9,fontWeight:400}}><I n="settings" s={18}/>More</button></div></div>}
       {mobileMenuOpen&&<div onClick={()=>setMobileMenuOpen(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:9999}}/>}
+
 
       {/* SIDEBAR */}
       <div className={"sidebar"+(mobileMenuOpen?" open":"")} style={{width:sidebarCollapsed?56:220,minWidth:sidebarCollapsed?56:220,background:"#000000",borderRight:"1px solid rgba(255,255,255,0.06)",display:"flex",flexDirection:"column",transition:"width 0.25s cubic-bezier(0.4,0,0.2,1),min-width 0.25s cubic-bezier(0.4,0,0.2,1)",overflow:"hidden"}}>
@@ -1444,9 +1528,11 @@ const sharedScreen = sharedQuote ? <ShareQuotePortal quoteData={sharedQuote} onA
           {!sidebarCollapsed&&<button className="mobile-close-btn" onClick={e=>{e.stopPropagation();setMobileMenuOpen(false)}} style={{display:"none",width:24,height:24,borderRadius:6,background:"transparent",border:"none",cursor:"pointer",alignItems:"center",justifyContent:"center",color:"#525252",flexShrink:0,padding:0}}><I n="close" s={14}/></button>}
         </div>
 
+
         {/* Search trigger */}
         {!sidebarCollapsed&&<div style={{padding:"0 12px",marginBottom:8}}><button onClick={()=>setSearchOpen(true)} style={{width:"100%",display:"flex",alignItems:"center",gap:8,padding:"7px 10px",borderRadius:8,border:"1px solid rgba(255,255,255,0.08)",background:"rgba(255,255,255,0.03)",color:"#6b6b6b",fontSize:12,fontFamily:"'Satoshi',sans-serif",cursor:"pointer",transition:"border-color 0.15s"}} onMouseEnter={e=>e.currentTarget.style.borderColor="rgba(255,255,255,0.12)"} onMouseLeave={e=>e.currentTarget.style.borderColor="rgba(255,255,255,0.06)"}><I n="search" s={13}/><span style={{flex:1,textAlign:"left"}}>Search...</span><span style={{fontSize:10,color:"#333",background:"rgba(255,255,255,0.04)",padding:"1px 6px",borderRadius:4,fontFamily:"'JetBrains Mono',monospace"}}>K</span></button></div>}
         {sidebarCollapsed&&<div style={{padding:"4px 0",display:"flex",justifyContent:"center",marginBottom:4}}><button onClick={()=>setSearchOpen(true)} style={{width:32,height:32,borderRadius:8,border:"none",background:"transparent",cursor:"pointer",color:"#525252",display:"flex",alignItems:"center",justifyContent:"center"}}><I n="search" s={16}/></button></div>}
+
 
         {/* Nav sections */}
         <nav style={{flex:1,padding:sidebarCollapsed?"4px":"4px 8px",display:"flex",flexDirection:"column",gap:0,overflowY:"auto",overflowX:"hidden"}}>
@@ -1454,10 +1540,12 @@ const sharedScreen = sharedQuote ? <ShareQuotePortal quoteData={sharedQuote} onA
           {!sidebarCollapsed&&<div style={{fontSize:10,fontWeight:600,color:"#444",textTransform:"uppercase",letterSpacing:1.5,padding:"10px 10px 6px",userSelect:"none"}}>Core</div>}
           {navItems.slice(0,2).map(item=>{const active=page===item.id;return <button key={item.id} onClick={()=>{setPage(item.id);setSelectedJob(null);setMobileMenuOpen(false);window.scrollTo(0,0)}} style={{display:"flex",alignItems:"center",gap:10,padding:sidebarCollapsed?"8px 0":"7px 10px",borderRadius:8,border:"none",cursor:"pointer",background:active?"rgba(45,212,191,0.08)":"transparent",color:active?"#2dd4bf":"#9a9a9a",fontSize:13,fontWeight:active?500:400,fontFamily:"'Satoshi',sans-serif",textAlign:"left",transition:"all 0.15s",justifyContent:sidebarCollapsed?"center":"flex-start",width:"100%",position:"relative"}} onMouseEnter={e=>{if(!active)e.currentTarget.style.background="rgba(255,255,255,0.03)"}} onMouseLeave={e=>{if(!active)e.currentTarget.style.background="transparent"}}>{active&&<div style={{position:"absolute",left:sidebarCollapsed?-4:0,top:"50%",transform:"translateY(-50%)",width:3,height:16,borderRadius:2,background:"#2dd4bf"}}/>}<span style={{flexShrink:0,display:"flex",alignItems:"center"}}><I n={item.icon} s={16}/></span>{!sidebarCollapsed&&<span style={{flex:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.label}</span>}{!sidebarCollapsed&&item.badge&&<span style={{minWidth:18,height:18,borderRadius:9,background:item.badgeColor=="#f87171"?"rgba(248,113,113,0.15)":item.badgeColor=="#fbbf24"?"rgba(251,191,36,0.15)":"rgba(45,212,191,0.15)",color:item.badgeColor||"#2dd4bf",fontSize:10,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 5px",fontFamily:"'JetBrains Mono',monospace"}}>{item.badge}</span>}</button>})}
 
+
           {/* Operations */}
           {!sidebarCollapsed&&<div style={{fontSize:10,fontWeight:600,color:"#444",textTransform:"uppercase",letterSpacing:1.5,padding:"14px 10px 6px",userSelect:"none"}}>Operations</div>}
           {sidebarCollapsed&&<div style={{height:1,background:"rgba(255,255,255,0.04)",margin:"8px 12px"}}/>}
           {navItems.slice(2,7).map(item=>{const active=page===item.id;return <button key={item.id} onClick={()=>{setPage(item.id);setSelectedJob(null);setMobileMenuOpen(false);window.scrollTo(0,0)}} style={{display:"flex",alignItems:"center",gap:10,padding:sidebarCollapsed?"8px 0":"7px 10px",borderRadius:8,border:"none",cursor:"pointer",background:active?"rgba(45,212,191,0.08)":"transparent",color:active?"#2dd4bf":"#9a9a9a",fontSize:13,fontWeight:active?500:400,fontFamily:"'Satoshi',sans-serif",textAlign:"left",transition:"all 0.15s",justifyContent:sidebarCollapsed?"center":"flex-start",width:"100%",position:"relative"}} onMouseEnter={e=>{if(!active)e.currentTarget.style.background="rgba(255,255,255,0.03)"}} onMouseLeave={e=>{if(!active)e.currentTarget.style.background="transparent"}}>{active&&<div style={{position:"absolute",left:sidebarCollapsed?-4:0,top:"50%",transform:"translateY(-50%)",width:3,height:16,borderRadius:2,background:"#2dd4bf"}}/>}<span style={{flexShrink:0,display:"flex",alignItems:"center"}}><I n={item.icon} s={16}/></span>{!sidebarCollapsed&&<span style={{flex:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.label}</span>}{!sidebarCollapsed&&item.badge&&<span style={{minWidth:18,height:18,borderRadius:9,background:item.badgeColor=="#f87171"?"rgba(248,113,113,0.15)":item.badgeColor=="#fbbf24"?"rgba(251,191,36,0.15)":"rgba(45,212,191,0.15)",color:item.badgeColor||"#2dd4bf",fontSize:10,fontWeight:600,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 5px",fontFamily:"'JetBrains Mono',monospace"}}>{item.badge}</span>}</button>})}
+
 
           {/* Intelligence */}
           {!sidebarCollapsed&&<div style={{fontSize:10,fontWeight:600,color:"#444",textTransform:"uppercase",letterSpacing:1.5,padding:"14px 10px 6px",userSelect:"none"}}>Intelligence</div>}
@@ -1465,11 +1553,13 @@ const sharedScreen = sharedQuote ? <ShareQuotePortal quoteData={sharedQuote} onA
           {navItems.slice(7).map(item=>{const active=page===item.id;return <button key={item.id} onClick={()=>{setPage(item.id);setSelectedJob(null);setMobileMenuOpen(false);window.scrollTo(0,0)}} style={{display:"flex",alignItems:"center",gap:10,padding:sidebarCollapsed?"8px 0":"7px 10px",borderRadius:8,border:"none",cursor:"pointer",background:active?"rgba(45,212,191,0.08)":"transparent",color:active?"#2dd4bf":"#8a8a8a",fontSize:13,fontWeight:active?500:400,fontFamily:"'Satoshi',sans-serif",textAlign:"left",transition:"all 0.15s",justifyContent:sidebarCollapsed?"center":"flex-start",width:"100%",position:"relative"}} onMouseEnter={e=>{if(!active)e.currentTarget.style.background="rgba(255,255,255,0.03)"}} onMouseLeave={e=>{if(!active)e.currentTarget.style.background="transparent"}}>{active&&<div style={{position:"absolute",left:sidebarCollapsed?-4:0,top:"50%",transform:"translateY(-50%)",width:3,height:16,borderRadius:2,background:"#2dd4bf"}}/>}<span style={{flexShrink:0,display:"flex",alignItems:"center"}}><I n={item.icon} s={16}/></span>{!sidebarCollapsed&&<span style={{flex:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{item.label}</span>}</button>})}
         </nav>
 
+
         {/* Footer */}
         <div style={{padding:sidebarCollapsed?"10px 8px":"10px 16px",borderTop:"1px solid rgba(255,255,255,0.04)"}}>
           {!sidebarCollapsed?<div style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}} onClick={syncAll} title="Click to force-sync all data"><div style={{width:6,height:6,borderRadius:"50%",background:realtimeStatus==="connected"?"#34d399":dbStatus==="connected"?"#2dd4bf":dbStatus==="connecting"?"#fbbf24":"#f87171",flexShrink:0,boxShadow:realtimeStatus==="connected"?"0 0 6px rgba(52,211,153,0.4)":"none"}}/><span style={{fontSize:11,color:"#444"}}>{realtimeStatus==="connected"?"Live":dbStatus==="connected"?"Connected":"Connecting..."}</span>{onlineUsers.length>1&&<span style={{fontSize:10,color:"#34d399"}}>{onlineUsers.length} online</span>}<span style={{marginLeft:"auto",fontSize:9,color:"#333",letterSpacing:1}}>DYFRENT</span></div>:<div style={{display:"flex",justifyContent:"center"}}><div style={{width:6,height:6,borderRadius:"50%",background:realtimeStatus==="connected"?"#34d399":"#fbbf24",boxShadow:realtimeStatus==="connected"?"0 0 6px rgba(52,211,153,0.4)":"none"}}/></div>}
         </div>
       </div>
+
 
       {/* MAIN */}
       <div style={{flex:1,overflow:"auto",background:"#000000"}}>
@@ -1496,6 +1586,7 @@ const sharedScreen = sharedQuote ? <ShareQuotePortal quoteData={sharedQuote} onA
           {page==="brain"&&<BrainPage {...ctx}/>}
           {page==="exitready"&&<ExitReadinessPage {...ctx}/>}
 
+
           {page==="usermgmt"&&<UserMgmtPage {...ctx}/>}
         </div>
       </div>
@@ -1511,6 +1602,7 @@ const sharedScreen = sharedQuote ? <ShareQuotePortal quoteData={sharedQuote} onA
           select {
             color-scheme: dark;
           }
+
 
         input[type="date"]{color-scheme:dark}
         input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(0.8) brightness(1.2)}
@@ -1591,6 +1683,7 @@ const sharedScreen = sharedQuote ? <ShareQuotePortal quoteData={sharedQuote} onA
   );
 }
 
+
 // ===============================================================
 // DASHBOARD
 // ===============================================================
@@ -1612,6 +1705,7 @@ function AnimNum({value}){
   return <>{display||value}</>;
 }
 
+
 function AnimatedNumber({value,prefix="",suffix="",duration=600}){
   const [display,setDisplay]=useState(0);
   const ref=useRef(null);
@@ -1630,6 +1724,7 @@ function AnimatedNumber({value,prefix="",suffix="",duration=600}){
   return <>{prefix}{isNeg?"-":""}{typeof value==="string"&&value.startsWith("$")?"":""}{formatted}{suffix}</>;
 }
 
+
 function AnimatedPct({value,duration=600}){
   const [display,setDisplay]=useState(0);
   const ref=useRef(null);
@@ -1644,6 +1739,7 @@ function AnimatedPct({value,duration=600}){
   },[value]);
   return <>{display.toFixed(1)}%</>;
 }
+
 
 function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJobItems,setPage,setSelectedJob,dateFilter,setDateFilter,jobNum,notify}){
   // Date filtering
@@ -1670,6 +1766,7 @@ function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJo
   const pendingDel = fLineItems.filter(i=>i.qtyReceived<i.qtyOrdered).length;
   const pendingInv = fLineItems.filter(i=>i.qtyReceived>i.qtyInvoiced).length;
 
+
   const overdueJobs=filtered.filter(j=>j.dueDate&&new Date(j.dueDate)<new Date()&&j.phase!=='Complete'&&j.paymentStatus!=='paid');
   const phases=["Quoting","In Progress","Invoiced","Complete"];
   const phaseData=phases.map(p=>{const pj=filtered.filter(j=>j.phase===p);return{phase:p,count:pj.length,rev:pj.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0)}});
@@ -1679,6 +1776,7 @@ function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJo
   const paidRev=filtered.filter(j=>j.paymentStatus==="paid").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
   const partialRev=filtered.filter(j=>j.paymentStatus==="partial").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
   const unpaidRev=filtered.filter(j=>j.paymentStatus==="unpaid").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
+
 
   // Extra dashboard data
   const topCustomers=(()=>{const cr={};filtered.forEach(j=>{const r=getJobFinancials(j.id).totalRevenue;const c=customers.find(c=>c.id===j.customer);if(c)cr[c.name]=(cr[c.name]||0)+r});return Object.entries(cr).sort((a,b)=>b[1]-a[1]).slice(0,5)})();
@@ -1697,6 +1795,7 @@ function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJo
   const darkLabel={color:"#737373",fontSize:11,marginBottom:4};
   const darkItem={color:"#a3a3a3",fontSize:11,padding:0};
 
+
   return <div style={{animation:"fadeUp 0.4s"}}>
     {/* Header */}
     <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:6,flexWrap:"wrap"}}><h1 style={{fontSize:28,fontWeight:800,color:"#f0f0f0",letterSpacing:-1.5}}>Command Center</h1><div style={{padding:"3px 8px",background:"#34d399",borderRadius:20,fontSize:11,fontWeight:700,color:"#fff"}}>LIVE</div>
@@ -1708,10 +1807,12 @@ function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJo
       {label:"Full Export",fn:()=>{const jRows=jobs.map(j=>{const f=getJobFinancials(j.id);return[j.id,j.name,customers?.find(c=>c.id===j.customer)?.name||"",reps?.find(r=>r.id===j.salesRep)?.name||"",j.phase,j.paymentStatus,j.createdDate,j.startDate,j.dueDate,f.totalRevenue.toFixed(2),f.totalCost.toFixed(2),f.margin.toFixed(1)+"%",f.totalOrdered,f.totalReceived].join(",")});const iRows=lineItems.map(i=>{const j=jobs.find(j2=>j2.id===i.jobId);const v=vendors.find(v2=>v2.id===i.vendor);return[i.id,i.jobId,j?.name||"",i.description,v?.name||"",i.unitCost,i.unitPrice,i.qtyOrdered,i.qtyReceived,i.qtyInvoiced].join(",")});const vRows=vendors.map(v=>{const spend=lineItems.filter(i=>i.vendor===v.id).reduce((s,i)=>s+i.unitCost*i.qtyOrdered,0);return[v.id,v.name,v.contact,v.email,v.phone,v.category,(v.discountRate*100).toFixed(1)+"%",spend.toFixed(2)].join(",")});const cRows=customers.map(c=>[c.id,c.name,c.contact,c.email,c.phone,c.type].join(","));const rRows=reps.filter(r=>!r.id.includes("SEED_FLAG")).map(r=>{const rv=jobs.filter(j=>j.salesRep===r.id).reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);return[r.id,r.name,r.email,r.territory,(r.commissionRate*100).toFixed(1)+"%",rv.toFixed(2)].join(",")});const wb="JOBS\nID,Name,Customer,Rep,Phase,Payment,Created,Start,Due,Revenue,Cost,Margin,Ordered,Received\n"+jRows.join("\n")+"\n\nLINE ITEMS\nID,JobID,Job,Description,Vendor,Cost,Price,Ordered,Received,Invoiced\n"+iRows.join("\n")+"\n\nVENDORS\nID,Name,Contact,Email,Phone,Category,Discount,TotalSpend\n"+vRows.join("\n")+"\n\nCUSTOMERS\nID,Name,Contact,Email,Phone,Type\n"+cRows.join("\n")+"\n\nSALES REPS\nID,Name,Email,Territory,Rate,Revenue\n"+rRows.join("\n");const blob=new Blob([wb],{type:"text/csv"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download="midwest-full-export-"+new Date().toISOString().split("T")[0]+".csv";a.click();URL.revokeObjectURL(url);notify("Full database exported -- 5 tables")}}
     ].map((b,i)=><button key={i} onClick={b.fn} style={cs()} onMouseEnter={e=>{e.currentTarget.style.borderColor="#2dd4bf";e.currentTarget.style.color="#2dd4bf";e.currentTarget.style.background="#2dd4bf08"}} onMouseLeave={e=>{e.currentTarget.style.borderColor="#1a1a1a";e.currentTarget.style.color="#737373";e.currentTarget.style.background="#0a0a0a"}}><I n="download" s={10}/> {b.label}</button>)}</div>
 
+
     {/* Row 1: Stat Cards */}
     <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:14}} className="resp-grid-4">
       {[{label:"PIPELINE",value:fmt(totalRev),sub:filtered.length+" jobs",color:"#2dd4bf"},{label:"ACTIVE",value:String(activeJobs),sub:filtered.filter(j=>j.phase==="Quoting").length+" quoting",color:"#a78bfa"},{label:"MARGIN",value:pct(avgMargin),sub:fmt(totalRev-totalCost)+" profit",color:"#34d399"},{label:"DELIVERY",value:pct(deliveredPct),sub:pendingCount+" pending",color:"#fbbf24"}].map((s,i)=><Card key={i} style={{padding:16,transition:"all 0.25s"}} hover><span style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2}}>{s.label}</span><div style={{fontSize:"clamp(22px,5vw,36px)",fontWeight:800,color:s.color,fontFamily:"'JetBrains Mono',monospace",letterSpacing:-1,lineHeight:1,margin:"8px 0 6px"}}><AnimNum value={s.value}/></div><div style={{fontSize:12,color:"#a3a3a3"}}>{s.sub}</div></Card>)}
     </div>
+
 
     {/* Row 2: Action Required + Revenue Chart */}
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}} className="resp-grid-2">
@@ -1728,6 +1829,7 @@ function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJo
       </Card>
     </div>
 
+
     {/* Row 3: Active Jobs + Team Leaderboard */}
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}} className="resp-grid-2">
       <Card style={{padding:16}} hover><div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:14,fontFamily:"'JetBrains Mono',monospace"}}>Active Jobs</div>
@@ -1738,6 +1840,7 @@ function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJo
       </Card>
     </div>
 
+
     {/* Row 4: Margin Trend + Payment Collection */}
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}} className="resp-grid-2">
       <Card style={{padding:16}} hover><div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:14,fontFamily:"'JetBrains Mono',monospace"}}>Margin Trend</div>
@@ -1747,6 +1850,7 @@ function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJo
         <ResponsiveContainer width="100%" height={170}><BarChart data={[{name:"Paid",value:paidRev},{name:"Partial",value:partialRev},{name:"Unpaid",value:unpaidRev}]}><defs><linearGradient id="paidG" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#34d399" stopOpacity={0.9}/><stop offset="100%" stopColor="#34d399" stopOpacity={0.4}/></linearGradient><linearGradient id="partG" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#fbbf24" stopOpacity={0.9}/><stop offset="100%" stopColor="#fbbf24" stopOpacity={0.4}/></linearGradient><linearGradient id="unpG" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#f87171" stopOpacity={0.9}/><stop offset="100%" stopColor="#f87171" stopOpacity={0.4}/></linearGradient></defs><XAxis dataKey="name" tick={{fill:"#a3a3a3",fontSize:12}} axisLine={false} tickLine={false}/><YAxis tick={{fill:"#737373",fontSize:11}} axisLine={false} tickLine={false} tickFormatter={v=>"$"+Math.round(v/1000)+"k"}/><Tooltip contentStyle={darkTip} labelStyle={darkLabel} itemStyle={darkItem} cursor={{fill:"rgba(255,255,255,0.02)"}}/><RBar dataKey="value" radius={[6,6,0,0]}>{["url(#paidG)","url(#partG)","url(#unpG)"].map((c,i)=><Cell key={i} fill={c}/>)}</RBar></BarChart></ResponsiveContainer>
       </Card>
     </div>
+
 
     {/* Row 5: Vendor Spend + Pipeline Phase */}
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}} className="resp-grid-2">
@@ -1759,6 +1863,7 @@ function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJo
       </Card>
     </div>
 
+
     {/* Row 6: Top Customers + Top Vendors */}
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}} className="resp-grid-2">
       <Card style={{padding:16}} hover><div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:14,fontFamily:"'JetBrains Mono',monospace"}}>Top Customers</div>
@@ -1768,6 +1873,7 @@ function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJo
         {vendorSpend.map(([name,spend],i)=><div key={name} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:i<vendorSpend.length-1?"1px solid #111":"none",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.background="#0a0a0a"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}><div style={{width:28,height:28,borderRadius:8,background:["#2dd4bf","#a78bfa","#34d399","#fbbf24","#f87171","#8b5cf6"][i%6]+"12",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:["#2dd4bf","#a78bfa","#34d399","#fbbf24","#f87171","#8b5cf6"][i%6],fontWeight:800,fontFamily:"'JetBrains Mono',monospace"}}>{i+1}</div><span style={{fontSize:14,color:"#f0f0f0",flex:1,fontWeight:500}}>{name}</span><span style={{fontSize:14,fontWeight:700,color:"#e5e5e5",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(spend)}</span></div>)}
       </Card>
     </div>
+
 
     {/* Row 7: Delivery Health + Commission Summary */}
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}} className="resp-grid-2">
@@ -1791,12 +1897,14 @@ function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJo
       </Card>
     </div>
 
+
     {/* Row 8: Margin by Job */}
     <Card style={{padding:16,marginBottom:14}} hover><div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:14,fontFamily:"'JetBrains Mono',monospace"}}>Margin by Job</div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(250px,1fr))",gap:10}} className="resp-grid-3">{filtered.map(j=>{const f=getJobFinancials(j.id);const mc=f.margin>=30?"#34d399":f.margin>=20?"#fbbf24":"#f87171";return <div key={j.id} style={{padding:"10px 12px",background:"#000",borderRadius:10,border:"1px solid rgba(255,255,255,0.04)",transition:"all 0.2s"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="rgba(45,212,191,0.12)";e.currentTarget.style.transform="translateY(-1px)"}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.04)";e.currentTarget.style.transform="translateY(0)"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}><span style={{fontSize:14,fontWeight:600,color:"#f0f0f0"}}><span style={{fontFamily:"'JetBrains Mono',monospace",color:"#525252",fontSize:11,marginRight:6}}>{jobNum(j.id)}</span>{j.name}</span><span style={{fontSize:16,fontWeight:800,color:mc,fontFamily:"'JetBrains Mono',monospace"}}>{pct(f.margin)}</span></div><div style={{fontSize:13,color:"#a3a3a3",marginBottom:4,fontFamily:"'JetBrains Mono',monospace"}}>{fmt(f.totalRevenue)}</div><Bar value={f.margin} max={100} color={mc} height={5}/></div>})}</div>
     </Card>
   </div>;
 }
+
 
 function JobsPage(ctx){
   const {jobs,reps,customers,vendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobFinancials,getJobItems,getItemStatus,getJobPOStatus,getJobInvStatus,updateJob,addJob,addLineItem,updateLineItem,deleteLineItem,lineItems,addCustomer,addVendor,deleteJob,confirm,db} = ctx;
@@ -1816,6 +1924,7 @@ function JobsPage(ctx){
   const uploadRef=useRef();
   const [jobSelected,setJobSelected]=useState(new Set());
   const [jobBulkAction,setJobBulkAction]=useState(null);
+
 
   
   // XLS Quote Upload Parser
@@ -1998,17 +2107,22 @@ function JobsPage(ctx){
       ).join('\n');
       const system = `You are an AI assistant reviewing parsed Excel quote data for Midwest Educational Furnishings. There are ${items.length} parsed line items.
 
+
 CAPABILITIES:
 - Answer questions about the parsed data (totals, missing items, vendors, etc.)
 - MODIFY line items when the user asks to change, fix, update, or correct something
 
+
 TO MODIFY ITEMS, you MUST respond with a JSON block. Put your explanation text BEFORE the JSON. The JSON must be on its own line:
 {"actions":[{"index":0,"field":"unitPrice","value":500},{"index":3,"field":"qtyOrdered","value":10}]}
+
 
 Valid fields: tag, manufacturer, modelNumber, description, color, qtyOrdered, unitCost, unitPrice, shippingPerUnit, installPerUnit, listPrice
 Index is the row number shown in [brackets] in the item list below.
 
+
 IMPORTANT: Always include the JSON block when the user asks you to change something. Do not just describe what you would change. Actually output the JSON to make the change happen.
+
 
 Never use emoji. Be concise.`;
       const msgs = [...uploadAiChat.slice(-6).map(m => ({role:m.role, content:m.content})), {role:'user', content:query + '\n\nPARSED ITEMS (' + items.length + ' total, showing first 150):\n' + itemSummary + (items.length > 150 ? '\n... and ' + (items.length - 150) + ' more items' : '')}];
@@ -2094,12 +2208,15 @@ Never use emoji. Be concise.`;
   const uploadSelRev=uploadData?uploadData.items.filter(i=>uploadSheets[i.sheet]).reduce((s,i)=>s+(i.priceExtended&&i.priceExtended>0?i.priceExtended:(i.unitPrice||0)*(i.qtyOrdered||1)),0):0;
   const handleCreateJob=()=>{if(!newJob.name)return;const maxNum=jobs.reduce((mx,j)=>{const m=j.id.match(/JOB-\d+-(\d+)/);return m?Math.max(mx,parseInt(m[1])):mx},0);const id=`JOB-2026-${String(maxNum+1).padStart(3,"0")}`;addJob({id,...newJob,phase:newJob.phase||"Quoting",createdDate:new Date().toISOString().split("T")[0],startDate:newJob.startDate||"",endDate:"",paymentStatus:"unpaid",terms:newJob.terms||"Net 30",poNumber:newJob.poNumber||"",shipTo:newJob.shipTo||"",shipVia:newJob.shipVia||"",billTo:newJob.billTo||"",orderNotes:""});setShowNewJob(false);setNewJob({name:"",customer:"",salesRep:reps[0]?.id||"",phase:"Quoting",dueDate:"",startDate:"",notes:"",terms:"Net 30",poNumber:"",shipTo:"",shipVia:""});notify(`Job ${id} created -- saved to database`)};
 
+
   const newJobModal = <><input ref={uploadRef} type="file" accept=".xls,.xlsx,.pdf,.png,.jpg,.jpeg" onChange={e=>{if(!e.target.files[0])return;const f=e.target.files[0];const ext=(f.name||'').split('.').pop().toLowerCase();if(ext==='pdf'||f.type==='application/pdf'||f.type?.startsWith('image/'))parseQuoteFileAI(f);else parseQuoteFile(f)}} style={{display:"none"}}/>{showNewJob&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(8px)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20,animation:"fadeUp 0.25s"}} onClick={e=>{if(e.target===e.currentTarget)setShowNewJob(false)}}><div style={{background:"#111",border:"1px solid rgba(45,212,191,0.15)",borderRadius:16,padding:28,width:"100%",maxWidth:640,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 24px 80px rgba(0,0,0,0.6)"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}><div style={{fontSize:18,fontWeight:800,color:"#f0f0f0"}}>New Job Record</div><div onClick={()=>setShowNewJob(false)} style={{width:32,height:32,borderRadius:8,background:"rgba(255,255,255,0.06)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",color:"#737373",fontSize:18,transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.1)";e.currentTarget.style.color="#f0f0f0"}} onMouseLeave={e=>{e.currentTarget.style.background="rgba(255,255,255,0.06)";e.currentTarget.style.color="#737373"}}>x</div></div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:12}}><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Job Name</label><input value={newJob.name} onChange={e=>setNewJob({...newJob,name:e.target.value})} placeholder="e.g., Lincoln USD Media Center" style={inputStyle}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Customer</label><CustomerPicker value={newJob.customer} onChange={v=>setNewJob({...newJob,customer:v})} customers={customers} onAddNew={(name)=>{const id="CUST-"+Math.random().toString(36).slice(2,8);addCustomer({id,name:name||"New Customer",contact:"",email:"",phone:"",type:"K-12 District",address:""});setNewJob({...newJob,customer:id});notify("Customer created: "+(name||"New Customer"))}}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Sales Rep</label><select value={newJob.salesRep} onChange={e=>setNewJob({...newJob,salesRep:e.target.value})} style={inputStyle}>{reps.filter(isSalesRep).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Phase</label><select value={newJob.phase||"Quoting"} onChange={e=>setNewJob({...newJob,phase:e.target.value})} style={inputStyle}><option>Quoting</option><option>Approved</option><option>Ordered</option><option>In Production</option><option>Delivering</option><option>Invoiced</option><option>Complete</option></select></div></div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12,marginBottom:12}}><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Start Date</label><input type="date" value={newJob.startDate} onChange={e=>setNewJob({...newJob,startDate:e.target.value})} style={inputStyle}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Due Date</label><input type="date" value={newJob.dueDate} onChange={e=>setNewJob({...newJob,dueDate:e.target.value})} style={inputStyle}/></div><div style={{gridColumn:"span 2"}}><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Notes</label><input value={newJob.notes} onChange={e=>setNewJob({...newJob,notes:e.target.value})} placeholder="Project details..." style={inputStyle}/></div></div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12,marginBottom:12}}><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Payment Terms</label><select value={newJob.terms||"Net 30"} onChange={e=>setNewJob({...newJob,terms:e.target.value})} style={inputStyle}><option>Net 30</option><option>Net 15</option><option>Due Upon Receipt</option></select></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Customer PO #</label><input value={newJob.poNumber||""} onChange={e=>setNewJob({...newJob,poNumber:e.target.value})} placeholder="Customer PO number" style={inputStyle}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Ship To</label><textarea value={newJob.shipTo||""} onChange={e=>setNewJob({...newJob,shipTo:e.target.value})} placeholder={"School Name\nStreet Address\nCity, State Zip"} rows={3} style={{...inputStyle,resize:"vertical",minHeight:56,lineHeight:1.4,fontFamily:"inherit"}}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Ship Via</label><input value={newJob.shipVia||""} onChange={e=>setNewJob({...newJob,shipVia:e.target.value})} placeholder="Shipping instructions" style={inputStyle}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Bill To</label><textarea value={newJob.billTo||""} onChange={e=>setNewJob({...newJob,billTo:e.target.value})} placeholder={"School Name\nStreet Address\nCity, State Zip"} rows={3} style={{...inputStyle,resize:"vertical",minHeight:56,lineHeight:1.4,fontFamily:"inherit"}}/></div></div><div style={{display:"flex",gap:8}}><Btn onClick={handleCreateJob}>Create Job Record</Btn><Btn v="secondary" onClick={()=>setShowNewJob(false)}>Cancel</Btn></div></div></div>}</>;
+
 
   // Kanban drag handler
   const handleDragStart=(e,jobId)=>{e.dataTransfer.setData("jobId",jobId)};
   const handleDrop=(e,phase)=>{e.preventDefault();const jobId=e.dataTransfer.getData("jobId");if(jobId)updateJob(jobId,{phase});notify(`Job moved to ${phase}`)};
   const handleDragOver=(e)=>e.preventDefault();
+
 
   if(selectedJob){
     const job=jobs.find(j=>j.id===selectedJob);
@@ -2107,11 +2224,14 @@ Never use emoji. Be concise.`;
     return <JobDetail job={job} ctx={ctx}/>;
   }
 
+
   const filteredJobs = jobs.filter(j => { const s = (ctx.globalSearch||"").toLowerCase(); if (!s) return true; const c = customers.find(c=>c.id===j.customer)?.name||""; const r = reps.find(r=>r.id===j.salesRep)?.name||""; return j.name.toLowerCase().includes(s)||j.id.toLowerCase().includes(s)||c.toLowerCase().includes(s)||r.toLowerCase().includes(s)||j.phase.toLowerCase().includes(s); });
   const sortedJobs = [...filteredJobs].sort((a,b)=>{ if(sortBy==="revenue") return getJobFinancials(b.id).totalRevenue-getJobFinancials(a.id).totalRevenue; if(sortBy==="margin") return getJobFinancials(b.id).margin-getJobFinancials(a.id).margin; if(sortBy==="name") return a.name.localeCompare(b.name); return (b[sortBy]||"").localeCompare(a[sortBy]||""); });
 
+
   return <>{newJobModal}<div style={{animation:"fadeUp 0.4s"}}>
     <Header title="Job Records" sub="Central hub -- single source of truth for every project"/>
+
 
     <div style={{display:"flex",gap:8,marginBottom:16,alignItems:"center",flexWrap:"wrap"}}>
       <input value={ctx.globalSearch} onChange={e=>ctx.setGlobalSearch(e.target.value)} placeholder="Search jobs..." style={{...inputStyle,flex:"0 1 260px",minWidth:160,background:"#111111",border:"1px solid #222222",padding:"10px 14px",fontSize:14}}/><Btn onClick={()=>setShowNewJob(true)} style={{flexShrink:0,whiteSpace:"nowrap"}}><I n="plus" s={14}/> New Job</Btn><Btn onClick={()=>uploadRef.current?.click()} v="secondary" style={{flexShrink:0,whiteSpace:"nowrap"}}><I n="download" s={14}/> Upload Quote</Btn><Btn onClick={()=>setNewCust(true)} v="secondary" style={{flexShrink:0,whiteSpace:"nowrap"}}><I n="plus" s={14}/> Add Customer</Btn>
@@ -2123,6 +2243,7 @@ Never use emoji. Be concise.`;
         {[["createdDate","Date"],["name","Name"],["revenue","Revenue"],["margin","Margin"]].map(([v,l])=><button key={v} onClick={()=>setSortBy(v)} style={{padding:"5px 10px",borderRadius:6,border:"none",cursor:"pointer",background:sortBy===v?"#2dd4bf22":"transparent",color:sortBy===v?"#2dd4bf":"#525252",fontSize:12,fontFamily:"inherit"}}>{l}</button>)}
       </div>
     </div>
+
 
     {uploadData&&<Card style={{marginBottom:24,border:"1px solid rgba(45,212,191,0.2)"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
@@ -2179,6 +2300,7 @@ Never use emoji. Be concise.`;
     </Card>}
     {newCust&&<Card style={{marginBottom:20,border:"1px solid #2563eb30"}}><div style={{fontSize:14,fontWeight:700,marginBottom:16,color:"#a78bfa"}}>Add New Customer</div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12,marginBottom:12}}>{[["name","Name"],["contact","Contact"],["email","Email"],["phone","Phone"]].map(([k,l])=><div key={k}><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>{l}</label><input value={custForm[k]} onChange={e=>setCustForm({...custForm,[k]:e.target.value})} style={inputStyle}/></div>)}</div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12,marginBottom:12}}><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Type</label><select value={custForm.type||"K-12 District"} onChange={e=>setCustForm({...custForm,type:e.target.value})} style={inputStyle}><option>K-12 District</option><option>Private School</option><option>University</option><option>Government</option><option>Corporate</option><option>Other</option></select></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Address</label><input value={custForm.address||""} onChange={e=>setCustForm({...custForm,address:e.target.value})} placeholder="Full address (street, city, state, zip)" style={inputStyle}/></div></div><div style={{display:"flex",gap:8}}><Btn onClick={()=>{if(custForm.name){addCustomer(custForm);setNewCust(false);setCustForm({name:"",contact:"",email:"",phone:"",type:"K-12 District",address:""});notify("Customer added")}}}>Add Customer</Btn><Btn v="secondary" onClick={()=>setNewCust(false)}>Cancel</Btn></div></Card>}
 
+
     {viewMode==="table"&&<>
       {/* Bulk action bar */}
       {jobSelected.size>0&&<div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 16px",background:"rgba(45,212,191,0.06)",border:"1px solid rgba(45,212,191,0.15)",borderRadius:10,marginBottom:12,flexWrap:"wrap"}}>
@@ -2209,6 +2331,7 @@ Never use emoji. Be concise.`;
       </tr>)}</tbody></table></div>
     </>}{sortedJobs.length===0&&<Card style={{textAlign:"center",padding:40,marginTop:16}}><div style={{fontSize:40,marginBottom:8}}>+</div><div style={{fontSize:16,fontWeight:600,color:"#2dd4bf",marginBottom:4}}>No jobs yet</div><div style={{fontSize:13,color:"#a3a3a3",marginBottom:16}}>Create your first job to start tracking projects, deliveries, and invoices.</div><Btn onClick={()=>setShowNewJob(true)}><I n="plus" s={14}/> Create First Job</Btn></Card>}
 
+
     {viewMode==="kanban"&&<div className="kanban-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12,minHeight:400}}>
       {["Quoting","In Progress","Invoiced","Complete"].map(phase=><div key={phase} onDrop={e=>handleDrop(e,phase)} onDragOver={handleDragOver} style={{background:"#111111",borderRadius:12,padding:12,border:"1px solid #222222",minHeight:300}}>
         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,paddingBottom:8,borderBottom:"2px solid "+statusColor(phase)}}><div style={{width:8,height:8,borderRadius:"50%",background:statusColor(phase)}}/><span style={{fontSize:13,fontWeight:700,color:"#e5e5e5"}}>{phase}</span><span style={{fontSize:12,color:"#a3a3a3",marginLeft:"auto"}}>{sortedJobs.filter(j=>j.phase===phase).length}</span></div>
@@ -2228,6 +2351,7 @@ Never use emoji. Be concise.`;
     </div>}
   </div></>;
 }
+
 
 // --- JOB DETAIL ----------------------------------------------
 function DiscInput({initial,onCommit,style}){
@@ -2385,9 +2509,11 @@ function JobDetail({job,ctx}){
     setUploadingToJob(false);if(jobQuoteRef.current)jobQuoteRef.current.value='';
   };
 
+
   const saveJob=()=>{updateJob(job.id,editJob);setEditing(false);notify("Job updated -- changes propagated everywhere")};
   const autoCalcFromList=(lp,vid)=>{const v=vendors.find(v=>v.id===vid);const dr=v?.discountRate||0;return{unitCost:Math.round(lp*(1-dr)*100)/100,unitPrice:Math.round(lp*100)/100}};
   const saveNewItem=()=>{if(!newItem.description)return;addLineItem({...newItem,jobId:job.id,group:newItem.group||"",tag:newItem.tag||"",manufacturer:newItem.manufacturer||"",modelNumber:newItem.modelNumber||"",color:newItem.color||"",listPrice:parseFloat(newItem.listPrice)||0,unitCost:parseFloat(newItem.unitCost)||0,unitPrice:parseFloat(newItem.unitPrice)||0,shippingPerUnit:parseFloat(newItem.shippingPerUnit)||0,installPerUnit:parseFloat(newItem.installPerUnit)||0,qtyOrdered:parseInt(newItem.qtyOrdered)||0,qtyReceived:parseInt(newItem.qtyReceived)||0,qtyInvoiced:parseInt(newItem.qtyInvoiced)||0});setAddingItem(false);setNewItem({description:"",vendor:"",tag:"",manufacturer:"",modelNumber:"",color:"",group:"",listPrice:"",unitCost:"",unitPrice:"",shippingPerUnit:"",installPerUnit:"",qtyOrdered:"",qtyReceived:0,qtyInvoiced:0});notify("Line item added -- financials updated")};
+
 
   return <div style={{animation:"fadeUp 0.3s"}} onClick={e=>{const tag=e.target.tagName;if((tag==="DIV"||tag==="SECTION")&&!e.target.closest("input,select,textarea,button,td,th")&&editingItem&&editingItem!=="ALL")setEditingItem(null)}}>
     <div className="job-sticky" style={{position:"sticky",top:0,zIndex:100,background:"rgba(0,0,0,0.92)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",margin:"-32px -40px 0",padding:"16px 40px 0",borderBottom:"none"}}>
@@ -2410,6 +2536,7 @@ function JobDetail({job,ctx}){
   const deliveryHtml='<div style="font-size:24px;font-weight:300;color:#888;letter-spacing:1;margin-bottom:16px">Delivery Status</div><table style="'+tS+'"><thead><tr><th style="'+thS+';text-align:left">Tag</th><th style="'+thS+';text-align:left">Vendor</th><th style="'+thS+';text-align:left">Item</th><th style="'+thS+';text-align:right">Ordered</th><th style="'+thS+';text-align:right">Received</th><th style="'+thS+';text-align:right">Outstanding</th><th style="'+thS+';text-align:center">Status</th></tr></thead><tbody>'+deliveryRows+'</tbody></table>';
   const summaryHtml='<div style="font-size:24px;font-weight:300;color:#888;letter-spacing:1;margin:32px 0 16px">Financial Summary</div><table style="'+tS+'"><tbody><tr><td style="'+tdS+';font-weight:600">Total Revenue</td><td style="'+tdS+';text-align:right;font-weight:700;font-size:14px">$'+invTotal.toFixed(2)+'</td></tr><tr><td style="'+tdS+'">Total Cost</td><td style="'+tdS+';text-align:right">$'+costTotal.toFixed(2)+'</td></tr><tr><td style="'+tdS+';color:#059669">Gross Profit</td><td style="'+tdS+';text-align:right;color:#059669;font-weight:700">$'+(invTotal-costTotal).toFixed(2)+'</td></tr><tr><td style="'+tdS+'">Margin</td><td style="'+tdS+';text-align:right">'+(invTotal>0?((1-costTotal/invTotal)*100).toFixed(1):0)+'%</td></tr></tbody></table>';
 
+
   triggerPrint('Job Packet - '+job.name,coverHtml+'<div class="page-break-before" style="page-break-before:always"></div>'+quoteHtml+'<div class="page-break-before" style="page-break-before:always"></div>'+hd+poSections+'<div class="page-break-before" style="page-break-before:always"></div>'+hd+deliveryHtml+summaryHtml)}catch(e){console.error('Job Packet error:',e);alert('Packet error: '+e.message)}}} style={{fontSize:12,padding:"6px 10px"}}><I n="download" s={12}/> Job Packet</Btn></div>
       {/* Quote Column Visibility */}
       <Card style={{padding:14,marginBottom:16,border:"1px solid rgba(45,212,191,0.1)"}}>
@@ -2418,10 +2545,13 @@ function JobDetail({job,ctx}){
       </Card>
       </div>
 
+
     </div>
     <div style={{paddingTop:12}}>
 
+
     {editing&&<Card style={{marginBottom:20,border:"1px solid #2dd4bf30"}}><div style={{fontSize:14,fontWeight:700,marginBottom:12,color:"#2dd4bf"}}>Edit Job Record</div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:12}}><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Job Name</label><input value={editJob.name} onChange={e=>setEditJob({...editJob,name:e.target.value})} style={inputStyle}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Phase</label><select value={editJob.phase} onChange={e=>setEditJob({...editJob,phase:e.target.value})} style={inputStyle}>{["Quoting","In Progress","Invoiced","Complete"].map(p=><option key={p}>{p}</option>)}</select></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Payment Status</label><select value={editJob.paymentStatus} onChange={e=>setEditJob({...editJob,paymentStatus:e.target.value})} style={inputStyle}>{["unpaid","partial","paid"].map(p=><option key={p}>{p}</option>)}</select></div></div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:12}}><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Customer</label><CustomerPicker value={editJob.customer} onChange={v=>setEditJob({...editJob,customer:v})} customers={customers} onAddNew={(name)=>{const id="CUST-"+Math.random().toString(36).slice(2,8);addCustomer({id,name:name||"New Customer",contact:"",email:"",phone:"",type:"K-12 District",address:""});setEditJob({...editJob,customer:id});notify("Customer created: "+(name||"New Customer"))}}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Sales Rep</label><select value={editJob.salesRep} onChange={e=>setEditJob({...editJob,salesRep:e.target.value})} style={inputStyle}>{reps.filter(isSalesRep).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Due Date</label><input type="date" value={editJob.dueDate} onChange={e=>setEditJob({...editJob,dueDate:e.target.value})} style={inputStyle}/></div></div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12,marginBottom:12}}><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Start Date</label><input type="date" value={editJob.startDate||""} onChange={e=>setEditJob({...editJob,startDate:e.target.value})} style={inputStyle}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>End Date</label><input type="date" value={editJob.endDate||""} onChange={e=>setEditJob({...editJob,endDate:e.target.value})} style={inputStyle}/></div><div style={{gridColumn:"span 2"}}><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>PO Notes</label><textarea value={editJob.notes||""} onChange={e=>setEditJob({...editJob,notes:e.target.value})} rows={3} style={{...inputStyle,resize:"vertical",minHeight:60}}/></div></div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12,marginBottom:12}}><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Payment Terms</label><select value={editJob.terms||"Net 30"} onChange={e=>setEditJob({...editJob,terms:e.target.value})} style={inputStyle}><option>Net 30</option><option>Net 15</option><option>Due Upon Receipt</option></select></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Customer PO #</label><input value={editJob.poNumber||""} onChange={e=>setEditJob({...editJob,poNumber:e.target.value})} placeholder="P044193" style={inputStyle}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Ship To</label><textarea value={editJob.shipTo||""} onChange={e=>setEditJob({...editJob,shipTo:e.target.value})} placeholder={"School Name\nStreet Address\nCity, State Zip"} rows={3} style={{...inputStyle,resize:"vertical",minHeight:56,lineHeight:1.4,fontFamily:"inherit"}}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Ship Via</label><input value={editJob.shipVia||""} onChange={e=>setEditJob({...editJob,shipVia:e.target.value})} placeholder="e.g. Must deliver after 4/6" style={inputStyle}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Bill To (if different from customer)</label><textarea value={editJob.billTo||""} onChange={e=>setEditJob({...editJob,billTo:e.target.value})} placeholder={"School Name\nStreet Address\nCity, State Zip"} rows={3} style={{...inputStyle,resize:"vertical",minHeight:56,lineHeight:1.4,fontFamily:"inherit"}}/></div></div><div style={{display:"flex",gap:8}}><Btn onClick={saveJob}>Save Changes</Btn><Btn v="secondary" onClick={()=>setEditing(false)}>Cancel</Btn></div></Card>}
+
 
     <div className="resp-grid-5" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(100px,1fr))",gap:12,marginBottom:24}}>
       <Card style={{padding:14,textAlign:"center"}}><div style={{fontSize:12,color:"#a3a3a3",marginBottom:4}}>Revenue</div><div style={{fontSize:18,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:"#e5e5e5"}}>{fmt(f.totalRevenue)}</div></Card>
@@ -2438,7 +2568,9 @@ function JobDetail({job,ctx}){
       <Card style={{padding:12}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{fontSize:12,color:"#c4c4c4"}}>Due Date</span><span style={{fontSize:13,fontWeight:600,color:job.dueDate&&new Date(job.dueDate)<new Date()&&job.paymentStatus!=="paid"?"#f87171":"#e5e5e5"}}>{job.dueDate||"Not set"}</span></div>{job.dueDate&&new Date(job.dueDate)<new Date()&&job.paymentStatus!=="paid"&&<span style={{fontSize:12,color:"#f87171"}}>OVERDUE</span>}</Card>
     </div>
 
+
     {addingItem&&<Card style={{marginBottom:20,border:"1px solid #05966930"}}><div style={{fontSize:14,fontWeight:700,marginBottom:12,color:"#34d399"}}>Add Line Item</div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:8,marginBottom:8}}><div style={{position:"relative"}}><label style={{fontSize:12,color:"#a78bfa",display:"block",marginBottom:3}}>Group / Section</label><input value={newItem.group} onChange={e=>setNewItem({...newItem,group:e.target.value})} placeholder="e.g. Cafeteria 179, Library" style={{...inputStyle,fontSize:12,borderColor:"#a78bfa30"}} list="group-list"/><datalist id="group-list">{[...new Set(items.map(i=>i.group).filter(Boolean))].map(g=><option key={g} value={g}/>)}</datalist></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:3}}>Tag/Room</label><input value={newItem.tag} onChange={e=>setNewItem({...newItem,tag:e.target.value})} placeholder="e.g. 100A" style={{...inputStyle,fontSize:12}}/></div><div style={{position:"relative"}}><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:3}}>Vendor / Manufacturer</label><input value={newItem.manufacturer} onChange={e=>{const val=e.target.value;const match=vendors.find(v=>v.name.toLowerCase()===val.toLowerCase());const lp=parseFloat(newItem.listPrice)||0;setNewItem({...newItem,manufacturer:val,vendor:match?match.id:newItem.vendor,...(match&&lp>0?{unitCost:Math.round(lp*(1-match.discountRate)*100)/100}:{})})}} placeholder="Type to search vendors..." style={{...inputStyle,fontSize:12}} list="vendor-list"/><datalist id="vendor-list">{vendors.map(v=><option key={v.id} value={v.name}>{v.name}{v.discountRate?" ("+((v.discountRate*100).toFixed(0))+"% off)":""}</option>)}</datalist>{newItem.vendor&&vendors.find(v=>v.id===newItem.vendor)&&<div style={{display:"flex",alignItems:"center",gap:6,marginTop:2}}><span style={{fontSize:10,color:"#34d399"}}>Matched: {vendors.find(v=>v.id===newItem.vendor)?.name}</span><input type="number" value={vendors.find(v=>v.id===newItem.vendor)?.discountRate?Math.round((vendors.find(v=>v.id===newItem.vendor)?.discountRate||0)*100):""} onChange={e=>{const dr=(parseFloat(e.target.value)||0)/100;updateVendor(newItem.vendor,{discountRate:dr});const lp=parseFloat(newItem.listPrice)||0;if(lp>0)setNewItem(prev=>({...prev,unitCost:Math.round(lp*(1-dr)*100)/100}));items.filter(li=>li.vendor===newItem.vendor&&li.listPrice).forEach(li=>{updateLineItem(li.id,{unitCost:Math.round((li.listPrice||0)*(1-dr)*100)/100})})}} style={{...inputStyle,width:40,fontSize:10,padding:"2px 4px",textAlign:"right"}} placeholder="0"/><span style={{fontSize:10,color:"#34d399"}}>% discount</span></div>}</div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:3}}>Model #</label><input value={newItem.modelNumber} onChange={e=>setNewItem({...newItem,modelNumber:e.target.value})} placeholder="e.g. 714" style={{...inputStyle,fontSize:12}}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:3}}>Color/Finish</label><input value={newItem.color} onChange={e=>setNewItem({...newItem,color:e.target.value})} placeholder="e.g. Black/Chrome" style={{...inputStyle,fontSize:12}}/></div></div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:8,marginBottom:8}}><div style={{gridColumn:"1/-1"}}><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:3}}>Description</label><textarea value={newItem.description} onChange={e=>setNewItem({...newItem,description:e.target.value})} rows={3} style={{...inputStyle,fontSize:12,resize:"vertical",minHeight:50,lineHeight:1.4,fontFamily:"inherit"}} placeholder="Item description (use Enter for new lines: edge detail, hinge type, hardware, finish...)"/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:3}}>List Price</label><input type="number" value={newItem.listPrice} onChange={e=>{const lp=parseFloat(e.target.value)||0;const calc=autoCalcFromList(lp,newItem.vendor);setNewItem({...newItem,listPrice:e.target.value,...calc})}} style={{...inputStyle,fontSize:12}} placeholder="0.00"/></div><div><label style={{fontSize:12,color:"#34d399",display:"block",marginBottom:3}}>Net Cost (auto)</label><input type="number" value={newItem.unitCost} onChange={e=>setNewItem({...newItem,unitCost:e.target.value})} style={{...inputStyle,fontSize:12,borderColor:"#05966930"}} placeholder="0.00"/></div><div><label style={{fontSize:12,color:"#2dd4bf",display:"block",marginBottom:3}}>Your Price</label><input type="number" value={newItem.unitPrice} onChange={e=>setNewItem({...newItem,unitPrice:e.target.value})} style={{...inputStyle,fontSize:12,borderColor:"#2dd4bf30"}} placeholder="0.00"/></div></div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:8,marginBottom:12}}><div><label style={{fontSize:12,color:"#fbbf24",display:"block",marginBottom:3}}>Shipping/Unit</label><input type="number" value={newItem.shippingPerUnit} onChange={e=>setNewItem({...newItem,shippingPerUnit:e.target.value})} placeholder="" style={{...inputStyle,fontSize:12,borderColor:"#fbbf2430"}}/></div><div><label style={{fontSize:12,color:"#a78bfa",display:"block",marginBottom:3}}>Install/Unit</label><input type="number" value={newItem.installPerUnit} onChange={e=>setNewItem({...newItem,installPerUnit:e.target.value})} placeholder="" style={{...inputStyle,fontSize:12,borderColor:"#a78bfa30"}}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:3}}>Qty Ordered</label><input type="number" value={newItem.qtyOrdered} onChange={e=>setNewItem({...newItem,qtyOrdered:e.target.value})} style={{...inputStyle,fontSize:12}}/></div><div style={{display:"flex",alignItems:"flex-end"}}>{newItem.qtyOrdered>0&&newItem.unitPrice>0&&<div style={{fontSize:12,color:"#2dd4bf",padding:"8px 0"}}>Total: {fmt(((parseFloat(newItem.unitPrice)||0)+(parseFloat(newItem.shippingPerUnit)||0)+(parseFloat(newItem.installPerUnit)||0))*(parseInt(newItem.qtyOrdered)||0))}</div>}</div></div>{newItem.listPrice>0&&<div style={{fontSize:12,color:"#34d399",marginBottom:8}}>Vendor discount: {((vendors.find(v=>v.id===newItem.vendor)?.discountRate||0)*100).toFixed(0)}% off list -- Cost: {fmt(newItem.unitCost)} -- Sell: {fmt(newItem.unitPrice)} -- Margin: {newItem.unitPrice>0?((1-newItem.unitCost/newItem.unitPrice)*100).toFixed(1):0}%</div>}<div style={{display:"flex",gap:8}}><Btn onClick={saveNewItem}>Add Item</Btn><Btn v="secondary" onClick={()=>setAddingItem(false)}>Cancel</Btn></div></Card>}
+
 
     <Header title="Line Items" sub="Click any cell value to edit inline -- changes propagate across all views"/>
     {/* Bulk select bar */}
@@ -2453,25 +2585,27 @@ function JobDetail({job,ctx}){
       return grouped.map(([grp,grpItems])=>{
         const grpTotal=grpItems.reduce((s,i)=>s+(i.unitPrice||0)*(i.qtyOrdered||0),0);
         return <React.Fragment key={grp}>{grp&&<tr style={{background:"#a78bfa10"}}><td colSpan={15} style={{padding:"10px 8px",fontWeight:700,color:"#a78bfa",fontSize:13}}>{grp}<span style={{fontWeight:400,color:"#888",fontSize:12,marginLeft:12}}>{grpItems.length} items -- {fmt(grpTotal)}</span></td></tr>}{grpItems.map(item=>{
-      const isE=editingItem===item.id||editingItem==="ALL";const eS={...inputStyle,fontSize:12,padding:"6px 8px",borderRadius:6};const ship=item.shippingPerUnit||0;const inst=item.installPerUnit||0;const lineTotal=item.priceExtended&&item.priceExtended>0?item.priceExtended:(item.unitPrice||0)*(item.qtyOrdered||0);
+      const isE=editingItem===item.id||editingItem==="ALL";const eS={...inputStyle,fontSize:13,padding:"9px 11px",borderRadius:8};const ship=item.shippingPerUnit||0;const inst=item.installPerUnit||0;const lineTotal=item.priceExtended&&item.priceExtended>0?item.priceExtended:(item.unitPrice||0)*(item.qtyOrdered||0);
       return <tr key={item.id} onClick={e=>{const tag=e.target.tagName;if(tag==="INPUT"||tag==="SELECT"||tag==="TEXTAREA"||tag==="BUTTON"||tag==="LABEL"||e.target.closest("input,select,textarea,button"))return;if(editingItem==="ALL")return;if(isE)return;setEditingItem(item.id)}} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",background:isE?"#0a0a0a":"transparent",transition:"background 0.15s"}}>
-        <td style={{padding:"6px 8px",minWidth:55}}>{isE?<input value={item.tag||""} onChange={e=>updateLineItem(item.id,{tag:e.target.value})} style={{...eS,width:60}}/>:<span style={{color:"#c4c4c4"}}>{item.tag||""}</span>}</td>
-        <td style={{padding:"6px 8px",minWidth:80}}>{isE?<div><input value={item.manufacturer||""} onChange={e=>{const val=e.target.value;const match=vendors.find(v=>v.name.toLowerCase()===val.toLowerCase());const updates={manufacturer:val};if(match){updates.vendor=match.id;if(item.listPrice&&match.discountRate){updates.unitCost=Math.round((item.listPrice||0)*(1-match.discountRate)*100)/100}}updateLineItem(item.id,updates)}} list="vendor-list-tbl" style={{...eS,width:90}}/></div>:<span style={{color:"#c4c4c4"}}>{item.manufacturer||vendors.find(v=>v.id===item.vendor)?.name||""}</span>}</td>
-        <td style={{padding:"6px 8px",textAlign:"right",minWidth:50}}>{(()=>{const v=vendors.find(v=>v.id===item.vendor);const dr=v?.discountRate||0;const calcDr=item.listPrice>0&&item.unitCost>0&&item.unitCost<item.listPrice?Math.round((1-item.unitCost/item.listPrice)*10000)/100:0;const showDr=calcDr||Math.round(dr*10000)/100;return isE?<DiscInput key={item.id+"-disc"} initial={editingItem==="ALL"?(dr?Math.round(dr*10000)/100:""):(showDr||"")} onCommit={pct=>{const newDr=pct/100;if(editingItem==="ALL"){updateVendor(v?.id||"",{discountRate:newDr});items.filter(li=>li.vendor===item.vendor&&li.listPrice).forEach(li=>{updateLineItem(li.id,{unitCost:Math.round((li.listPrice||0)*(1-newDr)*100)/100})})}else{if(v?.id)updateVendor(v.id,{discountRate:newDr});if(item.listPrice){updateLineItem(item.id,{unitCost:Math.round((item.listPrice||0)*(1-newDr)*100)/100})}else if(item.unitPrice>0&&newDr>0){const impliedList=Math.round(item.unitCost/(1-newDr)*100)/100;updateLineItem(item.id,{listPrice:impliedList})}}}} style={{...eS,width:48,textAlign:"right"}}/>:showDr>0?<span style={{fontFamily:"'JetBrains Mono',monospace",color:"#34d399",fontSize:11}}>{showDr%1===0?showDr:showDr.toFixed(2)}%</span>:<span style={{color:"#555"}}>--</span>})()}</td>
-        <td style={{padding:"6px 8px",minWidth:80}}>{isE?<input value={item.modelNumber||""} onChange={e=>updateLineItem(item.id,{modelNumber:e.target.value})} style={{...eS,width:90}}/>:<span style={{color:"#c4c4c4"}}>{item.modelNumber||""}</span>}</td>
-        <td style={{padding:"6px 8px",color:"#e5e5e5",fontWeight:500,minWidth:150,maxWidth:220}}>{isE?<><textarea value={item.description} onChange={e=>updateLineItem(item.id,{description:e.target.value})} rows={Math.max(2,Math.ceil((item.description||"").length/40))} style={{...eS,width:"100%",resize:"vertical",minHeight:40,lineHeight:1.4,fontFamily:"inherit"}}/><div style={{marginTop:6}}><label style={{fontSize:9,color:"#737373",textTransform:"uppercase",letterSpacing:0.5,fontWeight:600,display:"block",marginBottom:2}}>Ship To (line-item override)</label><textarea value={item.shipTo||""} onChange={e=>updateLineItem(item.id,{shipTo:e.target.value})} rows={2} placeholder="Leave blank to use job default. Each unique address creates its own PO." style={{...eS,width:"100%",resize:"vertical",minHeight:34,lineHeight:1.4,fontFamily:"inherit",fontSize:11,borderColor:item.shipTo?"#a78bfa40":undefined,background:item.shipTo?"rgba(167,139,250,0.04)":undefined}}/></div></>:<><div style={{whiteSpace:"pre-line"}}>{item.description}</div>{item.shipTo&&<div style={{marginTop:4,padding:"3px 6px",background:"rgba(167,139,250,0.08)",border:"1px solid rgba(167,139,250,0.18)",borderRadius:4,fontSize:10,color:"#a78bfa",fontWeight:500,display:"inline-block",maxWidth:"100%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={item.shipTo}>Ship: {(item.shipTo||"").split('\n')[0].slice(0,40)}{(item.shipTo||"").length>40?"...":""}</div>}</>}</td>
-        <td style={{padding:"6px 8px",minWidth:65}}>{isE?<input value={item.color||""} onChange={e=>updateLineItem(item.id,{color:e.target.value})} style={{...eS,width:70}}/>:<span style={{color:"#c4c4c4"}}>{item.color||""}</span>}</td>
-        <td style={{padding:"6px 8px",textAlign:"right",minWidth:55}}>{isE?<input type="number" value={item.qtyOrdered} onChange={e=>updateLineItem(item.id,{qtyOrdered:parseInt(e.target.value)||0})} style={{...eS,width:55,textAlign:"right"}}/>:fmtN(item.qtyOrdered)}</td>
-        <td style={{padding:"6px 8px",textAlign:"right",minWidth:75}}>{isE?<input type="number" value={item.unitCost} onChange={e=>updateLineItem(item.id,{unitCost:parseFloat(e.target.value)||0})} style={{...eS,width:80,textAlign:"right"}}/>:<span style={{fontFamily:"'JetBrains Mono',monospace"}}>{fmt(item.unitCost)}</span>}</td>
+        <td style={{padding:"6px 8px",minWidth:55}}>{isE?<input value={item.tag||""} onChange={e=>updateLineItem(item.id,{tag:e.target.value})} style={{...eS,width:80}}/>:<span style={{color:"#c4c4c4"}}>{item.tag||""}</span>}</td>
+        <td style={{padding:"6px 8px",minWidth:80}}>{isE?<div><input value={item.manufacturer||""} onChange={e=>{const val=e.target.value;const match=vendors.find(v=>v.name.toLowerCase()===val.toLowerCase());const updates={manufacturer:val};if(match){updates.vendor=match.id;if(item.listPrice&&match.discountRate){updates.unitCost=Math.round((item.listPrice||0)*(1-match.discountRate)*100)/100}}updateLineItem(item.id,updates)}} list="vendor-list-tbl" style={{...eS,width:130}}/></div>:<span style={{color:"#c4c4c4"}}>{item.manufacturer||vendors.find(v=>v.id===item.vendor)?.name||""}</span>}</td>
+        <td style={{padding:"6px 8px",textAlign:"right",minWidth:50}}>{(()=>{const v=vendors.find(v=>v.id===item.vendor);const dr=v?.discountRate||0;const calcDr=item.listPrice>0&&item.unitCost>0&&item.unitCost<item.listPrice?Math.round((1-item.unitCost/item.listPrice)*10000)/100:0;const showDr=calcDr||Math.round(dr*10000)/100;return isE?<DiscInput key={item.id+"-disc"} initial={editingItem==="ALL"?(dr?Math.round(dr*10000)/100:""):(showDr||"")} onCommit={pct=>{const newDr=pct/100;if(editingItem==="ALL"){updateVendor(v?.id||"",{discountRate:newDr});items.filter(li=>li.vendor===item.vendor&&li.listPrice).forEach(li=>{updateLineItem(li.id,{unitCost:Math.round((li.listPrice||0)*(1-newDr)*100)/100})})}else{if(v?.id)updateVendor(v.id,{discountRate:newDr});if(item.listPrice){updateLineItem(item.id,{unitCost:Math.round((item.listPrice||0)*(1-newDr)*100)/100})}else if(item.unitPrice>0&&newDr>0){const impliedList=Math.round(item.unitCost/(1-newDr)*100)/100;updateLineItem(item.id,{listPrice:impliedList})}}}} style={{...eS,width:70,textAlign:"right"}}/>:showDr>0?<span style={{fontFamily:"'JetBrains Mono',monospace",color:"#34d399",fontSize:11}}>{showDr%1===0?showDr:showDr.toFixed(2)}%</span>:<span style={{color:"#555"}}>--</span>})()}</td>
+        <td style={{padding:"6px 8px",minWidth:80}}>{isE?<input value={item.modelNumber||""} onChange={e=>updateLineItem(item.id,{modelNumber:e.target.value})} style={{...eS,width:120}}/>:<span style={{color:"#c4c4c4"}}>{item.modelNumber||""}</span>}</td>
+        <td style={{padding:"6px 8px",color:"#e5e5e5",fontWeight:500,minWidth:240,maxWidth:340}}>{isE?<><textarea value={item.description} onChange={e=>updateLineItem(item.id,{description:e.target.value})} rows={Math.max(3,Math.ceil((item.description||"").length/40))} style={{...eS,width:"100%",resize:"vertical",minHeight:64,lineHeight:1.5,fontFamily:"inherit"}}/><div style={{marginTop:10}}><label style={{fontSize:11,color:"#ffffff",textTransform:"uppercase",letterSpacing:0.6,fontWeight:700,display:"block",marginBottom:5}}>Ship To (line-item override)</label><textarea value={item.shipTo||""} onChange={e=>updateLineItem(item.id,{shipTo:e.target.value})} rows={3} placeholder="Leave blank to use job default. Each unique address creates its own PO." style={{...eS,width:"100%",resize:"vertical",minHeight:64,lineHeight:1.5,fontFamily:"inherit",fontSize:13,color:"#ffffff",background:"#000000",borderColor:item.shipTo?"#a78bfa60":"rgba(255,255,255,0.18)"}}/></div></>:<><div style={{whiteSpace:"pre-line"}}>{item.description}</div>{item.shipTo&&<div style={{marginTop:4,padding:"3px 6px",background:"rgba(167,139,250,0.08)",border:"1px solid rgba(167,139,250,0.18)",borderRadius:4,fontSize:10,color:"#a78bfa",fontWeight:500,display:"inline-block",maxWidth:"100%",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={item.shipTo}>Ship: {(item.shipTo||"").split('\n')[0].slice(0,40)}{(item.shipTo||"").length>40?"...":""}</div>}</>}</td>
+        <td style={{padding:"6px 8px",minWidth:65}}>{isE?<input value={item.color||""} onChange={e=>updateLineItem(item.id,{color:e.target.value})} style={{...eS,width:110}}/>:<span style={{color:"#c4c4c4"}}>{item.color||""}</span>}</td>
+        <td style={{padding:"6px 8px",textAlign:"right",minWidth:55}}>{isE?<input type="number" value={item.qtyOrdered} onChange={e=>updateLineItem(item.id,{qtyOrdered:parseInt(e.target.value)||0})} style={{...eS,width:75,textAlign:"right"}}/>:fmtN(item.qtyOrdered)}</td>
+        <td style={{padding:"6px 8px",textAlign:"right",minWidth:75}}>{isE?<input type="number" value={item.unitCost} onChange={e=>updateLineItem(item.id,{unitCost:parseFloat(e.target.value)||0})} style={{...eS,width:100,textAlign:"right"}}/>:<span style={{fontFamily:"'JetBrains Mono',monospace"}}>{fmt(item.unitCost)}</span>}</td>
         <td style={{padding:"6px 8px",textAlign:"right",minWidth:80}}><span style={{fontFamily:"'JetBrains Mono',monospace",color:"#a3a3a3"}}>{fmt((item.unitCost||0)*(item.qtyOrdered||0))}</span></td>
-        <td style={{padding:"6px 8px",textAlign:"right",minWidth:65}}>{(()=>{const markup=item.unitCost>0?Math.round((item.unitPrice/item.unitCost-1)*100):0;return isE?<input type="number" value={markup||""} onChange={e=>{const pct=parseFloat(e.target.value)||0;updateLineItem(item.id,{unitPrice:Math.round(item.unitCost*(1+pct/100)*100)/100})}} style={{...eS,width:58,textAlign:"right"}}/>:<span style={{fontFamily:"'JetBrains Mono',monospace",color:markup>0?"#34d399":"#555"}}>{markup>0?markup+"%":"--"}</span>})()}</td>
-        <td style={{padding:"6px 8px",textAlign:"right",minWidth:80}}>{isE?<input type="number" value={item.unitPrice} onChange={e=>updateLineItem(item.id,{unitPrice:parseFloat(e.target.value)||0})} style={{...eS,width:80,textAlign:"right"}}/>:<span style={{fontFamily:"'JetBrains Mono',monospace",color:"#2dd4bf"}}>{fmt(item.unitPrice)}</span>}</td>
+        <td style={{padding:"6px 8px",textAlign:"right",minWidth:65}}>{(()=>{const markup=item.unitCost>0?Math.round((item.unitPrice/item.unitCost-1)*100):0;return isE?<input type="number" value={markup||""} onChange={e=>{const pct=parseFloat(e.target.value)||0;updateLineItem(item.id,{unitPrice:Math.round(item.unitCost*(1+pct/100)*100)/100})}} style={{...eS,width:80,textAlign:"right"}}/>:<span style={{fontFamily:"'JetBrains Mono',monospace",color:markup>0?"#34d399":"#555"}}>{markup>0?markup+"%":"--"}</span>})()}</td>
+        <td style={{padding:"6px 8px",textAlign:"right",minWidth:80}}>{isE?<input type="number" value={item.unitPrice} onChange={e=>updateLineItem(item.id,{unitPrice:parseFloat(e.target.value)||0})} style={{...eS,width:100,textAlign:"right"}}/>:<span style={{fontFamily:"'JetBrains Mono',monospace",color:"#2dd4bf"}}>{fmt(item.unitPrice)}</span>}</td>
         <td style={{padding:"6px 8px",textAlign:"right",minWidth:85}}><span style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:600,color:"#2dd4bf"}}>{fmt((item.unitPrice||0)*(item.qtyOrdered||0))}</span></td>
-        <td style={{padding:"6px 8px",textAlign:"right",minWidth:55}}>{isE?<input type="number" value={item.qtyReceived} onChange={e=>updateLineItem(item.id,{qtyReceived:parseInt(e.target.value)||0})} style={{...eS,width:55,textAlign:"right"}}/>:<span style={{color:item.qtyReceived===item.qtyOrdered?"#34d399":item.qtyReceived>0?"#fbbf24":"#555"}}>{fmtN(item.qtyReceived)}/{fmtN(item.qtyOrdered)}</span>}</td>
+        <td style={{padding:"6px 8px",textAlign:"right",minWidth:55}}>{isE?<input type="number" value={item.qtyReceived} onChange={e=>updateLineItem(item.id,{qtyReceived:parseInt(e.target.value)||0})} style={{...eS,width:75,textAlign:"right"}}/>:<span style={{color:item.qtyReceived===item.qtyOrdered?"#34d399":item.qtyReceived>0?"#fbbf24":"#555"}}>{fmtN(item.qtyReceived)}/{fmtN(item.qtyOrdered)}</span>}</td>
         <td style={{padding:"6px 8px"}}><Badge label={getItemStatus(item)} color={statusColor(getItemStatus(item))}/></td>
         <td style={{padding:"6px 8px",position:"sticky",right:0,background:isE?"#0a0a0a":"#0a0a0a",zIndex:2}} onClick={e=>e.stopPropagation()}><div style={{display:"flex",gap:3}}><Btn v={isE?"primary":"ghost"} style={{fontSize:11,padding:"2px 6px"}} onClick={e=>{e.stopPropagation();setEditingItem(isE?null:item.id)}}>{isE?"Done":"Edit"}</Btn><Btn v="secondary" style={{fontSize:11,padding:"2px 6px"}} onClick={e=>{e.stopPropagation();addLineItem({...item,id:"LI-"+Date.now()+"-"+Math.random().toString(36).slice(2,6),qtyReceived:0,qtyInvoiced:0});notify("Line item duplicated")}}>Dup</Btn><Btn v="danger" style={{fontSize:11,padding:"2px 6px"}} onClick={e=>{e.stopPropagation();deleteLineItem(item.id);if(editingItem===item.id)setEditingItem(null);notify("Line item deleted")}}>Del</Btn></div></td>
       </tr>})}{grp&&<tr style={{borderTop:"1px solid #a78bfa30"}}><td colSpan={13} style={{padding:"6px 8px",textAlign:"right",fontSize:12,color:"#a78bfa",fontWeight:600}}>{grp} Subtotal: {fmt(grpTotal)}</td><td></td><td></td></tr>}</React.Fragment>})})()}</tbody></table></div>
     <datalist id="vendor-list-tbl">{vendors.map(v=><option key={v.id} value={v.name}/>)}</datalist>
+
+
 
 
     {/* --- JOB TIMELINE ---------------------------------------- */}
@@ -2498,8 +2632,11 @@ function JobDetail({job,ctx}){
     </Card>
 
 
+
+
     {/* --- AUDIT TRAIL ---------------------------------------- */}
     {(()=>{const jobAudit=job.auditTrail||[];return jobAudit.length>0?<Card style={{marginTop:24,marginBottom:8}}><details><summary style={{fontSize:14,fontWeight:700,color:"#a78bfa",cursor:"pointer"}}>Audit Trail ({jobAudit.length} changes)</summary><div style={{maxHeight:250,overflow:"auto",marginTop:8}}>{jobAudit.map((log,idx)=><div key={idx} style={{padding:"6px 0",borderBottom:"1px solid #1a1a1a",fontSize:12}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:2}}><span style={{color:"#a78bfa"}}>{log.entity==="job"?"Job":"Line Item"+(log.desc?" ("+log.desc+")":"")} edited</span><span style={{color:"#555"}}>{new Date(log.time).toLocaleString()}</span></div>{log.fields.map((f,fi)=><div key={fi} style={{color:"#a3a3a3",paddingLeft:12}}><span style={{color:"#e5e5e5"}}>{f.field}</span>: <span style={{color:"#f87171"}}>{String(f.from===undefined?"--":f.from).slice(0,40)}</span> &rarr; <span style={{color:"#34d399"}}>{String(f.to===undefined?"--":f.to).slice(0,40)}</span></div>)}</div>)}</div></details></Card>:null})()}
+
 
     {/* --- ACTIVITY FEED ---------------------------------------- */}
     <Card style={{marginTop:32}}>
@@ -2508,9 +2645,11 @@ function JobDetail({job,ctx}){
       <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:300,overflow:"auto"}}>{activities.length===0?<div style={{fontSize:12,color:"#8a8a8a",padding:12,textAlign:"center"}}>No activity yet. Add notes, status updates, or reminders.</div>:activities.map(a=><div key={a.id} style={{display:"flex",gap:10,padding:"8px 0",borderBottom:"1px solid #222222"}}><div style={{width:6,height:6,borderRadius:"50%",background:a.source==="auto"?"#a78bfa":"#2dd4bf",marginTop:6,flexShrink:0}}/><div style={{flex:1}}><div style={{fontSize:12,color:"#c4c4c4"}}>{a.text}</div><div style={{display:"flex",gap:8,fontSize:11,marginTop:3}}>{a.user&&<span style={{color:"#2dd4bf",fontWeight:600}}>{a.user}</span>}<span style={{color:"#737373"}}>{new Date(a.time).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}</span><span style={{color:"#525252"}}>{new Date(a.time).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"})}</span></div></div></div>)}</div>
     </Card>
 
+
     </div>
   </div>;
 }
+
 
 // ===============================================================
 // DELIVERY CALENDAR
@@ -2525,6 +2664,7 @@ function DeliveryCalendar({jobs,lineItems,vendors,customers,getJobItems,setPage,
   const monthName=viewDate.toLocaleString("default",{month:"long"});
   const daysInMonth=new Date(year,month+1,0).getDate();
   const firstDay=new Date(year,month,1).getDay();
+
 
   // Build ALL events from line items and jobs
   const events=[];
@@ -2560,13 +2700,16 @@ function DeliveryCalendar({jobs,lineItems,vendors,customers,getJobItems,setPage,
     }}
   });
 
+
   const filtered=calFilter==="all"?events:events.filter(e=>e.type===calFilter);
   const days=[];
   for(let i=0;i<firstDay;i++)days.push(null);
   for(let d=1;d<=daysInMonth;d++)days.push(d);
 
+
   const filterBtns=[["all","All Events"],["pending","Pending"],["delivered","Delivered"],["po","PO Sent"],["due","Due Dates"]];
   const filterColors={all:"#2dd4bf",pending:"#fbbf24",delivered:"#34d399",po:"#a78bfa",due:"#f87171"};
+
 
   return <div style={{animation:"fadeUp 0.4s"}}>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:10}}>
@@ -2613,6 +2756,7 @@ function DeliveryCalendar({jobs,lineItems,vendors,customers,getJobItems,setPage,
   </div>;
 }
 
+
 // ===============================================================
 // DELIVERY TRACKER -- Real updates to state
 // ===============================================================
@@ -2624,6 +2768,7 @@ function DeliveryPage({jobs,lineItems,vendors,customers,reps,userRole,userRepId,
   const [receiveQty,setReceiveQty]=useState("");
   const [searchQuery,setSearchQuery]=useState("");
   const [repFilter,setRepFilter]=useState("all");
+
 
   // Apply per-rep + search filters to the jobs and line items used by ALL views
   // (tracker KPIs, tracker job groups, calendar). Sales-role users already only
@@ -2646,13 +2791,16 @@ function DeliveryPage({jobs,lineItems,vendors,customers,reps,userRole,userRepId,
   const allItems=(delFilter==="all"?lineItemsForView:delFilter==="delivered"?lineItemsForView.filter(i=>i.qtyReceived>=i.qtyOrdered&&i.qtyOrdered>0):lineItemsForView.filter(i=>i.qtyReceived<i.qtyOrdered)).map(i=>({...i,jobName:jobsForView.find(j=>j.id===i.jobId)?.name||"",jobId:i.jobId}));
   const partials=lineItemsForView.filter(i=>i.qtyReceived>0&&i.qtyReceived<i.qtyOrdered);
 
+
   // Group by job
   const jobGroups={};
   allItems.forEach(item=>{if(!jobGroups[item.jobId])jobGroups[item.jobId]={job:jobsForView.find(j=>j.id===item.jobId),items:[]};jobGroups[item.jobId].items.push(item)});
   const groupedJobs=Object.values(jobGroups).filter(g=>g.job);
 
+
   const handleReceive=(item)=>{const qty=parseInt(receiveQty)||0;if(qty<=0)return;const newRcv=Math.min((item||receiveModal).qtyReceived+qty,(item||receiveModal).qtyOrdered);updateLineItem((item||receiveModal).id,{qtyReceived:newRcv,deliveryDate:new Date().toISOString().split("T")[0]});notify(`Logged ${qty} units received`);setReceiveModal(null);setReceiveQty("")};
   const completeAll=(jobItems)=>{jobItems.forEach(item=>{updateLineItem(item.id,{qtyReceived:item.qtyOrdered,deliveryDate:new Date().toISOString().split("T")[0]})});notify(`All ${jobItems.length} items marked complete`)};
+
 
   return <div style={{animation:"fadeUp 0.4s"}}><Header title="Deliveries" sub="Track shipments and plan receiving"/>
     <div style={{display:"flex",gap:12,marginBottom:20,alignItems:"center",flexWrap:"wrap"}}>
@@ -2672,7 +2820,9 @@ function DeliveryPage({jobs,lineItems,vendors,customers,reps,userRole,userRepId,
     </div>
     {/* Inline receive is now handled per-row in the table below */}
 
+
     {groupedJobs.length===0&&<Card style={{textAlign:"center",padding:40}}><div style={{fontSize:16,color:"#34d399",fontWeight:600,marginBottom:4}}>{(searchQuery||repFilter!=="all")?"No matching jobs":delFilter==="pending"?"All deliveries complete":delFilter==="delivered"?"No delivered items yet":"No items found"}</div><div style={{fontSize:13,color:"#a3a3a3"}}>{(searchQuery||repFilter!=="all")?"Try a different search term or rep filter.":delFilter==="pending"?"No outstanding items across any job.":"Try a different filter."}</div></Card>}
+
 
     {groupedJobs.map(({job,items})=>{
       const totalOut=items.reduce((s,i)=>s+i.qtyOrdered-i.qtyReceived,0);
@@ -2746,6 +2896,7 @@ function DeliveryPage({jobs,lineItems,vendors,customers,reps,userRole,userRepId,
   </div>;
 }
 
+
 // ===============================================================
 // DOCUMENTS -- Quotes, POs, Invoices, Commission Statements
 // ===============================================================
@@ -2769,6 +2920,7 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
       else if(t.docType==="po"||t.docType==="pos")setTab("pos");
     }
   },[]);
+
 
   const [billDetail,setBillDetail]=useState(null);
   const [billInvNum,setBillInvNum]=useState('');
@@ -2840,6 +2992,7 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
     try{localStorage.removeItem("quote_approved_"+docNum)}catch{};
   };
 
+
   // Check for quote approvals from shared customer links
   useEffect(()=>{const check=()=>{const keys=Object.keys(localStorage).filter(k=>k.startsWith("quote_approved_"));keys.forEach(k=>{const dn=k.replace("quote_approved_","");if(dn){setDocStatus(dn,"approved");localStorage.removeItem(k);notify("Quote "+dn+" approved by customer!")}})};check();const iv=setInterval(check,3000);return()=>clearInterval(iv)},[]);
   // Invoice PO selections - persist via docStatuses
@@ -2861,6 +3014,7 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
   const [emailSubject,setEmailSubject]=useState("");
   const [emailSending,setEmailSending]=useState(false);
   const [invPOSelect,setInvPOSelect]=useState({});
+
 
   const sendEmail = async () => {
     if(!emailTo||!emailSubject){notify("Enter recipient and subject","error");return}
@@ -2906,12 +3060,15 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
     setEmailSending(false);
   };
 
+
   // Stable doc numbers -- same job+vendor always = same docNum, so statuses persist when you navigate away and back
   const stableNum = (prefix, a, b) => prefix + (a||'').replace(/[^A-Z0-9]/gi,'').slice(-4).toUpperCase() + '-' + (b||'').replace(/[^A-Z0-9]/gi,'').slice(-4).toUpperCase();
+
 
   const genPOs=job=>{const items=getJobItems(job.id);const groups={};items.forEach(i=>{const key=(i.vendor||'')+'||'+(i.shipTo||'');if(!groups[key])groups[key]={vid:i.vendor||'',shipTo:i.shipTo||'',items:[]};groups[key].items.push(i)});return Object.values(groups).map(g=>{const sk=shipKey(g.shipTo);const docNum=sk?stableNum('PO-',job.id,g.vid)+'-S'+sk:stableNum('PO-',job.id,g.vid);return {vendor:vendors.find(v=>v.id===g.vid),items:g.items.map(i=>({...i,displayQty:i.qtyOrdered,displayPrice:i.unitCost})),total:g.items.reduce((s,i)=>s+i.unitCost*i.qtyOrdered,0),job,docNum,shipTo:g.shipTo}})};
   const genInvoice=(job,full)=>{const allItems=getJobItems(job.id);const items=full?allItems.filter(i=>i.qtyOrdered>0):allItems.filter(i=>i.qtyReceived>i.qtyInvoiced);const isPartial=!full&&allItems.some(i=>i.qtyOrdered>i.qtyReceived);const jobPONums=genPOs(job).map(po=>po.docNum);return {customer:customers.find(c=>c.id===job.customer),items:items.map(i=>({...i,displayQty:full?i.qtyOrdered:(i.qtyReceived-i.qtyInvoiced),displayPrice:i.unitPrice})),total:items.reduce((s,i)=>s+i.unitPrice*(full?i.qtyOrdered:(i.qtyReceived-i.qtyInvoiced)),0),job,docNum:stableNum('INV-',job.id,job.customer),isPartial,isFull:!!full,poNumbers:jobPONums}};
   const genQuote=job=>{const items=getJobItems(job.id);const customer=customers.find(c=>c.id===job.customer);const qvc=((job.docStatuses||{}).__qcv||{});const hc={netCost:true,netTotal:true,...qvc};return {customer,items:items.map(i=>({...i,displayQty:i.qtyOrdered,displayPrice:i.unitPrice})),total:items.reduce((s,i)=>s+(i.priceExtended&&i.priceExtended>0?i.priceExtended:(i.unitPrice||0)*i.qtyOrdered),0),job,docNum:stableNum('QT-',job.id,job.customer),projectNum:projectNum(job.id),hiddenCols:hc}};
+
 
   // Build the document HTML -- shared by handleExportPDF and sendEmail so they always look identical
   // When forEmail=true, use hosted logo URL instead of base64 (Gmail and other email clients strip inline base64 images)
@@ -2956,15 +3113,19 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
     return {html,docTitle,job};
   };
 
+
   const handleExportPDF=(doc)=>{
     const {html,docTitle,job}=buildDocHtml(doc);
     triggerPrint(docTitle+" - "+(doc.data.docNum||job.name||""),html);
     if(doc.data.docNum && !docStatuses[doc.data.docNum]) setDocStatus(doc.data.docNum,'drafted');
   };
 
+
 ;
 
+
   const StatusBadge=({docNum})=>{const s=docStatuses[docNum];if(!s)return <Badge label="new" color="#525252"/>;if(s==="drafted")return <Badge label="drafted" color="#fbbf24"/>;if(s==="sent")return <Badge label="sent" color="#34d399"/>;if(s==="approved")return <Badge label="approved" color="#a78bfa"/>;return <Badge label={s} color="#525252"/>};
+
 
   // Document stats
   const totalQuotes=jobs.length;
@@ -2972,8 +3133,10 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
   const pendingInvJobs=jobs.filter(j=>getJobItems(j.id).some(i=>i.qtyReceived>i.qtyInvoiced));
   const fullyInvoicedJobs=jobs.filter(j=>{const items=getJobItems(j.id);return items.length>0&&items.every(i=>i.qtyInvoiced>=i.qtyOrdered)});
 
+
   return <div style={{animation:"fadeUp 0.4s"}}><Header title="Documents" sub="Quotes, Purchase Orders, Invoices"/>
     <div style={{display:"flex",gap:0,alignItems:"center",marginBottom:16,padding:"10px 16px",background:"#111111",borderRadius:8,fontSize:12,overflowX:"auto",WebkitOverflowScrolling:"touch",color:"#a3a3a3"}}><span style={{color:"#2dd4bf",fontWeight:600}}>Workflow:</span><span style={{margin:"0 8px"}}>Quote</span><span style={{color:"#8a8a8a"}}>&rarr;</span><span style={{margin:"0 8px",color:"#2dd4bf"}}>Approve/Send</span><span style={{color:"#8a8a8a"}}>&rarr;</span><span style={{margin:"0 8px"}}>Purchase Orders</span><span style={{color:"#8a8a8a"}}>&rarr;</span><span style={{margin:"0 8px"}}>Draft/Send</span><span style={{color:"#8a8a8a"}}>&rarr;</span><span style={{margin:"0 8px"}}>Invoices</span><span style={{color:"#8a8a8a"}}>&rarr;</span><span style={{margin:"0 8px",color:"#34d399"}}>Mark Paid</span></div>
+
 
     <div className="doc-tabs" style={{display:"flex",gap:0,marginBottom:20,background:"#111111",borderRadius:12,padding:3,overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
       {[["quotes","Quotes",totalQuotes,"#2dd4bf"],["pos","Purchase Orders",totalPOs,"#a78bfa"],["bills","Vendor Bills",totalPOs,"#f97316"],["invoices","Invoices",pendingInvJobs.length+" pending","#fbbf24"],["payments","Payments",jobs.filter(j=>j.paymentStatus!=="paid").length+" open","#34d399"]].map(([id,label,count,color])=>
@@ -2984,9 +3147,12 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
       )}
     </div>
 
+
     {tab==="quotes"&&<div>{jobs.map(job=>{const q=genQuote(job);const customer=customers.find(c=>c.id===job.customer);return <Card key={job.id} style={{marginBottom:10,padding:14}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}><div style={{flex:1,minWidth:180}}><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4,flexWrap:"wrap"}}><span style={{fontSize:14,fontWeight:700,color:"#e5e5e5"}}>{job.name}</span><Badge label={job.phase} color={statusColor(job.phase)}/></div><div style={{fontSize:12,color:"#a3a3a3"}}>{customer?.name} - <span style={{fontFamily:"'JetBrains Mono',monospace",color:"#2dd4bf"}}>{q.projectNum}</span> - {q.items.length} items - {fmt(q.total)}</div></div><div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}><StatusBadge docNum={q.docNum}/>{docStatuses[q.docNum]==="approved"&&<span style={{fontSize:11,color:"#34d399",padding:"2px 8px",background:"#34d39910",borderRadius:6}}>POs unlocked</span>}<Btn style={{fontSize:12,padding:"6px 12px"}} onClick={()=>{setPreviewDoc({type:"quote",data:q,job});setTab("preview")}}><I n="file" s={12}/> Quote</Btn></div></div></Card>})}</div>}
 
+
     {tab==="pos"&&<div>{jobs.map(job=>{const pos=genPOs(job);if(pos.length===0)return null;const quoteDocNum=stableNum('QT-',job.id,job.customer);const quoteStatus=docStatuses[quoteDocNum];const quoteApproved=quoteStatus==="approved"||quoteStatus==="sent";return <Card key={job.id} style={{marginBottom:12,opacity:quoteApproved?1:0.6}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}><div><span style={{fontSize:14,fontWeight:700,color:"#e5e5e5"}}><span style={{fontFamily:"'JetBrains Mono',monospace",color:"#525252",fontSize:11,marginRight:6}}>{projectNum(job.id)}</span>{job.name}</span><span style={{fontSize:12,color:"#a3a3a3",marginLeft:8}}>{pos.length} vendor POs - {fmt(pos.reduce((s,p)=>s+p.total,0))}</span>{!quoteApproved&&<span style={{fontSize:12,color:"#fbbf24",marginLeft:8}}>Quote must be approved or sent first</span>}</div></div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:10}}>{pos.map((po,i)=><div key={i} onClick={()=>{if(!quoteApproved){notify("Approve or send the quote for this job before creating POs","error");return}setPreviewDoc({type:"po",data:po,job});setTab("preview")}} style={{padding:14,background:"#1a1a1a",borderRadius:8,border:"1px solid #222222",cursor:"pointer",transition:"border 0.15s"}} onMouseEnter={e=>e.currentTarget.style.borderColor="#2dd4bf44"} onMouseLeave={e=>e.currentTarget.style.borderColor="rgba(255,255,255,0.04)"}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}><span style={{fontSize:13,fontWeight:600,color:"#d4d4d4"}}>{po.vendor?.name}</span><StatusBadge docNum={po.docNum}/></div><div style={{fontSize:12,color:"#a3a3a3"}}>{po.items.length} items</div><div style={{fontSize:16,fontWeight:700,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace",marginTop:4}}>{fmt(po.total)}</div></div>)}</div></Card>})}</div>}
+
 
     {tab==="bills"&&(()=>{
       // Build vendor bills from PO data. Use genPOs so each (vendor, shipTo)
@@ -3127,6 +3293,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
       };
       const saveBillDetail=(bill)=>{const existing=typeof docStatuses[bill.billDocNum]==='object'?docStatuses[bill.billDocNum]:{};setDocStatus(bill.billDocNum,{...existing,vendorInvNum:billInvNum,checkNum:billCheckNum,payDate:billPayDate,memo:billMemo,paid:existing.status==='paid'||!!billPayDate});notify('Bill updated: '+bill.vendorName);setBillDetail(null)};
 
+
       // Detail view for a single bill
       if(billDetail){const bill=billDetail;const pos=genPOs?genPOs(bill.job):[];const thisPO=pos.find(p=>p.docNum===bill.poDocNum);
         const billData=typeof docStatuses[bill.billDocNum]==='object'?docStatuses[bill.billDocNum]:{};
@@ -3201,6 +3368,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
   background-color:#fcfcfa}
 .check-section::before{content:'';position:absolute;inset:0;border:3px solid #4a7a4a;border-radius:2px;pointer-events:none}
 
+
 .check-watermark{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:72px;font-weight:900;color:rgba(100,140,100,0.04);letter-spacing:20px;white-space:nowrap;pointer-events:none;font-family:serif}
 .check-security-banner{position:absolute;top:0;left:0;right:0;background:linear-gradient(90deg,#3a6a3a,#5a8a5a,#3a6a3a);color:#d4e8d4;text-align:center;font-size:7px;letter-spacing:1.5px;padding:2px 0;font-weight:600;text-transform:uppercase}
 .check-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;margin-top:10px;position:relative;z-index:1}
@@ -3240,6 +3408,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
 @media print{body{width:8.5in;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}.check-section,.stub-section{page-break-inside:avoid}}
 </style></head><body>
 
+
 <!-- CHECK (top third) -->
 <div class="check-section">
   <div class="check-security-banner">CASH ONLY IF ALL SECURITY FEATURES ARE PRESENT &bull; ORIGINAL DOCUMENT HAS COLORED BACKGROUND &bull; VOID IF COPIED</div>
@@ -3267,6 +3436,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
   ${micrHtml}
 </div>
 
+
 <!-- STUB 1 (middle third -- company copy) -->
 <div class="stub-section">
   <div class="stub-header">
@@ -3285,6 +3455,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
   </table>
   <div class="stub-footer"><div class="stub-bank">Cornerstone Bank Ch</div><div class="stub-amount">${amtFmt}</div></div>
 </div>
+
 
 <!-- STUB 2 (bottom third -- payment record) -->
 <div class="stub-section" style="border-bottom:none">
@@ -3305,6 +3476,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
   </table>
   <div class="stub-footer"><div class="stub-bank">Cornerstone Bank Ch</div><div class="stub-amount">${amtFmt}</div></div>
 </div>
+
 
 </body></html>`;
           const w=window.open('','_blank');
@@ -3342,6 +3514,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
             </Card>
           </div>
 
+
           <Card style={{padding:16,marginBottom:16}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}>
               <div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>Bill Status</div>
@@ -3350,6 +3523,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
             {isVoid&&<div style={{padding:"8px 12px",background:"#52525210",border:"1px solid #52525225",borderRadius:6,marginBottom:8,fontSize:12,color:"#737373"}}>This bill has been voided and will not count toward outstanding payables.</div>}
             <div style={{marginTop:12,padding:"12px 16px",background:billData.isCredit?"#34d39910":"#111",border:"1px solid "+(billData.isCredit?"#34d39930":"#222"),borderRadius:8,cursor:"pointer",transition:"all 0.15s"}} onClick={()=>{const existing=typeof docStatuses[bill.billDocNum]==='object'?docStatuses[bill.billDocNum]:{};const newVal=!existing.isCredit;setDocStatus(bill.billDocNum,{...existing,isCredit:newVal});notify(newVal?'Marked as vendor credit -- reduces balance':'Marked as standard bill')}}><div style={{display:"flex",alignItems:"center",gap:12}}><div style={{width:24,height:24,borderRadius:6,border:"2px solid "+(billData.isCredit?"#34d399":"#525252"),background:billData.isCredit?"#34d399":"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all 0.15s"}}>{billData.isCredit&&<span style={{color:"#000",fontSize:16,fontWeight:800}}>&#10003;</span>}</div><div><div style={{fontSize:14,fontWeight:600,color:billData.isCredit?"#34d399":"#e5e5e5"}}>Vendor Credit</div><div style={{fontSize:12,color:"#e5e5e5",marginTop:2}}>Check this if this is a credit from the vendor. Credits reduce the total balance owed instead of adding to it.</div></div></div></div>
           </Card>
+
 
           <Card style={{padding:16,marginBottom:16}}>
             <div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:12,fontFamily:"'JetBrains Mono',monospace"}}>Payment Details</div>
@@ -3443,6 +3617,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
           </Card>
         </div>}
 
+
       return <div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12,marginBottom:16}} className="resp-grid-4">
           <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>TOTAL OWED</div><div style={{fontSize:22,fontWeight:800,color:"#f97316",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalOwed)}</div><div style={{fontSize:11,color:"#a3a3a3",marginTop:4}}>{unpaidBills.length} open bill{unpaidBills.length!==1?'s':''}</div></Card>
@@ -3481,13 +3656,16 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
         </Card>}
       </div>})()}
 
+
     {tab==="invoices"&&<><div style={{marginBottom:12,padding:"12px 16px",background:"#111111",borderRadius:8,border:"1px solid #222222"}}><div style={{fontSize:13,fontWeight:600,color:"#2dd4bf",marginBottom:4}}>How Partial Invoicing Works</div><div style={{fontSize:12,color:"#c4c4c4"}}>Invoices are auto-generated from received quantities. If 200 units were ordered, 120 received, and 80 already invoiced, the system drafts an invoice for the remaining 40 units. Each invoice only includes items with uninvoiced received quantities.</div></div>
         {(()=>{const overdueJobs2=jobs.filter(j=>{if(j.paymentStatus==="paid")return false;const items2=getJobItems(j.id);const hasInvoiced=items2.some(i=>i.qtyInvoiced>0);if(!hasInvoiced)return false;const terms2=j.terms||"Net 30";const days=terms2.includes("15")?15:terms2.includes("Receipt")?0:30;const created=new Date(j.createdDate);const due=new Date(created);due.setDate(due.getDate()+days);return new Date()>due});return overdueJobs2.length>0?<Card style={{marginBottom:12,border:"1px solid #f8717130"}}><div style={{fontSize:14,fontWeight:700,color:"#f87171",marginBottom:12,display:"flex",alignItems:"center",gap:8}}><I n="alert" s={16}/> Payment Reminders ({overdueJobs2.length} overdue)</div>{overdueJobs2.map(job=>{const cust=customers.find(c=>c.id===job.customer);const f2=getJobFinancials(job.id);const invoicedAmt=getJobItems(job.id).reduce((s,i)=>s+i.unitPrice*i.qtyInvoiced,0);return <div key={job.id} style={{padding:"10px 12px",background:"#f8717108",borderRadius:8,marginBottom:8,border:"1px solid #f8717115"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}><div><span style={{fontSize:13,fontWeight:600,color:"#e5e5e5"}}><span style={{fontFamily:"'JetBrains Mono',monospace",color:"#525252",fontSize:10,marginRight:5}}>{projectNum(job.id)}</span>{job.name}</span><span style={{fontSize:12,color:"#a3a3a3",marginLeft:8}}>{cust?.name}</span></div><span style={{fontSize:14,fontWeight:700,color:"#f87171",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(invoicedAmt)}</span></div><div style={{display:"flex",gap:6,flexWrap:"wrap"}}><Btn v="danger" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>{const email=cust?.email||"";const subject="Payment Reminder - "+job.name+" - Midwest Educational Furnishings";const body="Dear "+(cust?.contact||cust?.name||"Customer")+",\n\nThis is a friendly reminder that payment of "+fmt(invoicedAmt)+" for "+job.name+" is now past due.\n\nTerms: "+(job.terms||"Net 30")+"\n\nPlease remit payment at your earliest convenience.\n\nBlessings,\nMidwest Educational Furnishings\n(847) 847-1865";setEmailTo(email);setEmailSubject(subject);setEmailBody(body);setEmailModal({type:"reminder",job})}}>Send External Reminder</Btn><Btn v="ghost" style={{fontSize:11,padding:"4px 10px",color:"#fbbf24"}} onClick={()=>{const rep=reps.find(r=>r.id===job.salesRep);notify("REMINDER: Payment overdue for "+fmt(invoicedAmt)+" - "+(cust?.name||"")+" - notified internally");notify("Internal reminder logged for "+job.name)}}>Log Internal Reminder</Btn><span style={{fontSize:11,color:"#a3a3a3",padding:"4px 0"}}>Terms: {job.terms||"Net 30"}</span></div></div>})}</Card>:null})()}<div>{[...jobs].sort((a,b)=>{const aHas=getJobItems(a.id).some(i=>i.qtyReceived>i.qtyInvoiced)?0:1;const bHas=getJobItems(b.id).some(i=>i.qtyReceived>i.qtyInvoiced)?0:1;return aHas-bHas}).map(job=>{const inv=genInvoice(job);const items=getJobItems(job.id);const invoicedTotal=items.reduce((s,i)=>s+i.unitPrice*i.qtyInvoiced,0);const fullTotal=items.reduce((s,i)=>s+i.unitPrice*i.qtyOrdered,0);const isComplete=items.length>0&&items.every(i=>i.qtyInvoiced>=i.qtyOrdered);const hasPending=inv.items.length>0;const customer=customers.find(c=>c.id===job.customer);return <Card key={job.id} style={{marginBottom:12,opacity:isComplete?0.65:1,border:hasPending?"1px solid #d9770630":"1px solid #222222"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}><div style={{flex:1}}><div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}><span style={{fontSize:14,fontWeight:700,color:"#e5e5e5"}}><span style={{fontFamily:"'JetBrains Mono',monospace",color:"#525252",fontSize:11,marginRight:6}}>{projectNum(job.id)}</span>{job.name}</span>{isComplete?<Badge label="fully invoiced" color="#34d399"/>:hasPending?<Badge label="partial ready" color="#fbbf24"/>:<Badge label="awaiting delivery" color="#525252"/>}<StatusBadge docNum={inv.docNum}/></div><div style={{fontSize:12,color:"#a3a3a3"}}>{customer?.name} - {fmt(invoicedTotal)} of {fmt(fullTotal)} invoiced</div></div><div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>{(()=>{const jobPOs=genPOs(job);const anyPODrafted=jobPOs.some(po=>docStatuses[po.docNum]&&docStatuses[po.docNum]!=="new");const fullInv=genInvoice(job,true);const allReceived=items.length>0&&items.every(i=>i.qtyReceived>=i.qtyOrdered);return <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{hasPending&&anyPODrafted&&<Btn onClick={()=>{setIsProforma(false);setIsCreditMemo(false);setPreviewDoc({type:"invoice",data:inv,job});setTab("preview")}}><I n="receipt" s={14}/> {inv.isPartial?"Partial":"Full"} Invoice ({fmt(inv.total)})</Btn>}{hasPending&&anyPODrafted&&<Btn v="ghost" style={{fontSize:11,color:"#a78bfa",border:"1px solid #a78bfa30"}} onClick={()=>{setIsProforma(true);setIsCreditMemo(false);setPreviewDoc({type:"invoice",data:inv,job});setTab("preview")}}>ProForma</Btn>}{hasPending&&anyPODrafted&&<Btn v="ghost" style={{fontSize:11,color:"#f87171",border:"1px solid #f8717130"}} onClick={()=>{setIsCreditMemo(true);setIsProforma(false);setPreviewDoc({type:"invoice",data:inv,job});setTab("preview")}}>Credit Memo</Btn>}{hasPending&&!anyPODrafted&&<span style={{fontSize:12,color:"#fbbf24",padding:"6px 10px"}}>Draft POs first</span>}{!hasPending&&!isComplete&&allReceived&&<Btn v="ghost" style={{fontSize:12}} onClick={()=>{setPreviewDoc({type:"invoice",data:fullInv,job});setTab("preview")}}>Full Invoice ({fmt(fullInv.total)})</Btn>}{isComplete&&<Badge label="fully invoiced" color="#34d399"/>}</div>})()}{job.paymentStatus!=="paid"&&<Btn v="ghost" style={{fontSize:11}} onClick={()=>{updateJob(job.id,{paymentStatus:isComplete?"paid":"partial"});notify(isComplete?"Marked as paid":"Marked partial payment")}}>Mark {isComplete?"Paid":"Partial"}</Btn>}{job.paymentStatus==="paid"&&<Badge label="paid" color="#34d399"/>}</div></div><Bar value={invoicedTotal} max={fullTotal||1} color={isComplete?"#34d399":"#fbbf24"} height={4}/>{hasPending&&<div style={{marginTop:10,borderTop:"1px solid #222222",paddingTop:10}}><div style={{fontSize:12,fontWeight:600,color:"#fbbf24",marginBottom:6}}>Ready to invoice ({inv.items.length} items - {fmt(inv.total)}):</div>{inv.items.map((item,idx)=><div key={idx} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",fontSize:12,color:"#c4c4c4"}}><span style={{flex:1}}>{item.description}</span><span style={{display:"flex",gap:12,fontFamily:"'JetBrains Mono',monospace",fontSize:10}}><span>ordered: {fmtN(item.qtyOrdered)}</span><span>received: {fmtN(item.qtyReceived)}</span><span>invoiced: {fmtN(item.qtyInvoiced)}</span><span style={{color:"#fbbf24",fontWeight:600}}>this invoice: {fmtN(item.displayQty)} x {fmt(item.displayPrice)} = {fmt(item.displayQty*item.displayPrice)}</span></span></div>)}</div>}</Card>})}</div></>}
+
 
     {tab==="payments"&&(()=>{
       // Get all payment records from docStatuses
       const paymentRecords=Object.entries(docStatuses).filter(([k,v])=>k.startsWith('PAY-')&&v&&typeof v==='object'&&v.jobId).map(([k,v])=>({id:k,...v})).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
       const totalReceived=paymentRecords.reduce((s,p)=>s+(p.amount||0),0);
+
 
       const unpaidJobs=jobs.filter(j=>j.paymentStatus!=='paid');
       const selectedJob=payJob?jobs.find(j=>j.id===payJob):null;
@@ -3497,9 +3675,11 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
       const invoicedAmt=selItems.reduce((s,i)=>s+(i.unitPrice||0)*i.qtyInvoiced,0);
       const outstandingAmt=selFinancials.totalRevenue-(selectedJob?.paidAmount||0);
 
+
       // Outstanding invoices for selected job
       const invDocNum=selectedJob?stableNum('INV-',selectedJob.id,selectedJob.customer):'';
       const outstanding=selectedJob?[{description:'Invoice '+invDocNum+' - '+selectedJob.name,dueDate:selectedJob.dueDate||'',amount:invoicedAmt||selFinancials.totalRevenue,jobId:selectedJob.id}]:[];
+
 
       const handleRecord=()=>{
         if(!payJob||!payAmt)return;
@@ -3517,6 +3697,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
         notify('Payment of '+fmt(amt)+' recorded for '+selectedJob?.name);
         setPayAmt('');setPayRef('');setPayMemo('');setPayJob('');setPaySelected({});setPayDocUrl('');setPayDocName('');
       };
+
 
       const syncStripePayments=async()=>{
         setStripeLoading(true);
@@ -3562,6 +3743,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
         setStripeLoading(false);
       };
 
+
       return <div style={{display:"flex",flexDirection:"column",gap:16}}>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12}} className="resp-grid-4">
           <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>TOTAL RECEIVED</div><div style={{fontSize:22,fontWeight:800,color:"#34d399",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalReceived)}</div><div style={{fontSize:11,color:"#a3a3a3",marginTop:4}}>{paymentRecords.length} payment{paymentRecords.length!==1?'s':''}</div></Card>
@@ -3569,6 +3751,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
           <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>PAID JOBS</div><div style={{fontSize:22,fontWeight:800,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{jobs.filter(j=>j.paymentStatus==='paid').length}</div><div style={{fontSize:11,color:"#a3a3a3",marginTop:4}}>of {jobs.length} total</div></Card>
           <Card style={{padding:14,textAlign:"center",cursor:"pointer",border:"1px solid #a78bfa20"}} hover onClick={syncStripePayments}><div style={{fontSize:10,color:"#a78bfa",fontWeight:600,letterSpacing:2,marginBottom:4}}>STRIPE SYNC</div><div style={{fontSize:14,fontWeight:800,color:stripeLoading?"#a78bfa":"#f0f0f0"}}>{stripeLoading?"Checking...":"Sync Payments"}</div><div style={{fontSize:11,color:"#a3a3a3",marginTop:4}}>check for online payments</div></Card>
         </div>
+
 
         <Card style={{padding:20}}>
           <div style={{fontSize:18,fontWeight:800,color:"#34d399",marginBottom:16,fontFamily:"'JetBrains Mono',monospace"}}>Receive Payment</div>
@@ -3592,12 +3775,14 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
             </Card>
           </div>
 
+
           {selectedJob&&<div style={{marginTop:8}}>
             <div style={{fontSize:14,fontWeight:700,color:"#e5e5e5",marginBottom:8}}>Outstanding Transactions</div>
             <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><thead><tr style={{borderBottom:"2px solid #222"}}>{["","Description","Due Date","Original Amount","Payment"].map((h,i)=><th key={i} style={{padding:"8px 6px",textAlign:i>=3?"right":i===0?"center":"left",color:"#737373",fontSize:11,fontWeight:600}}>{h}</th>)}</tr></thead><tbody>
               {outstanding.map((inv,idx)=><tr key={idx} style={{borderBottom:"1px solid #111"}}><td style={{padding:"8px 6px",textAlign:"center",width:36}}><input type="checkbox" checked={!!paySelected[idx]} onChange={()=>{const next={...paySelected,[idx]:!paySelected[idx]};setPaySelected(next);if(next[idx]&&!payAmt)setPayAmt(String(inv.amount.toFixed(2)))}} style={{accentColor:"#2dd4bf",width:16,height:16,cursor:"pointer"}}/></td><td style={{padding:"8px 6px"}}><span style={{color:"#2dd4bf"}}>{inv.description}</span></td><td style={{padding:"8px 6px",color:"#a3a3a3"}}>{inv.dueDate||'Not set'}</td><td style={{padding:"8px 6px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(inv.amount)}</td><td style={{padding:"8px 6px",textAlign:"right",width:120}}><input type="number" value={paySelected[idx]?payAmt:''} onChange={e=>{setPayAmt(e.target.value);setPaySelected({...paySelected,[idx]:true})}} placeholder="0.00" style={{...inputStyle,width:100,textAlign:"right",fontSize:12,fontFamily:"'JetBrains Mono',monospace",padding:"4px 8px"}}/></td></tr>)}
             </tbody></table></div>
           </div>}
+
 
           <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:16}}>
             <input type="file" id="paymentDocUpload" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.tiff" style={{display:"none"}} onChange={async e=>{
@@ -3643,6 +3828,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
           </div>
         </Card>
 
+
         {paymentRecords.length>0&&<Card style={{padding:20}}>
           <div style={{fontSize:18,fontWeight:800,color:"#f0f0f0",marginBottom:16,fontFamily:"'JetBrains Mono',monospace"}}>Payment History</div>
           <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:700}}><thead><tr style={{borderBottom:"2px solid #222"}}>{["Date","Customer / Job","Reference","Method","Deposit To","Doc","Amount",""].map((h,i)=><th key={i} style={{padding:"8px 6px",textAlign:i>=6?"right":"left",color:"#737373",fontSize:11,fontWeight:600}}>{h}</th>)}</tr></thead><tbody>
@@ -3651,6 +3837,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
           </tbody></table></div>
         </Card>}
       </div>})()}
+
 
     {tab==="preview"&&previewDoc&&<Card style={{border:"1px solid #2dd4bf30",overflow:"hidden",maxWidth:"100%"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:8}}><div style={{display:"flex",alignItems:"center",gap:12}}><div style={{fontSize:16,fontWeight:700,color:"#2dd4bf"}}>{previewDoc.type==="quote"?("PROJECT QUOTE"+(previewDoc.data.projectNum?" #"+previewDoc.data.projectNum:"")):previewDoc.type==="po"?"PURCHASE ORDER":previewDoc.type==="commission"?"COMMISSION STATEMENT":previewDoc.data?.isPartial?"PARTIAL INVOICE":isCreditMemo?"CREDIT MEMO":isProforma?"PROFORMA INVOICE":"INVOICE"}</div><StatusBadge docNum={previewDoc.data.docNum}/></div><div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{previewDoc.data.docNum&&<div style={{display:"flex",gap:4}}>{["drafted","sent","approved"].map(s=><button key={s} onClick={()=>setDocStatus(previewDoc.data.docNum,s)} style={{padding:"4px 10px",borderRadius:6,border:"1px solid "+(docStatuses[previewDoc.data.docNum]===s?"#2dd4bf":"#444"),background:docStatuses[previewDoc.data.docNum]===s?"#2dd4bf20":"transparent",color:docStatuses[previewDoc.data.docNum]===s?"#2dd4bf":"#c4c4c4",fontSize:12,fontFamily:"inherit",cursor:"pointer",textTransform:"capitalize"}}>{s}</button>)}</div>}<Btn onClick={()=>handleExportPDF(previewDoc)}><I n="download" s={14}/> Export PDF</Btn>
       {previewDoc.data.docNum&&previewDoc.type!=="commission"&&<div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -3676,8 +3863,10 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
               setStripeLoading(false);
             }}>{stripeLoading?"Creating...":"Create Payment Link"}</Btn>}{(stripePayUrl||(previewDoc.type==="invoice"&&(previewDoc.job?.docStatuses||{})[previewDoc.data.docNum+"__stripe"]?.url))&&<a href={stripePayUrl||(previewDoc.job?.docStatuses||{})[previewDoc.data.docNum+"__stripe"]?.url} target="_blank" rel="noopener noreferrer" style={{fontSize:12,color:"#a78bfa",padding:"6px 12px",border:"1px solid #a78bfa30",borderRadius:8,textDecoration:"none",display:"flex",alignItems:"center",gap:6,background:"#a78bfa08",fontWeight:600,cursor:"pointer"}}><I n="send" s={12}/>Open Payment Link</a>}{(stripePayUrl||(previewDoc.type==="invoice"&&(previewDoc.job?.docStatuses||{})[previewDoc.data.docNum+"__stripe"]?.url))&&<Btn v="ghost" style={{fontSize:11,color:"#737373"}} onClick={()=>{navigator.clipboard.writeText(stripePayUrl||(previewDoc.job?.docStatuses||{})[previewDoc.data.docNum+"__stripe"]?.url||"").then(()=>notify("Link copied!")).catch(()=>{})}}>Copy Link</Btn>}</div></div>
 
+
       {/* Modern document preview */}
       {emailModal&&<div style={{background:"#1a1a1a",border:"1px solid #2dd4bf30",borderRadius:8,padding:20,marginBottom:16}}><div style={{fontSize:14,fontWeight:700,color:"#2dd4bf",marginBottom:12}}>Email Document</div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:12,marginBottom:12}}><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>From (your email)</label><input value={emailFrom} onChange={e=>setEmailFrom(e.target.value)} placeholder="lisa@mwfurnishings.com" style={inputStyle}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>To (recipient)</label><input value={emailTo} onChange={e=>setEmailTo(e.target.value)} placeholder="recipient@email.com" style={inputStyle}/></div></div><div style={{marginBottom:12}}><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Subject</label><input value={emailSubject} onChange={e=>setEmailSubject(e.target.value)} style={inputStyle}/></div><div style={{display:"flex",gap:8}}><Btn onClick={sendEmail} style={emailSending?{opacity:0.6,pointerEvents:"none"}:{}}>{emailSending?"Sending...":"Send Email"}</Btn><Btn v="secondary" onClick={()=>setEmailModal(null)}>Cancel</Btn></div></div>}
+
 
       {previewDoc.type==="invoice"&&previewDoc.data.poNumbers&&previewDoc.data.poNumbers.length>0&&<div style={{marginTop:12,marginBottom:12,padding:"12px 16px",background:"#111",borderRadius:8,border:"1px solid rgba(255,255,255,0.06)"}}>
         <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
@@ -3693,6 +3882,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
           <div style={{textAlign:"right"}}><div style={{fontSize:24,fontWeight:300,color:"#888",letterSpacing:1}}>{previewDoc.type==="quote"?"Quote":previewDoc.type==="po"?"Purchase Order":previewDoc.type==="commission"?"Commission Statement":previewDoc.data?.isPartial?"Partial Invoice":"Invoice"}</div><div style={{fontSize:14,fontWeight:600,color:"#111",marginTop:4}}>{previewDoc.data.docNum||""}</div><div style={{fontSize:12,color:"#888",marginTop:8}}>Date: {new Date().toLocaleDateString()}</div></div>
         </div>
 
+
         {/* PO-specific layout */}
         {previewDoc.type==="po"&&<>
           <div style={{display:"flex",gap:40,marginBottom:20}}>
@@ -3702,6 +3892,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
           </div>
           {previewDoc.job.shipVia&&<div style={{marginBottom:16,padding:"10px 14px",background:"#fafafa",borderRadius:6}}><div style={{fontSize:10,fontWeight:700,color:"#888",textTransform:"uppercase",letterSpacing:1.5,marginBottom:4}}>SHIP VIA</div><div style={{fontSize:13}}>{previewDoc.job.shipVia}</div></div>}
         </>}
+
 
         {/* Invoice-specific layout */}
         {previewDoc.type==="invoice"&&<>
@@ -3713,6 +3904,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
           {previewDoc.job.poNumber&&<div style={{marginBottom:16}}><div style={{fontSize:10,fontWeight:700,color:"#888",textTransform:"uppercase",letterSpacing:1.5,marginBottom:4}}>P.O. NUMBER</div><div style={{fontSize:14,fontWeight:600}}>{previewDoc.job.poNumber}</div></div>}
         </>}
 
+
         {/* Quote-specific layout */}
         {previewDoc.type==="quote"&&<>
           <div style={{textAlign:"center",marginBottom:16}}><div style={{fontSize:12,color:"#888"}}>Designing Spaces | Building Futures | WBE Certified Enterprise</div></div>
@@ -3723,6 +3915,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
           </div>
         </>}
 
+
         {/* Commission layout */}
         {previewDoc.type==="commission"&&<><div style={{display:"flex",gap:40,marginBottom:20}}>
           <div style={{flex:1}}><div style={{fontSize:10,fontWeight:700,color:"#888",textTransform:"uppercase",letterSpacing:1.5,marginBottom:6}}>SALES REP</div><div style={{fontSize:16,fontWeight:700}}>{previewDoc.data.rep?.name||""}</div><div style={{fontSize:12,color:"#888"}}>{previewDoc.data.rep?.territory||""}</div><div style={{fontSize:12,color:"#888"}}>Rate: {previewDoc.data.rep?.commissionRate?((previewDoc.data.rep.commissionRate*100).toFixed(1)):0}%</div></div>
@@ -3730,7 +3923,9 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
         </div>
         {(()=>{const rep2=previewDoc.data.rep||{};const cJobs=jobs.filter(j=>j.salesRep===rep2.id);const pRev=cJobs.filter(j=>j.paymentStatus==="paid").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const pComm=pRev*(rep2.commissionRate||0);const uComm=(previewDoc.data.total||0)-pComm;return <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}><div style={{flex:"1 1 80px",padding:10,background:"#fafafa",borderRadius:8,textAlign:"center",minWidth:80}}><div style={{fontSize:11,color:"#888",textTransform:"uppercase"}}>Earned</div><div style={{fontSize:"clamp(14px,3vw,18px)",fontWeight:700,color:"#059669"}}>{fmt(pComm)}</div></div><div style={{flex:"1 1 80px",padding:10,background:"#fafafa",borderRadius:8,textAlign:"center",minWidth:80}}><div style={{fontSize:11,color:"#888",textTransform:"uppercase"}}>Pending</div><div style={{fontSize:"clamp(14px,3vw,18px)",fontWeight:700,color:"#d97706"}}>{fmt(uComm)}</div></div><div style={{flex:"1 1 80px",padding:10,background:"#fafafa",borderRadius:8,textAlign:"center",minWidth:80}}><div style={{fontSize:11,color:"#888",textTransform:"uppercase"}}>Total</div><div style={{fontSize:"clamp(14px,3vw,18px)",fontWeight:700}}>{fmt(previewDoc.data.total)}</div></div></div>})()}</>}
 
+
         <div style={{height:1,background:"#e5e5e5",marginBottom:20}}/>
+
 
         {/* Line items table */}
         <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
@@ -3751,6 +3946,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
           <tfoot><tr><td colSpan={previewDoc.type==="quote"?visibleCols.length-1:previewDoc.type==="commission"?4:3} style={{padding:"12px 6px",textAlign:"right",fontWeight:600,fontSize:13,borderTop:"2px solid #e5e5e5"}}>TOTAL</td><td style={{padding:"12px 6px",textAlign:"right",fontWeight:700,fontSize:16,borderTop:"2px solid #e5e5e5",color:"#111"}}>{fmt(previewDoc.data.total)}</td></tr></tfoot>
         </table></div>
 
+
         {/* Footer */}
         {previewDoc.type==="quote"&&<div style={{marginTop:24,padding:16,background:"#fafafa",borderRadius:8,fontSize:12,color:"#888"}}>Quote valid for 30 days. Prices subject to manufacturer availability.</div>}
         {previewDoc.type==="invoice"&&<div style={{marginTop:24,fontSize:13,color:"#888",textAlign:"center"}}>Thank you for your business!</div>}
@@ -3760,6 +3956,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
   </div>;
 }
 
+
 // ===============================================================
 // COMMISSIONS -- Editable Reps + PDF Export
 // ===============================================================
@@ -3768,6 +3965,7 @@ function CommissionsPage({jobs,reps,customers,updateRep,addRep,deleteRep,getJobF
   const [editForm,setEditForm]=useState({});
   const [addingRep,setAddingRep]=useState(false);
   const [newRepForm,setNewRepForm]=useState({name:"",email:"",territory:"",commissionRate:0.05,tier:"Associate"});
+
 
   // Doc statuses: read from jobs[].docStatuses + DOC_STATUSES_GLOBAL SOP record + localStorage fallback.
   // Mirrors DocumentsPage's persistence model so commission status badges stay in sync across pages.
@@ -3786,13 +3984,17 @@ function CommissionsPage({jobs,reps,customers,updateRep,addRep,deleteRep,getJobF
     try{const fb=JSON.parse(localStorage.getItem("mw_doc_statuses_fallback")||"{}");fb[docNum]=status;localStorage.setItem("mw_doc_statuses_fallback",JSON.stringify(fb))}catch{}
   };
 
+
   const startEdit=rep=>{setEditingRep(rep.id);setEditForm({...rep})};
   const saveEdit=()=>{updateRep(editingRep,{name:editForm.name,email:editForm.email,territory:editForm.territory,commissionRate:parseFloat(editForm.commissionRate)||0,tier:editForm.tier});setEditingRep(null);notify("Sales rep updated -- commissions recalculated everywhere")};
   const handleAddRep=()=>{if(!newRepForm.name)return;addRep({...newRepForm,commissionRate:parseFloat(newRepForm.commissionRate)||0.05});setAddingRep(false);setNewRepForm({name:"",email:"",territory:"",commissionRate:0.05,tier:"Associate"});notify("Sales rep added")};
 
+
   return <div style={{animation:"fadeUp 0.4s"}}><Header title="Commission Engine" sub="Editable reps, customizable rates -- auto-calculated on every job" action={<Btn onClick={()=>setAddingRep(true)}><I n="plus" s={14}/> Add Sales Rep</Btn>}/>
 
+
     {addingRep&&<Card style={{marginBottom:20,border:"1px solid #05966930"}}><div style={{fontSize:14,fontWeight:700,marginBottom:12,color:"#34d399"}}>Add New Sales Rep</div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12,marginBottom:12}}>{[["name","Name"],["email","Email"],["territory","Territory"],["tier","Tier"]].map(([k,l])=><div key={k}><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>{l}</label>{k==="tier"?<select value={newRepForm[k]} onChange={e=>setNewRepForm({...newRepForm,[k]:e.target.value})} style={inputStyle}>{["Associate","Mid-Level","Senior"].map(t=><option key={t}>{t}</option>)}</select>:<input value={newRepForm[k]} onChange={e=>setNewRepForm({...newRepForm,[k]:e.target.value})} style={inputStyle}/>}</div>)}<div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Commission Rate (%)</label><input type="number" step="0.5" value={(newRepForm.commissionRate*100)} onChange={e=>setNewRepForm({...newRepForm,commissionRate:parseFloat(e.target.value)/100||0})} style={inputStyle}/></div></div><div style={{display:"flex",gap:8}}><Btn onClick={handleAddRep}>Add Rep</Btn><Btn v="secondary" onClick={()=>setAddingRep(false)}>Cancel</Btn></div></Card>}
+
 
     <div>{reps.filter(r=>!r.id.includes("SEED_FLAG")&&isSalesRep(r)&&r.commissionRate>0).map(rep=>{
       const rj=jobs.filter(j=>j.salesRep===rep.id);
@@ -3854,6 +4056,7 @@ function CommissionsPage({jobs,reps,customers,updateRep,addRep,deleteRep,getJobF
   </div>;
 }
 
+
 // ===============================================================
 // SALES PORTAL
 // ===============================================================
@@ -3867,6 +4070,7 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
   const [taskText,setTaskText]=useState("");
   const [taskDue,setTaskDue]=useState("");
   const [repDetail,setRepDetail]=useState(null);
+
 
   // Sales-role users can never enter Overview mode -- coerce 'overview' to their own rep id
   // in case state somehow gets out of sync (e.g. stale state, manual intervention).
@@ -3887,12 +4091,14 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
   const lostJobs=0;
   const winRate=rj.length>0?Math.round((rj.filter(j=>j.phase!=="Quoting").length/rj.length)*100):0;
 
+
   // CRM: Activities from audit trails
   const allActivities=rj.flatMap(j=>(j.auditTrail||[]).map(a=>({...a,jobName:(jobNum?.(j.id)||"")+" "+j.name,jobId:j.id}))).sort((a,b)=>new Date(b.time)-new Date(a.time)).slice(0,30);
   // CRM: Tasks from job notes (lines starting with "TASK:")
   const allTasks=rj.flatMap(j=>{const notes=(j.orderNotes||"").split("\n").filter(l=>l.startsWith("TASK:")).map(l=>{const assignMatch=l.match(/\[assign:([^\]]+)\]/);const dueMatch=l.match(/\[due:([^\]]+)\]/);return{text:l.replace("TASK:","").trim(),jobId:j.id,jobName:(jobNum?.(j.id)||"")+" "+j.name,done:l.includes("[DONE]"),inProgress:l.includes("[IP]"),assignees:assignMatch?assignMatch[1].split(","):[],due:dueMatch?dueMatch[1]:""}});return notes});
   // CRM: Notes from job notes (lines starting with "NOTE:")
   const allNotes=rj.flatMap(j=>{const notes=(j.orderNotes||"").split("\n").filter(l=>l.startsWith("NOTE:")).map(l=>({text:l.replace("NOTE:","").trim(),jobId:j.id,jobName:(jobNum?.(j.id)||"")+" "+j.name,time:l.match(/\d{1,2}\/\d{1,2}\/\d{4}/)?.[0]||""}));return notes}).reverse().slice(0,20);
+
 
   const addNote=(jobId)=>{if(!noteText.trim())return;const job=jobs.find(j=>j.id===jobId);if(!job)return;const stamp=new Date().toLocaleDateString();const line="NOTE: "+noteText.trim()+" ("+stamp+")";updateJob(jobId,{orderNotes:(job.orderNotes||"")+"\n"+line});setNoteText("");notify("Note added")};
   const [taskAssignees,setTaskAssignees]=useState([]);
@@ -3903,7 +4109,9 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
   const [editNoteContent,setEditNoteContent]=useState("");
   const addTask=(jobId,status)=>{if(!taskText.trim())return;const job=jobs.find(j=>j.id===jobId);if(!job)return;const assignStr=taskAssignees.length>0?" [assign:"+taskAssignees.join(",")+"]":"";const statusTag=status==="In Progress"?" [IP]":status==="Done"?" [DONE]":"";const line="TASK: "+taskText.trim()+(taskDue?" [due:"+taskDue+"]":"")+assignStr+statusTag;updateJob(jobId,{orderNotes:(job.orderNotes||"")+"\n"+line});setTaskText("");setTaskDue("");setTaskAssignees([]);setTaskStatus("To Do");setShowAddTask(false);notify("Task added")};
 
+
   const kpi=(label,value,color)=><div style={{textAlign:"center",padding:"14px 10px",background:"#0a0a0a",borderRadius:10,flex:"1 1 100px"}}><div style={{fontSize:22,fontWeight:800,color:color||"#f0f0f0",fontFamily:"'JetBrains Mono',monospace",letterSpacing:-1}}><AnimNum value={String(value)}/></div><div style={{fontSize:11,color:"#9a9a9a",marginTop:2}}>{label}</div></div>;
+
 
   return <div style={{animation:"fadeUp 0.4s"}}><Header title="Sales Portal" sub={isSalesRole?"Your pipeline, CRM, and activity":"Pipeline management, CRM, and team performance"}/>
     {/* Rep selector. Sales-role users see only their own tab. */}
@@ -3911,6 +4119,7 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
       {!isSalesRole&&<button onClick={()=>setActiveRep("overview")} style={{padding:"8px 16px",borderRadius:8,cursor:"pointer",background:isOverview?"#2dd4bf":"#111",color:isOverview?"#000":"#737373",fontSize:13,fontWeight:isOverview?600:400,fontFamily:"inherit",border:isOverview?"none":"1px solid rgba(255,255,255,0.06)",whiteSpace:"nowrap",flexShrink:0}}>Overview</button>}
       {reps.filter(r=>!r.id.includes("SEED_FLAG")&&isSalesRep(r)&&(!isSalesRole||r.id===userRepId)).map(r=><button key={r.id} onClick={()=>setActiveRep(r.id)} style={{padding:"8px 16px",borderRadius:8,cursor:"pointer",background:activeRep===r.id?"#2dd4bf":"#111",color:activeRep===r.id?"#000":"#737373",fontSize:13,fontWeight:activeRep===r.id?600:400,fontFamily:"inherit",border:activeRep===r.id?"none":"1px solid rgba(255,255,255,0.06)",whiteSpace:"nowrap",flexShrink:0}}>{r.name}</button>)}
     </div>
+
 
     {/* Hero stats */}
     <Card style={{marginBottom:20,background:"linear-gradient(135deg,rgba(45,212,191,0.03),rgba(167,139,250,0.03))",border:"1px solid rgba(45,212,191,0.08)"}}>
@@ -3926,12 +4135,14 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
       </div>
     </Card>
 
+
     {/* CRM Tabs. Sales-role users do not see the Team tab -- they only see their own work. */}
     <div className="doc-tabs" style={{display:"flex",gap:0,marginBottom:20,background:"#111",borderRadius:10,padding:3,overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
       {[["pipeline","Pipeline"],["activity","Activity Feed"],["tasks","Tasks"],["notes","Notes"],["team","Team"]].filter(([id])=>!isSalesRole||id!=="team").map(([id,label])=>
         <button key={id} onClick={()=>setCrmTab(id)} style={{padding:"10px 18px",borderRadius:8,border:"none",cursor:"pointer",background:crmTab===id?"#2dd4bf":"transparent",color:crmTab===id?"#000":"#737373",fontSize:13,fontWeight:crmTab===id?600:400,fontFamily:"inherit",whiteSpace:"nowrap",flexShrink:0}}>{label}</button>
       )}
     </div>
+
 
     {/* PIPELINE */}
     {crmTab==="pipeline"&&<>
@@ -3952,6 +4163,7 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
       </Card>
     </>}
 
+
     {/* ACTIVITY FEED */}
     {crmTab==="activity"&&<Card>
       <div style={{fontSize:15,fontWeight:700,color:"#f0f0f0",marginBottom:14}}>Activity Feed</div>
@@ -3965,11 +4177,14 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
       </div>)}
     </Card>}
 
+
     {/* TASKS */}
     {crmTab==="tasks"&&<TasksKanban jobs={rj} allJobs={jobs} reps={reps} updateJob={updateJob} notify={notify} inputStyle={inputStyle} customSops={customSops} addSop={addSop} deleteSop={deleteSop}/>}
 
+
     {/* NOTES */}
     {crmTab==="notes"&&<NotesView customSops={customSops} addSop={addSop} deleteSop={deleteSop} jobs={rj} reps={reps} notify={notify} triggerPrint={triggerPrint}/>}
+
 
     {/* TEAM. Hidden entirely from sales-role users -- defense in depth even though
         the Team tab button is filtered out for them above. */}
@@ -3985,6 +4200,7 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
         </div>
       </div>})}
     </Card>}
+
 
     {/* REP PROFILE PAGE. Hidden from sales-role users. */}
     {crmTab==="team"&&repDetail&&!isSalesRole&&(()=>{
@@ -4040,12 +4256,15 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
       </>
     })()}
 
+
     </div>;
 }
+
 
 // ===============================================================
 // MIDWEST BRAIN
 // ===============================================================
+
 
 // ===============================================================
 // CUSTOMER 360 - Full Customer Profile
@@ -4054,6 +4273,7 @@ function Customer360Page({jobs,lineItems,vendors,customers,reps,getJobFinancials
   const custId=window._viewCustId||customers[0]?.id;
   const cust=customers.find(c=>c.id===custId);
   if(!cust) return <div style={{animation:"fadeUp 0.4s"}}><Header title="Customer Profile" sub="Select a customer from the Directory"/><Card style={{textAlign:"center",padding:40}}><div style={{color:"#737373",fontSize:14}}>No customer selected. Go to Directory and click a customer name.</div></Card></div>;
+
 
   const custJobs=jobs.filter(j=>j.customer===custId);
   const totalSpend=custJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
@@ -4072,9 +4292,11 @@ function Customer360Page({jobs,lineItems,vendors,customers,reps,getJobFinancials
   const [editing,setEditing]=useState(false);
   const [editForm,setEditForm]=useState({...cust});
 
+
   const kpiStyle={textAlign:"center",padding:"18px 14px",background:"#0a0a0a",borderRadius:12,border:"1px solid rgba(255,255,255,0.04)"};
   const kpiVal=(v,c)=>({fontSize:28,fontWeight:800,color:c||"#f0f0f0",fontFamily:"'JetBrains Mono',monospace",letterSpacing:-1,lineHeight:1.1,marginBottom:4});
   const kpiLabel={fontSize:12,color:"#9a9a9a",fontWeight:500,letterSpacing:0.5};
+
 
   return <div style={{animation:"fadeUp 0.4s"}}>
     <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:20}}>
@@ -4082,6 +4304,7 @@ function Customer360Page({jobs,lineItems,vendors,customers,reps,getJobFinancials
       <span style={{color:"#525252",fontSize:14}}>/</span>
       <span style={{color:"#f0f0f0",fontSize:14,fontWeight:600}}>{cust.name}</span>
     </div>
+
 
     <Card style={{marginBottom:28,background:"linear-gradient(135deg,rgba(45,212,191,0.04),rgba(167,139,250,0.04))",border:"1px solid rgba(45,212,191,0.12)"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:16}}>
@@ -4093,6 +4316,7 @@ function Customer360Page({jobs,lineItems,vendors,customers,reps,getJobFinancials
         <Btn v="secondary" onClick={()=>{setEditing(!editing);setEditForm({...cust})}}><I n="edit" s={14}/> Edit</Btn>
       </div>
     </Card>
+
 
     {editing&&<Card style={{marginBottom:20,border:"1px solid #2dd4bf30"}}><div style={{fontSize:15,fontWeight:700,marginBottom:14,color:"#2dd4bf"}}>Edit Customer</div>
       <div className="resp-grid-4" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12,marginBottom:14}}>
@@ -4108,6 +4332,7 @@ function Customer360Page({jobs,lineItems,vendors,customers,reps,getJobFinancials
       <div style={{display:"flex",gap:8}}><Btn onClick={()=>{updateCustomer(custId,editForm);setEditing(false);notify("Customer updated")}}>Save</Btn><Btn v="secondary" onClick={()=>setEditing(false)}>Cancel</Btn></div>
     </Card>}
 
+
     <div className="resp-grid-4" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:14,marginBottom:28}}>
       <div style={kpiStyle}><div style={kpiVal(0,"#2dd4bf")}>{fmt(totalSpend)}</div><div style={kpiLabel}>Lifetime Spend</div></div>
       <div style={kpiStyle}><div style={kpiVal(0,"#a78bfa")}>{custJobs.length}</div><div style={kpiLabel}>Total Jobs</div></div>
@@ -4116,6 +4341,7 @@ function Customer360Page({jobs,lineItems,vendors,customers,reps,getJobFinancials
       <div style={kpiStyle}><div style={kpiVal(0,paymentScore>=80?"#34d399":paymentScore>=50?"#fbbf24":"#f87171")}>{paymentScore}%</div><div style={{...kpiLabel}}>{paidJobs.length} of {custJobs.filter(j=>j.phase!=="Quoting").length} paid</div></div>
       <div style={kpiStyle}><div style={kpiVal(0,"#e5e5e5")}>{totalItems}</div><div style={kpiLabel}>Line Items</div></div>
     </div>
+
 
     <div className="resp-grid-2" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(300px,1fr))",gap:20,marginBottom:28}}>
       <Card><div style={{fontSize:15,fontWeight:700,color:"#f0f0f0",marginBottom:14}}>Jobs ({custJobs.length})</div>
@@ -4152,6 +4378,7 @@ function Customer360Page({jobs,lineItems,vendors,customers,reps,getJobFinancials
       </Card>
     </div>
 
+
     {totalOrdered>0&&<Card style={{marginBottom:28}}>
       <div style={{fontSize:15,fontWeight:700,color:"#f0f0f0",marginBottom:16}}>Delivery Progress</div>
       <div className="resp-grid-3" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:16,marginBottom:20,textAlign:"center"}}>
@@ -4163,6 +4390,7 @@ function Customer360Page({jobs,lineItems,vendors,customers,reps,getJobFinancials
         <div style={{height:"100%",width:(totalReceived/totalOrdered*100)+"%",background:"linear-gradient(90deg,#2dd4bf,#34d399)",borderRadius:5,transition:"width 1.5s ease"}}/>
       </div>
     </Card>}
+
 
     <Card><div style={{fontSize:15,fontWeight:700,color:"#f0f0f0",marginBottom:14}}>Activity Timeline</div>
       {allActivities.length===0?<div style={{fontSize:13,color:"#737373",padding:"12px 0"}}>No activity recorded yet. Changes to jobs will appear here.</div>:
@@ -4178,6 +4406,8 @@ function Customer360Page({jobs,lineItems,vendors,customers,reps,getJobFinancials
 }
 
 
+
+
 // ===============================================================
 // VENDOR 360 -- Full profile page mirroring Customer360Page
 // ===============================================================
@@ -4185,6 +4415,7 @@ function Vendor360Page({jobs,lineItems,vendors,customers,reps,getJobFinancials,g
   const vendorId=window._viewVendorId||vendors[0]?.id;
   const vend=vendors.find(v=>v.id===vendorId);
   if(!vend) return <div style={{animation:"fadeUp 0.4s"}}><Header title="Vendor Profile" sub="Select a vendor from the Directory"/><Card style={{textAlign:"center",padding:40}}><div style={{color:"#737373",fontSize:14}}>No vendor selected. Go to Directory and click a vendor name.</div></Card></div>;
+
 
   // Spend = OUR cost spent with this vendor (unitCost * qtyOrdered).
   // Revenue = what WE charged customers for this vendor's items (unitPrice * qtyOrdered).
@@ -4209,9 +4440,11 @@ function Vendor360Page({jobs,lineItems,vendors,customers,reps,getJobFinancials,g
   const [editing,setEditing]=useState(false);
   const [editForm,setEditForm]=useState({...vend});
 
+
   const kpiStyle={textAlign:"center",padding:"18px 14px",background:"#0a0a0a",borderRadius:12,border:"1px solid rgba(255,255,255,0.04)"};
   const kpiVal=(v,c)=>({fontSize:28,fontWeight:800,color:c||"#f0f0f0",fontFamily:"'JetBrains Mono',monospace",letterSpacing:-1,lineHeight:1.1,marginBottom:4});
   const kpiLabel={fontSize:12,color:"#9a9a9a",fontWeight:500,letterSpacing:0.5};
+
 
   return <div style={{animation:"fadeUp 0.4s"}}>
     <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:20}}>
@@ -4219,6 +4452,7 @@ function Vendor360Page({jobs,lineItems,vendors,customers,reps,getJobFinancials,g
       <span style={{color:"#525252",fontSize:14}}>/</span>
       <span style={{color:"#f0f0f0",fontSize:14,fontWeight:600}}>{vend.name}</span>
     </div>
+
 
     <Card style={{marginBottom:28,background:"linear-gradient(135deg,rgba(45,212,191,0.04),rgba(167,139,250,0.04))",border:"1px solid rgba(45,212,191,0.12)"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:16}}>
@@ -4230,6 +4464,7 @@ function Vendor360Page({jobs,lineItems,vendors,customers,reps,getJobFinancials,g
         <Btn v="secondary" onClick={()=>{setEditing(!editing);setEditForm({...vend})}}><I n="edit" s={14}/> Edit</Btn>
       </div>
     </Card>
+
 
     {editing&&<Card style={{marginBottom:20,border:"1px solid #2dd4bf30"}}><div style={{fontSize:15,fontWeight:700,marginBottom:14,color:"#2dd4bf"}}>Edit Vendor</div>
       <div className="resp-grid-4" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12,marginBottom:14}}>
@@ -4245,6 +4480,7 @@ function Vendor360Page({jobs,lineItems,vendors,customers,reps,getJobFinancials,g
       <div style={{display:"flex",gap:8}}><Btn onClick={()=>{updateVendor(vendorId,editForm);setEditing(false);notify("Vendor updated")}}>Save</Btn><Btn v="secondary" onClick={()=>setEditing(false)}>Cancel</Btn></div>
     </Card>}
 
+
     <div className="resp-grid-4" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:14,marginBottom:28}}>
       <div style={kpiStyle}><div style={kpiVal(0,"#2dd4bf")}>{fmt(totalSpend)}</div><div style={kpiLabel}>Lifetime Spend</div></div>
       <div style={kpiStyle}><div style={kpiVal(0,"#a78bfa")}>{vJobs.length}</div><div style={kpiLabel}>Total Jobs</div></div>
@@ -4253,6 +4489,7 @@ function Vendor360Page({jobs,lineItems,vendors,customers,reps,getJobFinancials,g
       <div style={kpiStyle}><div style={kpiVal(0,paymentScore>=80?"#34d399":paymentScore>=50?"#fbbf24":"#f87171")}>{paymentScore}%</div><div style={{...kpiLabel}}>{paidJobs.length} of {vJobs.filter(j=>j.phase!=="Quoting").length} paid</div></div>
       <div style={kpiStyle}><div style={kpiVal(0,"#e5e5e5")}>{totalItems}</div><div style={kpiLabel}>Line Items</div></div>
     </div>
+
 
     <div className="resp-grid-2" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(300px,1fr))",gap:20,marginBottom:28}}>
       <Card><div style={{fontSize:15,fontWeight:700,color:"#f0f0f0",marginBottom:14}}>Jobs ({vJobs.length})</div>
@@ -4290,6 +4527,7 @@ function Vendor360Page({jobs,lineItems,vendors,customers,reps,getJobFinancials,g
       </Card>
     </div>
 
+
     {totalOrdered>0&&<Card style={{marginBottom:28}}>
       <div style={{fontSize:15,fontWeight:700,color:"#f0f0f0",marginBottom:16}}>Delivery Progress</div>
       <div className="resp-grid-3" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:16,marginBottom:20,textAlign:"center"}}>
@@ -4301,6 +4539,7 @@ function Vendor360Page({jobs,lineItems,vendors,customers,reps,getJobFinancials,g
         <div style={{height:"100%",width:(totalReceived/totalOrdered*100)+"%",background:"linear-gradient(90deg,#2dd4bf,#34d399)",borderRadius:5,transition:"width 1.5s ease"}}/>
       </div>
     </Card>}
+
 
     <Card><div style={{fontSize:15,fontWeight:700,color:"#f0f0f0",marginBottom:14}}>Activity Timeline</div>
       {allActivities.length===0?<div style={{fontSize:13,color:"#737373",padding:"12px 0"}}>No activity recorded yet. Changes to jobs will appear here.</div>:
@@ -4316,6 +4555,8 @@ function Vendor360Page({jobs,lineItems,vendors,customers,reps,getJobFinancials,g
 }
 
 
+
+
 // ===============================================================
 // PLAYBOOK & SOPs
 // ===============================================================
@@ -4329,6 +4570,7 @@ function PlaybookPage({jobs,reps,vendors,customers,lineItems,getJobFinancials,se
   // addSop/deleteSop come from props
   const iconOpts=['shield','send','users','receipt','download','dollar','file','truck','package','check','alert','chart','brain','edit','settings','book'];
   const catOpts=['Company','Workflow','Financial','Operations','Strategic','Custom'];
+
 
   // Rich SOP renderer
   const RichSOP=({doc})=>{
@@ -4352,6 +4594,7 @@ function PlaybookPage({jobs,reps,vendors,customers,lineItems,getJobFinancials,se
           const isBulletList=lines.every(l=>l.startsWith('-')||l.startsWith('*'));
           const isFlowSteps=isNumberedList&&lines.filter(l=>/^\d+[\.\)]\s/.test(l)).length>=3;
 
+
           if(isFlowSteps){
             const steps=lines.filter(l=>/^\d+[\.\)]\s/.test(l)).map(l=>l.replace(/^\d+[\.\)]\s*/,''));
             return <div key={si} style={{marginBottom:28}}>
@@ -4372,6 +4615,7 @@ function PlaybookPage({jobs,reps,vendors,customers,lineItems,getJobFinancials,se
             </div>
           }
 
+
           if(isBulletList){
             return <div key={si} style={{marginBottom:24}}>
               {lines.map((line,li)=><div key={li} style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:8}}>
@@ -4380,6 +4624,7 @@ function PlaybookPage({jobs,reps,vendors,customers,lineItems,getJobFinancials,se
               </div>)}
             </div>
           }
+
 
           if(isHeading){
             const rest=lines.slice(1);
@@ -4393,6 +4638,7 @@ function PlaybookPage({jobs,reps,vendors,customers,lineItems,getJobFinancials,se
               })}
             </div>
           }
+
 
           // Default paragraph
           return <div key={si} style={{marginBottom:20}}>
@@ -4408,14 +4654,18 @@ function PlaybookPage({jobs,reps,vendors,customers,lineItems,getJobFinancials,se
     </div>
   };
 
+
   // DEFAULT_SOPS defined at module level
+
 
   const internalCats=new Set(["Notes","Task","DocStatuses","ManualTxn","HistoricalDoc","Settings"]);
   const customIds=new Set((customSops||[]).filter(s=>!internalCats.has(s.cat)).map(s=>s.overrideId||s.id));const allSops=[...DEFAULT_SOPS.filter(d=>!customIds.has(d.id)),...(customSops||[])].filter(s=>!internalCats.has(s.cat));
   const cats=[...new Set(allSops.map(s=>s.cat))];
   const filtered=search?allSops.filter(s=>s.title.toLowerCase().includes(search.toLowerCase())||s.content.toLowerCase().includes(search.toLowerCase())):allSops;
 
+
   if(activeDoc){const doc=allSops.find(s=>s.id===activeDoc);if(!doc){setActiveDoc(null);return null}return <RichSOP doc={doc}/>}
+
 
   return <div style={{animation:"fadeUp 0.4s"}}>
     <Header title="Playbook & SOPs" sub={"Documented systems, workflows, and operating procedures -- "+allSops.length+" documents"}/>
@@ -4463,12 +4713,14 @@ function PlaybookPage({jobs,reps,vendors,customers,lineItems,getJobFinancials,se
   </div>;
 }
 
+
 // ===============================================================
 // TASKS KANBAN (drag-and-drop, used in Sales Portal + standalone)
 // ===============================================================
 function TasksKanban({jobs,allJobs,reps,updateJob,notify,customSops,addSop,deleteSop,filterRep,filterJob}){
   const [editTask,setEditTask]=useState(null);
   const [dragId,setDragId]=useState(null);
+
 
   const allTasks=(customSops||[]).filter(s=>s.cat==="Task").map(s=>{try{const d=JSON.parse(s.content);return{...d,id:s.id,sopId:s.id}}catch{return{id:s.id,sopId:s.id,text:s.title,status:"To Do",assignees:[],due:"",jobId:"",jobName:"",notes:"",link:"",priority:"normal"}}});
   const filtered=allTasks.filter(t=>{if(filterRep&&filterRep!=="all"&&!(t.assignees||[]).includes(filterRep))return false;if(filterJob&&filterJob!=="all"&&t.jobId!==filterJob)return false;return true});
@@ -4477,13 +4729,17 @@ function TasksKanban({jobs,allJobs,reps,updateJob,notify,customSops,addSop,delet
   const colColors={"To Do":"#fbbf24","In Progress":"#2dd4bf","Done":"#34d399"};
   const priColors={"high":"#f87171","normal":"#525252","low":"#333"};
 
+
   const saveTask=(td,existingId)=>{const jn=td.jobId?(allJobs||jobs).find(j=>j.id===td.jobId)?.name||"":"";const {id:_id,sopId:_sid,isNew:_n,...cleanTd}=td;const sop={id:existingId||("TASK-"+Math.random().toString(36).slice(2,8)),title:td.text||"Untitled",cat:"Task",icon:"check",content:JSON.stringify({...cleanTd,jobName:jn}),custom:true};addSop(sop);notify(existingId?"Task updated":"Task created")};
   const moveTask=(id,newStatus)=>{const t=allTasks.find(x=>x.id===id);if(t)saveTask({...t,status:newStatus},t.sopId)};
   const handleDragStart=(e,id)=>{setDragId(id);e.dataTransfer.setData("taskId",id);e.dataTransfer.effectAllowed="move"};
   const handleDrop=(e,status)=>{e.preventDefault();const id=e.dataTransfer.getData("taskId")||dragId;if(id)moveTask(id,status);setDragId(null)};
   const handleDragOver=(e)=>{e.preventDefault();e.dataTransfer.dropEffect="move"};
 
+
   
+
+
 
 
   return <div>
@@ -4502,6 +4758,7 @@ function TasksKanban({jobs,allJobs,reps,updateJob,notify,customSops,addSop,delet
     </div>
   </div>;
 }
+
 
 // Edit Task Overlay (click blank space to close)
 function EditTaskOverlay({task,setEditTask,jobs,reps,saveTask,deleteSop,notify,inputStyle}){
@@ -4526,6 +4783,7 @@ function EditTaskOverlay({task,setEditTask,jobs,reps,saveTask,deleteSop,notify,i
   </div>;
 }
 
+
 function TasksPage({jobs,reps,updateJob,notify,customSops,addSop,deleteSop}){
   const [filterRep,setFilterRep]=useState("all");
   const [filterJob,setFilterJob]=useState("all");
@@ -4538,6 +4796,7 @@ function TasksPage({jobs,reps,updateJob,notify,customSops,addSop,deleteSop}){
     <TasksKanban jobs={jobs} allJobs={jobs} reps={reps} updateJob={updateJob} notify={notify} customSops={customSops} addSop={addSop} deleteSop={deleteSop} filterRep={filterRep} filterJob={filterJob}/>
   </div>;
 }
+
 
 // ===============================================================
 // NOTES
@@ -4556,28 +4815,35 @@ function NotesView({customSops,addSop,deleteSop,jobs,reps,notify,triggerPrint}){
   const [saved,setSaved]=useState(false);
   const saveTimerRef=useRef(null);
 
+
   const notes=(customSops||[]).filter(s=>s.cat==="Notes").sort((a,b)=>b.id.localeCompare(a.id));
   const parseNote=(n)=>{try{return JSON.parse(n.content)}catch{return{text:n.content,folder:"General"}}};
   const allFolders=[...new Set(["General",...notes.map(n=>(parseNote(n).folder||"General"))])].sort();
   const folders=["All",...allFolders];
   const filtered=notes.filter(n=>{if(search){const q=search.toLowerCase();if(!n.title.toLowerCase().includes(q)&&!(parseNote(n).text||"").toLowerCase().includes(q))return false}if(folder!=="All"&&(parseNote(n).folder||"General")!==folder)return false;return true});
 
+
   // Auto-save as you type
   const autoSave=(text)=>{setContent(text);setSaved(false);if(saveTimerRef.current)clearTimeout(saveTimerRef.current);if(!text.trim())return;saveTimerRef.current=setTimeout(()=>{const title=text.split("\n")[0].replace(/^#+\s*/,"").slice(0,60)||"Untitled";const data={text,folder:folder==="All"?"General":folder,date:new Date().toISOString()};const existing=(customSops||[]).find(s=>s.id===draftId);if(existing)deleteSop(draftId);addSop({id:draftId,title,cat:"Notes",icon:"file",content:JSON.stringify(data),custom:true});setSaved(true)},800)};
 
+
   const finishNote=()=>{if(!content.trim())return;const id=draftId;setContent("");setActiveNote(id);setDraftId("NOTE-"+Math.random().toString(36).slice(2,8));setSaved(false)};
+
 
   const updateNote=(note,newText)=>{const data=parseNote(note);const title=(newText||data.text||"").split("\n")[0].replace(/^#+\s*/,"").slice(0,60)||"Untitled";addSop({...note,title,content:JSON.stringify({...data,text:newText||data.text})});notify("Saved")};
   const toggleItem=(note,idx)=>{const data=parseNote(note);const lines=(data.text||"").split("\n");if(idx<lines.length){const l=lines[idx];if(l.startsWith("[x] "))lines[idx]="[ ] "+l.slice(4);else if(l.startsWith("[ ] "))lines[idx]="[x] "+l.slice(4);updateNote(note,lines.join("\n"))}};
   const exportPDF=(note)=>{const data=parseNote(note);const body=String(data.text||"").split("<").join("&lt;");const html="<div style=\"font-family:sans-serif;max-width:700px;margin:0 auto;padding:40px\"><h1>"+note.title+"</h1><div style=\"font-size:12px;color:#888;margin-bottom:20px\">"+(data.date?new Date(data.date).toLocaleDateString():"")+"</div><div style=\"font-size:14px;line-height:1.8;white-space:pre-wrap\">"+body+"</div></div>";if(triggerPrint)triggerPrint(note.title,html);else{const w=window.open("","_blank");w.document.write(html);w.print()}};
   const createFolder=()=>{if(!newFolder.trim())return;setFolder(newFolder.trim());setShowNewFolder(false);setNewFolder("");notify("Folder created")};
 
+
   // Toolbar actions - insert at cursor
   const insertAt=(prefix,suffix)=>{const el=editorRef.current;if(!el)return;const start=el.selectionStart;const end=el.selectionEnd;const text=content;const selected=text.slice(start,end);const newText=text.slice(0,start)+prefix+selected+suffix+text.slice(end);autoSave(newText);setTimeout(()=>{el.selectionStart=start+prefix.length;el.selectionEnd=start+prefix.length+selected.length;el.focus()},10)};
   const insertLine=(prefix)=>{const el=editorRef.current;if(!el)return;const pos=el.selectionStart;const before=content.slice(0,pos);const needsNewline=before.length>0&&!before.endsWith("\n");autoSave(before+(needsNewline?"\n":"")+prefix+content.slice(pos));setTimeout(()=>{el.selectionStart=el.selectionEnd=pos+(needsNewline?1:0)+prefix.length;el.focus()},10)};
 
+
   const viewing=activeNote?notes.find(n=>n.id===activeNote):null;
   const viewData=viewing?parseNote(viewing):null;
+
 
   return <div className="notes-layout" style={{display:"flex",gap:16,minHeight:400}}>
     {/* Sidebar */}
@@ -4591,8 +4857,10 @@ function NotesView({customSops,addSop,deleteSop,jobs,reps,notify,triggerPrint}){
       </div>
     </div>
 
+
     {/* Main editor area */}
     <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column"}}>
+
 
       {/* NEW NOTE: Always-ready editor */}
       {!activeNote&&<div style={{flex:1,display:"flex",flexDirection:"column"}}>
@@ -4617,6 +4885,7 @@ function NotesView({customSops,addSop,deleteSop,jobs,reps,notify,triggerPrint}){
         <textarea ref={editorRef} value={content} onChange={e=>autoSave(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){const lines=content.slice(0,e.target.selectionStart).split("\n");const last=lines[lines.length-1]||"";if(last.startsWith("[ ] ")||last.startsWith("[x] ")){e.preventDefault();autoSave(content.slice(0,e.target.selectionStart)+"\n[ ] "+content.slice(e.target.selectionEnd))}else if(last.startsWith("- ")){e.preventDefault();autoSave(content.slice(0,e.target.selectionStart)+"\n- "+content.slice(e.target.selectionEnd))}}}} placeholder={"Start typing...\n\nFirst line becomes the title.\nAuto-saves as you type."} style={{flex:1,width:"100%",padding:20,background:"#000",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,color:"#e5e5e5",fontSize:15,lineHeight:1.8,fontFamily:"inherit",resize:"none",minHeight:320,outline:"none"}}/>
       </div>}
 
+
       {/* VIEW existing note */}
       {viewing&&!editId&&<div>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,gap:12,flexWrap:"wrap"}}>
@@ -4635,6 +4904,7 @@ function NotesView({customSops,addSop,deleteSop,jobs,reps,notify,triggerPrint}){
           })}
         </div>
       </div>}
+
 
       {/* EDIT existing note */}
       {editId&&<div style={{flex:1,display:"flex",flexDirection:"column"}}>
@@ -4656,9 +4926,11 @@ function NotesView({customSops,addSop,deleteSop,jobs,reps,notify,triggerPrint}){
   </div>;
 }
 
+
 function NotesPage({customSops,addSop,deleteSop,jobs,reps,notify,triggerPrint}){
   return <div style={{animation:"fadeUp 0.4s"}}><Header title="Notes" sub={(customSops||[]).filter(s=>s.cat==="Notes").length+" notes saved"}/><NotesView customSops={customSops} addSop={addSop} deleteSop={deleteSop} jobs={jobs} reps={reps} notify={notify} triggerPrint={triggerPrint}/></div>;
 }
+
 
 function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJobItems,brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory,updateJob,addJob,updateLineItem,addLineItem,deleteLineItem,updateRep,addRep,addCustomer,updateCustomer,addVendor,updateVendor,notify,setPage,deleteJob,pendingBrainFile,setPendingBrainFile,pendingBrainEmail,setPendingBrainEmail,currentUser}){
   const [brainFile, setBrainFile] = useState(null);
@@ -4812,11 +5084,13 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
   };
   useEffect(()=>{if(chatRef.current)chatRef.current.scrollTop=chatRef.current.scrollHeight},[history,animatingIdx,pendingActions]);
 
+
   // Tool definitions for Claude function calling
   // Helper: find job by ID or name keywords
   const findJob=(ref)=>{if(!ref)return null;const r=ref.toLowerCase();return jobs.find(j=>j.id.toLowerCase()===r)||jobs.find(j=>j.name.toLowerCase().includes(r))||jobs.find(j=>{const words=r.split(/\s+/).filter(w=>w.length>3);return words.length>0&&words.every(w=>j.name.toLowerCase().includes(w))})};
   const findVendor=(ref)=>{if(!ref)return null;const r=ref.toLowerCase();return vendors.find(v=>v.id===ref)||vendors.find(v=>v.name.toLowerCase().includes(r))};
   const findCustomer=(ref)=>{if(!ref)return null;const r=ref.toLowerCase();return customers.find(c=>c.id===ref)||customers.find(c=>c.name.toLowerCase().includes(r))};
+
 
   const brainTools=[
     {name:"update_job",description:"Update a job's phase, payment status, notes, due date, or other fields.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name keywords"},updates:{type:"object",properties:{phase:{type:"string"},paymentStatus:{type:"string"},notes:{type:"string"},dueDate:{type:"string"},paymentTerms:{type:"string"},shipTo:{type:"string"},poNumber:{type:"string"}}}},required:["job_id","updates"]}},
@@ -4867,6 +5141,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     {name:"draft_email",description:"Draft an email for the user to review before sending. ALWAYS use this first when the user asks to write, draft, compose, or send an email. The user reviews the draft inline and clicks Send to actually send it. Use when user says 'draft an email to', 'write an email to', 'compose an email to', 'email maureen about', 'send an email to' (still drafts first for safety). The recipient can be specified by name (looks up customer/vendor/rep email) or direct email address.",input_schema:{type:"object",properties:{recipient_email:{type:"string",description:"Direct email address. Use this if user provides one explicitly."},customer_name:{type:"string",description:"Customer name to look up email for. Use if user references a customer."},vendor_name:{type:"string",description:"Vendor name to look up email for."},rep_name:{type:"string",description:"Sales rep name to look up email for."},subject:{type:"string",description:"Email subject line"},body:{type:"string",description:"Plain text email body. Will be formatted into a clean HTML email automatically. Use natural paragraph breaks. End with 'Best regards,' on its own line, then 'Midwest Educational Furnishings' on the next line. Do not sign with a personal name -- always sign off as the business."}},required:["subject","body"]}},
     {name:"send_email",description:"Send an email IMMEDIATELY without showing a draft preview first. Only use this when the user explicitly says 'send right now', 'send it without showing me', or has just reviewed a draft and confirms 'send it'. Default to draft_email instead -- it is much safer. Same recipient/content schema as draft_email.",input_schema:{type:"object",properties:{recipient_email:{type:"string",description:"Direct email address."},customer_name:{type:"string",description:"Customer name to look up email for."},vendor_name:{type:"string",description:"Vendor name to look up email for."},rep_name:{type:"string",description:"Sales rep name to look up email for."},subject:{type:"string",description:"Email subject line"},body:{type:"string",description:"Plain text email body."}},required:["subject","body"]}}
   ];
+
 
   // Execute a tool call locally
   const executeTool=async(toolName,input)=>{
@@ -5579,6 +5854,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     }catch(err){return{error:"Execution error: "+err.message}}
   };
 
+
   const buildContext = (query) => {
     const q = (query || "").toLowerCase();
     const memoryText = getMemoryText();
@@ -5589,6 +5865,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     const totalRev = jobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
     const totalCost = jobs.reduce((s,j)=>s+getJobFinancials(j.id).totalCost,0);
 
+
     // Smart job matching: find which jobs the query is about
     const matchedJobs=jobs.filter(j=>{const jn=j.name.toLowerCase();const words=q.split(/\s+/).filter(w=>w.length>3);return words.some(w=>jn.includes(w))||q.includes(j.id.toLowerCase())});
     // Also match by customer name
@@ -5597,8 +5874,10 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     const matchedVendors=vendors.filter(v=>v.name.toLowerCase().split(/\s+/).some(w=>w.length>3&&q.includes(w.toLowerCase())));
     const relevantJobs=[...new Set([...matchedJobs,...matchedByCustomer])];
 
+
     // Build job summaries -- always included, compact
     const jobSummaries = jobs.map(j => {const f=getJobFinancials(j.id);const c=customers.find(c2=>c2.id===j.customer);const r=reps.find(r2=>r2.id===j.salesRep);const items=getJobItems(j.id);const totalOrd=items.reduce((s2,i2)=>s2+i2.qtyOrdered,0);const totalRcv=items.reduce((s2,i2)=>s2+i2.qtyReceived,0);return j.name+"("+j.phase+"|"+(c?.name||"")+" | Rep:"+(r?.name||"")+" | Rev:$"+Math.round(f.totalRevenue)+" | Cost:$"+Math.round(f.totalCost)+" | Margin:"+f.margin.toFixed(1)+"% | Delivered:"+totalRcv+"/"+totalOrd+" | Pay:"+j.paymentStatus+" | Due:"+(j.dueDate||"none")+" | ID:"+j.id+")"}).join("\n");
+
 
     // Line item details: include for relevant jobs OR if user asks about items/deliveries
     let lineItemDetail="";
@@ -5614,6 +5893,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
       }).filter(Boolean).join("\n");
     }
 
+
     // Vendor details: include item breakdown if asking about specific vendors
     let vendorDetail="";
     if(matchedVendors.length>0){
@@ -5627,10 +5907,12 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
       }).join("\n");
     }
 
+
     // Compact vendor and customer summaries
     const vendorSummaries = vendors.map(v=>{const spend=lineItems.filter(i=>i.vendor===v.id).reduce((s2,i2)=>s2+i2.unitCost*i2.qtyOrdered,0);const itemCount=lineItems.filter(i=>i.vendor===v.id).length;return v.name+"($"+Math.round(spend)+"|"+itemCount+" items|"+(v.discountRate*100).toFixed(0)+"%)"}).join(", ");
     const custSummaries = customers.map(c=>{const cJobs=jobs.filter(j=>j.customer===c.id);const rev=cJobs.reduce((s2,j)=>s2+getJobFinancials(j.id).totalRevenue,0);return c.name+"("+cJobs.length+" jobs|$"+Math.round(rev)+")"}).join(", ");
     const repSummaries = reps.filter(r=>!r.id.includes("SEED_FLAG")).map(r=>{const rJobs=jobs.filter(j=>j.salesRep===r.id);const rev=rJobs.reduce((s2,j)=>s2+getJobFinancials(j.id).totalRevenue,0);return r.name+"("+rJobs.length+" jobs|$"+Math.round(rev)+"|"+(r.commissionRate*100).toFixed(0)+"%)"}).join(", ");
+
 
     // Smart SOP matching -- always know what SOPs exist, include full content when relevant
     const allSopDocs=(customSops||[]).filter(s=>!["Notes","Task","DocStatuses","ManualTxn","HistoricalDoc","Settings"].includes(s.cat));
@@ -5695,11 +5977,14 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     const sopFullText=relevantSops.length>0?relevantSops.map(s=>"=== "+s.title+" ["+s.cat+"] ===\n"+s.content.slice(0,1200)).join("\n\n"):"";
     const sopSection="\n\nALL SOPs AVAILABLE: "+sopIndex+(sopFullText?"\n\nRELEVANT SOP DETAILS:\n"+sopFullText:"");
 
+
     // Only include tasks when relevant
     const taskText = /task|todo|assign|follow.?up/i.test(q) ? (customSops||[]).filter(s=>s.cat==="Task").map(s=>{try{const d=JSON.parse(s.content);return d.text+" ["+d.status+"]"+(d.assignees?.length?" -> "+d.assignees.join(","):"")+(d.due?" due:"+d.due:"")}catch{return s.title}}).join("\n") : "";
 
+
     return "You are the Midwest Brain -- a full-capability AI assistant powered by Claude, built into the operating system for Midwest Educational Furnishings (Kildeer, IL). Owner: Maureen Welter. Today: " + today + ".\n\nYou are a COMPLETE AI assistant. You can do everything Claude can do: write emails, draft proposals, create content, analyze data, brainstorm ideas, explain concepts, write code, give advice, and more. You happen to ALSO have full access to the live Midwest business database below, so you can weave in real company data when relevant.\n\nIf someone asks you to write an email -- write a great email, using Midwest context if relevant. If they ask for a marketing idea -- give one. If they ask to explain a concept -- explain it. You are not limited to just answering data questions.\n\nBUSINESS CONTEXT:\nSTATS: " + jobs.length + " jobs | Rev $" + Math.round(totalRev) + " | Cost $" + Math.round(totalCost) + " | Margin " + (totalRev>0?Math.round((totalRev-totalCost)/totalRev*100):0) + "% | " + lineItems.length + " line items | " + vendors.length + " vendors | " + customers.length + " customers\n\nALL JOBS:\n" + jobSummaries + lineItemDetail + "\n\nVENDORS: " + vendorSummaries + vendorDetail + "\n\nCUSTOMERS: " + custSummaries + "\n\nREPS: " + repSummaries + sopSection + (taskText?"\n\nTASKS:\n"+taskText:"") + "\n\nRULES:\n1. You are a FULL AI assistant. You can write emails, draft documents, create proposals, brainstorm, explain anything, give business advice, and do everything Claude can normally do.\n2. When the question relates to Midwest business data, use the real numbers above. NEVER say you don't have the data.\n3. When writing emails or documents, use Midwest context naturally: 'Midwest Educational Furnishings', Maureen Welter, Kildeer IL, the customer/vendor names from the database.\n4. For 'how do I' questions about business processes: check the RELEVANT SOP DETAILS section. If an SOP covers it, answer FROM the SOP.\n5. For general knowledge questions, advice, brainstorming, writing help: answer like a world-class AI assistant would. You are not limited to business data.\n6. When asked about a job, use its LINE ITEM DETAILS for specific products, vendors, quantities, and costs.\n7. Show your math when doing financial calculations.\n8. Think like a CFO+COO+executive assistant combined.\n9. Keep answers concise but complete. Match the tone to what's being asked -- formal for emails, casual for brainstorming, detailed for analysis.\n10. FORMAT DATA AS TABLES: When showing line items, price comparisons, job lists, vendor data, or any structured data with 3+ rows, ALWAYS use markdown table format (| Col1 | Col2 |). The chat renders markdown tables as styled interactive tables. Include dollar signs for money columns. This is critical for readability.\n11. At the end of business-related answers, suggest 2-3 follow-up questions:\n>> [question 1]\n>> [question 2]\n>> [question 3]\n12. NEVER use emoji. Text only.\n13. When the user asks you to DO something (update, create, mark, change, set, navigate), USE THE TOOLS. Don't just describe what would happen -- call the tool. You will see a confirmation before the action executes.\n14. For job references: match by job ID or by name keywords. If ambiguous, ask which job.\n15. When using tools, briefly explain what you are about to do BEFORE the tool call.\n16. PROACTIVELY USE save_memory to remember important patterns, preferences, decisions, and insights from conversations. Your memory persists forever and makes you smarter over time.\n16. Use detect_anomalies for health checks. Use analyze_trends for patterns. Use summarize_context for briefings. Use predictive_flag for risk assessment.\n17. Use draft_email for professional emails with Midwest branding.\n18. Use database_query for complex data lookups. Use parse_uploaded_file ONLY for files at public URLs.\n19. CRITICAL FILE ATTACHMENT RULE: When a user attaches a file via the paperclip button, the file content is ALREADY EMBEDDED directly in the user message as text or document blocks. You can read it right there. Do NOT call parse_uploaded_file for attached files. The data is already here.\n\nWhen a file is attached, be PROACTIVE about what you can do with it:\n- VENDOR QUOTE (has model numbers, prices, quantities): Extract all line items and use create_job_from_file to build a complete job. Ask for the customer name if not obvious.\n- CUSTOMER LIST (schools, districts, contacts): Use import_customers_from_file to add them to the directory.\n- VENDOR LIST (manufacturers, suppliers): Use import_vendors_from_file to add them.\n- INVOICE/RECEIPT: Extract the data, match to existing jobs, summarize what is owed.\n- PRICE LIST: Compare against existing job prices using compare_quote_to_job.\n- GENERAL DOCUMENT: Analyze thoroughly, extract key data, suggest next actions.\n\nAlways tell the user what you found AND what you can do with it. Don't just describe the file -- offer to take action.\n21. You have WEB SEARCH capability. When asked about current events, market prices, competitor info, or anything needing real-time data, the web_search tool is always available and Claude uses it automatically.\n22. After substantive interactions, consider what should be saved to memory." + (memoryText ? "\n\nBRAIN MEMORY (persistent knowledge):\n" + memoryText : "");
   };
+
 
   // Convert attached file to Anthropic API content blocks
   const processFileForBrain = async (file) => {
@@ -5756,9 +6041,11 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
       });
     };
 
+
     if (isHeic) {
       throw new Error('HEIC images from iPhone are not supported. Change your iPhone camera setting to "Most Compatible" (Settings > Camera > Formats), or convert the image to JPEG before uploading.');
     }
+
 
     if (isExcel) {
       const XLSX = await import('xlsx');
@@ -5783,21 +6070,25 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
       return [{type:'text', text:'[Attached '+ext.toUpperCase()+' file: ' + file.name + ']\n\n' + text.slice(0, 100000)}];
     }
 
+
     if (isDocx) {
       const base64 = await readBase64(file);
       return [{type:'document', source:{type:'base64', media_type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document', data:base64}}, {type:'text', text:'[Attached Word document: ' + file.name + '] Analyze this document thoroughly. Extract all content.'}];
     }
+
 
     if (isPdf) {
       const base64 = await readBase64(file);
       return [{type:'document', source:{type:'base64', media_type:'application/pdf', data:base64}}, {type:'text', text:'[Attached PDF: ' + file.name + '] Analyze this document thoroughly.'}];
     }
 
+
     if (isImage) {
       const base64 = await readBase64(file);
       const mimeMap = {jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',gif:'image/gif',webp:'image/webp'};
       return [{type:'image', source:{type:'base64', media_type:mimeMap[ext]||'image/jpeg', data:base64}}, {type:'text', text:'[Attached image: ' + file.name + '] Describe and analyze what you see.'}];
     }
+
 
     if (isText || !ext) {
       const text = await readText(file);
@@ -5806,6 +6097,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
       }
       return [{type:'text', text:'[Attached file: ' + file.name + ']\n\n' + text.slice(0, 100000)}];
     }
+
 
     // Unknown extension: try reading as text, fall back to error
     try {
@@ -5816,6 +6108,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     } catch {}
     throw new Error('Unsupported file type: .'+ext+'. Supported: PDF, images (JPG/PNG/GIF/WebP), Excel, CSV, Word, and text files.');
   };
+
 
   const handleQuery = async () => {
     if (!brainQuery.trim() && !brainFile) return;
@@ -5946,6 +6239,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     try{const el=brainMemory.find(m=>m.title==="InteractionLog");let log=[];if(el){try{log=JSON.parse(JSON.parse(el.content).text||"[]")}catch{}}log.push({q:q.slice(0,80),t:new Date().toISOString().split("T")[0]});if(log.length>50)log=log.slice(-50);updateMemory("InteractionLog",JSON.stringify(log),{type:"auto"})}catch(e){}
   };
 
+
   // Execute pending actions after user confirms
   const executeActions=async()=>{
     setBrainLoading(true);
@@ -5962,6 +6256,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     setBrainLoading(false);
   };
   const cancelActions=()=>{setPendingActions([]);setHistory(p=>[...p,{role:"assistant",content:"Actions cancelled. No changes were made."}])};
+
 
   const renderMsg = (msg) => {
     const text=typeof msg.content==="string"?msg.content:JSON.stringify(msg.content);
@@ -6034,6 +6329,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
       </div>}
     </div>;
   };
+
 
   return <div className="brain-page" style={{display:"flex",flexDirection:"column",height:"calc(100vh - 80px)",background:"#000"}}>
     <div style={{display:"flex",alignItems:"center",gap:8,padding:"12px 16px",flexShrink:0}}>
@@ -6135,9 +6431,11 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify}){
   const PAGE_SIZE=50;
   const fileRef=React.useRef(null);
 
+
   const prospects=(customSops||[]).filter(s=>s.cat==='Prospect').map(s=>{try{return{id:s.id,...JSON.parse(s.content)}}catch{return null}}).filter(Boolean);
   const statuses=['New','Contacted','Replied','Meeting Set','Proposal','Won','Lost','Nurture'];
   const sc={New:'#525252',Contacted:'#a78bfa',Replied:'#2dd4bf','Meeting Set':'#fbbf24',Proposal:'#f97316',Won:'#34d399',Lost:'#f87171',Nurture:'#8b5cf6'};
+
 
   const allStates=[...new Set(prospects.map(p=>p.state).filter(Boolean))].sort();
   let filtered=prospects;
@@ -6147,13 +6445,16 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify}){
   if(repFilter!=='all')filtered=filtered.filter(p=>p.assignedRep===repFilter);
   filtered.sort((a,b)=>{let va=a[sortCol]||'',vb=b[sortCol]||'';if(['employees','rank'].includes(sortCol)){va=parseInt(va)||0;vb=parseInt(vb)||0}else{va=String(va).toLowerCase();vb=String(vb).toLowerCase()}return sortDir==='asc'?(va<vb?-1:va>vb?1:0):(va>vb?-1:va<vb?1:0)});
 
+
   const totalPages=Math.ceil(filtered.length/PAGE_SIZE);
   const paged=filtered.slice(pageNum*PAGE_SIZE,(pageNum+1)*PAGE_SIZE);
   const statusCounts={};statuses.forEach(s=>{statusCounts[s]=prospects.filter(p=>p.status===s).length});
 
+
   const save=(id,data)=>{addSop({id,title:data.name||'Prospect',cat:'Prospect',icon:'target',content:JSON.stringify(data),custom:true})};
   const del=(id)=>{deleteSop(id);notify('Prospect deleted')};
   const handleSort=(col)=>{if(sortCol===col)setSortDir(d=>d==='asc'?'desc':'asc');else{setSortCol(col);setSortDir('asc')}};
+
 
   const handleCsv=async(e)=>{
     const file=e.target.files?.[0];if(!file)return;e.target.value='';
@@ -6187,6 +6488,7 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify}){
     }catch(err){notify('CSV error: '+err.message,'error')}
   };
 
+
   const addSingle=()=>{if(!addForm.name.trim()){notify('Name required');return}save('PROS-'+Date.now()+'-'+Math.random().toString(36).slice(2,7),{...addForm,rank:prospects.length+1,addedAt:new Date().toISOString()});setAddForm({name:'',title:'',company:'',email:'',phone:'',city:'',state:'',linkedin:'',website:'',twitter:'',employees:'',status:'New',notes:'',address:'',assignedRep:'',revenue:'',funding:''});setShowAdd(false);notify('Added: '+addForm.name)};
   const bulkStatus=(s)=>{selected.forEach(id=>{const p=prospects.find(x=>x.id===id);if(p)save(id,{...p,status:s})});notify(selected.size+' >> '+s);setSelected(new Set())};
   const bulkDel=()=>{if(!confirm('Delete '+selected.size+' prospects?'))return;selected.forEach(id=>deleteSop(id));notify(selected.size+' deleted');setSelected(new Set())};
@@ -6195,8 +6497,10 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify}){
   const is=({...inputStyle,padding:'8px 12px',fontSize:12,borderRadius:8});
   const fN=n=>{const v=parseInt(String(n).replace(/,/g,''));if(isNaN(v))return'--';if(v>=1000000)return(v/1000000).toFixed(1)+'M';if(v>=1000)return(v/1000).toFixed(v>=10000?0:1)+'k';return String(v)};
 
+
   return <div style={{animation:'fadeUp 0.4s'}}>
     <Header title="Prospects" sub={"Sales prospecting and lead tracking -- "+prospects.length+" total contacts"}/>
+
 
     {/* KPI Dashboard Cards */}
     <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(130px,1fr))',gap:10,marginBottom:18}}>
@@ -6214,6 +6518,7 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify}){
         <div style={{fontSize:'clamp(20px,4vw,28px)',fontWeight:800,color:kpi.color,fontFamily:"'JetBrains Mono',monospace",lineHeight:1}}><AnimNum value={kpi.value}/></div>
       </Card>)}
     </div>
+
 
     {/* Status pipeline */}
     <div style={{display:'flex',gap:4,flexWrap:'wrap',marginBottom:16,overflowX:'auto',WebkitOverflowScrolling:'touch',paddingBottom:4}}>
@@ -6401,6 +6706,7 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
   const dropRef=React.useRef(null);
   const [dragOver,setDragOver]=useState(false);
 
+
   const PREDEFINED_CATEGORIES=['Quote','Purchase Order','Vendor Invoice','Customer Invoice','QB Export','Tax Document','Bank Statement','Contract','Insurance','Invoice','Receipt','Other'];
   // Custom categories saved as a single SOP for persistence to Supabase
   const customCatSop=(customSops||[]).find(s=>s.id==='CUSTOM_FILE_CATEGORIES');
@@ -6412,6 +6718,7 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
   const [newCatName,setNewCatName]=useState('');
   const addCustomCat=()=>{const n=newCatName.trim();if(!n)return;if(CATEGORIES.includes(n)){notify('Category already exists','error');return}const next=[...customCategories,n];addSop({id:'CUSTOM_FILE_CATEGORIES',title:'File Categories',cat:'Config',icon:'package',content:JSON.stringify(next),custom:true});setNewCatName('');notify('Added category: '+n)};
   const removeCustomCat=(c)=>{if(!confirm('Remove category "'+c+'"? Files using it will keep the label.'))return;const next=customCategories.filter(x=>x!==c);addSop({id:'CUSTOM_FILE_CATEGORIES',title:'File Categories',cat:'Config',icon:'package',content:JSON.stringify(next),custom:true});notify('Removed: '+c)};
+
 
   // FOLDERS -- flat (no nesting). Stored in a single SOP for persistence.
   const foldersSop=(customSops||[]).find(s=>s.id==='FILE_FOLDERS');
@@ -6444,9 +6751,11 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
     notify(f.name+' >> '+folderName);
   };
 
+
   // Load files from SOPs (cat: 'File') AND legacy historical docs (cat: 'HistoricalDoc')
   const allFiles=(customSops||[]).filter(s=>s.cat==='File').map(s=>{try{return{id:s.id,...JSON.parse(s.content),_legacy:false}}catch{return null}}).filter(Boolean);
   const legacyDocs=(customSops||[]).filter(s=>s.cat==='HistoricalDoc').map(s=>{try{const d=JSON.parse(s.content);const file0=(d.files&&d.files[0])||{};return{id:s.id,name:file0.name||(d.docNumber||'Historical Doc'),originalName:file0.name||(d.docNumber||'Historical Doc'),size:file0.size||0,type:file0.type||'application/octet-stream',url:file0.url||'',path:'',category:d.type==='vendor_po'?'Invoice':d.type==='customer_invoice'?'Invoice':'Other',uploadedBy:d.uploadedBy||'Legacy',uploadedAt:d.date||d.uploadedAt||new Date(0).toISOString(),version:1,parentId:null,_legacy:true,_legacyMeta:d}}catch{return null}}).filter(Boolean);
+
 
   // Group files by base name (originalName) to find versions; only show latest per group in main list
   const groupKey=(f)=>(f.parentId||f.id);
@@ -6454,6 +6763,7 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
   [...allFiles,...legacyDocs].forEach(f=>{const k=f._legacy?'__legacy_'+f.id:groupKey(f);if(!grouped[k])grouped[k]=[];grouped[k].push(f)});
   const latestPerGroup=Object.values(grouped).map(g=>g.sort((a,b)=>(b.version||1)-(a.version||1))[0]);
   const versionsByGroup=Object.fromEntries(Object.entries(grouped).map(([k,g])=>[k,g.sort((a,b)=>(b.version||1)-(a.version||1))]));
+
 
   // Filter
   let filtered=latestPerGroup;
@@ -6463,10 +6773,12 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
   // Sort
   filtered.sort((a,b)=>{let va,vb;if(sortBy==='name'){va=(a.originalName||a.name||'').toLowerCase();vb=(b.originalName||b.name||'').toLowerCase()}else if(sortBy==='size'){va=a.size||0;vb=b.size||0}else if(sortBy==='category'){va=a.category||'';vb=b.category||''}else{va=a.uploadedAt||'';vb=b.uploadedAt||''}return sortDir==='asc'?(va<vb?-1:va>vb?1:0):(va>vb?-1:va<vb?1:0)});
 
+
   // Stats
   const totalFiles=latestPerGroup.length;
   const totalSize=latestPerGroup.reduce((s,f)=>s+(f.size||0),0);
   const catCounts={};CATEGORIES.forEach(c=>{catCounts[c]=latestPerGroup.filter(f=>(f.category||'Other')===c).length});
+
 
   const fmtSize=(b)=>{if(!b||b<=0)return'--';if(b<1024)return b+' B';if(b<1048576)return(b/1024).toFixed(1)+' KB';if(b<1073741824)return(b/1048576).toFixed(1)+' MB';return(b/1073741824).toFixed(2)+' GB'};
   const fmtDate=(d)=>{if(!d)return'--';try{const dt=new Date(d);return dt.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' '+dt.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})}catch{return d}};
@@ -6474,6 +6786,7 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
   const isImage=(t,n)=>(t||'').startsWith('image/')||['png','jpg','jpeg','gif','webp','svg'].includes(ext(n));
   const isPdf=(t,n)=>(t||'').includes('pdf')||ext(n)==='pdf';
   const isText=(t,n)=>(t||'').startsWith('text/')||['txt','csv','tsv','md','json','log'].includes(ext(n));
+
 
   const handleFileSelect=(files)=>{
     const arr=Array.from(files||[]);
@@ -6485,6 +6798,7 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
     }
     if(validated.length>0){setPendingFiles(validated);setShowAdd(true)}
   };
+
 
   const doUpload=async()=>{
     if(pendingFiles.length===0)return;
@@ -6519,11 +6833,13 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
     notify(uploaded+' file'+(uploaded!==1?'s':'')+' uploaded'+(failed>0?', '+failed+' failed':''));
   };
 
+
   const deleteFile=(f)=>{
     if(!confirm('Delete "'+f.name+'"? This cannot be undone.'))return;
     deleteSop(f.id);
     notify('Deleted: '+f.name);
   };
+
 
   const updateCat=(f,newCat)=>{
     if(f._legacy){notify('Cannot recategorize legacy historical docs','error');return}
@@ -6531,12 +6847,14 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
     notify(f.name+' >> '+newCat);
   };
 
+
   const updateTags=(f,newTagsStr)=>{
     if(f._legacy){notify('Cannot tag legacy historical docs','error');return}
     const tagArr=newTagsStr.split(',').map(t=>t.trim()).filter(Boolean);
     addSop({id:f.id,title:f.name,cat:'File',icon:'package',content:JSON.stringify({...f,tags:tagArr,_legacy:undefined}),custom:true});
     notify('Tags updated for '+f.name);
   };
+
 
   const sendToBrain=async(f)=>{
     setLoadingBrainFile(f.id);
@@ -6572,17 +6890,22 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
     setLoadingBrainFile(null);
   };
 
+
   const handleSort=(col)=>{if(sortBy===col)setSortDir(d=>d==='asc'?'desc':'asc');else{setSortBy(col);setSortDir('desc')}};
+
 
   // Drag and drop
   const onDrop=(e)=>{e.preventDefault();setDragOver(false);if(e.dataTransfer.files)handleFileSelect(e.dataTransfer.files)};
   const onDragOver=(e)=>{e.preventDefault();setDragOver(true)};
   const onDragLeave=(e)=>{e.preventDefault();setDragOver(false)};
 
+
   const isLegacyVisible=showHistorySection||legacyDocs.length===0;
+
 
   return <div style={{animation:'fadeUp 0.4s'}}>
     <Header title="Files" sub={"Document repository -- "+totalFiles+" file"+(totalFiles!==1?'s':'')+", "+fmtSize(totalSize)+" total"}/>
+
 
     {/* KPI Cards */}
     <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:10,marginBottom:18}}>
@@ -6608,11 +6931,13 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
       </Card>
     </div>
 
+
     {/* Category filter chips */}
     <div style={{display:'flex',gap:4,flexWrap:'wrap',marginBottom:16,overflowX:'auto',WebkitOverflowScrolling:'touch',paddingBottom:4}}>
       <button onClick={()=>setCatFilter('all')} style={{padding:'5px 12px',borderRadius:20,border:catFilter==='all'?'1px solid #2dd4bf':'1px solid #1a1a1a',background:catFilter==='all'?'#2dd4bf12':'transparent',color:catFilter==='all'?'#2dd4bf':'#525252',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:"'JetBrains Mono',monospace",whiteSpace:'nowrap',transition:'all 0.15s'}}>ALL {totalFiles}</button>
       {CATEGORIES.map(c=><button key={c} onClick={()=>setCatFilter(catFilter===c?'all':c)} style={{padding:'5px 12px',borderRadius:20,border:'1px solid '+(catFilter===c?colorFor(c)+'60':'#1a1a1a'),background:catFilter===c?colorFor(c)+'12':'transparent',color:catFilter===c?colorFor(c):'#333',fontSize:12,fontWeight:600,cursor:'pointer',fontFamily:"'JetBrains Mono',monospace",whiteSpace:'nowrap',transition:'all 0.15s'}}>{c} {catCounts[c]||0}</button>)}
     </div>
+
 
     {/* Toolbar */}
     <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',marginBottom:12}}>
@@ -6633,6 +6958,7 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
         <Btn onClick={()=>fileRef.current?.click()} style={{fontSize:12,padding:'8px 16px'}}><I n="upload" s={13}/> Upload Files</Btn>
       </div>
     </div>
+
 
     {/* Manage Folders panel */}
     {showFolderEditor&&<Card style={{padding:16,marginBottom:12,border:'1px solid rgba(167,139,250,0.2)'}}>
@@ -6663,6 +6989,7 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
       })}</div>}
     </Card>}
 
+
     {/* Manage Categories panel */}
     {showCatEditor&&<Card style={{padding:16,marginBottom:12,border:'1px solid rgba(167,139,250,0.2)'}}>
       <div style={{fontSize:13,fontWeight:700,color:'#f0f0f0',marginBottom:10,fontFamily:"'JetBrains Mono',monospace"}}>CUSTOM CATEGORIES</div>
@@ -6674,6 +7001,7 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
       <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>{customCategories.map(c=><span key={c} style={{display:'inline-flex',alignItems:'center',gap:6,padding:'6px 12px',borderRadius:14,background:'rgba(139,92,246,0.08)',border:'1px solid rgba(139,92,246,0.25)',fontSize:11,color:'#a78bfa',fontFamily:"'JetBrains Mono',monospace"}}>{c}<button onClick={()=>removeCustomCat(c)} style={{background:'none',border:'none',color:'#a78bfa',cursor:'pointer',fontSize:14,padding:0,lineHeight:1}}>x</button></span>)}</div>}
     </Card>}
 
+
     {/* Folder breadcrumb */}
     {currentFolder!==null&&<div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',marginBottom:12,background:'rgba(167,139,250,0.05)',border:'1px solid rgba(167,139,250,0.2)',borderRadius:10}}>
       <button onClick={()=>setCurrentFolder(null)} style={{background:'transparent',border:'none',color:'#a78bfa',cursor:'pointer',fontSize:11,fontFamily:"'JetBrains Mono',monospace",padding:0}}>&larr; All Files</button>
@@ -6682,12 +7010,14 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
       <span style={{marginLeft:'auto',fontSize:11,color:'#c4c4c4',fontFamily:"'JetBrains Mono',monospace"}}>{filtered.length} file{filtered.length!==1?'s':''}</span>
     </div>}
 
+
     {/* Drop zone */}
     <div ref={dropRef} onDrop={onDrop} onDragOver={onDragOver} onDragLeave={onDragLeave} onClick={()=>fileRef.current?.click()} style={{border:'2px dashed '+(dragOver?'#2dd4bf':'#1a1a1a'),background:dragOver?'rgba(45,212,191,0.04)':'transparent',borderRadius:12,padding:'24px 16px',textAlign:'center',cursor:'pointer',marginBottom:14,transition:'all 0.15s'}}>
       <I n="upload" s={24} color={dragOver?'#2dd4bf':'#333'}/>
       <div style={{fontSize:13,color:dragOver?'#2dd4bf':'#737373',marginTop:8,fontWeight:600}}>{dragOver?'Drop files to upload':'Drop files here or click to browse'}</div>
       <div style={{fontSize:11,color:'#525252',marginTop:4,fontFamily:"'JetBrains Mono',monospace"}}>PDF, Excel, CSV, images, anything up to 50MB</div>
     </div>
+
 
     {/* Pending upload preview */}
     {showAdd&&pendingFiles.length>0&&<Card style={{padding:16,marginBottom:14,border:'1px solid rgba(45,212,191,0.2)'}}>
@@ -6727,11 +7057,13 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
       </div>
     </Card>}
 
+
     {/* Legacy docs notice */}
     {legacyDocs.length>0&&<div style={{display:'flex',alignItems:'center',gap:8,padding:'10px 14px',marginBottom:12,background:'rgba(139,92,246,0.04)',border:'1px solid rgba(139,92,246,0.15)',borderRadius:10,flexWrap:'wrap'}}>
       <span style={{fontSize:11,color:'#a78bfa',fontFamily:"'JetBrains Mono',monospace"}}>{legacyDocs.length} legacy historical document{legacyDocs.length!==1?'s':''} from old History tab</span>
       <button onClick={()=>setShowHistorySection(!showHistorySection)} style={{padding:'4px 10px',borderRadius:6,border:'1px solid rgba(139,92,246,0.3)',background:'transparent',color:'#a78bfa',fontSize:11,cursor:'pointer',fontFamily:'inherit',marginLeft:'auto'}}>{showHistorySection?'Hide':'Show'} legacy</button>
     </div>}
+
 
     {/* Files table */}
     <div style={{overflowX:'auto',borderRadius:12,border:'1px solid #1a1a1a',background:'#000'}}>
@@ -6807,6 +7139,7 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
     </div>
     <div style={{fontSize:11,color:'#525252',textAlign:'center',padding:'10px 0',fontFamily:"'JetBrains Mono',monospace"}}>{filtered.length} of {totalFiles} file{totalFiles!==1?'s':''}{search?' matching "'+search+'"':''}</div>
 
+
     {/* Preview modal */}
     {previewFile&&<div style={{position:'fixed',inset:0,zIndex:99998,display:'flex',alignItems:'center',justifyContent:'center',padding:20,animation:'fadeUp 0.15s'}}>
       <div onClick={()=>setPreviewFile(null)} style={{position:'absolute',inset:0,background:'rgba(0,0,0,0.85)',backdropFilter:'blur(20px)'}}/>
@@ -6834,6 +7167,7 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
     </div>}
   </div>;
 }
+
 
 function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,getJobItems,notify,triggerPrint,dateFilter,jobNum,customSops,addSop,deleteSop,...fCtx}){
   const [tab,setTab]=useState("overview");
@@ -6885,13 +7219,16 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   const [showBankAcctEditor,setShowBankAcctEditor]=useState(false);
   const [acctNicknameDraft,setAcctNicknameDraft]=useState({});
 
+
   // Period presets
   const setPeriodPreset=(p)=>{setPeriod(p);const n=new Date();const y=n.getFullYear();const m=n.getMonth();if(p==="month"){const s=new Date(y,m,1);setDateFrom(s.toISOString().split("T")[0]);setDateTo(n.toISOString().split("T")[0])}else if(p==="quarter"){const qm=Math.floor(m/3)*3;setDateFrom(new Date(y,qm,1).toISOString().split("T")[0]);setDateTo(n.toISOString().split("T")[0])}else if(p==="ytd"){setDateFrom(new Date(y,0,1).toISOString().split("T")[0]);setDateTo(n.toISOString().split("T")[0])}else if(p==="year"){setDateFrom(new Date(y-1,m,n.getDate()).toISOString().split("T")[0]);setDateTo(n.toISOString().split("T")[0])}else if(p==="all"){setDateFrom("2020-01-01");setDateTo(n.toISOString().split("T")[0])}};
+
 
   // Filter jobs by date range
   const fromD=new Date(dateFrom+"T00:00:00");const toD=new Date(dateTo+"T23:59:59");
   const filteredJobs=jobs.filter(j=>{const d=new Date(j.createdDate);return d>=fromD&&d<=toD});
   const filteredItems=lineItems.filter(i=>{const j=jobs.find(jj=>jj.id===i.jobId);if(!j)return false;const d=new Date(j.createdDate);return d>=fromD&&d<=toD});
+
 
   // Core calculations (use filteredJobs)
   // Load manual transactions from SOPs
@@ -6929,6 +7266,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   filteredJobs.filter(j=>j.paymentStatus!=="paid").forEach(j=>{const f=getJobFinancials(j.id);const inv=j.dueDate?new Date(j.dueDate):new Date(j.createdDate||now);const days=Math.floor((now-inv)/86400000);if(days<=0)arAging.current+=f.totalRevenue;else if(days<=30)arAging.t30+=f.totalRevenue;else if(days<=60)arAging.t60+=f.totalRevenue;else if(days<=90)arAging.t90+=f.totalRevenue;else arAging.over90+=f.totalRevenue});
   const totalAR=arAging.current+arAging.t30+arAging.t60+arAging.t90+arAging.over90;
 
+
   // AR by customer breakdown
   const arByCustomer={};
   filteredJobs.filter(j=>j.paymentStatus!=="paid").forEach(j=>{
@@ -6945,6 +7283,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   });
   const arCustomerList=Object.entries(arByCustomer).map(([name,d])=>({name,...d})).sort((a,b)=>b.total-a.total);
   const unpaidJobCount=filteredJobs.filter(j=>j.paymentStatus!=="paid").length;
+
 
   // AP Aging -- what Midwest owes vendors (cost side of unpaid/undelivered jobs)
   const apAging={current:0,t30:0,t60:0,t90:0,over90:0};
@@ -6969,15 +7308,19 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   const totalAP=apAging.current+apAging.t30+apAging.t60+apAging.t90+apAging.over90;
   const apVendorList=Object.entries(apByVendor).map(([name,d])=>({name,...d})).sort((a,b)=>b.total-a.total);
 
+
   // Monthly revenue data
   const months=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   const monthlyData=months.map((m,i)=>{const mJobs=filteredJobs.filter(j=>{const d=new Date(j.createdDate);return d.getMonth()===i&&d.getFullYear()===new Date().getFullYear()});const rev=mJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const cost=mJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalCost,0);return{name:m,revenue:rev,cost,profit:rev-cost,margin:rev>0?((rev-cost)/rev*100):0}});
 
+
   // Vendor spend breakdown
   const vendorSpend=vendors.map(v=>{const spend=filteredItems.filter(i=>i.vendor===v.id).reduce((s,i)=>s+i.unitCost*i.qtyOrdered,0);return{name:v.name,spend,pct:totalCost>0?(spend/totalCost*100):0}}).filter(v=>v.spend>0).sort((a,b)=>b.spend-a.spend);
 
+
   // Customer revenue
   const custRev=customers.map(c=>{const rev=filteredJobs.filter(j=>j.customer===c.id).reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const jc=filteredJobs.filter(j=>j.customer===c.id).length;return{name:c.name,revenue:rev,jobs:jc,pct:totalRev>0?(rev/totalRev*100):0}}).filter(c=>c.revenue>0).sort((a,b)=>b.revenue-a.revenue);
+
 
   const generatePDF=(type)=>{
     const today=new Date().toLocaleDateString();
@@ -7040,7 +7383,9 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
     const w=window.open("","_blank");if(!w||w.closed){notify('Please allow popups to print','error');return}w.document.write(html);w.document.close();if(w.document.fonts){w.document.fonts.ready.then(()=>w.print())}else{setTimeout(()=>w.print(),800)}
   };
 
+
   const kpi=(label,value,sub,color)=><Card style={{padding:16,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:6}}>{label}</div><div style={{fontSize:"clamp(18px,4vw,28px)",fontWeight:800,color:color||"#f0f0f0",fontFamily:"'JetBrains Mono',monospace",lineHeight:1}}><AnimNum value={value}/></div>{sub&&<div style={{fontSize:12,color:"#a3a3a3",marginTop:6}}>{sub}</div>}</Card>;
+
 
   return <div style={{animation:"fadeUp 0.4s"}}>
     <Header title="Financials" sub="Financial Intelligence"/>
@@ -7050,6 +7395,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       <div style={{fontSize:12,color:"#525252",fontFamily:"'JetBrains Mono',monospace"}}>{filteredJobs.length} job{filteredJobs.length!==1?"s":""}</div>
     </div>
         <div className="fin-tabs" style={{display:"flex",gap:3,background:"#111",padding:3,borderRadius:8,marginBottom:16,flexWrap:"wrap"}}>{[["overview","Overview"],["pnl","P&L"],["balance","Balance Sheet"],["banking","Banking"],["ar","Receivables"],["ap","Payables"],["margin","Margins"],["reports","Reports"]].map(([v,l])=><button key={v} onClick={()=>setTab(v)} style={{padding:"6px 14px",borderRadius:6,border:"none",cursor:"pointer",background:tab===v?"#2dd4bf":"transparent",color:tab===v?"#000":"#737373",fontSize:12,fontWeight:tab===v?600:400,fontFamily:"inherit",transition:"all 0.15s",whiteSpace:"nowrap"}}>{l}</button>)}</div>
+
 
     {tab==="overview"&&<div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:14}} className="resp-grid-4">
@@ -7089,6 +7435,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       </div>
     </div>}
 
+
     {tab==="pnl"&&<Card style={{padding:20}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}><div style={{fontSize:18,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>Profit & Loss</div><div style={{display:"flex",gap:8}}><Btn v="secondary" onClick={()=>setTab("banking")} style={{fontSize:11}}><I n="plus" s={12}/> Add Entry</Btn><Btn onClick={()=>generatePDF("pnl")}><I n="download" s={14}/> Export PDF</Btn></div></div>
       <div style={{borderBottom:"2px solid #222",padding:"10px 0",display:"flex",justifyContent:"space-between"}}><span style={{fontSize:15,fontWeight:700,color:"#f0f0f0"}}>REVENUE</span><span style={{fontSize:15,fontWeight:700,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalRev)}</span></div>
@@ -7103,6 +7450,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       <div style={{background:"#34d39908",borderRadius:8,padding:"14px 4px",marginTop:16,display:"flex",justifyContent:"space-between",border:"1px solid #34d39920"}}><span style={{fontSize:17,fontWeight:800,color:"#f0f0f0"}}>NET INCOME</span><span style={{fontSize:17,fontWeight:800,color:netIncome>=0?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace"}}><AnimatedNumber value={netIncome} prefix="$"/></span></div>
     </Card>}
 
+
     {tab==="balance"&&(()=>{
       // Balance Sheet calculations
       const inventory=filteredItems.reduce((s,i)=>s+(i.unitCost||0)*Math.max(0,i.qtyOrdered-i.qtyReceived),0);
@@ -7116,7 +7464,9 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       const bsTotalLiabEquity=bsTotalLiab+bsEquity;
       const isBalanced=Math.abs(bsTotalAssets-bsTotalLiabEquity)<0.01;
 
+
       const bsLine=(label,value,indent,bold,color,border)=><div style={{display:"flex",justifyContent:"space-between",padding:(bold?"10px":"6px")+" "+(indent?"16px":"0"),borderBottom:border?"2px solid #222":"1px solid #111",background:bold&&border?"#0a0a0a":"transparent"}}><span style={{fontSize:bold?14:13,fontWeight:bold?700:400,color:bold?"#f0f0f0":"#a3a3a3"}}>{label}</span><span style={{fontSize:bold?15:13,fontWeight:bold?800:500,color:color||"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>{typeof value==='number'?fmt(value):value}</span></div>;
+
 
       return <div style={{display:"flex",flexDirection:"column",gap:16}}>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12}} className="resp-grid-4">
@@ -7126,11 +7476,13 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
           <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>BALANCED</div><div style={{fontSize:22,fontWeight:800,color:isBalanced?"#34d399":"#f87171"}}>{isBalanced?"Yes":"No"}</div><div style={{fontSize:11,color:"#737373",marginTop:4}}>A = L + E</div></Card>
         </div>
 
+
         <Card style={{padding:20}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:8}}>
             <div><div style={{fontSize:18,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>Balance Sheet</div><div style={{fontSize:12,color:"#737373",marginTop:2}}>As of {new Date(dateTo).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</div></div>
             <div style={{display:"flex",gap:8}}><Btn v="secondary" onClick={()=>setTab("banking")} style={{fontSize:11}}><I n="plus" s={12}/> Add Entry</Btn><Btn onClick={()=>generatePDF("balance")}><I n="download" s={14}/> Export PDF</Btn></div>
           </div>
+
 
           <div style={{background:"#2dd4bf08",borderRadius:10,padding:2,marginBottom:20,border:"1px solid #2dd4bf15"}}>
             <div style={{padding:"12px 14px",borderBottom:"2px solid #2dd4bf20"}}><span style={{fontSize:15,fontWeight:800,color:"#2dd4bf",letterSpacing:1}}>ASSETS</span></div>
@@ -7143,6 +7495,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
             <div style={{display:"flex",justifyContent:"space-between",padding:"12px 14px",background:"#2dd4bf10",borderRadius:"0 0 8px 8px"}}><span style={{fontSize:15,fontWeight:800,color:"#f0f0f0"}}>TOTAL ASSETS</span><span style={{fontSize:16,fontWeight:800,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsTotalAssets)}</span></div>
           </div>
 
+
           <div style={{background:"#f9731608",borderRadius:10,padding:2,marginBottom:20,border:"1px solid #f9731615"}}>
             <div style={{padding:"12px 14px",borderBottom:"2px solid #f9731620"}}><span style={{fontSize:15,fontWeight:800,color:"#f97316",letterSpacing:1}}>LIABILITIES</span></div>
             <div style={{padding:"8px 14px",borderBottom:"1px solid #222"}}><span style={{fontSize:12,fontWeight:700,color:"#e5e5e5",letterSpacing:0.5}}>Current Liabilities</span></div>
@@ -7153,17 +7506,20 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
             <div style={{display:"flex",justifyContent:"space-between",padding:"12px 14px",background:"#f9731610",borderRadius:"0 0 8px 8px"}}><span style={{fontSize:15,fontWeight:800,color:"#f0f0f0"}}>TOTAL LIABILITIES</span><span style={{fontSize:16,fontWeight:800,color:"#f97316",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsTotalLiab)}</span></div>
           </div>
 
+
           <div style={{background:bsEquity>=0?"#34d39908":"#f8717108",borderRadius:10,padding:2,marginBottom:20,border:"1px solid "+(bsEquity>=0?"#34d39915":"#f8717115")}}>
             <div style={{padding:"12px 14px",borderBottom:"2px solid "+(bsEquity>=0?"#34d39920":"#f8717120")}}><span style={{fontSize:15,fontWeight:800,color:bsEquity>=0?"#34d399":"#f87171",letterSpacing:1}}>EQUITY</span></div>
             {bsLine("Retained Earnings",bsRetained,true,false,bsRetained>=0?"#34d399":"#f87171")}
             <div style={{display:"flex",justifyContent:"space-between",padding:"12px 14px",background:bsEquity>=0?"#34d39910":"#f8717110",borderRadius:"0 0 8px 8px"}}><span style={{fontSize:15,fontWeight:800,color:"#f0f0f0"}}>TOTAL EQUITY</span><span style={{fontSize:16,fontWeight:800,color:bsEquity>=0?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsEquity)}</span></div>
           </div>
 
+
           <div style={{background:isBalanced?"#34d39908":"#f8717108",borderRadius:10,padding:"14px 16px",border:"1px solid "+(isBalanced?"#34d39920":"#f8717120"),display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <span style={{fontSize:17,fontWeight:800,color:"#f0f0f0"}}>TOTAL LIABILITIES & EQUITY</span>
             <span style={{fontSize:18,fontWeight:800,color:isBalanced?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsTotalLiabEquity)}</span>
           </div>
         </Card>
+
 
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}} className="resp-grid-2">
           <Card style={{padding:16}}><div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:14,fontFamily:"'JetBrains Mono',monospace"}}>Asset Breakdown</div>
@@ -7174,6 +7530,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
           </Card>
         </div>
       </div>})()}
+
 
     {tab==="banking"&&(()=>{
       const defaultCats=['Uncategorized','Revenue - Product Sales','Revenue - Shipping','Revenue - Installation','COGS - Vendor Payments','COGS - Freight','Operating - Rent','Operating - Utilities','Operating - Insurance','Operating - Office Supplies','Operating - Commissions','Operating - Payroll','Operating - Marketing','Operating - Professional Services','Tax Payment','Transfer','Owner Draw','Owner Investment','Refund','Other'];
@@ -7237,6 +7594,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       const bulkDelete=()=>{txnSelected.forEach(id=>deleteSop(id));notify(txnSelected.size+' transaction'+(txnSelected.size!==1?'s':'')+' deleted');setTxnSelected(new Set())};
       const bulkCategorize=(cat)=>{txnSelected.forEach(id=>{const t=allTxns.find(x=>x.id===id);if(t)updateCategory(id,cat)});notify(txnSelected.size+' transaction'+(txnSelected.size!==1?'s':'')+' categorized as '+cat);setTxnSelected(new Set())};
 
+
       // Plaid connect handler
       const handlePlaidConnect=async()=>{
         setPlaidLoading(true);
@@ -7286,10 +7644,12 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
         }catch(err){notify('Connection error: '+err.message,'error');setPlaidLoading(false)}
       };
 
+
       // Plaid sync handler
       // Build dedup set once: plaidIds + fallback hashes for all existing transactions
       const existingPlaidIds=new Set(manualTxns.filter(mt=>mt.plaidId).map(mt=>mt.plaidId));
       const existingHashes=new Set(manualTxns.map(mt=>(mt.date||'')+'|'+(mt.amount||'')+'|'+(mt.description||'').slice(0,12).toLowerCase()));
+
 
       const handlePlaidSync=async(rangeOverride,silent)=>{
         if(!plaidAccessToken){if(!silent)notify('No access token. Reconnect bank.','error');return}
@@ -7345,6 +7705,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
         setPlaidLoading(false);setPlaidSyncing(false);
       };
 
+
       // Auto-refresh every hour while bank is connected. Sets up once per session
       // (guarded by plaidAutoSyncRef) and uses setInterval to fire silent syncs.
       // Also catches up immediately if last sync was more than 1 hour ago when the
@@ -7379,6 +7740,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
         },3600000);
       }
 
+
       return <div style={{display:"flex",flexDirection:"column",gap:16}}>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12}} className="resp-grid-4">
           {kpi("TOTAL IN",fmt(totalBankIn),filteredBankTxns.filter(t=>t.type==='revenue').length+" deposits","#34d399")}
@@ -7386,6 +7748,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
           {kpi("NET",fmt(totalBankIn-totalBankOut),"","#2dd4bf")}
           {kpi("UNCATEGORIZED",String(uncategorized),uncategorized>0?"needs review":"all done",uncategorized>0?"#fbbf24":"#34d399")}
         </div>
+
 
         <Card style={{padding:16}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
@@ -7436,6 +7799,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
           <div style={{display:"flex",gap:8}}><Btn onClick={saveTxn}>{manualEditing?'Update':'Add Transaction'}</Btn>{manualEditing&&<Btn v="secondary" onClick={()=>{setManualForm({date:'',description:'',category:'',amount:'',type:'expense',account:'Operating'});setManualEditing(null)}}>Cancel</Btn>}</div>
         </Card>
 
+
         <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
           <input value={bankSearch} onChange={e=>setBankSearch(e.target.value)} placeholder="Search transactions..." style={{...inputStyle,flex:1,minWidth:200,maxWidth:300}}/>
           <select value={bankCatFilter} onChange={e=>setBankCatFilter(e.target.value)} style={{...inputStyle,width:"auto"}}><option value="all">All Categories</option>{categories.map(c=><option key={c} value={c}>{c}</option>)}</select>
@@ -7472,6 +7836,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
           <span style={{fontSize:11,color:"#737373"}}>{filteredBankTxns.length} transaction{filteredBankTxns.length!==1?'s':''}{customCats.length>0?' -- '+customCats.length+' custom':''}</span>
         </div>
 
+
         {showCatEditor&&<Card style={{padding:16,border:"1px solid #2dd4bf20"}}>
           <div style={{fontSize:14,fontWeight:700,color:"#f0f0f0",marginBottom:12}}>Manage Categories</div>
           <div style={{display:"flex",gap:8,marginBottom:14}}>
@@ -7488,6 +7853,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
           <div style={{fontSize:11,color:"#737373",marginBottom:6,fontWeight:600}}>DEFAULT CATEGORIES ({defaultCats.length})</div>
           <div style={{display:"flex",flexWrap:"wrap",gap:4}}>{defaultCats.map(c=><span key={c} style={{padding:"3px 8px",background:"#0a0a0a",border:"1px solid #1a1a1a",borderRadius:5,fontSize:10,color:"#737373"}}>{c}</span>)}</div>
         </Card>}
+
 
         {showAcctEditor&&<Card style={{padding:16,border:"1px solid #a78bfa20"}}>
           <div style={{fontSize:14,fontWeight:700,color:"#f0f0f0",marginBottom:12}}>Manage Accounts</div>
@@ -7506,6 +7872,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
           <div style={{fontSize:11,color:"#737373",marginBottom:6,fontWeight:600}}>DEFAULT ACCOUNTS ({defaultAccts.length})</div>
           <div style={{display:"flex",flexWrap:"wrap",gap:4}}>{defaultAccts.map(a=><span key={a} style={{padding:"3px 8px",background:"#0a0a0a",border:"1px solid #1a1a1a",borderRadius:5,fontSize:10,color:"#737373"}}>{a}</span>)}</div>
         </Card>}
+
 
         {showBankAcctEditor&&<Card style={{padding:16,border:"1px solid #a78bfa20"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
@@ -7544,12 +7911,14 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
           })}</div>}
         </Card>}
 
+
         {txnSelected.size>0&&<div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",background:"#2dd4bf08",border:"1px solid #2dd4bf20",borderRadius:8}}>
           <span style={{fontSize:13,color:"#2dd4bf",fontWeight:600}}>{txnSelected.size} selected</span>
           <select onChange={e=>{if(e.target.value)bulkCategorize(e.target.value);e.target.value=''}} style={{background:"#111",border:"1px solid #222",color:"#a3a3a3",borderRadius:6,padding:"4px 8px",fontSize:11,fontFamily:"inherit",cursor:"pointer"}}><option value="">Bulk categorize...</option>{categories.map(c=><option key={c} value={c}>{c}</option>)}</select>
           <Btn v="secondary" style={{fontSize:11,padding:"4px 10px",color:"#f87171",border:"1px solid #f8717130"}} onClick={bulkDelete}>Delete Selected</Btn>
           <button onClick={()=>setTxnSelected(new Set())} style={{background:"none",border:"none",color:"#737373",cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>Clear</button>
         </div>}
+
 
         {filteredBankTxns.length===0?<Card style={{padding:40,textAlign:"center"}}><div style={{fontSize:14,color:"#525252"}}>No transactions yet. Add entries manually or connect your bank via Plaid.</div></Card>:
         <Card style={{padding:0,overflow:"hidden"}}>
@@ -7584,6 +7953,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
         </Card>}
       </div>})()}
 
+
     {tab==="ar"&&<div style={{display:"flex",flexDirection:"column",gap:16}}>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12}} className="resp-grid-4">
         <Card style={{padding:16,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:6}}>TOTAL AR</div><div style={{fontSize:"clamp(18px,4vw,28px)",fontWeight:800,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace",lineHeight:1}}><AnimNum value={fmt(totalAR)}/></div><div style={{fontSize:12,color:"#a3a3a3",marginTop:6}}>{unpaidJobCount} unpaid job{unpaidJobCount!==1?"s":""}</div></Card>
@@ -7591,6 +7961,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
         <Card style={{padding:16,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:6}}>30+ DAYS</div><div style={{fontSize:"clamp(18px,4vw,28px)",fontWeight:800,color:"#fbbf24",fontFamily:"'JetBrains Mono',monospace",lineHeight:1}}><AnimNum value={fmt(arAging.t30+arAging.t60+arAging.t90+arAging.over90)}/></div><div style={{fontSize:12,color:"#a3a3a3",marginTop:6}}>{totalAR>0?((arAging.t30+arAging.t60+arAging.t90+arAging.over90)/totalAR*100).toFixed(0):0}%</div></Card>
         <Card style={{padding:16,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:6}}>90+ OVERDUE</div><div style={{fontSize:"clamp(18px,4vw,28px)",fontWeight:800,color:arAging.over90>0?"#f87171":"#34d399",fontFamily:"'JetBrains Mono',monospace",lineHeight:1}}><AnimNum value={fmt(arAging.over90)}/></div><div style={{fontSize:12,color:"#a3a3a3",marginTop:6}}>{arAging.over90>0?"Action needed":"On track"}</div></Card>
       </div>
+
 
       <Card style={{padding:20}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}><div style={{fontSize:18,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>Accounts Receivable Aging</div><Btn onClick={()=>generatePDF("ar")}><I n="download" s={14}/> Export PDF</Btn></div>
@@ -7600,12 +7971,14 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
         </tbody></table></div>
       </Card>
 
+
       <Card style={{padding:16}}>
         <div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:14,fontFamily:"'JetBrains Mono',monospace"}}>AR by Customer</div>
         {arCustomerList.slice(0,10).map((c,i)=><div key={c.name} style={{marginBottom:10}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:24,height:24,borderRadius:6,background:"#2dd4bf12",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"#2dd4bf",fontWeight:800,fontFamily:"'JetBrains Mono',monospace"}}>{i+1}</div><div><span style={{fontSize:13,color:"#e5e5e5",fontWeight:500}}>{c.name}</span><span style={{fontSize:11,color:"#737373",marginLeft:8}}>{c.jobs} job{c.jobs!==1?"s":""}</span></div></div><div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:13,fontWeight:700,color:"#e5e5e5",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(c.total)}</span><span style={{fontSize:11,color:"#737373"}}>{totalAR>0?(c.total/totalAR*100).toFixed(0):0}%</span></div></div><Bar value={c.total} max={arCustomerList[0]?.total||1} color={c.over90>0?"#f87171":c.t90>0?"#f97316":c.t60>0?"#fbbf24":"#2dd4bf"} height={5}/></div>)}
         {arCustomerList.length===0&&<div style={{textAlign:"center",padding:20,color:"#525252",fontSize:13}}>All invoices are paid</div>}
       </Card>
     </div>}
+
 
     {tab==="ap"&&<div style={{display:"flex",flexDirection:"column",gap:16}}>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12}} className="resp-grid-4">
@@ -7615,6 +7988,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
         <Card style={{padding:16,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:6}}>90+ OVERDUE</div><div style={{fontSize:"clamp(18px,4vw,28px)",fontWeight:800,color:apAging.over90>0?"#f87171":"#34d399",fontFamily:"'JetBrains Mono',monospace",lineHeight:1}}><AnimNum value={fmt(apAging.over90)}/></div><div style={{fontSize:12,color:"#a3a3a3",marginTop:6}}>{apAging.over90>0?"Action needed":"On track"}</div></Card>
       </div>
 
+
       <Card style={{padding:20}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}><div style={{fontSize:18,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>Accounts Payable Aging</div><Btn onClick={()=>generatePDF("ap")}><I n="download" s={14}/> Export PDF</Btn></div>
         <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:500}}><thead><tr style={{borderBottom:"2px solid #222"}}>{["Vendor","Items","Current","1-30","31-60","61-90","90+","Total"].map(h=><th key={h} style={{padding:"8px 6px",textAlign:h==="Vendor"?"left":"right",color:"#737373",fontSize:11,fontWeight:600}}>{h}</th>)}</tr></thead><tbody>
@@ -7623,11 +7997,13 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
         </tbody></table></div>
       </Card>
 
+
       <Card style={{padding:16}}>
         <div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:14,fontFamily:"'JetBrains Mono',monospace"}}>AP by Vendor</div>
         {apVendorList.slice(0,10).map((v,i)=><div key={v.name} style={{marginBottom:10}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:24,height:24,borderRadius:6,background:"#a78bfa12",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"#a78bfa",fontWeight:800,fontFamily:"'JetBrains Mono',monospace"}}>{i+1}</div><span style={{fontSize:13,color:"#e5e5e5",fontWeight:500}}>{v.name}</span></div><div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:13,fontWeight:700,color:"#e5e5e5",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(v.total)}</span><span style={{fontSize:11,color:"#737373"}}>{totalAP>0?(v.total/totalAP*100).toFixed(0):0}%</span></div></div><Bar value={v.total} max={apVendorList[0]?.total||1} color="#a78bfa" height={5}/></div>)}
       </Card>
     </div>}
+
 
     {tab==="margin"&&<Card style={{padding:20}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}><div style={{fontSize:18,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>Job Margin Analysis</div><Btn onClick={()=>generatePDF("margin")}><I n="download" s={14}/> Export PDF</Btn></div>
@@ -7636,6 +8012,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
         <tr style={{borderTop:"2px solid #222"}}><td style={{padding:"8px 6px",fontWeight:700}} colSpan={2}>TOTAL</td><td style={{padding:"8px 6px",textAlign:"right",fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalRev)}</td><td style={{padding:"8px 6px",textAlign:"right",fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}><AnimatedNumber value={totalCost} prefix="$"/></td><td style={{padding:"8px 6px",textAlign:"right",fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:grossProfit>=0?"#34d399":"#f87171"}}><AnimatedNumber value={grossProfit} prefix="$"/></td><td style={{padding:"8px 6px",textAlign:"right",fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}>{grossMargin.toFixed(1)}%</td></tr>
       </tbody></table></div>
     </Card>}
+
 
     {tab==="reports"&&<div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(250px,1fr))",gap:12}} className="resp-grid-2">
@@ -7656,6 +8033,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   </div>;
 }
 
+
 function UserMgmtPage({notify,reps,customSops,addSop,deleteSop}){
   const [users,setUsers]=useState([]);
   const [loading,setLoading]=useState(true);
@@ -7664,12 +8042,15 @@ function UserMgmtPage({notify,reps,customSops,addSop,deleteSop}){
   const [editingUser,setEditingUser]=useState(null);
   const [newUser,setNewUser]=useState({name:"",username:"",password:"",role:"sales",rep_id:""});
 
+
   useEffect(()=>{(async()=>{const data=await db.fetchUsers();if(data)setUsers(data);setLoading(false)})()},[]);
+
 
   // Load Clerk user roles from SOPs settings
   const clerkRolesRaw=(customSops||[]).find(s=>s.id==="CLERK_USER_ROLES"&&s.cat==="Settings");
   const clerkRoles=clerkRolesRaw?JSON.parse(clerkRolesRaw.content||"{}"):{}; 
   // clerkRoles = { "clerk-id-xxx": { role: "admin", pages: [...], name: "...", email: "..." } }
+
 
   const saveClerkRole=(clerkId,roleData)=>{
     const updated={...clerkRoles,[clerkId]:roleData};
@@ -7677,22 +8058,28 @@ function UserMgmtPage({notify,reps,customSops,addSop,deleteSop}){
     notify("Updated role for "+roleData.name);
   };
 
+
   // Get all Clerk users from the clerkRoles store
   const clerkUsers=Object.entries(clerkRoles).map(([id,data])=>({id,clerkId:id,...data}));
 
+
   const addUser=async()=>{if(!newUser.name||!newUser.username||!newUser.password){notify("All fields required");return}const user={id:"USR-"+Math.random().toString(36).slice(2,8).toUpperCase(),username:newUser.username.trim().toLowerCase(),password:newUser.password,role:newUser.role,rep_id:newUser.role==="sales"?newUser.rep_id:"",name:newUser.name.trim()};const res=await db.saveUser(user);if(res?.ok){setUsers(p=>[...p,user]);setNewUser({name:"",username:"",password:"",role:"sales",rep_id:""});setShowAdd(false);notify("User created: "+user.name)}else{notify("Error creating user -- username may exist")}};
 
+
   const deleteUser=async(id)=>{if(!confirm("Delete this user?"))return;await db.deleteUser(id);setUsers(p=>p.filter(u=>u.id!==id));notify("User deleted")};
+
 
   const roleColor={admin:"#2dd4bf",office:"#a78bfa",sales:"#fbbf24"};
   const allPages=["dashboard","jobs","deliveries","documents","files","commissions","financials","salesportal","prospects","playbook","tasks","notes","brain","exitreadiness","usermgmt"];
   const pageLabels={dashboard:"Command Center",jobs:"Job Records",deliveries:"Delivery Tracker",documents:"Documents",files:"Files",commissions:"Commissions",financials:"Financials",salesportal:"Sales Portal",prospects:"Prospects",playbook:"Playbook & SOPs",tasks:"Tasks",notes:"Notes",brain:"Brain",exitreadiness:"Exit Readiness",usermgmt:"Users & Permissions"};
   const roleDefaults={admin:allPages,office:["dashboard","jobs","deliveries","documents","files","salesportal","prospects","playbook","tasks","notes","brain"],sales:["dashboard","jobs","deliveries","documents","files","tasks","notes","brain","salesportal","prospects"]};
 
+
   const allUsersList=[
     ...users.map(u=>{const dbPages=(()=>{try{return u.pages?JSON.parse(u.pages):null}catch{return null}})();return{...u,source:"password",pages:u.pages,_pages:dbPages||roleDefaults[u.role]||roleDefaults.sales}}),
     ...clerkUsers.map(u=>({...u,source:"clerk",username:u.email||"Google/Apple",pages:u.pages,_pages:u.pages||roleDefaults[u.role||"admin"]}))
   ];
+
 
   return <div style={{animation:"fadeUp 0.4s"}}>
     <Header title="Users & Permissions" sub="Manage team access"/>
@@ -7700,6 +8087,7 @@ function UserMgmtPage({notify,reps,customSops,addSop,deleteSop}){
       <div style={{fontSize:13,color:"#a3a3a3"}}>{allUsersList.length} user{allUsersList.length!==1?"s":""} ({users.length} password, {clerkUsers.length} Google/Apple)</div>
       <Btn onClick={()=>setShowAdd(!showAdd)}>{showAdd?"Cancel":"+ Add User"}</Btn>
     </div>
+
 
     {showAdd&&<Card style={{padding:20,marginBottom:16,border:"1px solid rgba(45,212,191,0.15)"}}>
       <div style={{fontSize:15,fontWeight:700,color:"#2dd4bf",marginBottom:14}}>New User (Username/Password)</div>
@@ -7712,6 +8100,7 @@ function UserMgmtPage({notify,reps,customSops,addSop,deleteSop}){
       {newUser.role==="sales"&&<div style={{marginBottom:12}}><label style={{fontSize:13,color:"#c4c4c4",display:"block",marginBottom:4}}>Link to Sales Rep</label><select value={newUser.rep_id} onChange={e=>setNewUser({...newUser,rep_id:e.target.value})} style={{width:"100%",padding:"10px 14px",background:"#000",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,color:"#f0f0f0",fontSize:14,fontFamily:"inherit",outline:"none",boxSizing:"border-box"}}><option value="">Select rep...</option>{reps.filter(r=>!r.id.includes("SEED_FLAG")).map(r=><option key={r.id} value={r.id}>{r.name} -- {r.territory}</option>)}</select></div>}
       <Btn onClick={addUser}>Create User</Btn>
     </Card>}
+
 
     {loading?<div style={{textAlign:"center",padding:40,color:"#737373"}}>Loading users...</div>:
     <div style={{display:"grid",gap:10}}>
@@ -7733,6 +8122,7 @@ function UserMgmtPage({notify,reps,customSops,addSop,deleteSop}){
           </div>
         </div>
 
+
         {editingUser===u.id&&<div style={{marginTop:14,padding:16,background:"#0a0a0a",borderRadius:12,border:"1px solid #222"}}>
           <div style={{fontSize:13,fontWeight:700,color:"#a78bfa",marginBottom:12}}>Edit Permissions -- {u.name}</div>
           {/* Role selector */}
@@ -7744,6 +8134,7 @@ function UserMgmtPage({notify,reps,customSops,addSop,deleteSop}){
               db.saveUser({...u,role:r.v,pages:newPages}).then(()=>{setUsers(prev=>prev.map(x=>x.id===u.id?{...x,role:r.v,pages:newPages}:x));notify("Role updated to "+r.l+" -- pages reset to default")}).catch(()=>{})
             }
           }} style={{padding:"8px 16px",borderRadius:8,border:"1px solid "+((u.role||"admin")===r.v?(roleColor[r.v]||"#525252")+"60":"#222"),background:(u.role||"admin")===r.v?(roleColor[r.v]||"#525252")+"12":"transparent",color:(u.role||"admin")===r.v?roleColor[r.v]:"#737373",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>{r.l}</button>)}</div></div>
+
 
           {/* Page-level permissions -- granular control regardless of role */}
           <div><label style={{fontSize:12,color:"#737373",display:"block",marginBottom:8}}>Visible Pages<span style={{color:"#525252",fontWeight:400,marginLeft:6}}>Click to show/hide</span></label>
@@ -7767,15 +8158,18 @@ function UserMgmtPage({notify,reps,customSops,addSop,deleteSop}){
             })}
           </div></div>
 
+
           {/* Password change for password users */}
           {u.source!=="clerk"&&<div style={{marginTop:12}}><button onClick={()=>setChangingPw(changingPw===u.id?null:u.id)} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #333",background:"transparent",color:"#a3a3a3",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Change Password</button>
           {changingPw===u.id&&<div style={{marginTop:8,display:"flex",gap:8,alignItems:"center"}}><input id={"pw-"+u.id} type="password" placeholder="New password" style={{flex:1,padding:"8px 12px",background:"#000",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"#f0f0f0",fontSize:13,fontFamily:"inherit",outline:"none"}}/><Btn onClick={async()=>{const pw=document.getElementById("pw-"+u.id)?.value;if(!pw||pw.length<4){notify("Password must be at least 4 characters");return}const res=await db.saveUser({...u,password:pw});if(res?.ok){notify("Password updated for "+u.name);setChangingPw(null)}else{notify("Error updating password")}}}>Save</Btn></div>}</div>}
+
 
           {/* Clerk user info */}
           {u.source==="clerk"&&<div style={{marginTop:12,fontSize:11,color:"#525252"}}>Signed in via Google/Apple. Role and page access managed here.</div>}
         </div>}
       </Card>)}
     </div>}
+
 
     <Card style={{marginTop:20,padding:16,border:"1px solid rgba(167,139,250,0.1)"}}>
       <div style={{fontSize:14,fontWeight:700,color:"#a78bfa",marginBottom:8}}>Permission Levels</div>
@@ -7788,9 +8182,12 @@ function UserMgmtPage({notify,reps,customSops,addSop,deleteSop}){
   </div>;
 }
 
+
 function DirectoryPage({vendors,customers,reps,updateVendor,addVendor,deleteVendor,forceDeleteVendor,forceDeleteCustomer,forceDeleteRep,updateCustomer,addCustomer,deleteCustomer,updateRep,addRep,deleteRep,notify,jobs,lineItems,getJobFinancials,getJobItems,setPage,confirm}){
   
   // Custom checkbox component
+
+
 
 
 const [tab,setTab]=useState("vendors");
@@ -7803,6 +8200,7 @@ const [tab,setTab]=useState("vendors");
   const [bulkAction,setBulkAction]=useState(null);
   const [custDetail,setCustDetail]=useState(null);
   const [vendorDetail,setVendorDetail]=useState(null);
+
 
   const startEdit=(item)=>{if(editId===item.id){setEditId(null);setForm({});return}setEditId(item.id);setForm({...item,roles:Array.isArray(item.roles)&&item.roles.length>0?item.roles:getRoles(item)});setAdding(false);setSelected(new Set())};
   const startAdd=()=>{setAdding(true);setEditId(null);setSelected(new Set());
@@ -7834,6 +8232,7 @@ const [tab,setTab]=useState("vendors");
   const cancel=()=>{setEditId(null);setAdding(false);setForm({})};
   const field = (k, l, type) => <div key={k}><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>{l}</label>{type==="select-tier"?<select value={form[k]||""} onChange={e=>setForm(prev=>({...prev,[k]:e.target.value}))} style={inputStyle}>{["Associate","Mid-Level","Senior"].map(t=><option key={t}>{t}</option>)}</select>:<input type={type||"text"} value={form[k]==null?"":form[k]} onChange={e=>setForm(prev=>({...prev,[k]:e.target.value}))} style={inputStyle}/>}</div>;
 
+
   // Bulk operations
   const toggleSelect=(id)=>{const s=new Set(selected);if(s.has(id))s.delete(id);else s.add(id);setSelected(s)};
   const list=tab==="vendors"?vendors:tab==="customers"?customers:reps;
@@ -7861,6 +8260,7 @@ const [tab,setTab]=useState("vendors");
     notify(selected.size+" "+tab+" updated");
     setBulkAction(null);
   };
+
 
   // Customer analytics mini-view
   const CustAnalytics=({cust})=>{
@@ -7895,6 +8295,7 @@ const [tab,setTab]=useState("vendors");
       {totalOrdered>0&&<div style={{marginTop:12}}><div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#737373",marginBottom:3}}><span>Delivery Progress</span><span>{totalReceived}/{totalOrdered} units</span></div><div style={{height:6,background:"#111",borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:(totalReceived/totalOrdered*100)+"%",background:"linear-gradient(90deg,#2dd4bf,#34d399)",borderRadius:3}}/></div></div>}
     </Card>
   };
+
 
   // Inline vendor analytics panel -- mirrors CustAnalytics structure but scoped
   // to line items where i.vendor === vend.id. "Spend" here is OUR cost (unitCost*qtyOrdered).
@@ -7933,11 +8334,13 @@ const [tab,setTab]=useState("vendors");
     </Card>
   };
 
+
   // CSV Upload for vendors/customers/reps
   const csvUploadRef=React.useRef(null);
   const enrichUploadRef=React.useRef(null);
   const [csvPreview,setCsvPreview]=useState(null); // {rows:[{...,_action,_existingId,_changes}], tab, dupeCount, newCount, enrichCount}
   const [enrichLoading,setEnrichLoading]=useState(false);
+
 
   // Heuristic field validator -- detects when CSV columns hold the wrong kind of
   // data (e.g. an email in the phone column, an address in the name column) and
@@ -7986,6 +8389,7 @@ const [tab,setTab]=useState("vendors");
     return r;
   };
 
+
   const handleCsvUpload=async(file)=>{
     if(!file)return;
     try{
@@ -8001,6 +8405,7 @@ const [tab,setTab]=useState("vendors");
     if(csvUploadRef.current)csvUploadRef.current.value='';
     if(enrichUploadRef.current)enrichUploadRef.current.value='';
   };
+
 
   // PDF / image directory ingestion via Claude Vision (/api/ai-scan).
   // Sends the file as base64 and asks Claude to extract a JSON array of vendor
@@ -8027,6 +8432,7 @@ const [tab,setTab]=useState("vendors");
     setEnrichLoading(false);
     if(enrichUploadRef.current)enrichUploadRef.current.value='';
   };
+
 
   // Common ingestion path -- runs validation, dedupe, and enrichment-vs-new
   // classification on a parsed array of rows from either CSV or PDF.
@@ -8089,6 +8495,7 @@ const [tab,setTab]=useState("vendors");
     notify(previewRows.length+' records ready: '+newCount+' new, '+enrichCount+' enrichments');
   };
 
+
   const csvPreviewUpdate=(idx,field,value)=>{setCsvPreview(prev=>{if(!prev)return prev;const rows=[...prev.rows];rows[idx]={...rows[idx],[field]:value};return{...prev,rows}})};
   const csvPreviewToggle=(idx)=>{setCsvPreview(prev=>{if(!prev)return prev;const rows=[...prev.rows];rows[idx]={...rows[idx],_include:!rows[idx]._include};return{...prev,rows}})};
   const csvPreviewConfirm=()=>{
@@ -8103,6 +8510,7 @@ const [tab,setTab]=useState("vendors");
     notify(parts.join(', ')+' '+label+' saved');
     setCsvPreview(null);
   };
+
 
   // CSV Export -- download the current tab's list as a .csv file
   const exportCsv=()=>{
@@ -8123,6 +8531,7 @@ const [tab,setTab]=useState("vendors");
     notify('Exported '+data.length+' '+tab+' to CSV');
   };
 
+
   return <div style={{animation:"fadeUp 0.4s"}}><Header title="Directory" sub="Manage all vendors, customers, and team members -- edit, add, sort" action={<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
       <input ref={csvUploadRef} type="file" accept=".csv,.tsv" onChange={e=>{if(e.target.files[0])handleCsvUpload(e.target.files[0])}} style={{display:"none"}}/>
       <input ref={enrichUploadRef} type="file" accept=".csv,.tsv,.pdf,image/*" onChange={e=>{const f=e.target.files[0];if(!f)return;const ext=f.name.toLowerCase().split('.').pop();if(ext==='csv'||ext==='tsv')handleCsvUpload(f);else handlePdfUpload(f)}} style={{display:"none"}}/>
@@ -8136,6 +8545,7 @@ const [tab,setTab]=useState("vendors");
       <input value={dirSearch} onChange={e=>setDirSearch(e.target.value)} placeholder={"Search "+tab+"..."} style={{...inputStyle,maxWidth:260,background:"#111111",border:"1px solid #222222",padding:"8px 14px"}}/>
     </div>
 
+
     {/* Bulk action bar */}
     {selected.size>0&&<div style={{display:"flex",alignItems:"center",gap:12,padding:"10px 16px",background:"rgba(45,212,191,0.06)",border:"1px solid rgba(45,212,191,0.15)",borderRadius:10,marginBottom:16,flexWrap:"wrap"}}>
       <span style={{fontSize:13,fontWeight:600,color:"#2dd4bf"}}>{selected.size} selected</span>
@@ -8147,12 +8557,14 @@ const [tab,setTab]=useState("vendors");
       {bulkAction==="category"&&<div style={{display:"flex",gap:8,alignItems:"center"}}><select onChange={e=>{if(e.target.value)handleBulkEdit("category",e.target.value)}} style={{...inputStyle,width:180,padding:"5px 10px"}}><option value="">Choose category...</option><option>Classroom Furniture</option><option>Collaborative Tables</option><option>Seating</option><option>Science Lab</option><option>Early Childhood</option><option>AV Equipment</option><option>Storage</option><option>Library</option><option>Cafeteria</option><option>Office</option></select></div>}
     </div>}
 
+
     {adding&&<Card style={{marginBottom:16,border:"1px solid #2dd4bf30"}}><div style={{fontSize:14,fontWeight:700,marginBottom:12,color:"#2dd4bf"}}>Add New {tab==="vendors"?"Vendor":tab==="customers"?"Customer":"Team Member"}</div>
       {tab==="vendors"&&<div style={{display:"grid",gridTemplateColumns:"2fr 1.5fr 2fr 1fr 1fr",gap:12,marginBottom:12}}>{field("name","Company Name")}{field("contact","Contact Person")}{field("email","Email")}{field("phone","Phone")}{field("category","Category")}</div>}{tab==="vendors"&&<div style={{display:"grid",gridTemplateColumns:"3fr 1fr 1fr",gap:12,marginBottom:12}}><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Address</label><input value={form.address||""} onChange={e=>setForm(prev=>({...prev,address:e.target.value}))} placeholder="Full address..." style={{...inputStyle,width:"100%"}}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Discount Rate (%)</label><input type="number" step="1" value={((form.discountRate||0)*100).toFixed(0)} onChange={e=>setForm(prev=>({...prev,discountRate:parseFloat(e.target.value)/100||0}))} style={inputStyle}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Discount Method</label><select value={form.discountType||"percentage"} onChange={e=>setForm(prev=>({...prev,discountType:e.target.value}))} style={inputStyle}><option value="percentage">Straight %</option><option value="reciprocal">Reciprocal (e.g. 50/10/5)</option></select></div></div>}{tab==="vendors"&&form.discountType==="reciprocal"&&<div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:12,marginBottom:12}}><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Reciprocal Tiers (e.g. 50/10/5)</label><input value={form.reciprocalTiers||""} onChange={e=>{const tiers=e.target.value;const parts=tiers.split("/").map(s=>parseFloat(s.trim())/100).filter(n=>!isNaN(n)&&n>0);const compound=parts.length>0?1-parts.reduce((acc,p)=>acc*(1-p),1):0;setForm(prev=>({...prev,reciprocalTiers:tiers,discountRate:compound}))}} placeholder="50/10/5" style={inputStyle}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Effective Rate</label><div style={{padding:"8px 12px",background:"#0a0a0a",borderRadius:6,border:"1px solid #222",fontSize:14,fontWeight:700,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{((form.discountRate||0)*100).toFixed(2)}%</div></div></div>}{tab==="vendors"&&<div style={{marginBottom:12}}><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Discount Notes</label><textarea value={form.discountNotes||""} onChange={e=>setForm(prev=>({...prev,discountNotes:e.target.value}))} placeholder="Volume thresholds, freight terms..." rows={3} style={{...inputStyle,resize:"vertical",minHeight:60,width:"100%"}}/></div>}
       {tab==="customers"&&<div style={{display:"grid",gridTemplateColumns:"2fr 1.5fr 2fr 1fr 1fr",gap:12,marginBottom:12}}>{field("name","Organization Name")}{field("contact","Contact Person")}{field("email","Email")}{field("phone","Phone")}{field("type","Type")}</div>}{tab==="customers"&&<div style={{marginBottom:12}}><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Address</label><input value={form.address||""} onChange={e=>setForm(prev=>({...prev,address:e.target.value}))} placeholder="Full address..." style={{...inputStyle,width:"100%"}}/></div>}
       {tab==="reps"&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:12}}>{field("name","Name")}{field("email","Email")}{field("territory","Territory")}<div style={{gridColumn:"span 2"}}><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Role (select one or more)</label><div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{["Owner","Sales","Office"].map(role=>{const on=Array.isArray(form.roles)&&form.roles.includes(role);return <button type="button" key={role} onClick={()=>{const current=Array.isArray(form.roles)?form.roles:[];const next=on?current.filter(r=>r!==role):[...current,role];setForm(prev=>({...prev,roles:next}))}} style={{padding:"6px 14px",borderRadius:8,border:"1px solid "+(on?"#2dd4bf":"rgba(255,255,255,0.08)"),background:on?"rgba(45,212,191,0.1)":"transparent",color:on?"#2dd4bf":"#737373",fontSize:12,fontWeight:on?600:400,cursor:"pointer",fontFamily:"inherit"}}>{role}</button>})}</div></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Commission Rate (%)</label><input type="number" step="0.5" value={((form.commissionRate||0)*100).toFixed(1)} onChange={e=>setForm(prev=>({...prev,commissionRate:parseFloat(e.target.value)/100||0}))} style={inputStyle}/></div></div>}
       <div style={{display:"flex",gap:8}}><Btn onClick={save}>Add</Btn><Btn v="secondary" onClick={cancel}>Cancel</Btn></div>
     </Card>}
+
 
     {/* Import & Enrichment Preview */}
     {csvPreview&&<Card style={{marginBottom:20,border:"1px solid rgba(45,212,191,0.2)"}}>
@@ -8212,11 +8624,14 @@ const [tab,setTab]=useState("vendors");
       </Btn>
     </Card>}
 
+
     {/* Customer analytics panel */}
     {custDetail&&tab==="customers"&&<CustAnalytics cust={custDetail}/>}
 
+
     {/* Vendor analytics panel */}
     {vendorDetail&&tab==="vendors"&&<VendorAnalytics vend={vendorDetail}/>}
+
 
     {/* Sort + Select All */}
     <div style={{marginBottom:8,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
@@ -8225,6 +8640,7 @@ const [tab,setTab]=useState("vendors");
       <span style={{fontSize:12,color:"#a3a3a3"}}>Sort by:</span>
       {(tab==="vendors"?["name","category","contact"]:tab==="customers"?["name","type","contact"]:["name","territory","tier"]).map(s=><button key={s} onClick={()=>setSort(s)} style={{fontSize:12,padding:"3px 10px",borderRadius:6,border:"none",cursor:"pointer",background:sort===s?"#2dd4bf22":"transparent",color:sort===s?"#2dd4bf":"#525252",fontFamily:"inherit"}}>{s}</button>)}
     </div>
+
 
     {/* Inline edit form renderer */}
     {(()=>{
@@ -8236,10 +8652,12 @@ const [tab,setTab]=useState("vendors");
         <div style={{display:"flex",gap:8}}><Btn onClick={save}>Save Changes</Btn><Btn v="secondary" onClick={cancel}>Cancel</Btn><Btn v="danger" onClick={()=>del(editId)}>Delete</Btn></div>
       </div></td></tr>;
 
+
       const vCols=["","Name","Contact","Email","Phone","Category","Address","Discount",""];
       const cCols=["","Name","Contact","Email","Phone","Type","Address",""];
       const rCols=["","Name","Email","Territory","Role","Rate",""];
       const headers=tab==="vendors"?vCols:tab==="customers"?cCols:rCols;
+
 
       return <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}><thead><tr>{headers.map((h,i)=><th key={i} style={{padding:"10px 8px",textAlign:"left",fontSize:11,fontWeight:600,color:"#737373",borderBottom:"1px solid #222",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead><tbody>
         {filteredList.map(r=><React.Fragment key={r.id}>
@@ -8256,6 +8674,8 @@ const [tab,setTab]=useState("vendors");
 }
 
 
+
+
 // ===============================================================
 // EXIT READINESS
 // ===============================================================
@@ -8263,11 +8683,13 @@ function ExitReadinessPage({jobs,vendors,customers,lineItems}){
   const criteria=[{category:"Operational Documentation",items:[{name:"Job Record Hub",status:true,note:`${jobs.length} jobs in system`},{name:"Vendor database",status:true,note:`${vendors.length} vendors`},{name:"Customer database",status:true,note:`${customers.length} customers`},{name:"Pricing templates",status:true,note:"30-35% district margin"},{name:"Naming conventions",status:true,note:"JOB-YYYY-NNN format"}]},{category:"Automated Workflows",items:[{name:"Quote -> PO generation",status:true,note:"One-click"},{name:"Quote -> Invoice generation",status:true,note:"Partial support"},{name:"Partial shipment tracking",status:true,note:"Quantity-specific"},{name:"Commission auto-calculation",status:true,note:"Real-time"},{name:"Email integration",status:true,note:"Resend live - mwfurnishings.com"}]},{category:"Reporting & Visibility",items:[{name:"Real-time dashboard",status:true,note:"Command Center"},{name:"Financial reporting",status:true,note:"Per-job + aggregate"},{name:"Commission statements",status:true,note:"PDF export"},{name:"Sales portal",status:true,note:"Per-rep filtered"},{name:"Vendor performance",status:"partial",note:"Distribution tracked"}]},{category:"Knowledge Transfer",items:[{name:"Midwest Brain AI",status:true,note:"Queryable"},{name:"Operational playbooks",status:"partial",note:"In progress"},{name:"Workflow diagrams",status:true,note:"Before/after"},{name:"System architecture",status:true,note:"Full stack"},{name:"KPI reporting",status:true,note:"Margins, delivery, commission"}]}];
   const all=criteria.flatMap(c=>c.items);const done=all.filter(i=>i.status===true).length;const partial=all.filter(i=>i.status==="partial").length;const score=(done+partial*0.5)/all.length*100;
 
+
   return <div style={{animation:"fadeUp 0.4s"}}><Header title="Exit Readiness Score" sub="Buyer due diligence -- systemized, transferable, auditable"/>
     <Card style={{marginBottom:24,background:"linear-gradient(135deg,#0a0a0a,#111111)",border:"1px solid #2dd4bf30"}}><div style={{display:"flex",alignItems:"center",gap:32}}><div style={{width:120,height:120,borderRadius:"50%",border:"4px solid #2dd4bf",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}><div style={{fontSize:28,fontWeight:800,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{Math.round(score)}</div><div style={{fontSize:12,color:"#a3a3a3"}}>/ 100</div></div><div style={{flex:1}}><div style={{fontSize:20,fontWeight:800,color:"#e5e5e5",marginBottom:4}}>Exit Readiness Assessment</div><div style={{fontSize:13,color:"#a3a3a3",marginBottom:12}}>{done} complete - {partial} in progress</div><Bar value={score} max={100} color="#2dd4bf" height={8}/><div style={{marginTop:8,fontSize:12,color:"#2dd4bf"}}>{score>=90?"Excellent -- buyer-ready":score>=70?"Strong -- minor items remaining":"In Progress"}</div></div><div style={{textAlign:"center",padding:"0 24px"}}><div style={{fontSize:12,color:"#a3a3a3",marginBottom:4}}>Valuation Impact</div><div style={{fontSize:13,fontWeight:600,color:"#34d399"}}>+1.5-2x multiple uplift</div></div></div></Card>
     <div className="resp-grid-2" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:16}}>{criteria.map((s,si)=><Card key={si}><div style={{fontSize:14,fontWeight:700,color:"#e5e5e5",marginBottom:14}}>{s.category}</div>{s.items.map((item,ii)=><div key={ii} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:ii<s.items.length-1?"1px solid #1e213044":"none"}}><div style={{width:20,height:20,borderRadius:6,flexShrink:0,background:item.status===true?"#34d399":item.status==="partial"?"#fbbf24":"#333333",display:"flex",alignItems:"center",justifyContent:"center"}}>{item.status===true&&<I n="check" s={12}/>}{item.status==="partial"&&<span style={{fontSize:12,fontWeight:700,color:"#fff"}}>~</span>}</div><div style={{flex:1}}><div style={{fontSize:13,color:item.status?"#d4d4d4":"#525252",fontWeight:500}}>{item.name}</div><div style={{fontSize:12,color:"#8a8a8a",marginTop:1}}>{item.note}</div></div></div>)}</Card>)}</div>
     <Card style={{marginTop:20,textAlign:"center",borderTop:"2px solid #2dd4bf"}}><div style={{fontSize:12,color:"#a3a3a3",textTransform:"uppercase",letterSpacing:2,marginBottom:4}}>Powered by</div><div style={{fontSize:20,fontWeight:800,color:"#2dd4bf",letterSpacing:1}}>DYFRENT</div></Card>
   </div>;
 }
+
 
 export default function MidwestAIOS(){return <ErrorBoundary><MidwestAIOSInner/></ErrorBoundary>}
