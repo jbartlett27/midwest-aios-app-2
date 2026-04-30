@@ -1506,6 +1506,53 @@ function MidwestAIOSInner() {
     addSop({id:"LINE_ITEM_SHIP_TO_GLOBAL",title:"Line Item Ship-To Overrides",cat:"LineItemShipTo",icon:"truck",content:JSON.stringify(next),custom:true});
   };
   const deleteSop = (id) => { setCustomSops(p => p.filter(s => s.id !== id)); db.deleteSop(id); };
+  // ===========================================================================
+  // Cross-device Plaid connection sync.
+  // The Plaid access token, status, bank name, and last-sync timestamp are
+  // mirrored into a sops record (PLAID_CONN_STATE) so they propagate via Supabase
+  // realtime to every device the user logs in on. Local code paths still read
+  // from localStorage as before -- this effect simply keeps localStorage in sync
+  // with the source-of-truth sops record. This means: Maureen connects on her
+  // laptop, opens the app on her phone, and the phone immediately shows
+  // 'connected' to the same bank without needing to re-link.
+  useEffect(() => {
+    if (!appReady) return;
+    try {
+      const rec = (customSops || []).find(s => s.id === 'PLAID_CONN_STATE');
+      if (!rec) return;
+      const data = JSON.parse(rec.content || '{}');
+      // Mirror each field into localStorage if the sops record has a newer or
+      // different value. We treat the sops record as the source of truth: if it
+      // says disconnected, we clear localStorage; if it has a token, we set it.
+      if (data.status === 'connected' && data.accessToken) {
+        if (localStorage.getItem('mw_plaid_access_token') !== data.accessToken) {
+          localStorage.setItem('mw_plaid_access_token', data.accessToken);
+        }
+        if (localStorage.getItem('mw_plaid_status') !== 'connected') {
+          localStorage.setItem('mw_plaid_status', 'connected');
+        }
+        if (data.bankName && localStorage.getItem('mw_plaid_bank_name') !== data.bankName) {
+          localStorage.setItem('mw_plaid_bank_name', data.bankName);
+        }
+        // Only update lastSync if the sops record has a NEWER timestamp than
+        // localStorage. This prevents a stale sops record from overwriting a
+        // fresher local sync timestamp during the brief race window after a sync.
+        if (data.lastSync) {
+          const localLast = localStorage.getItem('mw_plaid_last_sync') || '';
+          if (!localLast || data.lastSync > localLast) {
+            localStorage.setItem('mw_plaid_last_sync', data.lastSync);
+          }
+        }
+      } else if (data.status === 'disconnected') {
+        // Remote disconnect: clear local cache too.
+        if (localStorage.getItem('mw_plaid_access_token')) {
+          localStorage.removeItem('mw_plaid_access_token');
+          localStorage.removeItem('mw_plaid_status');
+          localStorage.removeItem('mw_plaid_bank_name');
+        }
+      }
+    } catch {}
+  }, [customSops, appReady]);
   const addVendor = v => { const nv = {...v, id: v.id||("V-"+uid())}; setVendors(p => [...p, nv]); db.saveVendor(nv).then(r=>{if(!r?.ok)setTimeout(()=>db.saveVendor(nv).catch(()=>{}),2000)}).catch(()=>setTimeout(()=>db.saveVendor(nv).catch(()=>{}),2000)); };
   const updateVendor = (id, u) => {
     setVendors(p => { const updated = p.map(v => v.id===id ? {...v,...u} : v); const ven = updated.find(v=>v.id===id); if(ven) db.saveVendor(ven); return updated; });
@@ -7395,14 +7442,20 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   // Banking / manual transaction state
   const [manualForm,setManualForm]=useState({date:'',description:'',category:'',amount:'',type:'expense',account:'Operating'});
   const [manualEditing,setManualEditing]=useState(null);
-  const [plaidStatus,setPlaidStatus]=useState(()=>{try{return localStorage.getItem('mw_plaid_status')||'disconnected'}catch{return 'disconnected'}});
-  const [plaidAccessToken,setPlaidAccessToken]=useState(()=>{try{return localStorage.getItem('mw_plaid_access_token')||''}catch{return ''}});
-  const [plaidBankName,setPlaidBankName]=useState(()=>{try{return localStorage.getItem('mw_plaid_bank_name')||''}catch{return ''}});
+  // Initial Plaid state: prefer the cross-device sops record (source of truth)
+  // over localStorage. This way, when Maureen opens the app on a fresh device,
+  // the Banking tab immediately shows 'connected' instead of flashing 'not connected'
+  // for the moment between mount and the customSops effect firing.
+  const _plaidConnRec=(customSops||[]).find(s=>s.id==='PLAID_CONN_STATE');
+  const _plaidConnData=(()=>{try{return _plaidConnRec?JSON.parse(_plaidConnRec.content||'{}'):{}}catch{return{}}})();
+  const [plaidStatus,setPlaidStatus]=useState(()=>{if(_plaidConnData.status)return _plaidConnData.status;try{return localStorage.getItem('mw_plaid_status')||'disconnected'}catch{return 'disconnected'}});
+  const [plaidAccessToken,setPlaidAccessToken]=useState(()=>{if(_plaidConnData.accessToken)return _plaidConnData.accessToken;try{return localStorage.getItem('mw_plaid_access_token')||''}catch{return ''}});
+  const [plaidBankName,setPlaidBankName]=useState(()=>{if(_plaidConnData.bankName)return _plaidConnData.bankName;try{return localStorage.getItem('mw_plaid_bank_name')||''}catch{return ''}});
   const [plaidLoading,setPlaidLoading]=useState(false);
   const [plaidSyncRange,setPlaidSyncRange]=useState(()=>{try{return localStorage.getItem('mw_plaid_sync_range')||'quarter'}catch{return 'quarter'}});
   const [plaidSyncFrom,setPlaidSyncFrom]=useState('');
   const [plaidSyncTo,setPlaidSyncTo]=useState('');
-  const [plaidLastSync,setPlaidLastSync]=useState(()=>{try{return localStorage.getItem('mw_plaid_last_sync')||''}catch{return ''}});
+  const [plaidLastSync,setPlaidLastSync]=useState(()=>{if(_plaidConnData.lastSync)return _plaidConnData.lastSync;try{return localStorage.getItem('mw_plaid_last_sync')||''}catch{return ''}});
   // plaidSyncing: true during any Plaid sync (silent or manual). Surfaces a visible
   // indicator so the user can see that the hourly auto-sync is actually firing.
   // plaidSyncError: persistent error message from the most recent silent sync that
@@ -7413,6 +7466,27 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   // (which doesn't have access to this setter) are surfaced as soon as the
   // Banking tab mounts. Cleared on next successful sync.
   const [plaidSyncError,setPlaidSyncError]=useState(()=>{try{return localStorage.getItem('mw_plaid_sync_error')||''}catch{return ''}});
+  // Watch customSops (Supabase realtime feed) for the cross-device PLAID_CONN_STATE
+  // record. When it changes (e.g., user connected on another device), re-derive
+  // local React state so the Banking UI immediately reflects the new connection
+  // without requiring a page refresh.
+  useEffect(()=>{
+    try{
+      const rec=(customSops||[]).find(s=>s.id==='PLAID_CONN_STATE');
+      if(!rec)return;
+      const data=JSON.parse(rec.content||'{}');
+      if(data.status==='connected'&&data.accessToken){
+        if(plaidAccessToken!==data.accessToken)setPlaidAccessToken(data.accessToken);
+        if(plaidStatus!=='connected')setPlaidStatus('connected');
+        if(data.bankName&&plaidBankName!==data.bankName)setPlaidBankName(data.bankName);
+        if(data.lastSync&&(!plaidLastSync||data.lastSync>plaidLastSync))setPlaidLastSync(data.lastSync);
+      }else if(data.status==='disconnected'){
+        if(plaidStatus!=='disconnected'){
+          setPlaidAccessToken('');setPlaidStatus('disconnected');setPlaidBankName('');
+        }
+      }
+    }catch{}
+  },[customSops]);
   // Tick state forces a re-render every minute so the "X mins ago" relative-time
   // display under Last Sync stays accurate without requiring user interaction.
   const [,setNowTick]=useState(0);
@@ -7870,6 +7944,10 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
                   const bankName=metadata?.institution?.name||'Bank';
                   localStorage.setItem('mw_plaid_bank_name',bankName);
                   setPlaidAccessToken(exData.access_token);setPlaidStatus('connected');setPlaidBankName(bankName);
+                  // Save to sops so connection state propagates to all other devices
+                  // (laptop, phone, tablet) via Supabase realtime sync. Without this,
+                  // each device would show 'Bank not connected' until the user re-linked there.
+                  addSop({id:'PLAID_CONN_STATE',title:'Plaid Connection State',cat:'PlaidConn',icon:'dollar',content:JSON.stringify({status:'connected',accessToken:exData.access_token,bankName:bankName,lastSync:''}),custom:true});
                   // Auto-pull 3 months of transactions immediately on first connect.
                   // Reset the auto-sync ref so the hourly auto-refresh hook reseats with the new token.
                   plaidAutoSyncRef.current=false;
@@ -7958,6 +8036,9 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
           const syncTime=new Date().toISOString();
           localStorage.setItem('mw_plaid_last_sync',syncTime);setPlaidLastSync(syncTime);
           setPlaidSyncError('');
+          // Update sops PLAID_CONN_STATE so other devices know about the latest sync time.
+          // Without this, every device would re-sync the same recent window on its own auto-sync.
+          try{const _existRec=(customSops||[]).find(s=>s.id==='PLAID_CONN_STATE');const _existData=_existRec?JSON.parse(_existRec.content||'{}'):{};addSop({id:'PLAID_CONN_STATE',title:'Plaid Connection State',cat:'PlaidConn',icon:'dollar',content:JSON.stringify({status:'connected',accessToken:plaidAccessToken,bankName:plaidBankName||_existData.bankName||'',lastSync:syncTime}),custom:true})}catch{}
           if(!silent||imported>0)notify(imported+' new'+(skipped>0?', '+skipped+' skipped (already in system)':'')+' ('+startDate+' to '+endDate+')');
         }catch(err){
           setPlaidSyncError(err.message||'Network error');
@@ -8031,7 +8112,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
               })()}
               {plaidSyncError&&<span style={{fontSize:10,color:"#f87171",background:"#f8717115",padding:"2px 8px",borderRadius:4}} title={plaidSyncError}>{plaidSyncError.length>40?plaidSyncError.slice(0,40)+'...':plaidSyncError}</span>}
               <Btn v="secondary" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>handlePlaidSync()}>{plaidLoading?'Syncing...':'Sync Now'}</Btn>
-              <Btn v="secondary" style={{fontSize:11,padding:"4px 10px",color:"#f87171",border:"1px solid #f8717130"}} onClick={()=>{localStorage.removeItem('mw_plaid_access_token');localStorage.removeItem('mw_plaid_status');localStorage.removeItem('mw_plaid_bank_name');localStorage.removeItem('mw_plaid_last_sync');setPlaidAccessToken('');setPlaidStatus('disconnected');setPlaidBankName('');setPlaidLastSync('');setPlaidSyncError('');plaidAutoSyncRef.current=false;notify('Bank disconnected')}}>Disconnect</Btn>
+              <Btn v="secondary" style={{fontSize:11,padding:"4px 10px",color:"#f87171",border:"1px solid #f8717130"}} onClick={()=>{localStorage.removeItem('mw_plaid_access_token');localStorage.removeItem('mw_plaid_status');localStorage.removeItem('mw_plaid_bank_name');localStorage.removeItem('mw_plaid_last_sync');setPlaidAccessToken('');setPlaidStatus('disconnected');setPlaidBankName('');setPlaidLastSync('');setPlaidSyncError('');plaidAutoSyncRef.current=false;/* Mark disconnected in sops so other devices also reflect the disconnect */addSop({id:'PLAID_CONN_STATE',title:'Plaid Connection State',cat:'PlaidConn',icon:'dollar',content:JSON.stringify({status:'disconnected',accessToken:'',bankName:'',lastSync:''}),custom:true});notify('Bank disconnected on all devices')}}>Disconnect</Btn>
             </div>}
             {plaidStatus!=='connected'&&<div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:8,height:8,borderRadius:"50%",background:"#525252"}}/><span style={{fontSize:11,color:"#525252"}}>Bank not connected</span><Btn v="secondary" style={{fontSize:11,padding:"4px 10px"}} onClick={handlePlaidConnect}>{plaidLoading?'Loading...':'Connect Bank (Plaid)'}</Btn></div>}
           </div>
