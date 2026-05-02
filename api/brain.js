@@ -14,7 +14,12 @@ export default async function handler(req, res) {
   global._brainKeyIdx++;
 
   try {
-    const { system, messages, tools } = req.body;
+    // stream: optional flag from client. When true, response is forwarded as
+    // Server-Sent Events (text/event-stream) instead of one JSON blob. Used by
+    // the Brain chat UI to deliver a typewriter effect. All other callers
+    // (document import, quote upload, transcript cleanup) leave stream undefined
+    // and continue to receive the original JSON-blob response.
+    const { system, messages, tools, stream } = req.body;
     if (!messages || !Array.isArray(messages)) {
       return res.status(400).json({ error: { message: 'Messages array required' } });
     }
@@ -61,6 +66,10 @@ export default async function handler(req, res) {
       messages,
     };
 
+    // When the client requested streaming, set stream:true on the upstream
+    // Anthropic call so we receive SSE chunks instead of a single JSON.
+    if (stream) body.stream = true;
+
     // Build tools: custom tools + web search (always on, Claude decides when to use)
     const allTools = [];
     if (tools && Array.isArray(tools) && tools.length > 0) {
@@ -90,16 +99,75 @@ export default async function handler(req, res) {
           },
           body: JSON.stringify(body),
         });
+
+        // ============ STREAMING PATH ============
+        // When the client asked for streaming AND the upstream call succeeded,
+        // forward the SSE bytes through to the client unchanged. The client
+        // parses the Anthropic SSE event format directly.
+        // We only commit to the streaming path on a 200 OK -- if the upstream
+        // returned a 4xx/5xx, fall through to the JSON error path so the client
+        // can surface the error normally.
+        if (stream && response.ok && response.body) {
+          res.setHeader('Content-Type', 'text/event-stream');
+          res.setHeader('Cache-Control', 'no-cache, no-transform');
+          res.setHeader('Connection', 'keep-alive');
+          res.setHeader('X-Accel-Buffering', 'no'); // disable proxy buffering on some hosts
+          if (typeof res.flushHeaders === 'function') res.flushHeaders();
+
+          const reader = response.body.getReader();
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              // Pass-through. value is a Uint8Array of SSE bytes.
+              res.write(Buffer.from(value));
+              if (typeof res.flush === 'function') res.flush();
+            }
+          } catch (streamErr) {
+            // Surface stream errors to the client as a final SSE event so the
+            // browser knows to stop reading and show an error.
+            try {
+              res.write('event: error\ndata: ' + JSON.stringify({ message: streamErr.message || 'Stream error' }) + '\n\n');
+            } catch {}
+          }
+          try { res.end(); } catch {}
+          return;
+        }
+        // ============ END STREAMING PATH ============
+
         const data = await response.json();
 
         if ((response.status === 429 || response.status === 529) && i < keys.length - 1) continue;
 
         if (data.error && data.error.type === 'not_found_error') {
+          const r2body = { ...body, model: 'claude-3-5-sonnet-20241022', max_tokens: 4096 };
+          // The fallback model also respects the streaming flag.
+          if (stream) r2body.stream = true; else delete r2body.stream;
           const r2 = await fetch('https://api.anthropic.com/v1/messages', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-            body: JSON.stringify({ ...body, model: 'claude-3-5-sonnet-20241022', max_tokens: 4096 }),
+            body: JSON.stringify(r2body),
           });
+          if (stream && r2.ok && r2.body) {
+            res.setHeader('Content-Type', 'text/event-stream');
+            res.setHeader('Cache-Control', 'no-cache, no-transform');
+            res.setHeader('Connection', 'keep-alive');
+            res.setHeader('X-Accel-Buffering', 'no');
+            if (typeof res.flushHeaders === 'function') res.flushHeaders();
+            const reader2 = r2.body.getReader();
+            try {
+              while (true) {
+                const { done, value } = await reader2.read();
+                if (done) break;
+                res.write(Buffer.from(value));
+                if (typeof res.flush === 'function') res.flush();
+              }
+            } catch (e) {
+              try { res.write('event: error\ndata: ' + JSON.stringify({ message: e.message || 'Stream error' }) + '\n\n'); } catch {}
+            }
+            try { res.end(); } catch {}
+            return;
+          }
           const d2 = await r2.json();
           if ((r2.status === 429 || r2.status === 529) && i < keys.length - 1) continue;
           return res.status(r2.status).json(d2);
