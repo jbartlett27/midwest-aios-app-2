@@ -1785,6 +1785,7 @@ const sharedScreen = sharedQuote ? <ShareQuotePortal quoteData={sharedQuote} onA
         .hover-lift{transition:transform 0.25s cubic-bezier(0.4,0,0.2,1),box-shadow 0.25s cubic-bezier(0.4,0,0.2,1),border-color 0.25s}.hover-lift:hover{transform:translateY(-3px);box-shadow:0 12px 32px rgba(0,0,0,0.3)}
         .btn-glow:hover{box-shadow:0 0 16px rgba(200,162,92,0.25)}
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
+        @keyframes brainCursor{0%,49%{opacity:1}50%,100%{opacity:0}}
         *{box-sizing:border-box;margin:0;padding:0}
         ::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#2a2d37;border-radius:3px}
         input,textarea,select{font-family:Satoshi,sans-serif;font-size:16px!important}
@@ -3216,7 +3217,24 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
   const [emailTo,setEmailTo]=useState("");
   const [stripeLoading,setStripeLoading]=useState(false);
   const [stripePayUrl,setStripePayUrl]=useState("");
-  const [emailFrom,setEmailFrom]=useState(()=>localStorage.getItem('mw_email_from')||"");
+  // emailFrom default: prefer the current user's real rep email (so Lisa sees
+  // lmonchunski@mwfurnishings.com and Maureen sees mwelter@mwfurnishings.com
+  // automatically). Falls back to whatever the user last typed (localStorage)
+  // and finally to empty (the server uses its default sender in that case).
+  // This fixes the "Invalid reply_to" Resend error when non-Maureen users on
+  // this domain hit the Email modal for the first time.
+  const [emailFrom,setEmailFrom]=useState(()=>{
+    try{
+      const stored=localStorage.getItem('mw_email_from')||"";
+      if(stored)return stored;
+      const cu=ctx.currentUser;
+      if(cu&&cu.rep_id&&Array.isArray(reps)){
+        const r=reps.find(x=>x.id===cu.rep_id);
+        if(r&&r.email)return r.email;
+      }
+      return "";
+    }catch{return ""}
+  });
   const [emailSubject,setEmailSubject]=useState("");
   const [emailSending,setEmailSending]=useState(false);
   const [invPOSelect,setInvPOSelect]=useState({});
@@ -3225,6 +3243,15 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
   const sendEmail = async () => {
     if(!emailTo||!emailSubject){notify("Enter recipient and subject","error");return}
     if(!emailFrom){notify("Enter a From email address","error");return}
+    // Client-side format check so we surface the problem here instead of letting
+    // Resend reject the entire send later. Accepts "user@host.tld" or
+    // "Name <user@host.tld>" -- same formats the server (and Resend) accept.
+    {
+      const _ef=String(emailFrom).trim();
+      const _bare=/^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$/;
+      const _named=/^.+\s*<\s*[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\s*>$/;
+      if(!_bare.test(_ef)&&!_named.test(_ef)){notify("From must be a valid email address (e.g. lisa@mwfurnishings.com)","error");return}
+    }
     localStorage.setItem('mw_email_from',emailFrom);
     setEmailSending(true);
     try {
@@ -5242,6 +5269,10 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
   const chatRef=useRef(null);
   const [animatingIdx,setAnimatingIdx]=useState(-1);
   const [pendingActions,setPendingActions]=useState([]);
+  // Streaming state for the typewriter effect on Brain responses.
+  // isStreaming: true while text deltas are arriving for the most recent assistant
+  // message. Used to render a blinking cursor next to the live message.
+  const [isStreaming,setIsStreaming]=useState(false);
   // === VOICE INPUT ===
   const [isListening, setIsListening] = useState(false);
   const [isCleaningTranscript, setIsCleaningTranscript] = useState(false);
@@ -6107,7 +6138,11 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
           if(input.customer_name||input.vendor_name||input.rep_name)return{error:'No email address on file for '+(recipientLabel||input.customer_name||input.vendor_name||input.rep_name)+'. Please ask the user for the email address, or have them add it in the Directory.'};
           return{error:'No recipient. Provide recipient_email, customer_name, vendor_name, or rep_name.'};
         }
-        const draft={to:recipient,toLabel:recipientLabel,subject:input.subject||'',body:input.body||'',from:currentUser?.email||'',autoSend:toolName==="send_email"};
+        // Derive the sender's email from their rep record (the users table has
+        // no email column -- the real address lives on reps via rep_id).
+        let _senderEmail='';
+        try{if(currentUser&&currentUser.rep_id&&Array.isArray(reps)){const _r=reps.find(x=>x.id===currentUser.rep_id);if(_r&&_r.email)_senderEmail=_r.email}}catch{}
+        const draft={to:recipient,toLabel:recipientLabel,subject:input.subject||'',body:input.body||'',from:_senderEmail,autoSend:toolName==="send_email"};
         setPendingBrainEmail(draft);
         if(toolName==="send_email"){
           return{success:true,message:'Email staged for '+recipient+(recipientLabel?' ('+recipientLabel+')':'')+'. The user is being shown a one-click send confirmation. Subject: "'+(input.subject||'')+'"'};
@@ -6411,8 +6446,159 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         }
       }
       const msgs = [...history.filter(h=>h.role==="user"||h.role==="assistant").slice(-8).map(h=>({role:h.role,content:typeof h.content==="string"?h.content:h.content})),{role:"user",content:userContent}];
-      const response = await fetch("/api/brain", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({system:ctx,messages:msgs,tools:brainTools})});
-      const data = await response.json();
+      const response = await fetch("/api/brain", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({system:ctx,messages:msgs,tools:brainTools,stream:true})});
+      // If server fell back to non-streaming (e.g. error path), parse as JSON.
+      const ctype = (response.headers.get("content-type")||"").toLowerCase();
+      let data;
+      let streamPlaceholderIdx = -1;
+      if (!ctype.includes("text/event-stream")) {
+        data = await response.json();
+      } else {
+        // === STREAMING PATH ===
+        // Accumulate SSE events into a `data` shape that matches the non-streaming
+        // response (data.content = array of content blocks). Update the displayed
+        // assistant message in real time as text deltas arrive.
+        const reconstructed = { content: [], stop_reason: null, usage: null };
+        // Per-block working state: text accumulators and tool_use partial-json accumulators
+        const blocks = {}; // index -> { type, text?, name?, id?, partialJson? }
+        let placeholderInserted = false;
+        // Append placeholder assistant bubble so the cursor can render next to it.
+        // The placeholder is always the LAST item in history once inserted, so we
+        // identify it by index at append-time using a pure setHistory updater.
+        const insertPlaceholder = () => {
+          if (placeholderInserted) return;
+          placeholderInserted = true;
+          setIsStreaming(true);
+          setHistory(p => [...p, { role:"assistant", content:"" }]);
+        };
+        const appendToPlaceholder = (deltaText) => {
+          if (!placeholderInserted) insertPlaceholder();
+          // Pure updater: find the last assistant bubble (which is our placeholder
+          // since we just inserted it) and append the delta to its content.
+          setHistory(p => {
+            // Walk backward to find the most recent assistant message. This is
+            // the placeholder we inserted (newer messages haven't been added).
+            let lastAssistantIdx = -1;
+            for (let k = p.length - 1; k >= 0; k--) {
+              if (p[k].role === "assistant") { lastAssistantIdx = k; break; }
+            }
+            if (lastAssistantIdx < 0) return p;
+            // Track the placeholder's index in the outer scope so the post-stream
+            // cleanup code can find it.
+            streamPlaceholderIdx = lastAssistantIdx;
+            const next = [...p];
+            const cur = next[lastAssistantIdx];
+            next[lastAssistantIdx] = { ...cur, content: (cur.content || "") + deltaText };
+            return next;
+          });
+        };
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let sseBuffer = "";
+        let streamErr = null;
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            sseBuffer += decoder.decode(value, { stream:true });
+            // Parse SSE events: each event is separated by a blank line.
+            // An event has lines like "event: foo\ndata: {...}".
+            let nlIdx;
+            while ((nlIdx = sseBuffer.indexOf("\n\n")) !== -1) {
+              const rawEvent = sseBuffer.slice(0, nlIdx);
+              sseBuffer = sseBuffer.slice(nlIdx + 2);
+              if (!rawEvent.trim()) continue;
+              const dataLine = rawEvent.split("\n").find(l => l.startsWith("data:"));
+              if (!dataLine) continue;
+              const jsonStr = dataLine.slice(5).trim();
+              if (!jsonStr || jsonStr === "[DONE]") continue;
+              let evt;
+              try { evt = JSON.parse(jsonStr); } catch { continue; }
+              if (evt.type === "error") {
+                streamErr = evt.error?.message || "Stream error";
+                break;
+              }
+              if (evt.type === "message_start" && evt.message) {
+                reconstructed.id = evt.message.id;
+                reconstructed.role = evt.message.role;
+                reconstructed.model = evt.message.model;
+              } else if (evt.type === "content_block_start") {
+                const cb = evt.content_block || {};
+                blocks[evt.index] = { ...cb, partialJson: "" };
+              } else if (evt.type === "content_block_delta") {
+                const b = blocks[evt.index] || {};
+                if (evt.delta?.type === "text_delta" && typeof evt.delta.text === "string") {
+                  b.text = (b.text || "") + evt.delta.text;
+                  blocks[evt.index] = b;
+                  // Only stream text deltas to the visible bubble. Tool-use and web-search
+                  // deltas are accumulated silently and surfaced after stream completion.
+                  if (b.type === "text") appendToPlaceholder(evt.delta.text);
+                } else if (evt.delta?.type === "input_json_delta" && typeof evt.delta.partial_json === "string") {
+                  b.partialJson = (b.partialJson || "") + evt.delta.partial_json;
+                  blocks[evt.index] = b;
+                }
+              } else if (evt.type === "content_block_stop") {
+                const b = blocks[evt.index];
+                if (b) {
+                  // Finalize tool_use blocks: parse the accumulated partial_json into input.
+                  if (b.type === "tool_use" && b.partialJson) {
+                    try { b.input = JSON.parse(b.partialJson); } catch { b.input = b.input || {}; }
+                  }
+                  // Strip our internal partialJson scratch field before pushing.
+                  const finalBlock = { ...b };
+                  delete finalBlock.partialJson;
+                  reconstructed.content.push(finalBlock);
+                }
+              } else if (evt.type === "message_delta") {
+                if (evt.delta?.stop_reason) reconstructed.stop_reason = evt.delta.stop_reason;
+                if (evt.usage) reconstructed.usage = evt.usage;
+              }
+              // ping and message_stop are no-ops here.
+            }
+          }
+        } catch (readErr) {
+          streamErr = readErr.message || "Stream read error";
+        }
+        // Stream ended.
+        setIsStreaming(false);
+        if (streamErr) {
+          // If we already streamed some text, leave it visible and append a note.
+          // Otherwise, surface the error directly.
+          if (placeholderInserted && reconstructed.content.some(b => b.type === "text" && b.text)) {
+            setHistory(p => {
+              if (streamPlaceholderIdx < 0 || streamPlaceholderIdx >= p.length) return p;
+              const next = [...p];
+              const cur = next[streamPlaceholderIdx];
+              next[streamPlaceholderIdx] = { ...cur, content: (cur.content || "") + "\n\n[Stream interrupted: " + streamErr + " -- partial response shown above. Try again to retry.]" };
+              return next;
+            });
+          } else {
+            setHistory(p => [...p, { role:"assistant", content:"Connection error: " + streamErr + ". Try again." }]);
+          }
+          setBrainLoading(false);
+          return;
+        }
+        data = reconstructed;
+        // If we streamed text into a placeholder bubble AND there are tool-use blocks,
+        // the downstream tool-handling code is going to APPEND a new bubble for the
+        // action confirmation. To avoid duplicating the streamed text, remove the
+        // placeholder before tool handling runs (the streamed text is already in
+        // data.content as a text block, so it will be re-rendered alongside tool calls
+        // by the existing tool-routing code below).
+        const hasAnyToolBlocks = reconstructed.content.some(b => b.type === "tool_use");
+        if (placeholderInserted && hasAnyToolBlocks) {
+          // Streaming produced text AND tool calls. KEEP the placeholder bubble
+          // (with its streamed text) and let the downstream code append a
+          // separate action-confirmation bubble below it. Signal to that code
+          // not to prepend the same text to the action bubble.
+          data._brainStreamedTextWithTools = true;
+        } else if (placeholderInserted && !hasAnyToolBlocks) {
+          // Pure text response -- the placeholder bubble already shows the full text.
+          // Skip the downstream "append assistant text bubble" code by signaling we
+          // are done. We use a sentinel flag on data to communicate this.
+          data._brainStreamedTextOnly = true;
+        }
+      }
       if(data.error){
         const msg=data.error.message||JSON.stringify(data.error);
         setHistory(p=>[...p,{role:"assistant",content:msg.includes("rate limit")?"I need a moment -- rate limit hit. Try again in 30 seconds.":"API Error: "+msg}]);
@@ -6436,7 +6622,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
           // 5 tools that take 1s each go from 5s sequential to ~1s parallel.
           const readResults=await Promise.all(readTools.map(tb=>executeTool(tb.name,tb.input).catch(err=>({success:false,error:'Tool '+tb.name+' failed: '+(err?.message||String(err))}))));
           const readText=readResults.map(r=>r.success?r.message:(r.error||'Error')).join('\n\n');
-          setHistory(p=>[...p,{role:"assistant",content:(textBlocks?textBlocks+"\n\n":"")+readText}]);
+          setHistory(p=>[...p,{role:"assistant",content:(data._brainStreamedTextWithTools?"":(textBlocks?textBlocks+"\n\n":""))+readText}]);
           setAnimatingIdx(history.length+1);setTimeout(()=>setAnimatingIdx(-1),800);
         } else {
         // Write tools -- show confirmation
@@ -6485,13 +6671,28 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
           if(a.name==="update_line_item")return "Update line item: **"+(a.input.item_description||a.input.item_id||"")+"**"+(a.input.updates?" >> "+Object.entries(a.input.updates).map(([k,v])=>k+"="+v).join(", "):"");
           return a.name+"("+JSON.stringify(a.input).slice(0,60)+")";
         }).join("\n");
-        setHistory(p=>[...p,{role:"assistant",content:(textBlocks?textBlocks+"\n\n":"")+"I'd like to take these actions:\n"+actionSummary,actions}]);
+        setHistory(p=>[...p,{role:"assistant",content:(data._brainStreamedTextWithTools?"":(textBlocks?textBlocks+"\n\n":""))+"I'd like to take these actions:\n"+actionSummary,actions}]);
         setAnimatingIdx(history.length+1);setTimeout(()=>setAnimatingIdx(-1),800);
         }
       } else if(textBlocks){
         const citeText=webCitations.length>0?"\n\n**Sources:**\n"+webCitations.slice(0,5).map(c=>"- ["+c.title+"]("+c.url+")").join("\n"):"";
-        setHistory(p=>[...p,{role:"assistant",content:textBlocks+citeText}]);
-        setAnimatingIdx(history.length+1);setTimeout(()=>setAnimatingIdx(-1),800);
+        if (data._brainStreamedTextOnly && streamPlaceholderIdx >= 0) {
+          // The streaming path already displayed the text in a placeholder bubble.
+          // Just append citations (if any) to that same bubble.
+          if (citeText) {
+            setHistory(p => {
+              if (streamPlaceholderIdx >= p.length) return p;
+              const next = [...p];
+              const cur = next[streamPlaceholderIdx];
+              next[streamPlaceholderIdx] = { ...cur, content: (cur.content || "") + citeText };
+              return next;
+            });
+          }
+          setAnimatingIdx(streamPlaceholderIdx);setTimeout(()=>setAnimatingIdx(-1),800);
+        } else {
+          setHistory(p=>[...p,{role:"assistant",content:textBlocks+citeText}]);
+          setAnimatingIdx(history.length+1);setTimeout(()=>setAnimatingIdx(-1),800);
+        }
       } else {
         setHistory(p=>[...p,{role:"assistant",content:"Unexpected response: "+JSON.stringify(data).slice(0,200)}]);
       }
@@ -6613,10 +6814,10 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         :msg.role==="system"?
           <div style={{maxWidth:"85%",padding:"10px 0",color:"#525252",fontSize:13,lineHeight:1.6,fontStyle:"italic"}}>{msg.content}</div>
         :
-          <div style={{maxWidth:"85%",padding:"2px 0",color:"#d4d4d4",fontSize:13,lineHeight:1.7,animation:i===animatingIdx?"fadeUp 0.5s ease-out":"none"}}>{renderMsg(msg)}</div>
+          <div style={{maxWidth:"85%",padding:"2px 0",color:"#d4d4d4",fontSize:13,lineHeight:1.7,animation:i===animatingIdx?"fadeUp 0.5s ease-out":"none"}}>{renderMsg(msg)}{isStreaming&&i===history.length-1&&<span style={{display:"inline-block",width:8,height:14,marginLeft:2,verticalAlign:"middle",background:"#2dd4bf",borderRadius:1,animation:"brainCursor 0.9s steps(2) infinite"}}/>}</div>
         }
       </div>)}
-      {brainLoading&&<div style={{display:"flex",gap:4,padding:"8px 0"}}><div style={{width:6,height:6,borderRadius:"50%",background:"#2dd4bf",animation:"pulse 1s infinite"}}/>
+      {brainLoading&&!isStreaming&&<div style={{display:"flex",gap:4,padding:"8px 0"}}><div style={{width:6,height:6,borderRadius:"50%",background:"#2dd4bf",animation:"pulse 1s infinite"}}/>
         <div style={{width:6,height:6,borderRadius:"50%",background:"#2dd4bf",animation:"pulse 1s infinite 0.2s"}}/>
         <div style={{width:6,height:6,borderRadius:"50%",background:"#2dd4bf",animation:"pulse 1s infinite 0.4s"}}/></div>}
     </div>
