@@ -4250,6 +4250,58 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
         <div style={{height:1,background:"#e5e5e5",marginBottom:20}}/>
 
 
+        {/* Quantity Breakdown panel -- shows the partial-vs-full invoice story
+            unambiguously so the user knows exactly what is being invoiced and what
+            remains. Only renders for invoices (not credit memos or proformas).
+            Built as an on-screen callout in the React preview only -- does NOT
+            appear in the customer-facing PDF (PDF is built separately by buildDocHtml). */}
+        {previewDoc.type==="invoice"&&!isCreditMemo&&!isProforma&&(()=>{
+          const items=previewDoc.data.items||[];
+          if(items.length===0)return null;
+          const anyPriorInvoicing=items.some(i=>(i.qtyInvoiced||0)>0);
+          const isPartialFlag=!!previewDoc.data.isPartial;
+          const heading=anyPriorInvoicing?"REMAINING BALANCE INVOICE":isPartialFlag?"PARTIAL INVOICE -- First Shipment":"FULL INVOICE";
+          const subhead=anyPriorInvoicing?"Prior invoicing detected. The Qty column below shows ONLY the remaining balance, not the full order.":isPartialFlag?"Some items are still awaiting delivery. Only items received so far are being invoiced.":"All items are being invoiced in full. No prior partial invoices detected.";
+          const accentColor=anyPriorInvoicing?"#2dd4bf":isPartialFlag?"#fbbf24":"#34d399";
+          const bgColor=anyPriorInvoicing?"#2dd4bf08":isPartialFlag?"#fbbf2408":"#34d39908";
+          return <div style={{marginBottom:20,padding:"14px 16px",background:bgColor,border:"1px solid "+accentColor+"40",borderRadius:8}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+              <div style={{fontSize:12,fontWeight:700,color:accentColor,letterSpacing:0.8}}>{heading}</div>
+            </div>
+            <div style={{fontSize:12,color:"#555",marginBottom:10,lineHeight:1.5}}>{subhead}</div>
+            <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+              <thead><tr style={{borderBottom:"1px solid "+accentColor+"30"}}>
+                <th style={{padding:"6px 4px",textAlign:"left",fontSize:10,fontWeight:600,color:"#666",textTransform:"uppercase",letterSpacing:0.5}}>Item</th>
+                <th style={{padding:"6px 4px",textAlign:"right",fontSize:10,fontWeight:600,color:"#666",textTransform:"uppercase",letterSpacing:0.5}}>Ordered</th>
+                <th style={{padding:"6px 4px",textAlign:"right",fontSize:10,fontWeight:600,color:"#666",textTransform:"uppercase",letterSpacing:0.5}}>Received</th>
+                <th style={{padding:"6px 4px",textAlign:"right",fontSize:10,fontWeight:600,color:"#666",textTransform:"uppercase",letterSpacing:0.5}}>Previously Invoiced</th>
+                <th style={{padding:"6px 4px",textAlign:"right",fontSize:10,fontWeight:700,color:accentColor,textTransform:"uppercase",letterSpacing:0.5}}>This Invoice</th>
+                <th style={{padding:"6px 4px",textAlign:"right",fontSize:10,fontWeight:600,color:"#666",textTransform:"uppercase",letterSpacing:0.5}}>Remaining After</th>
+              </tr></thead>
+              <tbody>{items.map((item,ii)=>{
+                const ord=item.qtyOrdered||0;
+                const rec=item.qtyReceived||0;
+                const prev=item.qtyInvoiced||0;
+                const thisQ=item.displayQty!==undefined?item.displayQty:ord;
+                const remAfter=Math.max(0,ord-prev-thisQ);
+                const desc=(item.description||"").split("\n")[0].slice(0,50);
+                return <tr key={ii} style={{borderBottom:"1px solid "+accentColor+"15"}}>
+                  <td style={{padding:"6px 4px",color:"#333",maxWidth:240,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{desc}</td>
+                  <td style={{padding:"6px 4px",textAlign:"right",color:"#666",fontFamily:"\u0027JetBrains Mono\u0027,monospace"}}>{fmtN(ord)}</td>
+                  <td style={{padding:"6px 4px",textAlign:"right",color:rec<ord?"#fbbf24":"#666",fontFamily:"\u0027JetBrains Mono\u0027,monospace"}}>{fmtN(rec)}</td>
+                  <td style={{padding:"6px 4px",textAlign:"right",color:prev>0?"#888":"#bbb",fontFamily:"\u0027JetBrains Mono\u0027,monospace"}}>{fmtN(prev)}</td>
+                  <td style={{padding:"6px 4px",textAlign:"right",fontWeight:700,color:accentColor,fontFamily:"\u0027JetBrains Mono\u0027,monospace"}}>{fmtN(thisQ)}</td>
+                  <td style={{padding:"6px 4px",textAlign:"right",color:remAfter>0?"#fbbf24":"#bbb",fontFamily:"\u0027JetBrains Mono\u0027,monospace"}}>{fmtN(remAfter)}</td>
+                </tr>;
+              })}</tbody>
+            </table></div>
+            <div style={{marginTop:10,padding:"8px 12px",background:"#fffaeb",border:"1px solid #fbbf2440",borderRadius:6,fontSize:11,color:"#92400e",lineHeight:1.5}}>
+              <strong>Workflow tip:</strong> After sending this invoice, click <strong>Mark All Invoiced</strong> at the top of the page. This updates each line&#39;s &quot;previously invoiced&quot; count so the next partial invoice automatically shows only the remaining balance instead of defaulting to the full order quantity.
+            </div>
+          </div>;
+        })()}
+
+
         {/* Line items table */}
         <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
           <thead><tr>{(previewDoc.type==="quote"?visibleCols.map(c=>c.label):previewDoc.type==="commission"?["Job","Customer","Revenue","Status","Commission"]:["Description","Qty","Rate","Amount"]).map((h,i)=><th key={i} style={{padding:"8px 6px",textAlign:i<5&&previewDoc.type==="quote"?"left":"right",fontSize:10,fontWeight:600,color:"#888",textTransform:"uppercase",letterSpacing:0.5,borderBottom:"2px solid #e5e5e5"}}>{h}</th>)}</tr></thead>
