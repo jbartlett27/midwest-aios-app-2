@@ -3219,18 +3219,29 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
   const [stripePayUrl,setStripePayUrl]=useState("");
   // emailFrom default: prefer the current user's real rep email (so Lisa sees
   // lmonchunski@mwfurnishings.com and Maureen sees mwelter@mwfurnishings.com
-  // automatically). Falls back to whatever the user last typed (localStorage)
-  // and finally to empty (the server uses its default sender in that case).
-  // This fixes the "Invalid reply_to" Resend error when non-Maureen users on
-  // this domain hit the Email modal for the first time.
+  // automatically). Falls back to a previously-typed value in localStorage ONLY
+  // if it passes the same email format check the server uses -- this prevents
+  // a previously-saved garbage value (e.g. "Lisa" from before this fix shipped)
+  // from blocking the rep-derived auto-fill on every future use.
   const [emailFrom,setEmailFrom]=useState(()=>{
+    // Mirror of the server's strict email-format regexes (api/send-email.js).
+    // Accepts "user@host.tld" or "Name <user@host.tld>".
+    const _isValid=(s)=>{
+      if(!s)return false;
+      const t=String(s).trim();
+      if(!t)return false;
+      const bare=/^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$/;
+      const named=/^.+\s*<\s*[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\s*>$/;
+      return bare.test(t)||named.test(t);
+    };
     try{
       const stored=localStorage.getItem('mw_email_from')||"";
-      if(stored)return stored;
+      // Stored value wins ONLY if it's well-formed. Garbage falls through.
+      if(stored&&_isValid(stored))return stored;
       const cu=ctx.currentUser;
       if(cu&&cu.rep_id&&Array.isArray(reps)){
         const r=reps.find(x=>x.id===cu.rep_id);
-        if(r&&r.email)return r.email;
+        if(r&&r.email&&_isValid(r.email))return r.email;
       }
       return "";
     }catch{return ""}
@@ -3251,6 +3262,9 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
       const _bare=/^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$/;
       const _named=/^.+\s*<\s*[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\s*>$/;
       if(!_bare.test(_ef)&&!_named.test(_ef)){notify("From must be a valid email address (e.g. lisa@mwfurnishings.com)","error");return}
+      // Validate To here too -- Resend rejects malformed recipients.
+      const _et=String(emailTo).trim();
+      if(!_bare.test(_et)&&!_named.test(_et)){notify("To must be a valid email address","error");return}
     }
     localStorage.setItem('mw_email_from',emailFrom);
     setEmailSending(true);
@@ -3441,6 +3455,13 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           const dueDate2=billDueOverride?new Date(billDueOverride+'T12:00:00'):new Date(baseBillDate.getTime()+30*86400000);
           const now2=new Date();const daysUntil=Math.floor((dueDate2-now2)/86400000);
           const billData=typeof docStatuses[billDocNum]==='object'?docStatuses[billDocNum]:{};
+          // Skip bills that have been deleted by the user. The deleted flag is set
+          // via the Delete button in the bill detail view. This removes the bill
+          // from the Vendor Bills tab entirely (rendered list AND all summary totals).
+          // The underlying PO and line items are untouched -- only the bill's docStatuses
+          // entry is marked deleted, which preserves prior payment data should the bill
+          // ever need to be restored.
+          if(billData.deleted)return;
           const paid=billData.status==='paid'||billData.paid||docStatuses[billDocNum]==='paid';
           const isVoidBill=billData.status==='void';
           const isCredit=billData.isCredit||false;
@@ -3829,6 +3850,17 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
               {!bill.paid&&!isVoid&&billPayDate&&<Btn onClick={()=>{setBillPayDate(billPayDate||new Date().toISOString().split('T')[0]);saveBillDetail(bill);setBillStatus('paid')}} style={{background:"#34d399",color:"#000"}}>Record Payment</Btn>}
               <Btn v="secondary" onClick={()=>printCheck(bill)}><I n="file" s={12}/> Print Check</Btn>
               <Btn v="secondary" onClick={()=>setBillDetail(null)}>Cancel</Btn>
+              <Btn v="danger" onClick={async()=>{
+                // Two-step confirm so accidental clicks do nothing. Names the
+                // vendor and shows the bill amount so the user can verify the
+                // exact bill being removed before committing.
+                const ok=await ctx.confirm('Delete vendor bill from "'+bill.vendorName+'" for '+fmt(bill.cost)+'? This removes it from the Vendor Bills list. The underlying PO and line items are not affected.');
+                if(!ok)return;
+                const existing=typeof docStatuses[bill.billDocNum]==='object'?docStatuses[bill.billDocNum]:{};
+                setDocStatus(bill.billDocNum,{...existing,deleted:true});
+                notify('Vendor bill deleted: '+bill.vendorName+' ('+fmt(bill.cost)+')');
+                setBillDetail(null);
+              }}><I n="close" s={12}/> Delete Bill</Btn>
             </div>
           </Card>
           <Card style={{padding:16,marginBottom:16}}>
@@ -6842,6 +6874,17 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         <button onClick={async()=>{
           if(!pendingBrainEmail.to||!pendingBrainEmail.subject||!pendingBrainEmail.body){notify("Fill in To, Subject, and Body","error");return}
           if(!pendingBrainEmail.from){notify("Fill in From email address","error");return}
+          // Format-check the From field locally so the user gets a clear message
+          // instead of Resend's cryptic "Invalid reply_to field" error.
+          {
+            const _f=String(pendingBrainEmail.from).trim();
+            const _bare2=/^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$/;
+            const _named2=/^.+\s*<\s*[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\s*>$/;
+            if(!_bare2.test(_f)&&!_named2.test(_f)){notify("From must be a valid email address (e.g. lisa@mwfurnishings.com)","error");setBrainEmailSending(false);return}
+            // Same check on To so we surface bad recipients before the send too.
+            const _t=String(pendingBrainEmail.to||"").trim();
+            if(!_bare2.test(_t)&&!_named2.test(_t)){notify("To must be a valid email address","error");setBrainEmailSending(false);return}
+          }
           setBrainEmailSending(true);
           try{
             const bodyHtml=(pendingBrainEmail.body||'').split('\n').map(l=>l.trim()===''?'<br/>':'<p style="font-size:14px;color:#222;line-height:1.6;margin:0 0 8px;text-align:left">'+l.replace(/</g,'&lt;')+'</p>').join('');
