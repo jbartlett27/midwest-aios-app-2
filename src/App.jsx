@@ -888,8 +888,8 @@ function shipKey(s){
 
 
 const INIT_REPS = [
-  { id: "S001", name: "Dave Welter", email: "dwelter@mwfurnishings.com", territory: "Illinois & Wisconsin", commissionRate: 0, tier: "Owner", roles: ["Owner"] },
-  { id: "S002", name: "Maureen Welter", email: "mwelter@mwfurnishings.com", territory: "Illinois & Wisconsin", commissionRate: 0, tier: "Owner", roles: ["Owner"] },
+  { id: "S001", name: "Dave Welter", email: "dwelter@mwfurnishings.com", territory: "Illinois & Wisconsin", commissionRate: 0, tier: "Owner", roles: ["Owner", "Sales"] },
+  { id: "S002", name: "Maureen Welter", email: "mwelter@mwfurnishings.com", territory: "Illinois & Wisconsin", commissionRate: 0, tier: "Owner", roles: ["Owner", "Office"] },
   { id: "S003", name: "Lisa Monchunski", email: "lmonchunski@mwfurnishings.com", territory: "Administrative", commissionRate: 0, tier: "Administrative Support", roles: ["Office"] },
   { id: "S004", name: "Jim Harris", email: "jharris@mwfurnishings.com", territory: "Illinois", commissionRate: 0.06, tier: "Regional Sales Manager", roles: ["Sales"], salesTier: "Regional Sales Manager" },
   { id: "S005", name: "Jim Lindner", email: "jlindner@mwfurnishings.com", territory: "Wisconsin", commissionRate: 0.06, tier: "Regional Sales Manager", roles: ["Sales"], salesTier: "Regional Sales Manager" },
@@ -3467,9 +3467,22 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           const billDocNum='BILL-'+poDocNum.replace('PO-','');
           const billDateOverride=docStatuses[billDocNum+'__date']||'';
           const billDueOverride=docStatuses[billDocNum+'__due']||'';
-          const baseBillDate=billDateOverride?new Date(billDateOverride+'T12:00:00'):(poDate?new Date(poDate):new Date());
-          const dueDate2=billDueOverride?new Date(billDueOverride+'T12:00:00'):new Date(baseBillDate.getTime()+30*86400000);
-          const now2=new Date();const daysUntil=Math.floor((dueDate2-now2)/86400000);
+          // Defensive date parsing -- a malformed override (e.g. user typo producing
+          // "22026-03-28" or "0002-02-12") would otherwise yield an Invalid Date, and
+          // dueDate2.toISOString() at the bottom of this block would throw RangeError,
+          // crashing the entire Vendor Bills tab. Validate via isNaN(getTime()) and
+          // fall back to sensible defaults when bad. Caused the "App Error: RangeError:
+          // Invalid time value" reported May 12 2026 when bill BILL-6095-YTXI had a
+          // typo in its due date.
+          let baseBillDate=billDateOverride?new Date(billDateOverride+'T12:00:00'):(poDate?new Date(poDate):new Date());
+          if(!baseBillDate||isNaN(baseBillDate.getTime()))baseBillDate=new Date();
+          let dueDate2=billDueOverride?new Date(billDueOverride+'T12:00:00'):new Date(baseBillDate.getTime()+30*86400000);
+          if(!dueDate2||isNaN(dueDate2.getTime()))dueDate2=new Date(baseBillDate.getTime()+30*86400000);
+          // Final guard: even after the fallback, if something pathological remains,
+          // produce an empty string rather than crash. _safeDueDateStr captures that.
+          let _safeDueDateStr='';
+          try{_safeDueDateStr=dueDate2.toISOString().split('T')[0]}catch(_e){_safeDueDateStr=''}
+          const now2=new Date();const daysUntil=isNaN(dueDate2.getTime())?0:Math.floor((dueDate2-now2)/86400000);
           const billData=typeof docStatuses[billDocNum]==='object'?docStatuses[billDocNum]:{};
           // Skip bills that have been deleted by the user. The deleted flag is set
           // via the Delete button in the bill detail view. This removes the bill
@@ -3488,7 +3501,7 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           const _credRaw=(billData.creditAmount!==undefined&&billData.creditAmount!==null&&billData.creditAmount!=='')?Number(billData.creditAmount):cost;
           const _credAmt=isNaN(_credRaw)?cost:Math.max(0,Math.min(cost,_credRaw));
           allBills.push({job,vendor:v,vendorId:vid,vendorName:v?.name||'Unknown',items:vItems,cost,poDocNum,billDocNum,poDate,
-            dueDate:dueDate2.toISOString().split('T')[0],daysUntil,paid,voided:isVoidBill,itemCount:vItems.length,
+            dueDate:_safeDueDateStr,daysUntil,paid,voided:isVoidBill,itemCount:vItems.length,
             vendorInvNum:billData.vendorInvNum||'',checkNum:billData.checkNum||'',payDate:billData.payDate||'',memo:billData.memo||'',checkPrinted:billData.checkPrinted||'',isCredit:billData.isCredit||false,creditAmount:_credAmt});
         });
       });
