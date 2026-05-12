@@ -2113,21 +2113,35 @@ function JobsPage(ctx){
           for(let c=0;c<row.length;c++){
             const v=String(row[c]||'').toLowerCase().trim();
             if(v==='tag')h.tag=c;
-            else if(v==='manuf'||v==='manuf.'||v==='manufacturer')h.manuf=c;
+            else if(v==='manuf'||v==='manuf.'||v==='manufacturer'||v==='vendor'||v==='vendor name'||v==='supplier')h.manuf=c;
             else if(v==='model #'||v==='model'||v==='model#'||v==='model number')h.model=c;
-            else if(v==='description'||v==='desc')h.desc=c;
+            else if(v==='description'||v==='desc'||v==='item'||v==='item description'||v==='product'||v==='product description')h.desc=c;
             else if(v==='color'||v==='finish')h.color=c;
-            else if(v==='qty'||v==='quantity')h.qty=c;
+            else if(v==='qty'||v==='quantity'||v==='qty ordered'||v==='ordered')h.qty=c;
             else if(v==='list'||v==='list price'||v==='list each')h.list=c;
             else if(v==='ext'&&!h.listExt){if(h.list!==undefined)h.listExt=c;else h.list=c}
-            else if(v==='net each'||v==='net'||v==='net ea'||v==='net price'||v==='dealer'||v==='dealer net')h.net=c;
+            // Lisa's WIP spreadsheets use "Cost" (per-unit) as the net-cost column. Added
+            // as an alias so the WIP format is recognized without breaking quotes that
+            // use the standard "Net Each" / "Dealer" terminology.
+            else if(v==='net each'||v==='net'||v==='net ea'||v==='net price'||v==='dealer'||v==='dealer net'||v==='cost'||v==='unit cost'||v==='each')h.net=c;
             else if(v==='net ext'||v==='net extended')h.netExt=c;
             else if(v==='your price'||v==='sell'||v==='sell price'||v==='unit price'||v==='price each'||v==='sell each'||v==='customer price')h.price=c;
-            else if(v==='your price extended'||v==='sell ext'||v==='sell extended'||v==='price ext'||v==='extended'||v==='ext price'||v==='line total')h.priceExt=c;
+            // Lisa's WIP uses "Total" for the per-line extended total. Added as an alias
+            // to the existing priceExt vocabulary -- still detected via exact equality, so
+            // value cells like "Subtotal" or "Total: $5,000" cannot trigger a false header.
+            else if(v==='your price extended'||v==='sell ext'||v==='sell extended'||v==='price ext'||v==='extended'||v==='ext price'||v==='line total'||v==='total')h.priceExt=c;
             else if(v==='shipping'||v==='ship'||v==='shipping each'||v==='freight'){if(h.ship!==undefined)h.shipTotal=c;else h.ship=c}
             else if(v==='shipping total'||v==='ship total'||v==='freight total')h.shipTotal=c;
             else if(v==='install'||v==='install each'||v==='installation'){if(h.install!==undefined)h.installTotal=c;else h.install=c}
             else if(v==='install total'||v==='installation total')h.installTotal=c;
+          }
+          // Column-0-as-description fallback: many WIP spreadsheets leave the first column
+          // header blank but use that column for item names (Lisa's standard WIP layout).
+          // If at least 2 mapped columns were detected AND row[0] header is blank AND desc
+          // wasn't already mapped, assume col 0 is the description column. Conservative on
+          // purpose: requires >=2 real matches AND a blank first-cell header.
+          if(Object.keys(h).length>=2&&h.desc===undefined&&String(row[0]||'').trim()===''){
+            h.desc=0;
           }
           return Object.keys(h).length>=3?h:null;
         };
@@ -2191,7 +2205,15 @@ function JobsPage(ctx){
       const sel={};sheets.forEach(s=>{sel[s.name]=true});setUploadSheets(sel);
       setUploadData({items,vendors:vendorSet,groups,sheets});
       notify(items.length+' items found'+(items.length>0?' -- AI verifying in background...':'. AI scanning...'));
-      setUploadAiChat([{role:'assistant',content:'Parser found '+items.length+' items across '+sheets.length+' sheet(s). AI is verifying in the background. You can ask me questions about the data while we wait.'}]);
+      // Branched chat messaging: when 0 items found, the most likely cause is a
+      // header row that doesn't match the parser's vocabulary. Tell the user that
+      // explicitly so they don't waste time wondering why the table is empty.
+      // The AI scan still runs in the background and may recover items separately.
+      if(items.length===0){
+        setUploadAiChat([{role:'assistant',content:'Parser found 0 items across '+sheets.length+' sheet(s). The most common cause is column headers the parser doesn\u0027t recognize. The parser looks for headers like Tag, Manuf, Model, Description, Qty, Net Each, Cost, Quantity, Total, Your Price, etc. If your spreadsheet uses different labels, the AI scan running in the background should pick up the items -- give it a moment.'}]);
+      } else {
+        setUploadAiChat([{role:'assistant',content:'Parser found '+items.length+' items across '+sheets.length+' sheet(s). AI is verifying in the background. You can ask me questions about the data while we wait.'}]);
+      }
       setUploadAiStatus(null);
       // AI runs in parallel on Job Records uploads too
       try{
@@ -2644,19 +2666,27 @@ function JobDetail({job,ctx}){
         for(let c=0;c<row.length;c++){
           const v=String(row[c]||'').toLowerCase().trim();
           if(v==='tag')h.tag=c;
-          else if(v==='manuf'||v==='manuf.'||v==='manufacturer')h.manuf=c;
+          else if(v==='manuf'||v==='manuf.'||v==='manufacturer'||v==='vendor'||v==='vendor name'||v==='supplier')h.manuf=c;
           else if(v==='model #'||v==='model'||v==='model#'||v==='model number')h.model=c;
-          else if(v==='description'||v==='desc')h.desc=c;
+          else if(v==='description'||v==='desc'||v==='item'||v==='item description'||v==='product'||v==='product description')h.desc=c;
           else if(v==='color'||v==='finish')h.color=c;
-          else if(v==='qty'||v==='quantity')h.qty=c;
+          else if(v==='qty'||v==='quantity'||v==='qty ordered'||v==='ordered')h.qty=c;
           else if(v==='list'||v==='list price'||v==='list each')h.list=c;
           else if(v==='ext'&&!h.listExt){if(h.list!==undefined)h.listExt=c;else h.list=c}
-          else if(v==='net each'||v==='net'||v==='net ea'||v==='net price'||v==='dealer'||v==='dealer net')h.net=c;
+          // "Cost" recognized as net-each (Lisa's WIP spreadsheet convention).
+          else if(v==='net each'||v==='net'||v==='net ea'||v==='net price'||v==='dealer'||v==='dealer net'||v==='cost'||v==='unit cost'||v==='each')h.net=c;
           else if(v==='net ext'||v==='net extended')h.netExt=c;
           else if(v==='your price'||v==='sell'||v==='sell price'||v==='unit price'||v==='price each'||v==='sell each'||v==='customer price')h.price=c;
-          else if(v==='your price extended'||v==='sell ext'||v==='sell extended'||v==='price ext'||v==='extended'||v==='ext price'||v==='line total')h.priceExt=c;
+          // "Total" recognized as price-extended (Lisa's WIP convention).
+          else if(v==='your price extended'||v==='sell ext'||v==='sell extended'||v==='price ext'||v==='extended'||v==='ext price'||v==='line total'||v==='total')h.priceExt=c;
           else if(v==='shipping'||v==='ship'||v==='shipping each'||v==='freight'){if(h.ship!==undefined)h.shipTotal=c;else h.ship=c}
           else if(v==='install'||v==='install each'||v==='installation'){if(h.install!==undefined)h.installTotal=c;else h.install=c}
+        }
+        // Column-0-as-description fallback: WIP spreadsheets often leave the first column
+        // header blank but use that column for item names. Conservative: requires >=2 real
+        // matches AND a blank first-cell header before assuming desc=0.
+        if(Object.keys(h).length>=2&&h.desc===undefined&&String(row[0]||'').trim()===''){
+          h.desc=0;
         }
         return Object.keys(h).length>=3?h:null;
       };
