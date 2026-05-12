@@ -5594,7 +5594,12 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     {name:"get_banking_summary",description:"Get a summary of banking transactions -- totals by category, recent transactions, account balances, cash flow. Use when user says 'what did we spend this month', 'show me our expenses by category', 'what is our cash position', 'banking summary', 'how much have we spent on rent'.",input_schema:{type:"object",properties:{period:{type:"string",description:"month, quarter, ytd, year, all. Defaults to ytd."},category_filter:{type:"string",description:"Optional: filter to a specific category"}},required:[]}},
     {name:"get_payables_summary",description:"Get accounts payable / vendor bills summary -- what is owed, what is overdue, upcoming payments. Use when user says 'what do we owe vendors', 'show overdue bills', 'AP aging', 'what bills are due this week'.",input_schema:{type:"object",properties:{},required:[]}},
     {name:"draft_email",description:"Draft an email for the user to review before sending. ALWAYS use this first when the user asks to write, draft, compose, or send an email. The user reviews the draft inline and clicks Send to actually send it. Use when user says 'draft an email to', 'write an email to', 'compose an email to', 'email maureen about', 'send an email to' (still drafts first for safety). The recipient can be specified by name (looks up customer/vendor/rep email) or direct email address.",input_schema:{type:"object",properties:{recipient_email:{type:"string",description:"Direct email address. Use this if user provides one explicitly."},customer_name:{type:"string",description:"Customer name to look up email for. Use if user references a customer."},vendor_name:{type:"string",description:"Vendor name to look up email for."},rep_name:{type:"string",description:"Sales rep name to look up email for."},subject:{type:"string",description:"Email subject line"},body:{type:"string",description:"Plain text email body. Will be formatted into a clean HTML email automatically. Use natural paragraph breaks. End with 'Best regards,' on its own line, then 'Midwest Educational Furnishings' on the next line. Do not sign with a personal name -- always sign off as the business."}},required:["subject","body"]}},
-    {name:"send_email",description:"Send an email IMMEDIATELY without showing a draft preview first. Only use this when the user explicitly says 'send right now', 'send it without showing me', or has just reviewed a draft and confirms 'send it'. Default to draft_email instead -- it is much safer. Same recipient/content schema as draft_email.",input_schema:{type:"object",properties:{recipient_email:{type:"string",description:"Direct email address."},customer_name:{type:"string",description:"Customer name to look up email for."},vendor_name:{type:"string",description:"Vendor name to look up email for."},rep_name:{type:"string",description:"Sales rep name to look up email for."},subject:{type:"string",description:"Email subject line"},body:{type:"string",description:"Plain text email body."}},required:["subject","body"]}}
+    {name:"send_email",description:"Send an email IMMEDIATELY without showing a draft preview first. Only use this when the user explicitly says 'send right now', 'send it without showing me', or has just reviewed a draft and confirms 'send it'. Default to draft_email instead -- it is much safer. Same recipient/content schema as draft_email.",input_schema:{type:"object",properties:{recipient_email:{type:"string",description:"Direct email address."},customer_name:{type:"string",description:"Customer name to look up email for."},vendor_name:{type:"string",description:"Vendor name to look up email for."},rep_name:{type:"string",description:"Sales rep name to look up email for."},subject:{type:"string",description:"Email subject line"},body:{type:"string",description:"Plain text email body."}},required:["subject","body"]}},
+    {name:"list_prospects",description:"List/search/filter prospects on the Prospects board. Returns a count and a sample of matching records as a markdown table. Use when user says \'show me prospects\', \'list Illinois prospects\', \'find prospects at Chicago Public Schools\', \'how many prospects in Wisconsin\'. Use a high limit (or omit) for an unfiltered count; use small limit for a sample.",input_schema:{type:"object",properties:{state:{type:"string",description:"Filter by state name, e.g. Illinois, Wisconsin. Partial match supported. Empty string matches blank state."},status:{type:"string",description:"Filter by prospect status: New, Contacted, Replied, Meeting Set, Proposal, Won, Lost, Nurture"},company_contains:{type:"string",description:"Substring match on company name (case-insensitive)"},name_contains:{type:"string",description:"Substring match on contact name (case-insensitive)"},assigned_rep_name:{type:"string",description:"Filter by assigned rep name (case-insensitive partial match)"},unassigned_only:{type:"boolean",description:"If true, only return prospects with no assigned rep"},limit:{type:"number",description:"Max records to show in the sample table (default 25, max 100)"}},required:[]}},
+    {name:"update_prospect",description:"Update a single prospect record. Find the prospect by name + company (or email). Updates ONE prospect; if more than one matches the identifier the tool returns an error listing the candidates so you can disambiguate. Use when user says \'mark Mark Altmayer as Contacted\', \'change the email on the Huntley contact to ...\', \'assign Dave to the Chicago prospects\' (use bulk_update_prospects for the last one if it spans many).",input_schema:{type:"object",properties:{prospect_id:{type:"string",description:"Internal prospect ID (PROS-...) if known"},name:{type:"string",description:"Contact name to match exactly or partially"},company:{type:"string",description:"Company name to disambiguate when multiple people share a name"},email:{type:"string",description:"Email address to match exactly"},updates:{type:"object",description:"Fields to update. Any subset of: status, notes, assignedRep (rep ID or name), state, city, title, email, phone, linkedin, website, employees, tier, rank, address",properties:{status:{type:"string"},notes:{type:"string"},assignedRep:{type:"string"},state:{type:"string"},city:{type:"string"},title:{type:"string"},email:{type:"string"},phone:{type:"string"},linkedin:{type:"string"},website:{type:"string"},employees:{type:"string"},tier:{type:"string"},rank:{type:"number"},address:{type:"string"},name:{type:"string"},company:{type:"string"}}}},required:["updates"]}},
+    {name:"delete_prospect",description:"Delete a SINGLE prospect record permanently. Find by name+company or email. Returns an error if more than one record matches the identifier so you can disambiguate. For deleting many at once (e.g. \'remove all Ohio prospects\') use bulk_delete_prospects instead. Use when user says \'delete this prospect\', \'remove Mark Altmayer from prospects\'.",input_schema:{type:"object",properties:{prospect_id:{type:"string",description:"Internal prospect ID (PROS-...) if known"},name:{type:"string",description:"Contact name to match"},company:{type:"string",description:"Company name to disambiguate"},email:{type:"string",description:"Email to match exactly"}},required:[]}},
+    {name:"bulk_update_prospects",description:"Apply the same update to every prospect matching a filter. Use for sweeps like \'mark all Wisconsin prospects as Nurture\', \'assign Dave to all Cook County prospects\'. Requires confirm:true to actually apply; without confirm it returns a dry-run preview showing how many records would be affected.",input_schema:{type:"object",properties:{filter:{type:"object",description:"Match criteria. Combine multiple for AND logic.",properties:{state:{type:"string"},status:{type:"string"},company_contains:{type:"string"},name_contains:{type:"string"},assigned_rep_name:{type:"string"},unassigned_only:{type:"boolean"}}},updates:{type:"object",description:"Fields to apply to every matched prospect",properties:{status:{type:"string"},notes:{type:"string"},assignedRep:{type:"string"},state:{type:"string"},city:{type:"string"},tier:{type:"string"}}},confirm:{type:"boolean",description:"Must be true to actually apply. Without confirm, returns a dry-run preview."}},required:["filter","updates"]}},
+    {name:"bulk_delete_prospects",description:"Delete every prospect matching a filter, in one operation. Use for cleanup like \'delete all prospects outside Illinois and Wisconsin\', \'remove every Ohio and Michigan prospect\', \'clear out all Lost prospects from last year\'. Requires confirm:true to actually delete; without confirm it returns a dry-run preview showing exactly how many records and which states/statuses would be affected. ALWAYS run the dry-run first and surface the count to the user before deleting.",input_schema:{type:"object",properties:{filter:{type:"object",description:"Match criteria. Combine multiple for AND logic. Use exclude_states to delete everything except the listed states (the common Maureen-style cleanup).",properties:{state:{type:"string",description:"Match prospects in this state"},exclude_states:{type:"array",items:{type:"string"},description:"Keep these states, delete everything else. E.g. [\"Illinois\",\"Wisconsin\"] deletes all non-IL/WI prospects."},status:{type:"string"},company_contains:{type:"string"},name_contains:{type:"string"},assigned_rep_name:{type:"string"},unassigned_only:{type:"boolean"}}},confirm:{type:"boolean",description:"Must be true to actually delete. Without confirm, returns a dry-run preview."}},required:["filter"]}}
   ];
 
 
@@ -6309,6 +6314,154 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         }
         return{success:true,message:'Email draft prepared for '+recipient+(recipientLabel?' ('+recipientLabel+')':'')+'. The user can review, edit, and click Send. Subject: "'+(input.subject||'')+'"'};
       }
+      // ===== PROSPECT TOOLS =====
+      // All five tools below give the Brain read/write/delete access to the
+      // Prospects board. Prospect records live in customSops with cat=='Prospect'
+      // and content as a JSON-encoded blob mirroring the ProspectsPage editForm
+      // shape (name, company, email, phone, state, city, status, assignedRep,
+      // notes, etc.). Writes go through addSop (upsert by id) and deleteSop --
+      // the exact same primitives the on-screen Prospects page uses, so anything
+      // the Brain does is indistinguishable from a manual click on that page.
+
+      // Shared helpers (scoped to this branch so they cannot leak out).
+      const _getProspects=()=>(customSops||[]).filter(s=>s.cat==='Prospect').map(s=>{try{return{_sopId:s.id,data:JSON.parse(s.content||'{}')}}catch(_e){return null}}).filter(Boolean);
+      const _matchFilter=(p,filter)=>{
+        if(!filter)return true;
+        if(filter.state!==undefined){
+          const sf=String(filter.state||'').toLowerCase();
+          const ps=String(p.data.state||'').toLowerCase();
+          if(sf===''){if(ps!=='')return false;}
+          else if(!ps.includes(sf))return false;
+        }
+        if(filter.exclude_states&&Array.isArray(filter.exclude_states)){
+          const excludes=filter.exclude_states.map(s=>String(s||'').toLowerCase());
+          const ps=String(p.data.state||'').toLowerCase();
+          if(excludes.some(ex=>ex&&ps===ex))return false;
+        }
+        if(filter.status&&p.data.status!==filter.status)return false;
+        if(filter.company_contains&&!String(p.data.company||'').toLowerCase().includes(String(filter.company_contains).toLowerCase()))return false;
+        if(filter.name_contains&&!String(p.data.name||'').toLowerCase().includes(String(filter.name_contains).toLowerCase()))return false;
+        if(filter.unassigned_only&&p.data.assignedRep)return false;
+        if(filter.assigned_rep_name){
+          const r=reps.find(x=>(x.name||'').toLowerCase().includes(String(filter.assigned_rep_name).toLowerCase()));
+          if(!r||p.data.assignedRep!==r.id)return false;
+        }
+        return true;
+      };
+      const _matchIdentifier=(p,input)=>{
+        if(input.prospect_id&&p._sopId===input.prospect_id)return true;
+        if(input.email&&String(p.data.email||'').toLowerCase()===String(input.email).toLowerCase())return true;
+        if(input.name||input.company){
+          const nm=input.name?String(p.data.name||'').toLowerCase().includes(String(input.name).toLowerCase()):true;
+          const cm=input.company?String(p.data.company||'').toLowerCase().includes(String(input.company).toLowerCase()):true;
+          return nm&&cm;
+        }
+        return false;
+      };
+      const _resolveRepRef=(repRef)=>{
+        // Allows assignedRep to be specified by ID or by name; returns the ID or '' if not found.
+        if(!repRef)return '';
+        const direct=reps.find(r=>r.id===repRef);if(direct)return direct.id;
+        const byName=reps.find(r=>(r.name||'').toLowerCase().includes(String(repRef).toLowerCase()));
+        return byName?byName.id:'';
+      };
+
+      if(toolName==='list_prospects'){
+        const all=_getProspects();
+        const matched=all.filter(p=>_matchFilter(p,input||{}));
+        const limit=Math.min(100,Math.max(1,Number(input?.limit)||25));
+        const sample=matched.slice(0,limit);
+        const totalLine='**'+matched.length+' prospect'+(matched.length===1?'':'s')+' matched** (out of '+all.length+' total).\n\n';
+        if(matched.length===0)return{success:true,message:totalLine+'No matches for the filter you provided.'};
+        let table='| Name | Company | State | Status | Rep | Email |\n| --- | --- | --- | --- | --- | --- |\n';
+        sample.forEach(p=>{
+          const rep=reps.find(r=>r.id===p.data.assignedRep);
+          table+='| '+(p.data.name||'')+' | '+(p.data.company||'')+' | '+(p.data.state||'')+' | '+(p.data.status||'')+' | '+(rep?rep.name:'(unassigned)')+' | '+(p.data.email||'')+' |\n';
+        });
+        const more=matched.length>limit?'\n_Showing first '+limit+' of '+matched.length+'. Use a tighter filter or higher limit for more._':'';
+        return{success:true,message:totalLine+table+more};
+      }
+
+      if(toolName==='update_prospect'){
+        const all=_getProspects();
+        const candidates=all.filter(p=>_matchIdentifier(p,input||{}));
+        if(candidates.length===0)return{error:'No prospect found matching the identifier you provided. Try list_prospects first to find the exact record.'};
+        if(candidates.length>1){
+          const preview=candidates.slice(0,8).map(p=>'- '+(p.data.name||'(no name)')+' | '+(p.data.company||'')+' | '+(p.data.state||'')+' | '+(p.data.email||'')).join('\n');
+          return{error:candidates.length+' prospects match that identifier. Be more specific (e.g. add company or use email). Top matches:\n'+preview};
+        }
+        const target=candidates[0];
+        const updates=input.updates||{};
+        const next={...target.data};
+        Object.keys(updates).forEach(k=>{
+          if(updates[k]===undefined||updates[k]===null)return;
+          if(k==='assignedRep'){next.assignedRep=_resolveRepRef(updates[k])}
+          else next[k]=updates[k];
+        });
+        addSop({id:target._sopId,title:next.name||'Prospect',cat:'Prospect',icon:'target',content:JSON.stringify(next),custom:true});
+        const changedFields=Object.keys(updates).filter(k=>updates[k]!==undefined);
+        return{success:true,message:'Updated **'+(next.name||target._sopId)+'** ('+(next.company||'')+'). Fields changed: '+changedFields.join(', ')+'.'};
+      }
+
+      if(toolName==='delete_prospect'){
+        const all=_getProspects();
+        const candidates=all.filter(p=>_matchIdentifier(p,input||{}));
+        if(candidates.length===0)return{error:'No prospect found matching the identifier you provided.'};
+        if(candidates.length>1){
+          const preview=candidates.slice(0,8).map(p=>'- '+(p.data.name||'(no name)')+' | '+(p.data.company||'')+' | '+(p.data.state||'')+' | '+(p.data.email||'')).join('\n');
+          return{error:candidates.length+' prospects match. Be more specific, or use bulk_delete_prospects if you want all of them. Top matches:\n'+preview};
+        }
+        const target=candidates[0];
+        deleteSop(target._sopId);
+        return{success:true,message:'Deleted prospect: **'+(target.data.name||target._sopId)+'** ('+(target.data.company||'')+').'};
+      }
+
+      if(toolName==='bulk_update_prospects'){
+        const all=_getProspects();
+        const filter=input?.filter||{};
+        const updates=input?.updates||{};
+        if(Object.keys(filter).length===0)return{error:'bulk_update_prospects requires at least one filter criterion (refusing to update every prospect). Use update_prospect for single records.'};
+        if(Object.keys(updates).length===0)return{error:'bulk_update_prospects requires at least one field in updates.'};
+        const matched=all.filter(p=>_matchFilter(p,filter));
+        if(matched.length===0)return{success:true,message:'No prospects match the filter. Nothing to update.'};
+        if(!input.confirm){
+          const sample=matched.slice(0,5).map(p=>'- '+(p.data.name||'')+' | '+(p.data.company||'')+' | '+(p.data.state||'')).join('\n');
+          return{success:true,message:'**Dry run -- '+matched.length+' prospect'+(matched.length===1?'':'s')+' would be updated** with fields: '+Object.keys(updates).join(', ')+'.\n\nSample of affected records:\n'+sample+'\n\nRe-run with confirm:true to apply.'};
+        }
+        let applied=0;
+        matched.forEach(target=>{
+          const next={...target.data};
+          Object.keys(updates).forEach(k=>{
+            if(updates[k]===undefined||updates[k]===null)return;
+            if(k==='assignedRep'){next.assignedRep=_resolveRepRef(updates[k])}
+            else next[k]=updates[k];
+          });
+          addSop({id:target._sopId,title:next.name||'Prospect',cat:'Prospect',icon:'target',content:JSON.stringify(next),custom:true});
+          applied++;
+        });
+        return{success:true,message:'Updated **'+applied+' prospect'+(applied===1?'':'s')+'**. Fields changed: '+Object.keys(updates).join(', ')+'.'};
+      }
+
+      if(toolName==='bulk_delete_prospects'){
+        const all=_getProspects();
+        const filter=input?.filter||{};
+        const hasFilter=Object.keys(filter).some(k=>filter[k]!==undefined&&filter[k]!==null&&filter[k]!==''&&!(Array.isArray(filter[k])&&filter[k].length===0));
+        if(!hasFilter)return{error:'bulk_delete_prospects requires at least one filter criterion (refusing to delete every prospect). To delete a single record use delete_prospect.'};
+        const matched=all.filter(p=>_matchFilter(p,filter));
+        if(matched.length===0)return{success:true,message:'No prospects match the filter. Nothing to delete.'};
+        // Group by state for the preview so the user can sanity-check the cut.
+        const byState={};
+        matched.forEach(p=>{const s=p.data.state||'(no state)';byState[s]=(byState[s]||0)+1});
+        const stateBreakdown=Object.entries(byState).sort((a,b)=>b[1]-a[1]).map(([s,n])=>'- '+s+': '+n).join('\n');
+        if(!input.confirm){
+          const sample=matched.slice(0,5).map(p=>'- '+(p.data.name||'')+' | '+(p.data.company||'')+' | '+(p.data.state||'')).join('\n');
+          return{success:true,message:'**Dry run -- '+matched.length+' prospect'+(matched.length===1?'':'s')+' would be PERMANENTLY DELETED.**\n\nBy state:\n'+stateBreakdown+'\n\nSample of affected records:\n'+sample+'\n\nRe-run with confirm:true to actually delete. This cannot be undone.'};
+        }
+        let removed=0;
+        matched.forEach(target=>{deleteSop(target._sopId);removed++});
+        return{success:true,message:'**Deleted '+removed+' prospect'+(removed===1?'':'s')+'**\n\nBy state:\n'+stateBreakdown};
+      }
+
       return{error:"Unknown tool: "+toolName};
     }catch(err){return{error:"Execution error: "+err.message}}
   };
@@ -6441,7 +6594,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     const taskText = /task|todo|assign|follow.?up/i.test(q) ? (customSops||[]).filter(s=>s.cat==="Task").map(s=>{try{const d=JSON.parse(s.content);return d.text+" ["+d.status+"]"+(d.assignees?.length?" -> "+d.assignees.join(","):"")+(d.due?" due:"+d.due:"")}catch{return s.title}}).join("\n") : "";
 
 
-    return "You are the Midwest Brain -- a full-capability AI assistant powered by Claude, built into the operating system for Midwest Educational Furnishings (Kildeer, IL). Owner: Maureen Welter. Today: " + today + ".\n\nYou are a COMPLETE AI assistant. You can do everything Claude can do: write emails, draft proposals, create content, analyze data, brainstorm ideas, explain concepts, write code, give advice, and more. You happen to ALSO have full access to the live Midwest business database below, so you can weave in real company data when relevant.\n\nIf someone asks you to write an email -- write a great email, using Midwest context if relevant. If they ask for a marketing idea -- give one. If they ask to explain a concept -- explain it. You are not limited to just answering data questions.\n\nBUSINESS CONTEXT:\nSTATS: " + jobs.length + " jobs | Rev $" + Math.round(totalRev) + " | Cost $" + Math.round(totalCost) + " | Margin " + (totalRev>0?Math.round((totalRev-totalCost)/totalRev*100):0) + "% | " + lineItems.length + " line items | " + vendors.length + " vendors | " + customers.length + " customers\n\nALL JOBS:\n" + jobSummaries + lineItemDetail + "\n\nVENDORS: " + vendorSummaries + vendorDetail + "\n\nCUSTOMERS: " + custSummaries + "\n\nREPS: " + repSummaries + sopSection + (taskText?"\n\nTASKS:\n"+taskText:"") + "\n\nRULES:\n1. You are a FULL AI assistant. You can write emails, draft documents, create proposals, brainstorm, explain anything, give business advice, and do everything Claude can normally do.\n2. When the question relates to Midwest business data, use the real numbers above. NEVER say you don't have the data.\n3. When writing emails or documents, use Midwest context naturally: 'Midwest Educational Furnishings', Maureen Welter, Kildeer IL, the customer/vendor names from the database.\n4. For 'how do I' questions about business processes: check the RELEVANT SOP DETAILS section. If an SOP covers it, answer FROM the SOP.\n5. For general knowledge questions, advice, brainstorming, writing help: answer like a world-class AI assistant would. You are not limited to business data.\n6. When asked about a job, use its LINE ITEM DETAILS for specific products, vendors, quantities, and costs.\n7. Show your math when doing financial calculations.\n8. Think like a CFO+COO+executive assistant combined.\n9. Keep answers concise but complete. Match the tone to what's being asked -- formal for emails, casual for brainstorming, detailed for analysis.\n10. FORMAT DATA AS TABLES: When showing line items, price comparisons, job lists, vendor data, or any structured data with 3+ rows, ALWAYS use markdown table format (| Col1 | Col2 |). The chat renders markdown tables as styled interactive tables. Include dollar signs for money columns. This is critical for readability.\n11. At the end of business-related answers, suggest 2-3 follow-up questions:\n>> [question 1]\n>> [question 2]\n>> [question 3]\n12. NEVER use emoji. Text only.\n13. When the user asks you to DO something (update, create, mark, change, set, navigate), USE THE TOOLS. Don't just describe what would happen -- call the tool. You will see a confirmation before the action executes.\n14. For job references: match by job ID or by name keywords. If ambiguous, ask which job.\n15. When using tools, briefly explain what you are about to do BEFORE the tool call.\n16. PROACTIVELY USE save_memory to remember important patterns, preferences, decisions, and insights from conversations. Your memory persists forever and makes you smarter over time.\n16. Use detect_anomalies for health checks. Use analyze_trends for patterns. Use summarize_context for briefings. Use predictive_flag for risk assessment.\n17. Use draft_email for professional emails with Midwest branding.\n18. Use database_query for complex data lookups. Use parse_uploaded_file ONLY for files at public URLs.\n19. CRITICAL FILE ATTACHMENT RULE: When a user attaches a file via the paperclip button, the file content is ALREADY EMBEDDED directly in the user message as text or document blocks. You can read it right there. Do NOT call parse_uploaded_file for attached files. The data is already here.\n\nWhen a file is attached, be PROACTIVE about what you can do with it:\n- VENDOR QUOTE (has model numbers, prices, quantities): Extract all line items and use create_job_from_file to build a complete job. Ask for the customer name if not obvious.\n- CUSTOMER LIST (schools, districts, contacts): Use import_customers_from_file to add them to the directory.\n- VENDOR LIST (manufacturers, suppliers): Use import_vendors_from_file to add them.\n- INVOICE/RECEIPT: Extract the data, match to existing jobs, summarize what is owed.\n- PRICE LIST: Compare against existing job prices using compare_quote_to_job.\n- GENERAL DOCUMENT: Analyze thoroughly, extract key data, suggest next actions.\n\nAlways tell the user what you found AND what you can do with it. Don't just describe the file -- offer to take action.\n21. You have WEB SEARCH capability. When asked about current events, market prices, competitor info, or anything needing real-time data, the web_search tool is always available and Claude uses it automatically.\n22. After substantive interactions, consider what should be saved to memory." + (memoryText ? "\n\nBRAIN MEMORY (persistent knowledge):\n" + memoryText : "");
+    return "You are the Midwest Brain -- a full-capability AI assistant powered by Claude, built into the operating system for Midwest Educational Furnishings (Kildeer, IL). Owner: Maureen Welter. Today: " + today + ".\n\nYou are a COMPLETE AI assistant. You can do everything Claude can do: write emails, draft proposals, create content, analyze data, brainstorm ideas, explain concepts, write code, give advice, and more. You happen to ALSO have full access to the live Midwest business database below, so you can weave in real company data when relevant.\n\nIf someone asks you to write an email -- write a great email, using Midwest context if relevant. If they ask for a marketing idea -- give one. If they ask to explain a concept -- explain it. You are not limited to just answering data questions.\n\nBUSINESS CONTEXT:\nSTATS: " + jobs.length + " jobs | Rev $" + Math.round(totalRev) + " | Cost $" + Math.round(totalCost) + " | Margin " + (totalRev>0?Math.round((totalRev-totalCost)/totalRev*100):0) + "% | " + lineItems.length + " line items | " + vendors.length + " vendors | " + customers.length + " customers | " + ((customSops||[]).filter(s=>s.cat==='Prospect').length) + " prospects\n\nALL JOBS:\n" + jobSummaries + lineItemDetail + "\n\nVENDORS: " + vendorSummaries + vendorDetail + "\n\nCUSTOMERS: " + custSummaries + "\n\nREPS: " + repSummaries + sopSection + (taskText?"\n\nTASKS:\n"+taskText:"") + "\n\nRULES:\n1. You are a FULL AI assistant. You can write emails, draft documents, create proposals, brainstorm, explain anything, give business advice, and do everything Claude can normally do.\n2. When the question relates to Midwest business data, use the real numbers above. NEVER say you don't have the data.\n3. When writing emails or documents, use Midwest context naturally: 'Midwest Educational Furnishings', Maureen Welter, Kildeer IL, the customer/vendor names from the database.\n4. For 'how do I' questions about business processes: check the RELEVANT SOP DETAILS section. If an SOP covers it, answer FROM the SOP.\n5. For general knowledge questions, advice, brainstorming, writing help: answer like a world-class AI assistant would. You are not limited to business data.\n6. When asked about a job, use its LINE ITEM DETAILS for specific products, vendors, quantities, and costs.\n7. Show your math when doing financial calculations.\n8. Think like a CFO+COO+executive assistant combined.\n9. Keep answers concise but complete. Match the tone to what's being asked -- formal for emails, casual for brainstorming, detailed for analysis.\n10. FORMAT DATA AS TABLES: When showing line items, price comparisons, job lists, vendor data, or any structured data with 3+ rows, ALWAYS use markdown table format (| Col1 | Col2 |). The chat renders markdown tables as styled interactive tables. Include dollar signs for money columns. This is critical for readability.\n11. At the end of business-related answers, suggest 2-3 follow-up questions:\n>> [question 1]\n>> [question 2]\n>> [question 3]\n12. NEVER use emoji. Text only.\n13. When the user asks you to DO something (update, create, mark, change, set, navigate), USE THE TOOLS. Don't just describe what would happen -- call the tool. You will see a confirmation before the action executes.\n14. For job references: match by job ID or by name keywords. If ambiguous, ask which job.\n15. When using tools, briefly explain what you are about to do BEFORE the tool call.\n16. PROACTIVELY USE save_memory to remember important patterns, preferences, decisions, and insights from conversations. Your memory persists forever and makes you smarter over time.\n16. Use detect_anomalies for health checks. Use analyze_trends for patterns. Use summarize_context for briefings. Use predictive_flag for risk assessment.\n17. Use draft_email for professional emails with Midwest branding.\n18. Use database_query for complex data lookups. Use parse_uploaded_file ONLY for files at public URLs.\n19. CRITICAL FILE ATTACHMENT RULE: When a user attaches a file via the paperclip button, the file content is ALREADY EMBEDDED directly in the user message as text or document blocks. You can read it right there. Do NOT call parse_uploaded_file for attached files. The data is already here.\n\nWhen a file is attached, be PROACTIVE about what you can do with it:\n- VENDOR QUOTE (has model numbers, prices, quantities): Extract all line items and use create_job_from_file to build a complete job. Ask for the customer name if not obvious.\n- CUSTOMER LIST (schools, districts, contacts): Use import_customers_from_file to add them to the directory.\n- VENDOR LIST (manufacturers, suppliers): Use import_vendors_from_file to add them.\n- INVOICE/RECEIPT: Extract the data, match to existing jobs, summarize what is owed.\n- PRICE LIST: Compare against existing job prices using compare_quote_to_job.\n- GENERAL DOCUMENT: Analyze thoroughly, extract key data, suggest next actions.\n\nAlways tell the user what you found AND what you can do with it. Don't just describe the file -- offer to take action.\n21. You have WEB SEARCH capability. When asked about current events, market prices, competitor info, or anything needing real-time data, the web_search tool is always available and Claude uses it automatically.\n22. After substantive interactions, consider what should be saved to memory." + (memoryText ? "\n\nBRAIN MEMORY (persistent knowledge):\n" + memoryText : "");
   };
 
 
