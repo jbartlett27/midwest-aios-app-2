@@ -2838,6 +2838,7 @@ function JobDetail({job,ctx}){
           <span style={{fontSize:12,color:"#a3a3a3"}}>{a.creditDate||""}</span>
           {a.refNumber&&<span style={{fontSize:11,color:"#737373",fontFamily:"'JetBrains Mono',monospace"}}>{a.refNumber}</span>}
           {a.memo&&<span style={{fontSize:11,color:"#737373",flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={a.memo}>{a.memo}</span>}
+          {a.fileUrl&&<a href={a.fileUrl} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{fontSize:11,color:"#a78bfa",textDecoration:"none",display:"inline-flex",alignItems:"center",gap:3,padding:"2px 8px",background:"#a78bfa10",border:"1px solid #a78bfa25",borderRadius:4}} title={a.fileName||'View attachment'}><I n="file" s={11} color="#a78bfa"/> File</a>}
           <span style={{fontSize:14,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:isCred?"#34d399":"#f97316",marginLeft:"auto"}}>{isCred?"-":"+"}{fmt(Number(a.amount)||0)}</span>
           {a.paid&&<Badge label="paid" color="#34d399"/>}
         </div>})}
@@ -3243,7 +3244,10 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
   const [showAdjustModal,setShowAdjustModal]=useState(false);
   const [adjustMode,setAdjustMode]=useState('credit');
   const [adjustEdit,setAdjustEdit]=useState(null);
-  const [adjustForm,setAdjustForm]=useState({vendorId:'',jobId:'',amount:'',creditDate:'',refNumber:'',memo:''});
+  const [adjustForm,setAdjustForm]=useState({vendorId:'',jobId:'',amount:'',creditDate:'',refNumber:'',memo:'',fileUrl:'',fileName:'',fileSize:0,uploadDate:''});
+  // True while a file is uploading to Supabase storage for the credit/bill modal.
+  // Disables Save + the Upload button so the user can't submit a half-uploaded record.
+  const [adjustUploading,setAdjustUploading]=useState(false);
   // Payment tab state
   const [payJob,setPayJob]=useState('');
   const [payDate,setPayDate]=useState(()=>new Date().toISOString().split('T')[0]);
@@ -3662,6 +3666,8 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
             _standalone: true,
             _sopId: s.id,
             _standaloneKind: s.cat,
+            _fileUrl: d.fileUrl || '',
+            _fileName: d.fileName || '',
           });
         });
       } catch {}
@@ -3690,15 +3696,16 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           const sop=(customSops||[]).find(s=>s.id===existingBill._sopId);
           let d={};try{d=JSON.parse(sop?.content||'{}')}catch{}
           setAdjustEdit(existingBill._sopId);
-          setAdjustForm({vendorId:d.vendorId||'',jobId:d.jobId||'',amount:String(d.amount||''),creditDate:d.creditDate||'',refNumber:d.refNumber||'',memo:d.memo||''});
+          setAdjustForm({vendorId:d.vendorId||'',jobId:d.jobId||'',amount:String(d.amount||''),creditDate:d.creditDate||'',refNumber:d.refNumber||'',memo:d.memo||'',fileUrl:d.fileUrl||'',fileName:d.fileName||'',fileSize:Number(d.fileSize)||0,uploadDate:d.uploadDate||''});
         } else {
           setAdjustEdit(null);
-          setAdjustForm({vendorId:'',jobId:'',amount:'',creditDate:new Date().toISOString().split('T')[0],refNumber:'',memo:''});
+          setAdjustForm({vendorId:'',jobId:'',amount:'',creditDate:new Date().toISOString().split('T')[0],refNumber:'',memo:'',fileUrl:'',fileName:'',fileSize:0,uploadDate:''});
         }
         setShowAdjustModal(true);
       };
-      const closeAdjustModal=()=>{setShowAdjustModal(false);setAdjustEdit(null);setAdjustForm({vendorId:'',jobId:'',amount:'',creditDate:'',refNumber:'',memo:''})};
+      const closeAdjustModal=()=>{setShowAdjustModal(false);setAdjustEdit(null);setAdjustForm({vendorId:'',jobId:'',amount:'',creditDate:'',refNumber:'',memo:'',fileUrl:'',fileName:'',fileSize:0,uploadDate:''});setAdjustUploading(false)};
       const saveAdjust=()=>{
+        if(adjustUploading){notify('Wait for the file upload to finish','error');return}
         const amt=Number(adjustForm.amount);
         if(!adjustForm.vendorId){notify('Pick a vendor','error');return}
         if(!adjustForm.jobId){notify('Attach to a project','error');return}
@@ -3707,7 +3714,7 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
         const j=jobs.find(jj=>jj.id===adjustForm.jobId);
         if(!v||!j){notify('Vendor or project not found','error');return}
         const id=adjustEdit||((adjustMode==='credit'?'VC-':'SB-')+Date.now().toString(36).toUpperCase()+'-'+Math.random().toString(36).slice(2,6).toUpperCase());
-        const data={vendorId:adjustForm.vendorId,vendorName:v.name,jobId:adjustForm.jobId,jobName:j.name,amount:amt,creditDate:adjustForm.creditDate||new Date().toISOString().split('T')[0],refNumber:(adjustForm.refNumber||'').trim(),memo:(adjustForm.memo||'').trim(),createdAt:adjustEdit?undefined:new Date().toISOString()};
+        const data={vendorId:adjustForm.vendorId,vendorName:v.name,jobId:adjustForm.jobId,jobName:j.name,amount:amt,creditDate:adjustForm.creditDate||new Date().toISOString().split('T')[0],refNumber:(adjustForm.refNumber||'').trim(),memo:(adjustForm.memo||'').trim(),fileUrl:adjustForm.fileUrl||'',fileName:adjustForm.fileName||'',fileSize:Number(adjustForm.fileSize)||0,uploadDate:adjustForm.uploadDate||'',createdAt:adjustEdit?undefined:new Date().toISOString()};
         // Preserve createdAt + payment state if editing
         if(adjustEdit){
           const prior=(customSops||[]).find(s=>s.id===adjustEdit);
@@ -4208,7 +4215,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
                 <td style={{padding:"10px 8px",textAlign:"center",width:36}} onClick={e=>e.stopPropagation()}>{!bill.paid&&!bill._standalone&&<input type="checkbox" checked={billSelected.has(unpaidIdx)} onChange={()=>toggleSelect(unpaidIdx)} style={{accentColor:"#2dd4bf",width:16,height:16,cursor:"pointer"}}/>}{bill.paid&&<I n="check" s={14} color="#34d399"/>}{!bill.paid&&bill._standalone&&<span style={{fontSize:10,color:bill.isCredit?"#34d399":"#f97316",fontWeight:700,letterSpacing:0.5}}>{bill.isCredit?"CR":"ADJ"}</span>}</td>
                 <td style={{padding:"10px 8px"}}><div style={{fontWeight:600,color:"#e5e5e5",display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>{bill.vendorName}{bill.isCredit&&<span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:"#34d39920",color:"#34d399",fontWeight:700,letterSpacing:0.5}}>CREDIT {(()=>{const ca=typeof bill.creditAmount==='number'?bill.creditAmount:bill.cost;return ca<bill.cost-0.005?fmt(ca):'FULL'})()}</span>}</div><div style={{fontSize:11,color:"#737373"}}>{bill.itemCount} item{bill.itemCount!==1?'s':''}</div></td>
                 <td style={{padding:"10px 8px"}}><span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:11,color:"#a78bfa",cursor:"pointer",textDecoration:"underline",textUnderlineOffset:2}} onClick={e=>{e.stopPropagation();const pos2=genPOs?genPOs(bill.job):[];const thisPO2=pos2.find(p=>p.docNum===bill.poDocNum);if(thisPO2){setPreviewDoc({type:"po",data:thisPO2,job:bill.job});setTab("preview")}}}>{bill.poDocNum}</span></td>
-                <td style={{padding:"10px 8px",fontFamily:"'JetBrains Mono',monospace",fontSize:11,color:bill.vendorInvNum?"#f97316":"#333"}}>{bill.vendorInvNum||'--'}</td>
+                <td style={{padding:"10px 8px",fontFamily:"'JetBrains Mono',monospace",fontSize:11,color:bill.vendorInvNum?"#f97316":"#333"}}>{bill.vendorInvNum||'--'}{bill._standalone&&bill._fileUrl&&<a href={bill._fileUrl} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} title={bill._fileName||'View attached file'} style={{marginLeft:8,display:"inline-flex",alignItems:"center",gap:3,padding:"1px 6px",background:"#a78bfa10",border:"1px solid #a78bfa25",borderRadius:4,color:"#a78bfa",textDecoration:"none",fontSize:10,fontWeight:600,fontFamily:"inherit"}}><I n="file" s={10} color="#a78bfa"/> File</a>}</td>
                 <td style={{padding:"10px 8px"}}><div style={{color:"#c4c4c4",fontSize:12}}>{bill.job.name}</div></td>
                 <td style={{padding:"10px 8px",whiteSpace:"nowrap"}}>{bill.paid?<span style={{color:"#34d399",fontWeight:600}}>Paid{bill.payDate?' '+bill.payDate:''}</span>:isOverdue?<div><div style={{color:"#f87171",fontWeight:600}}>Overdue</div><div style={{fontSize:10,color:"#f87171"}}>{Math.abs(bill.daysUntil)} day{Math.abs(bill.daysUntil)!==1?'s':''} ago</div></div>:isDueSoon?<div><div style={{color:"#fbbf24",fontWeight:500}}>Due soon</div><div style={{fontSize:10,color:"#fbbf24"}}>Due in {bill.daysUntil} day{bill.daysUntil!==1?'s':''}</div></div>:<div><div style={{color:"#a3a3a3"}}>Due later</div><div style={{fontSize:10,color:"#737373"}}>Due in {bill.daysUntil} day{bill.daysUntil!==1?'s':''}</div></div>}</td>
                 <td style={{padding:"10px 8px"}} onClick={e=>e.stopPropagation()}>{(()=>{const bd=typeof docStatuses[bill.billDocNum]==='object'?docStatuses[bill.billDocNum]:{};const st=bd.status||(bill.paid?'paid':(bd.checkPrinted||bd.checkNum||bill.checkNum)?'check_sent':'unpaid');const nextStatus={unpaid:'check_sent',check_sent:'paid',paid:'unpaid',void:'unpaid'};return <button onClick={()=>{const ns=nextStatus[st]||'unpaid';setDocStatus(bill.billDocNum,{...bd,status:ns,paid:ns==='paid'});notify(bill.vendorName+' >> '+ns.replace('_',' '))}} style={{background:"none",border:"none",cursor:"pointer",padding:0}} title="Click to cycle status">{st==='void'?<Badge label="void" color="#525252"/>:st==='paid'?<Badge label="paid" color="#34d399"/>:st==='check_sent'?<Badge label="check sent" color="#f97316"/>:bill.daysUntil<0?<Badge label="overdue" color="#f87171"/>:<StatusBadge docNum={bill.poDocNum}/>}</button>})()}</td>
@@ -4267,6 +4274,56 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
                 <label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4,fontWeight:600}}>Memo / Notes</label>
                 <textarea value={adjustForm.memo} onChange={e=>setAdjustForm(p=>({...p,memo:e.target.value}))} placeholder={adjustMode==='credit'?"e.g. Damaged stool credit -- 7 units":"Reason for the bill"} rows={3} style={{...inputStyle,width:"100%",resize:"vertical",minHeight:60,fontFamily:"inherit"}}/>
               </div>
+              <div>
+                <label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4,fontWeight:600}}>Attachment {adjustMode==='credit'?'(credit memo PDF, image)':'(bill PDF, image)'}</label>
+                {!adjustForm.fileUrl&&!adjustUploading&&<div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                  <label style={{padding:"8px 14px",borderRadius:8,border:"1px dashed "+(adjustMode==='credit'?"#34d39940":"#f9731640"),background:"transparent",color:adjustMode==='credit'?"#34d399":"#f97316",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:6}}>
+                    <I n="upload" s={14}/> Upload File
+                    <input type="file" accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.heic,.doc,.docx,.xls,.xlsx,.csv,.txt" style={{display:"none"}} onChange={async e=>{
+                      const file=e.target.files?.[0];if(!file){return}
+                      // 25 MB safety cap (matches Supabase free-tier per-object practical limit)
+                      if(file.size>25*1024*1024){notify('File too large -- max 25 MB','error');e.target.value='';return}
+                      if(!window._supabase||typeof window._supabase.uploadFile!=='function'){notify('Storage not ready -- refresh the page and try again','error');return}
+                      setAdjustUploading(true);
+                      try{
+                        const ext=(file.name.split('.').pop()||'bin').toLowerCase();
+                        const kindPrefix=adjustMode==='credit'?'credits':'standalone-bills';
+                        const safeId=(adjustEdit||'new').replace(/[^a-zA-Z0-9-_]/g,'_');
+                        const path=kindPrefix+'/'+safeId+'_'+Date.now()+'.'+ext;
+                        const url=await window._supabase.uploadFile('vendor-invoices',path,file);
+                        if(url){
+                          setAdjustForm(p=>({...p,fileUrl:url,fileName:file.name,fileSize:file.size,uploadDate:new Date().toISOString()}));
+                          notify('File uploaded: '+file.name);
+                        } else {
+                          notify('Upload failed -- no URL returned','error');
+                        }
+                      } catch(err){
+                        notify('Upload failed: '+(err?.message||'unknown error'),'error');
+                      }
+                      setAdjustUploading(false);
+                      try{e.target.value=''}catch{}
+                    }}/>
+                  </label>
+                  <span style={{fontSize:11,color:"#525252"}}>PDF, image, or document up to 25 MB</span>
+                </div>}
+                {adjustUploading&&<div style={{padding:"10px 12px",background:"#0a0a0a",border:"1px solid #2dd4bf30",borderRadius:8,display:"flex",alignItems:"center",gap:10,fontSize:12,color:"#2dd4bf"}}>
+                  <span style={{display:"inline-flex",gap:3}}>
+                    <span style={{width:6,height:6,borderRadius:"50%",background:"#2dd4bf",animation:"pulse 1s infinite"}}/>
+                    <span style={{width:6,height:6,borderRadius:"50%",background:"#2dd4bf",animation:"pulse 1s infinite 0.2s"}}/>
+                    <span style={{width:6,height:6,borderRadius:"50%",background:"#2dd4bf",animation:"pulse 1s infinite 0.4s"}}/>
+                  </span>
+                  <span>Uploading file to storage...</span>
+                </div>}
+                {adjustForm.fileUrl&&!adjustUploading&&<div style={{padding:"10px 12px",background:"#a78bfa08",border:"1px solid #a78bfa25",borderRadius:8,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                  <I n="file" s={16} color="#a78bfa"/>
+                  <div style={{flex:1,minWidth:120}}>
+                    <div style={{fontSize:13,fontWeight:600,color:"#e5e5e5",wordBreak:"break-word"}}>{adjustForm.fileName||'Attached file'}</div>
+                    {adjustForm.fileSize>0&&<div style={{fontSize:11,color:"#737373",marginTop:2}}>{(adjustForm.fileSize/1024).toFixed(1)} KB{adjustForm.uploadDate?' -- uploaded '+(adjustForm.uploadDate.split('T')[0]):''}</div>}
+                  </div>
+                  <a href={adjustForm.fileUrl} target="_blank" rel="noopener noreferrer" style={{padding:"6px 12px",borderRadius:6,border:"1px solid #a78bfa30",background:"#a78bfa15",color:"#a78bfa",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",textDecoration:"none",display:"inline-flex",alignItems:"center",gap:4}}><I n="external-link" s={12} color="#a78bfa"/> View</a>
+                  <button onClick={()=>{setAdjustForm(p=>({...p,fileUrl:'',fileName:'',fileSize:0,uploadDate:''}));notify('Attachment removed (save to apply)')}} style={{padding:"6px 10px",borderRadius:6,border:"1px solid #52525230",background:"transparent",color:"#737373",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Remove</button>
+                </div>}
+              </div>
               {adjustForm.vendorId&&adjustForm.jobId&&Number(adjustForm.amount)>0&&<div style={{padding:"10px 12px",background:"#0a0a0a",borderRadius:8,border:"1px solid "+(adjustMode==='credit'?"#34d39930":"#f9731630"),fontSize:12,color:"#c4c4c4",lineHeight:1.6}}>
                 {adjustMode==='credit'
                   ?<>This credit will reduce <strong style={{color:"#e5e5e5"}}>{jobs.find(j=>j.id===adjustForm.jobId)?.name||"the project"}</strong>'s vendor cost by <strong style={{color:"#34d399",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(Number(adjustForm.amount))}</strong>, lifting the project margin and lowering Total Owed.</>
@@ -4276,7 +4333,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
             <div style={{display:"flex",gap:8,marginTop:18,justifyContent:"flex-end"}}>
               {adjustEdit&&<Btn v="danger" style={{fontSize:12}} onClick={()=>{const _doDelete=()=>{deleteAdjust(adjustEdit);closeAdjustModal()};if(ctx&&typeof ctx.confirm==='function'){ctx.confirm('Delete this '+(adjustMode==='credit'?'credit':'bill')+'?').then(ok=>{if(ok)_doDelete()})}else if(window.confirm('Delete this '+(adjustMode==='credit'?'credit':'bill')+'?')){_doDelete()}}}>Delete</Btn>}
               <Btn v="secondary" onClick={closeAdjustModal}>Cancel</Btn>
-              <Btn onClick={saveAdjust} style={{background:adjustMode==='credit'?"#34d399":"#f97316",color:"#000",fontWeight:700}}>{adjustEdit?"Save Changes":"Create "+(adjustMode==='credit'?"Credit":"Bill")}</Btn>
+              <Btn onClick={saveAdjust} disabled={adjustUploading} style={{background:adjustUploading?"#525252":(adjustMode==='credit'?"#34d399":"#f97316"),color:"#000",fontWeight:700,opacity:adjustUploading?0.6:1,cursor:adjustUploading?"not-allowed":"pointer"}}>{adjustUploading?"Uploading...":(adjustEdit?"Save Changes":"Create "+(adjustMode==='credit'?"Credit":"Bill"))}</Btn>
             </div>
           </div>
         </div>}
