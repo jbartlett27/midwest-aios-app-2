@@ -1427,13 +1427,39 @@ function MidwestAIOSInner() {
   const getJobItems = jobId => { const filtered = []; for (let i = 0; i < lineItems.length; i++) { if (lineItems[i].jobId === jobId) filtered.push(lineItems[i]); } return filtered; };
   const getJobFinancials = jobId => {
     const items = getJobItems(jobId);
-    const totalCost = items.reduce((s,i)=>s+(i.unitCost||0)*(i.qtyOrdered||0),0);
+    const rawCost = items.reduce((s,i)=>s+(i.unitCost||0)*(i.qtyOrdered||0),0);
+    // Cost adjustments: standalone vendor credits (reduce cost) and standalone
+    // vendor bills not tied to a PO (increase cost). Both live in customSops
+    // with cat 'VendorCredit' or 'StandaloneBill'. Each record has
+    // { vendorId, vendorName, jobId, amount, creditDate, refNumber, memo }
+    // serialized in content. Pulling them into getJobFinancials propagates the
+    // adjustment everywhere the app reads cost/margin -- Dashboard, Jobs list,
+    // JobDetail, Customer360, Vendor360, SalesPortal, Commissions, Financials,
+    // and Brain context -- with no per-page changes required.
+    let creditSum = 0;
+    let standaloneBillSum = 0;
+    try {
+      if (Array.isArray(customSops)) {
+        for (let i = 0; i < customSops.length; i++) {
+          const s = customSops[i];
+          if (!s || (s.cat !== 'VendorCredit' && s.cat !== 'StandaloneBill')) continue;
+          let d = null;
+          try { d = JSON.parse(s.content || '{}'); } catch { continue; }
+          if (!d || d.jobId !== jobId) continue;
+          const amt = Number(d.amount);
+          if (!isFinite(amt) || amt <= 0) continue;
+          if (s.cat === 'VendorCredit') creditSum += amt;
+          else standaloneBillSum += amt;
+        }
+      }
+    } catch {}
+    const totalCost = Math.max(0, rawCost + standaloneBillSum - creditSum);
     const totalRevenue = items.reduce((s,i)=>s+(i.priceExtended&&i.priceExtended>0?i.priceExtended:((i.unitPrice||0)*(i.qtyOrdered||0))),0);
     const margin = totalRevenue>0?((totalRevenue-totalCost)/totalRevenue*100):0;
     const totalReceived = items.reduce((s,i)=>s+(i.qtyReceived||0),0);
     const totalOrdered = items.reduce((s,i)=>s+(i.qtyOrdered||0),0);
     const totalInvoiced = items.reduce((s,i)=>s+(i.unitPrice||0)*(i.qtyInvoiced||0),0);
-    return {totalCost,totalRevenue,margin,totalReceived,totalOrdered,totalInvoiced,itemCount:items.length};
+    return {totalCost,totalRevenue,margin,totalReceived,totalOrdered,totalInvoiced,itemCount:items.length,rawCost,creditSum,standaloneBillSum};
   };
   const getItemStatus = i => {
     if(i.qtyReceived>=i.qtyOrdered && i.qtyInvoiced>=i.qtyOrdered) return "complete";
@@ -2791,6 +2817,33 @@ function JobDetail({job,ctx}){
       <Card style={{padding:14,textAlign:"center"}}><div style={{fontSize:12,color:"#a3a3a3",marginBottom:4}}>Line Items</div><div style={{fontSize:18,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:"#e5e5e5"}}>{f.itemCount}</div></Card>
       <Card style={{padding:14,textAlign:"center"}}><div style={{fontSize:12,color:"#a3a3a3",marginBottom:4}}>Commission</div><div style={{fontSize:18,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:"#2dd4bf"}}>{fmt(f.totalRevenue*(rep?.commissionRate||0))}</div></Card>
     </div>
+    {/* Vendor Credits & Adjustments. Only renders when this job has any standalone
+        credits or bills attached. Created from Documents > Vendor Bills tab via
+        the "+ New Vendor Credit" / "+ New Vendor Bill" buttons. Each entry
+        contributes to the cost adjustment that already flows through f.totalCost
+        and f.margin above. */}
+    {(()=>{const adj=((ctx.customSops||[]).filter(s=>(s.cat==='VendorCredit'||s.cat==='StandaloneBill'))).map(s=>{let d={};try{d=JSON.parse(s.content||'{}')}catch{}return {_sopId:s.id,_cat:s.cat,...d}}).filter(x=>x.jobId===job.id);if(adj.length===0)return null;const creditTotal=adj.filter(a=>a._cat==='VendorCredit').reduce((s,a)=>s+(Number(a.amount)||0),0);const billTotal=adj.filter(a=>a._cat==='StandaloneBill').reduce((s,a)=>s+(Number(a.amount)||0),0);return <Card style={{marginBottom:24,padding:14,border:"1px solid rgba(45,212,191,0.15)"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
+        <div style={{fontSize:13,fontWeight:700,color:"#2dd4bf"}}>Vendor Credits & Adjustments</div>
+        <div style={{display:"flex",gap:14,fontSize:11,color:"#a3a3a3"}}>
+          {creditTotal>0&&<span>Credits: <span style={{color:"#34d399",fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}>-{fmt(creditTotal)}</span></span>}
+          {billTotal>0&&<span>Standalone bills: <span style={{color:"#f97316",fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}>+{fmt(billTotal)}</span></span>}
+          <span>Net cost change: <span style={{color:billTotal-creditTotal<0?"#34d399":billTotal-creditTotal>0?"#f97316":"#a3a3a3",fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}>{billTotal-creditTotal>=0?"+":""}{fmt(billTotal-creditTotal)}</span></span>
+        </div>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+        {adj.map(a=>{const isCred=a._cat==='VendorCredit';return <div key={a._sopId} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",background:"#0a0a0a",border:"1px solid "+(isCred?"rgba(52,211,153,0.18)":"rgba(249,115,22,0.18)"),borderRadius:8,flexWrap:"wrap"}}>
+          <span style={{fontSize:10,fontWeight:700,color:isCred?"#34d399":"#f97316",letterSpacing:0.5,textTransform:"uppercase",padding:"2px 6px",background:isCred?"rgba(52,211,153,0.08)":"rgba(249,115,22,0.08)",borderRadius:4}}>{isCred?"CREDIT":"STANDALONE BILL"}</span>
+          <span style={{fontSize:13,color:"#e5e5e5",fontWeight:600}}>{a.vendorName||"Vendor"}</span>
+          <span style={{fontSize:12,color:"#a3a3a3"}}>{a.creditDate||""}</span>
+          {a.refNumber&&<span style={{fontSize:11,color:"#737373",fontFamily:"'JetBrains Mono',monospace"}}>{a.refNumber}</span>}
+          {a.memo&&<span style={{fontSize:11,color:"#737373",flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={a.memo}>{a.memo}</span>}
+          <span style={{fontSize:14,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:isCred?"#34d399":"#f97316",marginLeft:"auto"}}>{isCred?"-":"+"}{fmt(Number(a.amount)||0)}</span>
+          {a.paid&&<Badge label="paid" color="#34d399"/>}
+        </div>})}
+      </div>
+      <div style={{marginTop:10,fontSize:11,color:"#525252"}}>Manage from Documents &gt; Vendor Bills. Credits reduce vendor cost on this job; standalone bills increase it. Both reflect in the totals above.</div>
+    </Card>})()}
     <div className="resp-grid-5" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(100px,1fr))",gap:12,marginBottom:24}}>
       <Card style={{padding:12}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{fontSize:12,color:"#c4c4c4"}}>Payment</span><Badge label={job.paymentStatus} color={statusColor(job.paymentStatus)}/></div></Card>
       <Card style={{padding:12}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{fontSize:12,color:"#c4c4c4"}}>Delivery</span><span style={{fontSize:12,fontWeight:600,color:f.totalReceived===f.totalOrdered?"#34d399":f.totalReceived>0?"#fbbf24":"#525252"}}>{fmtN(f.totalReceived)}/{fmtN(f.totalOrdered)}</span></div><Bar value={f.totalReceived} max={f.totalOrdered||1} color={f.totalReceived===f.totalOrdered?"#34d399":"#fbbf24"} height={3}/></Card>
@@ -3181,6 +3234,16 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
   const [billPayDate,setBillPayDate]=useState('');
   const [billMemo,setBillMemo]=useState('');
   const [billSelected,setBillSelected]=useState(new Set());
+  // Vendor Credit / Standalone Bill modal: lets the user attach a credit or a
+  // standalone bill (one not derived from a PO) to a project. Stored in
+  // customSops with cat 'VendorCredit' or 'StandaloneBill'. Both flow through
+  // getJobFinancials so cost/margin update everywhere automatically.
+  // adjustMode is 'credit' or 'bill'. adjustEdit is the existing SOP id when
+  // editing, null when creating.
+  const [showAdjustModal,setShowAdjustModal]=useState(false);
+  const [adjustMode,setAdjustMode]=useState('credit');
+  const [adjustEdit,setAdjustEdit]=useState(null);
+  const [adjustForm,setAdjustForm]=useState({vendorId:'',jobId:'',amount:'',creditDate:'',refNumber:'',memo:''});
   // Payment tab state
   const [payJob,setPayJob]=useState('');
   const [payDate,setPayDate]=useState(()=>new Date().toISOString().split('T')[0]);
@@ -3535,6 +3598,73 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
             vendorInvNum:billData.vendorInvNum||'',checkNum:billData.checkNum||'',payDate:billData.payDate||'',memo:billData.memo||'',checkPrinted:billData.checkPrinted||'',isCredit:billData.isCredit||false,creditAmount:_credAmt});
         });
       });
+      // Inject standalone Vendor Credits and standalone Vendor Bills from
+      // customSops. These are NOT derived from a PO -- the user created them
+      // ad-hoc via the "+ New Vendor Credit" / "+ New Vendor Bill" buttons and
+      // attached them to a project. They participate in totalOwed exactly like
+      // the PO-derived bills, and their amount also flows through
+      // getJobFinancials so cost/margin update across the whole app.
+      // Shape: each SOP has cat 'VendorCredit' or 'StandaloneBill' and content
+      // JSON { vendorId, vendorName, jobId, jobName, amount, creditDate,
+      // refNumber, memo, paid, payDate, checkNum }.
+      try {
+        (customSops || []).forEach(s => {
+          if (!s || (s.cat !== 'VendorCredit' && s.cat !== 'StandaloneBill')) return;
+          let d = null;
+          try { d = JSON.parse(s.content || '{}'); } catch { return; }
+          if (!d) return;
+          const job2 = jobs.find(j => j.id === d.jobId);
+          if (!job2) return;
+          // Respect the same filters the PO-derived loop respects: rep filter
+          // (sales-role users only see their own jobs via filteredJobs) and
+          // search query. Use indexOf into filteredJobs as the filter membership
+          // check so this works regardless of the filter logic upstream.
+          if (!filteredJobs.some(fj => fj.id === d.jobId)) return;
+          const amtNum = Number(d.amount);
+          if (!isFinite(amtNum) || amtNum <= 0) return;
+          const v2 = (vendors || []).find(vv => vv.id === d.vendorId) || null;
+          const dateStrRaw = d.creditDate || '';
+          let baseDate2 = dateStrRaw ? new Date(dateStrRaw + 'T12:00:00') : new Date();
+          if (!baseDate2 || isNaN(baseDate2.getTime())) baseDate2 = new Date();
+          // For credits there's no "due" -- they're immediately applied. Use
+          // baseDate2 directly so the row sorts naturally by date. For
+          // standalone bills, use baseDate2 + 30 days as a sensible default
+          // (matches the PO-derived bill convention).
+          const dueDate3 = s.cat === 'VendorCredit'
+            ? baseDate2
+            : new Date(baseDate2.getTime() + 30 * 86400000);
+          const daysUntil3 = Math.ceil((dueDate3.getTime() - Date.now()) / 86400000);
+          let dueStr3 = '';
+          try { dueStr3 = dueDate3.toISOString().split('T')[0]; } catch { dueStr3 = ''; }
+          const paid3 = d.paid === true;
+          allBills.push({
+            job: job2,
+            vendor: v2,
+            vendorId: d.vendorId || 'unknown',
+            vendorName: d.vendorName || (v2 ? v2.name : 'Unknown'),
+            items: [],
+            cost: amtNum,
+            poDocNum: d.refNumber || '',
+            billDocNum: s.id, // SOP id doubles as the bill row id
+            poDate: dateStrRaw,
+            dueDate: dueStr3,
+            daysUntil: daysUntil3,
+            paid: paid3,
+            voided: false,
+            itemCount: 0,
+            vendorInvNum: d.refNumber || '',
+            checkNum: d.checkNum || '',
+            payDate: d.payDate || '',
+            memo: d.memo || '',
+            checkPrinted: '',
+            isCredit: s.cat === 'VendorCredit',
+            creditAmount: s.cat === 'VendorCredit' ? amtNum : 0,
+            _standalone: true,
+            _sopId: s.id,
+            _standaloneKind: s.cat,
+          });
+        });
+      } catch {}
       allBills.sort((a,b)=>a.daysUntil-b.daysUntil);
       const overdueBills=allBills.filter(b=>b.daysUntil<0&&!b.paid&&!b.voided);
       const dueSoonBills=allBills.filter(b=>b.daysUntil>=0&&b.daysUntil<=14&&!b.paid&&!b.voided);
@@ -3550,6 +3680,51 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
       const markSelectedPaid=()=>{const today=new Date().toISOString().split('T')[0];unpaidBills.forEach((bill,i)=>{if(billSelected.has(i)){setDocStatus(bill.billDocNum,{paid:true,payDate:today,vendorInvNum:bill.vendorInvNum,checkNum:'',memo:'Batch payment'})}});notify(billSelected.size+' bill'+(billSelected.size!==1?'s':'')+' marked as paid');setBillSelected(new Set())};
       const selectByVendor=(vendorName)=>{const next=new Set();unpaidBills.forEach((b,i)=>{if(b.vendorName===vendorName)next.add(i)});setBillSelected(next)};
       const selectByJob=(jobName)=>{const next=new Set();unpaidBills.forEach((b,i)=>{if(b.job.name===jobName)next.add(i)});setBillSelected(next)};
+      // Standalone Vendor Credit / Vendor Bill handlers. Records live in customSops
+      // (cat 'VendorCredit' or 'StandaloneBill') so they propagate via the same
+      // realtime sync as everything else, and feed getJobFinancials so cost/margin
+      // adjustments show across the whole app.
+      const openAdjustModal=(mode, existingBill)=>{
+        setAdjustMode(mode);
+        if(existingBill && existingBill._standalone && existingBill._sopId){
+          const sop=(customSops||[]).find(s=>s.id===existingBill._sopId);
+          let d={};try{d=JSON.parse(sop?.content||'{}')}catch{}
+          setAdjustEdit(existingBill._sopId);
+          setAdjustForm({vendorId:d.vendorId||'',jobId:d.jobId||'',amount:String(d.amount||''),creditDate:d.creditDate||'',refNumber:d.refNumber||'',memo:d.memo||''});
+        } else {
+          setAdjustEdit(null);
+          setAdjustForm({vendorId:'',jobId:'',amount:'',creditDate:new Date().toISOString().split('T')[0],refNumber:'',memo:''});
+        }
+        setShowAdjustModal(true);
+      };
+      const closeAdjustModal=()=>{setShowAdjustModal(false);setAdjustEdit(null);setAdjustForm({vendorId:'',jobId:'',amount:'',creditDate:'',refNumber:'',memo:''})};
+      const saveAdjust=()=>{
+        const amt=Number(adjustForm.amount);
+        if(!adjustForm.vendorId){notify('Pick a vendor','error');return}
+        if(!adjustForm.jobId){notify('Attach to a project','error');return}
+        if(!isFinite(amt)||amt<=0){notify('Enter an amount greater than 0','error');return}
+        const v=vendors.find(vv=>vv.id===adjustForm.vendorId);
+        const j=jobs.find(jj=>jj.id===adjustForm.jobId);
+        if(!v||!j){notify('Vendor or project not found','error');return}
+        const id=adjustEdit||((adjustMode==='credit'?'VC-':'SB-')+Date.now().toString(36).toUpperCase()+'-'+Math.random().toString(36).slice(2,6).toUpperCase());
+        const data={vendorId:adjustForm.vendorId,vendorName:v.name,jobId:adjustForm.jobId,jobName:j.name,amount:amt,creditDate:adjustForm.creditDate||new Date().toISOString().split('T')[0],refNumber:(adjustForm.refNumber||'').trim(),memo:(adjustForm.memo||'').trim(),createdAt:adjustEdit?undefined:new Date().toISOString()};
+        // Preserve createdAt + payment state if editing
+        if(adjustEdit){
+          const prior=(customSops||[]).find(s=>s.id===adjustEdit);
+          if(prior){try{const pd=JSON.parse(prior.content||'{}');if(pd.createdAt)data.createdAt=pd.createdAt;if(pd.paid)data.paid=pd.paid;if(pd.payDate)data.payDate=pd.payDate;if(pd.checkNum)data.checkNum=pd.checkNum;}catch{}}
+        }
+        const cat=adjustMode==='credit'?'VendorCredit':'StandaloneBill';
+        const title=(adjustMode==='credit'?'Credit ':'Bill ')+v.name+' '+j.name+' '+fmt(amt);
+        addSop({id,title,cat,icon:adjustMode==='credit'?'dollar':'receipt',content:JSON.stringify(data),custom:true});
+        notify((adjustMode==='credit'?'Vendor credit ':'Vendor bill ')+(adjustEdit?'updated':'created')+' for '+v.name+' -- '+fmt(amt)+' applied to '+j.name);
+        closeAdjustModal();
+      };
+      const deleteAdjust=(sopId)=>{
+        if(!sopId)return;
+        deleteSop(sopId);
+        notify('Adjustment removed');
+        if(billDetail&&billDetail._sopId===sopId)setBillDetail(null);
+      };
       const printBatchCheck=()=>{
         const selectedBills=Array.from(billSelected).map(i=>unpaidBills[i]).filter(Boolean);
         if(selectedBills.length===0)return;
@@ -4001,6 +4176,14 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
 
 
       return <div>
+        {/* New Vendor Credit / New Vendor Bill actions. Both create standalone
+            records attached to a project; they participate in totalOwed here
+            and feed getJobFinancials so cost/margin update everywhere else. */}
+        <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>
+          <Btn onClick={()=>openAdjustModal('credit',null)} style={{fontSize:12,padding:"6px 14px",background:"#34d39915",border:"1px solid #34d39940",color:"#34d399",fontWeight:600}}><I n="dollar" s={12}/> + New Vendor Credit</Btn>
+          <Btn onClick={()=>openAdjustModal('bill',null)} style={{fontSize:12,padding:"6px 14px",background:"#f9731615",border:"1px solid #f9731640",color:"#f97316",fontWeight:600}}><I n="receipt" s={12}/> + New Vendor Bill</Btn>
+          <span style={{fontSize:11,color:"#525252",marginLeft:4}}>Attach a standalone credit or bill (not tied to a PO) to a project</span>
+        </div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12,marginBottom:16}} className="resp-grid-4">
           <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>TOTAL OWED</div><div style={{fontSize:22,fontWeight:800,color:"#f97316",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalOwed)}</div><div style={{fontSize:11,color:"#a3a3a3",marginTop:4}}>{unpaidBills.length} open bill{unpaidBills.length!==1?'s':''}</div></Card>
           <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>OVERDUE</div><div style={{fontSize:22,fontWeight:800,color:overdueAmt>0?"#f87171":"#34d399",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(overdueAmt)}</div><div style={{fontSize:11,color:"#a3a3a3",marginTop:4}}>{overdueBills.length} bill{overdueBills.length!==1?'s':''}</div></Card>
@@ -4021,8 +4204,8 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
               const isOverdue=bill.daysUntil<0&&!bill.paid;
               const isDueSoon=bill.daysUntil>=0&&bill.daysUntil<=14&&!bill.paid;
               const unpaidIdx=unpaidBills.indexOf(bill);
-              return <tr key={idx} style={{borderBottom:"1px solid #111",background:bill.voided?"#52525208":bill.paid?"#34d39905":isOverdue?"#f8717108":billSelected.has(unpaidIdx)?"#f9731610":"transparent",transition:"background 0.15s",cursor:"pointer",opacity:bill.voided?0.5:1}} onClick={()=>{setBillInvNum(bill.vendorInvNum);setBillCheckNum(bill.checkNum);setBillPayDate(bill.payDate);setBillMemo(bill.memo);setBillDetail(bill)}} onMouseEnter={e=>{if(!bill.paid&&!bill.voided&&!billSelected.has(unpaidIdx))e.currentTarget.style.background=isOverdue?"#f8717112":"#111"}} onMouseLeave={e=>{e.currentTarget.style.background=bill.voided?"#52525208":bill.paid?"#34d39905":isOverdue?"#f8717108":billSelected.has(unpaidIdx)?"#f9731610":"transparent"}}>
-                <td style={{padding:"10px 8px",textAlign:"center",width:36}} onClick={e=>e.stopPropagation()}>{!bill.paid&&<input type="checkbox" checked={billSelected.has(unpaidIdx)} onChange={()=>toggleSelect(unpaidIdx)} style={{accentColor:"#2dd4bf",width:16,height:16,cursor:"pointer"}}/>}{bill.paid&&<I n="check" s={14} color="#34d399"/>}</td>
+              return <tr key={idx} style={{borderBottom:"1px solid #111",background:bill.voided?"#52525208":bill.paid?"#34d39905":isOverdue?"#f8717108":billSelected.has(unpaidIdx)?"#f9731610":"transparent",transition:"background 0.15s",cursor:"pointer",opacity:bill.voided?0.5:1}} onClick={()=>{if(bill._standalone){openAdjustModal(bill._standaloneKind==='VendorCredit'?'credit':'bill',bill);return}setBillInvNum(bill.vendorInvNum);setBillCheckNum(bill.checkNum);setBillPayDate(bill.payDate);setBillMemo(bill.memo);setBillDetail(bill)}} onMouseEnter={e=>{if(!bill.paid&&!bill.voided&&!billSelected.has(unpaidIdx))e.currentTarget.style.background=isOverdue?"#f8717112":"#111"}} onMouseLeave={e=>{e.currentTarget.style.background=bill.voided?"#52525208":bill.paid?"#34d39905":isOverdue?"#f8717108":billSelected.has(unpaidIdx)?"#f9731610":"transparent"}}>
+                <td style={{padding:"10px 8px",textAlign:"center",width:36}} onClick={e=>e.stopPropagation()}>{!bill.paid&&!bill._standalone&&<input type="checkbox" checked={billSelected.has(unpaidIdx)} onChange={()=>toggleSelect(unpaidIdx)} style={{accentColor:"#2dd4bf",width:16,height:16,cursor:"pointer"}}/>}{bill.paid&&<I n="check" s={14} color="#34d399"/>}{!bill.paid&&bill._standalone&&<span style={{fontSize:10,color:bill.isCredit?"#34d399":"#f97316",fontWeight:700,letterSpacing:0.5}}>{bill.isCredit?"CR":"ADJ"}</span>}</td>
                 <td style={{padding:"10px 8px"}}><div style={{fontWeight:600,color:"#e5e5e5",display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>{bill.vendorName}{bill.isCredit&&<span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:"#34d39920",color:"#34d399",fontWeight:700,letterSpacing:0.5}}>CREDIT {(()=>{const ca=typeof bill.creditAmount==='number'?bill.creditAmount:bill.cost;return ca<bill.cost-0.005?fmt(ca):'FULL'})()}</span>}</div><div style={{fontSize:11,color:"#737373"}}>{bill.itemCount} item{bill.itemCount!==1?'s':''}</div></td>
                 <td style={{padding:"10px 8px"}}><span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:11,color:"#a78bfa",cursor:"pointer",textDecoration:"underline",textUnderlineOffset:2}} onClick={e=>{e.stopPropagation();const pos2=genPOs?genPOs(bill.job):[];const thisPO2=pos2.find(p=>p.docNum===bill.poDocNum);if(thisPO2){setPreviewDoc({type:"po",data:thisPO2,job:bill.job});setTab("preview")}}}>{bill.poDocNum}</span></td>
                 <td style={{padding:"10px 8px",fontFamily:"'JetBrains Mono',monospace",fontSize:11,color:bill.vendorInvNum?"#f97316":"#333"}}>{bill.vendorInvNum||'--'}</td>
@@ -4030,12 +4213,73 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
                 <td style={{padding:"10px 8px",whiteSpace:"nowrap"}}>{bill.paid?<span style={{color:"#34d399",fontWeight:600}}>Paid{bill.payDate?' '+bill.payDate:''}</span>:isOverdue?<div><div style={{color:"#f87171",fontWeight:600}}>Overdue</div><div style={{fontSize:10,color:"#f87171"}}>{Math.abs(bill.daysUntil)} day{Math.abs(bill.daysUntil)!==1?'s':''} ago</div></div>:isDueSoon?<div><div style={{color:"#fbbf24",fontWeight:500}}>Due soon</div><div style={{fontSize:10,color:"#fbbf24"}}>Due in {bill.daysUntil} day{bill.daysUntil!==1?'s':''}</div></div>:<div><div style={{color:"#a3a3a3"}}>Due later</div><div style={{fontSize:10,color:"#737373"}}>Due in {bill.daysUntil} day{bill.daysUntil!==1?'s':''}</div></div>}</td>
                 <td style={{padding:"10px 8px"}} onClick={e=>e.stopPropagation()}>{(()=>{const bd=typeof docStatuses[bill.billDocNum]==='object'?docStatuses[bill.billDocNum]:{};const st=bd.status||(bill.paid?'paid':(bd.checkPrinted||bd.checkNum||bill.checkNum)?'check_sent':'unpaid');const nextStatus={unpaid:'check_sent',check_sent:'paid',paid:'unpaid',void:'unpaid'};return <button onClick={()=>{const ns=nextStatus[st]||'unpaid';setDocStatus(bill.billDocNum,{...bd,status:ns,paid:ns==='paid'});notify(bill.vendorName+' >> '+ns.replace('_',' '))}} style={{background:"none",border:"none",cursor:"pointer",padding:0}} title="Click to cycle status">{st==='void'?<Badge label="void" color="#525252"/>:st==='paid'?<Badge label="paid" color="#34d399"/>:st==='check_sent'?<Badge label="check sent" color="#f97316"/>:bill.daysUntil<0?<Badge label="overdue" color="#f87171"/>:<StatusBadge docNum={bill.poDocNum}/>}</button>})()}</td>
                 <td style={{padding:"10px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",fontWeight:700,color:bill.paid?"#34d399":isOverdue?"#f87171":"#f0f0f0"}}>{(()=>{if(bill.paid)return <span style={{textDecoration:"line-through",opacity:0.5}}>{fmt(bill.cost)}</span>;if(bill.isCredit){const ca=typeof bill.creditAmount==='number'?bill.creditAmount:bill.cost;const remaining=bill.cost-ca;const isPartial=ca<bill.cost-0.005;return <div><div style={{color:"#34d399",fontSize:12}}>{isPartial?fmt(remaining):"-"+fmt(ca)}</div><div style={{fontSize:9,color:"#34d399",fontWeight:600,marginTop:2,letterSpacing:0.5}}>{isPartial?'CREDIT '+fmt(ca):'FULL CREDIT'}</div></div>}return fmt(bill.cost)})()}</td>
-                <td style={{padding:"10px 8px",textAlign:"right"}} onClick={e=>e.stopPropagation()}>{!bill.paid&&<button onClick={()=>{setBillInvNum(bill.vendorInvNum);setBillCheckNum(bill.checkNum);setBillPayDate(new Date().toISOString().split('T')[0]);setBillMemo(bill.memo);setBillDetail(bill)}} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #34d39930",background:"transparent",color:"#34d399",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s",whiteSpace:"nowrap"}} onMouseEnter={e=>{e.currentTarget.style.background="#34d39915"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>Pay</button>}</td>
+                <td style={{padding:"10px 8px",textAlign:"right"}} onClick={e=>e.stopPropagation()}>{!bill.paid&&!bill.isCredit&&<button onClick={()=>{if(bill._standalone){const sop=(customSops||[]).find(s=>s.id===bill._sopId);if(!sop){notify('Record not found','error');return}let d={};try{d=JSON.parse(sop.content||'{}')}catch{}const today=new Date().toISOString().split('T')[0];const updated={...d,paid:true,payDate:today};addSop({id:sop.id,title:sop.title,cat:sop.cat,icon:sop.icon,content:JSON.stringify(updated),custom:true});notify('Bill marked paid: '+(d.vendorName||'vendor'));return}setBillInvNum(bill.vendorInvNum);setBillCheckNum(bill.checkNum);setBillPayDate(new Date().toISOString().split('T')[0]);setBillMemo(bill.memo);setBillDetail(bill)}} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #34d39930",background:"transparent",color:"#34d399",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s",whiteSpace:"nowrap"}} onMouseEnter={e=>{e.currentTarget.style.background="#34d39915"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>Pay</button>}</td>
               </tr>})}
               <tr style={{borderTop:"2px solid #222",background:"#0a0a0a"}}><td colSpan={7} style={{padding:"10px 8px",fontWeight:700,color:"#f0f0f0"}}>TOTAL OUTSTANDING</td><td style={{padding:"10px 8px",textAlign:"right",fontWeight:800,fontFamily:"'JetBrains Mono',monospace",color:"#f97316",fontSize:14}}>{fmt(totalOwed)}</td><td/></tr>
             </tbody>
           </table></div>
         </Card>}
+        {/* Standalone Vendor Credit / Vendor Bill creation+edit modal. Only mounts
+            on the bills tab. Writes a customSops record with cat 'VendorCredit'
+            or 'StandaloneBill' which feeds both this table and getJobFinancials. */}
+        {showAdjustModal&&<div onClick={closeAdjustModal} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:99998,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"#111111",border:"1px solid "+(adjustMode==='credit'?"#34d39940":"#f9731640"),borderRadius:12,padding:24,maxWidth:520,width:"100%",maxHeight:"90vh",overflowY:"auto"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+              <div>
+                <div style={{fontSize:11,color:adjustMode==='credit'?"#34d399":"#f97316",fontWeight:700,letterSpacing:1.5,textTransform:"uppercase"}}>{adjustEdit?"Edit":"New"} {adjustMode==='credit'?"Vendor Credit":"Vendor Bill"}</div>
+                <div style={{fontSize:14,color:"#a3a3a3",marginTop:4}}>{adjustMode==='credit'?"Credit from vendor applied against a project's cost":"Standalone bill not tied to an existing PO"}</div>
+              </div>
+              <button onClick={closeAdjustModal} style={{background:"none",border:"none",color:"#737373",fontSize:22,cursor:"pointer",fontFamily:"inherit",padding:0,lineHeight:1}}>&times;</button>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+              <div>
+                <label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4,fontWeight:600}}>Vendor *</label>
+                <select value={adjustForm.vendorId} onChange={e=>setAdjustForm(p=>({...p,vendorId:e.target.value}))} style={{...inputStyle,width:"100%"}}>
+                  <option value="">-- Select vendor --</option>
+                  {[...(vendors||[])].sort((a,b)=>(a.name||"").localeCompare(b.name||"")).map(v=><option key={v.id} value={v.id}>{v.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4,fontWeight:600}}>Attach to Project *</label>
+                <select value={adjustForm.jobId} onChange={e=>setAdjustForm(p=>({...p,jobId:e.target.value}))} style={{...inputStyle,width:"100%"}}>
+                  <option value="">-- Select project --</option>
+                  {[...(jobs||[])].sort((a,b)=>(a.name||"").localeCompare(b.name||"")).map(j=>{const c=customers.find(cc=>cc.id===j.customer);return <option key={j.id} value={j.id}>{j.name}{c?" -- "+c.name:""}</option>})}
+                </select>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                <div>
+                  <label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4,fontWeight:600}}>Amount *</label>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{fontSize:14,color:adjustMode==='credit'?"#34d399":"#f97316",fontFamily:"'JetBrains Mono',monospace"}}>$</span>
+                    <input type="number" step="0.01" min="0" value={adjustForm.amount} onChange={e=>setAdjustForm(p=>({...p,amount:e.target.value}))} placeholder="0.00" style={{...inputStyle,width:"100%",fontFamily:"'JetBrains Mono',monospace",color:adjustMode==='credit'?"#34d399":"#f97316"}}/>
+                  </div>
+                </div>
+                <div>
+                  <label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4,fontWeight:600}}>Date</label>
+                  <input type="date" value={adjustForm.creditDate} onChange={e=>setAdjustForm(p=>({...p,creditDate:e.target.value}))} style={{...inputStyle,width:"100%"}}/>
+                </div>
+              </div>
+              <div>
+                <label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4,fontWeight:600}}>Reference / Credit Memo #</label>
+                <input type="text" value={adjustForm.refNumber} onChange={e=>setAdjustForm(p=>({...p,refNumber:e.target.value}))} placeholder={adjustMode==='credit'?"e.g. CM-2026-001":"e.g. BILL-2026-001"} style={{...inputStyle,width:"100%"}}/>
+              </div>
+              <div>
+                <label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4,fontWeight:600}}>Memo / Notes</label>
+                <textarea value={adjustForm.memo} onChange={e=>setAdjustForm(p=>({...p,memo:e.target.value}))} placeholder={adjustMode==='credit'?"e.g. Damaged stool credit -- 7 units":"Reason for the bill"} rows={3} style={{...inputStyle,width:"100%",resize:"vertical",minHeight:60,fontFamily:"inherit"}}/>
+              </div>
+              {adjustForm.vendorId&&adjustForm.jobId&&Number(adjustForm.amount)>0&&<div style={{padding:"10px 12px",background:"#0a0a0a",borderRadius:8,border:"1px solid "+(adjustMode==='credit'?"#34d39930":"#f9731630"),fontSize:12,color:"#c4c4c4",lineHeight:1.6}}>
+                {adjustMode==='credit'
+                  ?<>This credit will reduce <strong style={{color:"#e5e5e5"}}>{jobs.find(j=>j.id===adjustForm.jobId)?.name||"the project"}</strong>'s vendor cost by <strong style={{color:"#34d399",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(Number(adjustForm.amount))}</strong>, lifting the project margin and lowering Total Owed.</>
+                  :<>This bill will add <strong style={{color:"#f97316",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(Number(adjustForm.amount))}</strong> to <strong style={{color:"#e5e5e5"}}>{jobs.find(j=>j.id===adjustForm.jobId)?.name||"the project"}</strong>'s vendor cost and Total Owed until marked paid.</>}
+              </div>}
+            </div>
+            <div style={{display:"flex",gap:8,marginTop:18,justifyContent:"flex-end"}}>
+              {adjustEdit&&<Btn v="danger" style={{fontSize:12}} onClick={()=>{const _doDelete=()=>{deleteAdjust(adjustEdit);closeAdjustModal()};if(ctx&&typeof ctx.confirm==='function'){ctx.confirm('Delete this '+(adjustMode==='credit'?'credit':'bill')+'?').then(ok=>{if(ok)_doDelete()})}else if(window.confirm('Delete this '+(adjustMode==='credit'?'credit':'bill')+'?')){_doDelete()}}}>Delete</Btn>}
+              <Btn v="secondary" onClick={closeAdjustModal}>Cancel</Btn>
+              <Btn onClick={saveAdjust} style={{background:adjustMode==='credit'?"#34d399":"#f97316",color:"#000",fontWeight:700}}>{adjustEdit?"Save Changes":"Create "+(adjustMode==='credit'?"Credit":"Bill")}</Btn>
+            </div>
+          </div>
+        </div>}
       </div>})()}
 
 
