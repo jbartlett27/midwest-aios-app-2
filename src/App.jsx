@@ -3556,7 +3556,20 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           const v=po.vendor;
           const poDocNum=po.docNum;
           const poStatus=docStatuses[poDocNum];
-          if(!poStatus||poStatus==="new")return;
+          // Show this PO's bill if EITHER:
+          //   (a) the user explicitly drafted/sent the PO (poStatus !== 'new'), OR
+          //   (b) any item on this PO has been received (qtyReceived > 0).
+          // Rationale: when a sales rep enters a job, approves the quote, and then
+          // receives items via Delivery Tracker, the underlying PO is never explicitly
+          // "drafted" through the PO preview screen -- so docStatuses[poDocNum] stays
+          // undefined and the bill never appears, even though the vendor has clearly
+          // shipped and is owed money. Receiving items is itself proof that the PO
+          // went out and a bill is due. Reported by Maureen May 13 2026 for the
+          // Global Furniture Group and Doane Keyes bills on the Global-Bookcase &
+          // Double Pedestal Desk and G103 Furniture jobs.
+          const anyReceived=(po.items||[]).some(i=>(Number(i.qtyReceived)||0)>0);
+          const isPoActive=poStatus&&poStatus!=="new";
+          if(!isPoActive&&!anyReceived)return;
           const vItems=po.items;
           const cost=vItems.reduce((s,i)=>s+(i.unitCost||0)*i.qtyOrdered,0);
           if(cost<=0)return;
