@@ -6013,7 +6013,32 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     {name:"update_prospect",description:"Update a single prospect record. Find the prospect by name + company (or email). Updates ONE prospect; if more than one matches the identifier the tool returns an error listing the candidates so you can disambiguate. Use when user says \'mark Mark Altmayer as Contacted\', \'change the email on the Huntley contact to ...\', \'assign Dave to the Chicago prospects\' (use bulk_update_prospects for the last one if it spans many).",input_schema:{type:"object",properties:{prospect_id:{type:"string",description:"Internal prospect ID (PROS-...) if known"},name:{type:"string",description:"Contact name to match exactly or partially"},company:{type:"string",description:"Company name to disambiguate when multiple people share a name"},email:{type:"string",description:"Email address to match exactly"},updates:{type:"object",description:"Fields to update. Any subset of: status, notes, assignedRep (rep ID or name), state, city, title, email, phone, linkedin, website, employees, tier, rank, address",properties:{status:{type:"string"},notes:{type:"string"},assignedRep:{type:"string"},state:{type:"string"},city:{type:"string"},title:{type:"string"},email:{type:"string"},phone:{type:"string"},linkedin:{type:"string"},website:{type:"string"},employees:{type:"string"},tier:{type:"string"},rank:{type:"number"},address:{type:"string"},name:{type:"string"},company:{type:"string"}}}},required:["updates"]}},
     {name:"delete_prospect",description:"Delete a SINGLE prospect record permanently. Find by name+company or email. Returns an error if more than one record matches the identifier so you can disambiguate. For deleting many at once (e.g. \'remove all Ohio prospects\') use bulk_delete_prospects instead. Use when user says \'delete this prospect\', \'remove Mark Altmayer from prospects\'.",input_schema:{type:"object",properties:{prospect_id:{type:"string",description:"Internal prospect ID (PROS-...) if known"},name:{type:"string",description:"Contact name to match"},company:{type:"string",description:"Company name to disambiguate"},email:{type:"string",description:"Email to match exactly"}},required:[]}},
     {name:"bulk_update_prospects",description:"Apply the same update to every prospect matching a filter. Use for sweeps like \'mark all Wisconsin prospects as Nurture\', \'assign Dave to all Cook County prospects\'. Requires confirm:true to actually apply; without confirm it returns a dry-run preview showing how many records would be affected.",input_schema:{type:"object",properties:{filter:{type:"object",description:"Match criteria. Combine multiple for AND logic.",properties:{state:{type:"string"},status:{type:"string"},company_contains:{type:"string"},name_contains:{type:"string"},assigned_rep_name:{type:"string"},unassigned_only:{type:"boolean"}}},updates:{type:"object",description:"Fields to apply to every matched prospect",properties:{status:{type:"string"},notes:{type:"string"},assignedRep:{type:"string"},state:{type:"string"},city:{type:"string"},tier:{type:"string"}}},confirm:{type:"boolean",description:"Must be true to actually apply. Without confirm, returns a dry-run preview."}},required:["filter","updates"]}},
-    {name:"bulk_delete_prospects",description:"Delete every prospect matching a filter, in one operation. Use for cleanup like \'delete all prospects outside Illinois and Wisconsin\', \'remove every Ohio and Michigan prospect\', \'clear out all Lost prospects from last year\'. Requires confirm:true to actually delete; without confirm it returns a dry-run preview showing exactly how many records and which states/statuses would be affected. ALWAYS run the dry-run first and surface the count to the user before deleting.",input_schema:{type:"object",properties:{filter:{type:"object",description:"Match criteria. Combine multiple for AND logic. Use exclude_states to delete everything except the listed states (the common Maureen-style cleanup).",properties:{state:{type:"string",description:"Match prospects in this state"},exclude_states:{type:"array",items:{type:"string"},description:"Keep these states, delete everything else. E.g. [\"Illinois\",\"Wisconsin\"] deletes all non-IL/WI prospects."},status:{type:"string"},company_contains:{type:"string"},name_contains:{type:"string"},assigned_rep_name:{type:"string"},unassigned_only:{type:"boolean"}}},confirm:{type:"boolean",description:"Must be true to actually delete. Without confirm, returns a dry-run preview."}},required:["filter"]}}
+    {name:"bulk_delete_prospects",description:"Delete every prospect matching a filter, in one operation. Use for cleanup like \'delete all prospects outside Illinois and Wisconsin\', \'remove every Ohio and Michigan prospect\', \'clear out all Lost prospects from last year\'. Requires confirm:true to actually delete; without confirm it returns a dry-run preview showing exactly how many records and which states/statuses would be affected. ALWAYS run the dry-run first and surface the count to the user before deleting.",input_schema:{type:"object",properties:{filter:{type:"object",description:"Match criteria. Combine multiple for AND logic. Use exclude_states to delete everything except the listed states (the common Maureen-style cleanup).",properties:{state:{type:"string",description:"Match prospects in this state"},exclude_states:{type:"array",items:{type:"string"},description:"Keep these states, delete everything else. E.g. [\"Illinois\",\"Wisconsin\"] deletes all non-IL/WI prospects."},status:{type:"string"},company_contains:{type:"string"},name_contains:{type:"string"},assigned_rep_name:{type:"string"},unassigned_only:{type:"boolean"}}},confirm:{type:"boolean",description:"Must be true to actually delete. Without confirm, returns a dry-run preview."}},required:["filter"]}},
+    // ==============================================================
+    // VENDOR BILLS, CREDITS, AND STANDALONE BILLS (16 tools, May 20 2026)
+    // ==============================================================
+    // Vendor Bills: queries
+    {name:"list_vendor_bills",description:"List vendor bills with rich filters. Returns a markdown table. Use when the user says 'show me unpaid bills', 'what bills are due this week', 'list all bills from Marco Group', 'overdue bills', 'show me bills for the Sandburg job', 'show deleted bills'. Bills include both PO-derived bills (auto-generated from purchase orders) and standalone bills (created ad-hoc). Default behavior with no filters returns the 25 most-due-soon unpaid bills.",input_schema:{type:"object",properties:{vendor_name:{type:"string",description:"Filter by vendor name (partial match, case-insensitive)"},job_id:{type:"string",description:"Filter by job ID or name keywords"},status:{type:"string",description:"unpaid | paid | overdue | check_sent | void | deleted | all (default: unpaid)"},due_within_days:{type:"number",description:"Only show bills due within N days from today"},date_from:{type:"string",description:"Bill date from (YYYY-MM-DD)"},date_to:{type:"string",description:"Bill date to (YYYY-MM-DD)"},has_file:{type:"boolean",description:"true to show only bills with attached invoice files, false to show only bills without"},amount_min:{type:"number",description:"Minimum bill amount"},amount_max:{type:"number",description:"Maximum bill amount"},limit:{type:"number",description:"Max rows to return (default 25)"}}}},
+    {name:"get_vendor_bill",description:"Get the full record of a vendor bill by its docNum (e.g. BILL-1234-VENDR or a standalone SB-/VC- id). Returns bill details, line items if PO-derived, payment history, and attached file info. Use when user says 'show me bill BILL-6100-SUKI', 'pull up the Doane Keyes bill on G103', 'get the full record for the Marco credit'.",input_schema:{type:"object",properties:{bill_doc_num:{type:"string",description:"The billDocNum (e.g. BILL-1234-VENDR) or standalone SOP id (e.g. SB-xxxxxx, VC-xxxxxx)"}},required:["bill_doc_num"]}},
+    {name:"search_bills_by_amount",description:"Find bills within a dollar amount range. Useful for fuzzy lookups like 'find that ~$5K Marco bill' or 'show me all bills between $1000 and $2000'. Searches both unpaid and paid bills unless status is specified.",input_schema:{type:"object",properties:{amount_min:{type:"number",description:"Minimum amount"},amount_max:{type:"number",description:"Maximum amount"},vendor_name:{type:"string",description:"Optional vendor name filter (partial match)"},status:{type:"string",description:"unpaid | paid | all (default: all)"}},required:["amount_min","amount_max"]}},
+    {name:"get_bills_summary",description:"Get aggregate totals across all vendor bills: total owed, total paid YTD, total overdue, count of unpaid bills, total credits. Can be broken down by vendor or by job. Use when user says 'how much do we owe vendors right now', 'what is the total outstanding to Marco', 'give me a bills summary', 'how much have we paid out this year'.",input_schema:{type:"object",properties:{group_by:{type:"string",description:"Optional: 'vendor' or 'job' to break down totals by that dimension"},job_id:{type:"string",description:"Optional: restrict summary to a single job"},vendor_name:{type:"string",description:"Optional: restrict summary to a single vendor (partial match)"}}}},
+    // Vendor Bills: actions
+    {name:"mark_bill_paid",description:"Mark a vendor bill as paid. Sets status to paid, records check number, pay date, and optional memo. Use when user says 'mark the Marco bill paid with check 1234', 'log payment on BILL-6100-SUKI'. If no pay_date provided, defaults to today.",input_schema:{type:"object",properties:{bill_doc_num:{type:"string",description:"The billDocNum or standalone SOP id"},check_num:{type:"string",description:"Check number (optional but recommended)"},pay_date:{type:"string",description:"Payment date YYYY-MM-DD (defaults to today)"},memo:{type:"string",description:"Optional payment memo"}},required:["bill_doc_num"]}},
+    {name:"void_bill",description:"Void a vendor bill (set status to void). Reversible via unvoid_bill. Use when a bill was a duplicate or sent in error.",input_schema:{type:"object",properties:{bill_doc_num:{type:"string"},memo:{type:"string",description:"Optional reason for voiding"}},required:["bill_doc_num"]}},
+    {name:"unvoid_bill",description:"Reverse a void on a bill, returning it to unpaid status.",input_schema:{type:"object",properties:{bill_doc_num:{type:"string"}},required:["bill_doc_num"]}},
+    {name:"restore_deleted_bill",description:"Restore a bill that was previously deleted, KEEPING all prior data (payment info, invoice attachment, memo, check number). Equivalent to clicking the green Restore button on the deleted bill row. Use when user says 'restore the bill that was accidentally deleted', 'bring back BILL-XXXX'.",input_schema:{type:"object",properties:{bill_doc_num:{type:"string"}},required:["bill_doc_num"]}},
+    {name:"reset_and_restore_bill",description:"Restore a deleted bill as a FRESH unpaid bill, WIPING all prior data (paid status, payment date, check number, invoice attachment, memo, date overrides). Use when prior bill data was wrong (e.g. wrong invoice attached, paid status was a mistake). Equivalent to clicking the yellow Reset & Restore button.",input_schema:{type:"object",properties:{bill_doc_num:{type:"string"}},required:["bill_doc_num"]}},
+    {name:"attach_file_to_bill",description:"Attach a PDF or image file to a vendor bill from a URL or base64 data. Uploads to the vendor-invoices storage bucket and links it to the bill. Use when user pastes a vendor invoice URL and says 'attach this to BILL-XXXX'. For base64, also pass file_name and content_type.",input_schema:{type:"object",properties:{bill_doc_num:{type:"string"},file_url:{type:"string",description:"Public URL of the file to fetch and re-upload"},file_base64:{type:"string",description:"Alternative to file_url: base64-encoded file content"},file_name:{type:"string",description:"Required when using file_base64; recommended for file_url"},content_type:{type:"string",description:"MIME type (e.g. application/pdf, image/jpeg)"}},required:["bill_doc_num"]}},
+    {name:"update_bill_due_date",description:"Override a bill's due date. Stored as a date-override key separate from the bill record so it can be cleared without touching payment data. Use when user says 'push the Marco bill due date out to June 15', 'change the due date on BILL-XXXX'.",input_schema:{type:"object",properties:{bill_doc_num:{type:"string"},due_date:{type:"string",description:"New due date YYYY-MM-DD. Pass an empty string to clear the override and revert to the default (bill date + 30 days)."}},required:["bill_doc_num","due_date"]}},
+    {name:"batch_mark_paid",description:"Mark multiple bills paid in one operation. Provide an array of bill_doc_nums, or a filter (vendor + status) to select bills. Set check_num if paying via one check, or method='ach' for ACH. Requires confirm:true to actually apply; without confirm returns a dry-run preview with the count and total.",input_schema:{type:"object",properties:{bill_doc_nums:{type:"array",items:{type:"string"},description:"Explicit list of bill docNums to mark paid"},filter:{type:"object",properties:{vendor_name:{type:"string"},job_id:{type:"string"},status:{type:"string",description:"Filter to unpaid | check_sent | overdue (default unpaid)"}}},check_num:{type:"string",description:"Check number to apply to all selected bills"},method:{type:"string",description:"'check' | 'ach' | 'wire' (defaults to check if check_num provided, else ach)"},pay_date:{type:"string",description:"YYYY-MM-DD, defaults to today"},memo:{type:"string"},confirm:{type:"boolean",description:"Must be true to actually mark paid. Without confirm, returns dry-run preview."}}}},
+    // Vendor Credits & Standalone Bills
+    {name:"create_vendor_credit",description:"Create a new vendor credit attached to a project. Credits reduce the project's cost and lift margin. Use when a vendor issues a credit memo (e.g. Marco Group credited $1,245.94 for damaged goods on Sandburg MS).",input_schema:{type:"object",properties:{vendor_name:{type:"string",description:"Vendor name (partial match)"},job_id:{type:"string",description:"Job ID or name keywords"},amount:{type:"number",description:"Credit amount in dollars"},credit_date:{type:"string",description:"YYYY-MM-DD (defaults to today)"},ref_number:{type:"string",description:"Vendor credit memo number / reference"},memo:{type:"string",description:"Notes about the credit"},file_url:{type:"string",description:"Optional URL of the credit memo PDF to attach"}},required:["vendor_name","job_id","amount"]}},
+    {name:"create_standalone_bill",description:"Create a standalone vendor bill not tied to a PO. Used for one-off vendor charges, freight bills that arrived without a PO, or rebill scenarios. Flows through the same totals as PO-derived bills.",input_schema:{type:"object",properties:{vendor_name:{type:"string"},job_id:{type:"string"},amount:{type:"number"},bill_date:{type:"string",description:"YYYY-MM-DD (defaults to today)"},ref_number:{type:"string",description:"Vendor invoice number"},memo:{type:"string"},file_url:{type:"string",description:"Optional URL of the bill PDF to attach"}},required:["vendor_name","job_id","amount"]}},
+    {name:"update_vendor_credit",description:"Update an existing vendor credit or standalone bill record. Match by sop_id (VC-xxx or SB-xxx) or by vendor + job + approximate amount. Fields: amount, ref_number, memo, credit_date, paid status.",input_schema:{type:"object",properties:{sop_id:{type:"string",description:"The credit/bill SOP id (VC-xxxxxx or SB-xxxxxx)"},vendor_name:{type:"string",description:"Vendor name for disambiguation when sop_id is unknown"},job_id:{type:"string",description:"Job for disambiguation"},updates:{type:"object",properties:{amount:{type:"number"},ref_number:{type:"string"},memo:{type:"string"},credit_date:{type:"string"},paid:{type:"boolean"},pay_date:{type:"string"},check_num:{type:"string"}}}},required:["updates"]}},
+    {name:"delete_vendor_credit",description:"Delete a vendor credit or standalone bill record. Permanent. Match by sop_id, or by vendor + job + amount. The underlying job/PO/line items are untouched.",input_schema:{type:"object",properties:{sop_id:{type:"string",description:"The credit/bill SOP id"},vendor_name:{type:"string"},job_id:{type:"string"},amount:{type:"number",description:"Used with vendor+job to disambiguate"}}}},
+    {name:"list_vendor_credits",description:"List vendor credits and standalone bills with filters. Returns a markdown table. Use when user says 'show me all open credits', 'list Marco credits', 'what credits do we have on the Sandburg job'.",input_schema:{type:"object",properties:{vendor_name:{type:"string"},job_id:{type:"string"},kind:{type:"string",description:"'credit' | 'standalone_bill' | 'all' (default all)"},applied_status:{type:"string",description:"'applied' to show only credits applied to a specific bill, 'unapplied' for unapplied, 'all' for both (default all)"},limit:{type:"number"}}}},
+    {name:"apply_credit_to_bill",description:"Explicitly link a vendor credit to a specific bill. The credit will be shown on the bill detail view and counted against that bill's owed amount. Use when user says 'apply the Marco credit to BILL-XXXX'.",input_schema:{type:"object",properties:{credit_sop_id:{type:"string",description:"The VC-xxxxxx SOP id of the credit"},bill_doc_num:{type:"string",description:"The bill to link the credit to"}},required:["credit_sop_id","bill_doc_num"]}},
+    {name:"find_unmatched_credits",description:"Find vendor credits that have NOT been applied to a specific bill. Useful when reviewing what credits are still available to apply, or auditing unallocated credits at month-end. Returns a markdown table sorted by amount desc.",input_schema:{type:"object",properties:{vendor_name:{type:"string",description:"Optional vendor name filter"},job_id:{type:"string",description:"Optional job filter"}}}}
   ];
 
 
@@ -6874,6 +6899,481 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         let removed=0;
         matched.forEach(target=>{deleteSop(target._sopId);removed++});
         return{success:true,message:'**Deleted '+removed+' prospect'+(removed===1?'':'s')+'**\n\nBy state:\n'+stateBreakdown};
+      }
+
+      // ==============================================================
+      // VENDOR BILLS, CREDITS, AND STANDALONE BILLS (16 tools, May 20 2026)
+      // ==============================================================
+      // Shared helpers, defined once and reused across the 16 bill/credit tools below.
+      // These reconstruct the same merged docStatuses + bills list that DocumentsPage
+      // renders, but from primitives that ARE in ctx (customSops, jobs, lineItems,
+      // vendors, addSop, deleteSop). DocumentsPage owns the canonical merge, so this
+      // intentionally mirrors its logic. If DocumentsPage logic changes, update here.
+      const _getDocStatusesBrain = () => {
+        const allDS = jobs.reduce((acc, j) => ({...acc, ...(j.docStatuses || {})}), {});
+        const sopRec = (customSops||[]).find(s=>s.id==='DOC_STATUSES_GLOBAL');
+        let sopDS = {};
+        if (sopRec) { try { sopDS = JSON.parse(sopRec.content||'{}'); } catch {} }
+        let lsDS = {};
+        try { lsDS = JSON.parse(localStorage.getItem('mw_doc_statuses_fallback')||'{}'); } catch {}
+        return {...allDS, ...sopDS, ...lsDS};
+      };
+      const _setDocStatusBrain = (docNum, value) => {
+        // Upsert into DOC_STATUSES_GLOBAL SOP (durable cross-browser source).
+        const merged = _getDocStatusesBrain();
+        const next = {...merged, [docNum]: value};
+        addSop({id:'DOC_STATUSES_GLOBAL',title:'Document Statuses',cat:'DocStatuses',icon:'file',content:JSON.stringify(next),custom:true});
+        // Also update localStorage so it doesn't shadow our write on next read in this browser.
+        try {
+          const fb = JSON.parse(localStorage.getItem('mw_doc_statuses_fallback')||'{}');
+          fb[docNum] = value;
+          localStorage.setItem('mw_doc_statuses_fallback', JSON.stringify(fb));
+        } catch {}
+      };
+      const _buildBillsList = () => {
+        // Reconstruct the same allBills array DocumentsPage builds. Returns the same
+        // shape so all bill tools can share a single lookup model.
+        const docStatuses = _getDocStatusesBrain();
+        const allBills = [];
+        // PO-derived bills
+        jobs.forEach(job => {
+          const jobPOs = (typeof genPOs === 'function') ? genPOs(job) : [];
+          jobPOs.forEach(po => {
+            const vid = po.vendor?.id || 'unknown';
+            const v = po.vendor;
+            const poDocNum = po.docNum;
+            const poStatus = docStatuses[poDocNum];
+            const anyReceived = (po.items||[]).some(i => (Number(i.qtyReceived)||0) > 0);
+            const isPoActive = poStatus && poStatus !== 'new';
+            if (!isPoActive && !anyReceived) return;
+            const vItems = po.items;
+            const cost = vItems.reduce((s,i) => s + (i.unitCost||0)*i.qtyOrdered, 0);
+            if (cost <= 0) return;
+            const poDate = vItems[0]?.poDate || job.createdDate || '';
+            const billDocNum = 'BILL-' + poDocNum.replace('PO-','');
+            const billDateOverride = docStatuses[billDocNum+'__date'] || '';
+            const billDueOverride = docStatuses[billDocNum+'__due'] || '';
+            let baseBillDate = billDateOverride ? new Date(billDateOverride+'T12:00:00') : (poDate ? new Date(poDate) : new Date());
+            if (!baseBillDate || isNaN(baseBillDate.getTime())) baseBillDate = new Date();
+            let dueDate2 = billDueOverride ? new Date(billDueOverride+'T12:00:00') : new Date(baseBillDate.getTime() + 30*86400000);
+            if (!dueDate2 || isNaN(dueDate2.getTime())) dueDate2 = new Date(baseBillDate.getTime() + 30*86400000);
+            let dueStr = '';
+            try { dueStr = dueDate2.toISOString().split('T')[0]; } catch {}
+            const billData = typeof docStatuses[billDocNum] === 'object' ? docStatuses[billDocNum] : {};
+            const paid = billData.status==='paid' || billData.paid || docStatuses[billDocNum]==='paid';
+            const daysUntil = isNaN(dueDate2.getTime()) ? 0 : Math.floor((dueDate2 - new Date())/86400000);
+            allBills.push({
+              job, vendor: v, vendorId: vid, vendorName: v?.name||'Unknown',
+              items: vItems, cost, poDocNum, billDocNum, poDate, dueDate: dueStr, daysUntil,
+              paid, voided: billData.status==='void',
+              vendorInvNum: billData.vendorInvNum||'', checkNum: billData.checkNum||'',
+              payDate: billData.payDate||'', memo: billData.memo||'',
+              status: billData.status||(paid?'paid':'unpaid'),
+              _isDeleted: billData.deleted===true,
+              _isStandalone: false,
+              _fileUrl: billData.invoiceFileUrl||'', _fileName: billData.invoiceFileName||''
+            });
+          });
+        });
+        // Standalone credits/bills
+        (customSops||[]).forEach(s => {
+          if (!s || (s.cat !== 'VendorCredit' && s.cat !== 'StandaloneBill')) return;
+          let d = null;
+          try { d = JSON.parse(s.content||'{}'); } catch { return; }
+          if (!d) return;
+          const job2 = jobs.find(j => j.id === d.jobId);
+          if (!job2) return;
+          const amt = Number(d.amount);
+          if (!isFinite(amt) || amt <= 0) return;
+          const v2 = (vendors||[]).find(vv => vv.id === d.vendorId) || null;
+          allBills.push({
+            job: job2, vendor: v2, vendorId: d.vendorId||'unknown',
+            vendorName: d.vendorName || (v2?v2.name:'Unknown'),
+            items: [], cost: amt,
+            poDocNum: d.refNumber||'', billDocNum: s.id,
+            poDate: d.creditDate||'', dueDate: d.creditDate||'',
+            daysUntil: 0, paid: d.paid===true, voided: false,
+            vendorInvNum: d.refNumber||'', checkNum: d.checkNum||'',
+            payDate: d.payDate||'', memo: d.memo||'',
+            status: d.paid?'paid':'unpaid',
+            _isDeleted: false,
+            _isStandalone: true, _standaloneKind: s.cat, _sopId: s.id,
+            _fileUrl: d.fileUrl||'', _fileName: d.fileName||'',
+            _appliedToBill: d.appliedToBill||''
+          });
+        });
+        return allBills;
+      };
+      const _findBill = (docNum) => {
+        if (!docNum) return null;
+        const bills = _buildBillsList();
+        const want = String(docNum).toLowerCase();
+        return bills.find(b => (b.billDocNum||'').toLowerCase() === want) || null;
+      };
+      const _formatBillsTable = (bills, max) => {
+        if (!bills || bills.length === 0) return 'No bills found.';
+        const limit = Math.min(max||25, bills.length);
+        const head = '| # | Bill | Vendor | Job | Amount | Status | Due | Days | File |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- |';
+        const rows = bills.slice(0, limit).map((b,i)=>{
+          const amt = (b._standaloneKind==='VendorCredit'?'-':'')+'$'+(b.cost||0).toFixed(2);
+          const status = b._isDeleted?'deleted':b.voided?'void':b.paid?'paid':b.daysUntil<0?'overdue':b.status||'unpaid';
+          const file = b._fileUrl?'yes':'no';
+          return '| '+(i+1)+' | '+b.billDocNum+' | '+(b.vendorName||'--')+' | '+(b.job?.name||'--')+' | '+amt+' | '+status+' | '+(b.dueDate||'--')+' | '+(isFinite(b.daysUntil)?b.daysUntil:'--')+' | '+file+' |';
+        }).join('\n');
+        const tail = bills.length > limit ? '\n\n... and '+(bills.length-limit)+' more.' : '';
+        return head+'\n'+rows+tail;
+      };
+
+      // ----------- VENDOR BILLS: QUERIES -----------
+      if (toolName === 'list_vendor_bills') {
+        let bills = _buildBillsList();
+        const status = (input.status||'unpaid').toLowerCase();
+        if (status === 'deleted') { bills = bills.filter(b => b._isDeleted); }
+        else if (status === 'all') { /* keep everything */ }
+        else if (status === 'unpaid') { bills = bills.filter(b => !b._isDeleted && !b.paid && !b.voided); }
+        else if (status === 'paid') { bills = bills.filter(b => !b._isDeleted && b.paid); }
+        else if (status === 'overdue') { bills = bills.filter(b => !b._isDeleted && !b.paid && !b.voided && b.daysUntil < 0); }
+        else if (status === 'check_sent') { bills = bills.filter(b => !b._isDeleted && b.status === 'check_sent'); }
+        else if (status === 'void') { bills = bills.filter(b => b.voided); }
+        if (input.vendor_name) { const q = input.vendor_name.toLowerCase(); bills = bills.filter(b => (b.vendorName||'').toLowerCase().includes(q)); }
+        if (input.job_id) { const job = findJob(input.job_id); if (job) bills = bills.filter(b => b.job?.id === job.id); else return {error: 'Job not found: '+input.job_id}; }
+        if (typeof input.due_within_days === 'number') { bills = bills.filter(b => b.daysUntil <= input.due_within_days); }
+        if (input.date_from) { bills = bills.filter(b => (b.poDate||b.dueDate||'') >= input.date_from); }
+        if (input.date_to) { bills = bills.filter(b => (b.poDate||b.dueDate||'') <= input.date_to); }
+        if (typeof input.has_file === 'boolean') { bills = bills.filter(b => !!b._fileUrl === input.has_file); }
+        if (typeof input.amount_min === 'number') { bills = bills.filter(b => b.cost >= input.amount_min); }
+        if (typeof input.amount_max === 'number') { bills = bills.filter(b => b.cost <= input.amount_max); }
+        bills.sort((a,b) => (a.daysUntil||0) - (b.daysUntil||0));
+        const total = bills.reduce((s,b) => s+(b._standaloneKind==='VendorCredit'?-b.cost:b.cost), 0);
+        const msg = '**Vendor Bills ('+bills.length+' matching, status='+status+')**\n\nNet total: $'+total.toFixed(2)+'\n\n'+_formatBillsTable(bills, input.limit||25);
+        return {success: true, message: msg};
+      }
+      if (toolName === 'get_vendor_bill') {
+        const b = _findBill(input.bill_doc_num);
+        if (!b) return {error: 'Bill not found: '+input.bill_doc_num};
+        let msg = '**'+b.billDocNum+'**\n\n';
+        msg += '- Vendor: '+b.vendorName+'\n- Job: '+(b.job?.name||'--')+'\n- Amount: $'+b.cost.toFixed(2);
+        if (b._standaloneKind === 'VendorCredit') msg += ' (CREDIT)';
+        msg += '\n- Status: '+(b._isDeleted?'deleted':b.voided?'void':b.paid?'paid':b.daysUntil<0?'overdue':b.status||'unpaid');
+        msg += '\n- Bill date: '+(b.poDate||'--')+'\n- Due date: '+(b.dueDate||'--')+' ('+(isFinite(b.daysUntil)?b.daysUntil+' days':'--')+')';
+        if (b.vendorInvNum) msg += '\n- Vendor invoice #: '+b.vendorInvNum;
+        if (b.checkNum) msg += '\n- Check #: '+b.checkNum;
+        if (b.payDate) msg += '\n- Pay date: '+b.payDate;
+        if (b.memo) msg += '\n- Memo: '+b.memo;
+        if (b._fileUrl) msg += '\n- File: '+(b._fileName||'attached')+' ('+b._fileUrl+')';
+        if (b._appliedToBill) msg += '\n- Applied to bill: '+b._appliedToBill;
+        if (b.items && b.items.length > 0) {
+          msg += '\n\n**Line items ('+b.items.length+'):**\n| Description | Qty | Unit Cost | Line Total |\n| --- | --- | --- | --- |\n';
+          b.items.forEach(it => { msg += '| '+(it.description||'--')+' | '+it.qtyOrdered+' | $'+(it.unitCost||0).toFixed(2)+' | $'+((it.unitCost||0)*it.qtyOrdered).toFixed(2)+' |\n'; });
+        }
+        return {success: true, message: msg};
+      }
+      if (toolName === 'search_bills_by_amount') {
+        let bills = _buildBillsList().filter(b => !b._isDeleted);
+        const lo = Number(input.amount_min)||0, hi = Number(input.amount_max)||Infinity;
+        bills = bills.filter(b => b.cost >= lo && b.cost <= hi);
+        if (input.vendor_name) { const q = input.vendor_name.toLowerCase(); bills = bills.filter(b => (b.vendorName||'').toLowerCase().includes(q)); }
+        const status = (input.status||'all').toLowerCase();
+        if (status === 'unpaid') bills = bills.filter(b => !b.paid && !b.voided);
+        else if (status === 'paid') bills = bills.filter(b => b.paid);
+        bills.sort((a,b) => b.cost - a.cost);
+        return {success: true, message: '**'+bills.length+' bills in range $'+lo.toFixed(2)+' -- $'+(isFinite(hi)?hi.toFixed(2):'inf')+'**\n\n'+_formatBillsTable(bills, 25)};
+      }
+      if (toolName === 'get_bills_summary') {
+        let bills = _buildBillsList().filter(b => !b._isDeleted && !b.voided);
+        if (input.job_id) { const job = findJob(input.job_id); if (job) bills = bills.filter(b => b.job?.id === job.id); }
+        if (input.vendor_name) { const q = input.vendor_name.toLowerCase(); bills = bills.filter(b => (b.vendorName||'').toLowerCase().includes(q)); }
+        const unpaid = bills.filter(b => !b.paid);
+        const paid = bills.filter(b => b.paid);
+        const overdue = unpaid.filter(b => b.daysUntil < 0);
+        const credits = bills.filter(b => b._standaloneKind === 'VendorCredit');
+        const totalOwed = unpaid.reduce((s,b) => s+(b._standaloneKind==='VendorCredit'?-b.cost:b.cost), 0);
+        const totalPaid = paid.reduce((s,b) => s+b.cost, 0);
+        const totalOverdue = overdue.reduce((s,b) => s+b.cost, 0);
+        const totalCredits = credits.reduce((s,b) => s+b.cost, 0);
+        const thisYear = new Date().getFullYear();
+        const paidYTD = paid.filter(b => (b.payDate||'').startsWith(String(thisYear))).reduce((s,b)=>s+b.cost,0);
+        let msg = '**Bills Summary**\n\n';
+        msg += '- Total Owed (unpaid net of credits): $'+totalOwed.toFixed(2)+'\n';
+        msg += '- Unpaid bills: '+unpaid.length+'\n- Overdue bills: '+overdue.length+' ($'+totalOverdue.toFixed(2)+')\n';
+        msg += '- Paid this year (YTD '+thisYear+'): $'+paidYTD.toFixed(2)+' ('+paid.filter(b => (b.payDate||'').startsWith(String(thisYear))).length+' bills)\n';
+        msg += '- Total paid (all time): $'+totalPaid.toFixed(2)+'\n';
+        msg += '- Vendor credits: '+credits.length+' ($'+totalCredits.toFixed(2)+')\n';
+        if (input.group_by === 'vendor') {
+          const byVendor = {};
+          unpaid.forEach(b => { const v = b.vendorName||'Unknown'; byVendor[v] = (byVendor[v]||0) + (b._standaloneKind==='VendorCredit'?-b.cost:b.cost); });
+          const rows = Object.entries(byVendor).sort((a,b)=>b[1]-a[1]).slice(0,20);
+          msg += '\n**By vendor (top 20 unpaid):**\n| Vendor | Owed |\n| --- | --- |\n';
+          rows.forEach(([v,a]) => { msg += '| '+v+' | $'+a.toFixed(2)+' |\n'; });
+        } else if (input.group_by === 'job') {
+          const byJob = {};
+          unpaid.forEach(b => { const j = b.job?.name||'Unknown'; byJob[j] = (byJob[j]||0) + (b._standaloneKind==='VendorCredit'?-b.cost:b.cost); });
+          const rows = Object.entries(byJob).sort((a,b)=>b[1]-a[1]).slice(0,20);
+          msg += '\n**By job (top 20 unpaid):**\n| Job | Owed |\n| --- | --- |\n';
+          rows.forEach(([j,a]) => { msg += '| '+j+' | $'+a.toFixed(2)+' |\n'; });
+        }
+        return {success: true, message: msg};
+      }
+
+      // ----------- VENDOR BILLS: ACTIONS -----------
+      if (toolName === 'mark_bill_paid') {
+        const b = _findBill(input.bill_doc_num);
+        if (!b) return {error: 'Bill not found: '+input.bill_doc_num};
+        if (b._isDeleted) return {error: 'Bill is deleted. Restore it first.'};
+        const today = new Date().toISOString().split('T')[0];
+        if (b._isStandalone) {
+          // Standalone credits/bills are stored as SOPs
+          const sop = (customSops||[]).find(s => s.id === b._sopId);
+          if (!sop) return {error: 'Underlying SOP record missing'};
+          let d = {}; try { d = JSON.parse(sop.content||'{}'); } catch {}
+          d.paid = true;
+          d.payDate = input.pay_date || today;
+          if (input.check_num) d.checkNum = input.check_num;
+          if (input.memo) d.memo = input.memo;
+          addSop({...sop, content: JSON.stringify(d)});
+        } else {
+          const ds = _getDocStatusesBrain();
+          const existing = typeof ds[b.billDocNum] === 'object' ? ds[b.billDocNum] : {};
+          _setDocStatusBrain(b.billDocNum, {...existing, status:'paid', paid:true, payDate: input.pay_date || today, checkNum: input.check_num || existing.checkNum || '', memo: input.memo || existing.memo || ''});
+        }
+        return {success: true, message: 'Marked paid: '+b.billDocNum+' ('+b.vendorName+', $'+b.cost.toFixed(2)+')'};
+      }
+      if (toolName === 'void_bill' || toolName === 'unvoid_bill') {
+        const b = _findBill(input.bill_doc_num);
+        if (!b) return {error: 'Bill not found: '+input.bill_doc_num};
+        if (b._isStandalone) return {error: 'Void is only supported for PO-derived bills. For standalone records, use delete_vendor_credit.'};
+        const ds = _getDocStatusesBrain();
+        const existing = typeof ds[b.billDocNum] === 'object' ? ds[b.billDocNum] : {};
+        if (toolName === 'void_bill') {
+          _setDocStatusBrain(b.billDocNum, {...existing, status:'void', paid:false, memo: input.memo || existing.memo || ''});
+          return {success: true, message: 'Voided: '+b.billDocNum};
+        } else {
+          _setDocStatusBrain(b.billDocNum, {...existing, status:'unpaid', paid:false});
+          return {success: true, message: 'Unvoided: '+b.billDocNum+' (now unpaid)'};
+        }
+      }
+      if (toolName === 'restore_deleted_bill') {
+        const ds = _getDocStatusesBrain();
+        const existing = typeof ds[input.bill_doc_num] === 'object' ? ds[input.bill_doc_num] : {};
+        if (existing.deleted !== true) return {error: 'Bill is not deleted: '+input.bill_doc_num};
+        const {deleted:_d, ...rest} = existing;
+        _setDocStatusBrain(input.bill_doc_num, rest);
+        return {success: true, message: 'Restored bill (kept prior data): '+input.bill_doc_num};
+      }
+      if (toolName === 'reset_and_restore_bill') {
+        const ds = _getDocStatusesBrain();
+        const existing = typeof ds[input.bill_doc_num] === 'object' ? ds[input.bill_doc_num] : {};
+        if (existing.deleted !== true) return {error: 'Bill is not deleted: '+input.bill_doc_num};
+        _setDocStatusBrain(input.bill_doc_num, {});
+        // Also clear date/due overrides
+        if (ds[input.bill_doc_num+'__date'] !== undefined) _setDocStatusBrain(input.bill_doc_num+'__date', '');
+        if (ds[input.bill_doc_num+'__due'] !== undefined) _setDocStatusBrain(input.bill_doc_num+'__due', '');
+        return {success: true, message: 'Reset and restored as fresh unpaid bill: '+input.bill_doc_num+' (all prior payment data, attachments, and overrides wiped)'};
+      }
+      if (toolName === 'attach_file_to_bill') {
+        const b = _findBill(input.bill_doc_num);
+        if (!b) return {error: 'Bill not found: '+input.bill_doc_num};
+        if (typeof window === 'undefined' || !window._supabase || typeof window._supabase.uploadFile !== 'function') return {error: 'Storage not ready -- file uploads require browser context.'};
+        try {
+          let file;
+          const fileName = input.file_name || 'attachment-'+Date.now()+'.pdf';
+          const contentType = input.content_type || 'application/pdf';
+          if (input.file_url) {
+            const resp = await fetch(input.file_url);
+            if (!resp.ok) return {error: 'Failed to fetch file: HTTP '+resp.status};
+            const blob = await resp.blob();
+            file = new File([blob], fileName, {type: contentType});
+          } else if (input.file_base64) {
+            const bin = atob(input.file_base64);
+            const arr = new Uint8Array(bin.length);
+            for (let i=0;i<bin.length;i++) arr[i] = bin.charCodeAt(i);
+            file = new File([arr], fileName, {type: contentType});
+          } else {
+            return {error: 'Provide either file_url or file_base64'};
+          }
+          const path = b.billDocNum + '/' + Date.now() + '_' + fileName;
+          const url = await window._supabase.uploadFile('vendor-invoices', path, file);
+          if (b._isStandalone) {
+            const sop = (customSops||[]).find(s => s.id === b._sopId);
+            if (!sop) return {error: 'Underlying SOP record missing'};
+            let d = {}; try { d = JSON.parse(sop.content||'{}'); } catch {}
+            d.fileUrl = url; d.fileName = fileName; d.uploadDate = new Date().toISOString();
+            addSop({...sop, content: JSON.stringify(d)});
+          } else {
+            const ds = _getDocStatusesBrain();
+            const existing = typeof ds[b.billDocNum] === 'object' ? ds[b.billDocNum] : {};
+            _setDocStatusBrain(b.billDocNum, {...existing, invoiceFileUrl:url, invoiceFileName:fileName, invoiceUploadDate: new Date().toISOString()});
+          }
+          return {success: true, message: 'Attached '+fileName+' to '+b.billDocNum};
+        } catch (e) { return {error: 'Attach failed: '+(e.message||String(e))}; }
+      }
+      if (toolName === 'update_bill_due_date') {
+        const b = _findBill(input.bill_doc_num);
+        if (!b) return {error: 'Bill not found: '+input.bill_doc_num};
+        if (b._isStandalone) return {error: 'Due date override is only supported for PO-derived bills. For standalone records, use update_vendor_credit with credit_date.'};
+        const due = (input.due_date||'').trim();
+        if (due && !/^\d{4}-\d{2}-\d{2}$/.test(due)) return {error: 'due_date must be YYYY-MM-DD format or empty string to clear'};
+        _setDocStatusBrain(b.billDocNum+'__due', due);
+        return {success: true, message: due ? ('Due date set to '+due+' for '+b.billDocNum) : ('Cleared due date override for '+b.billDocNum)};
+      }
+      if (toolName === 'batch_mark_paid') {
+        let bills = _buildBillsList().filter(b => !b._isDeleted && !b.voided && !b.paid);
+        if (Array.isArray(input.bill_doc_nums) && input.bill_doc_nums.length > 0) {
+          const wanted = new Set(input.bill_doc_nums.map(x => String(x).toLowerCase()));
+          bills = bills.filter(b => wanted.has((b.billDocNum||'').toLowerCase()));
+        } else if (input.filter) {
+          if (input.filter.vendor_name) { const q = input.filter.vendor_name.toLowerCase(); bills = bills.filter(b => (b.vendorName||'').toLowerCase().includes(q)); }
+          if (input.filter.job_id) { const job = findJob(input.filter.job_id); if (job) bills = bills.filter(b => b.job?.id === job.id); }
+          const st = (input.filter.status||'unpaid').toLowerCase();
+          if (st === 'check_sent') bills = bills.filter(b => b.status === 'check_sent');
+          else if (st === 'overdue') bills = bills.filter(b => b.daysUntil < 0);
+        } else {
+          return {error: 'Provide bill_doc_nums (array) or filter (object).'};
+        }
+        if (bills.length === 0) return {error: 'No matching unpaid bills found.'};
+        const total = bills.reduce((s,b)=>s+b.cost,0);
+        if (!input.confirm) {
+          return {success: true, message: '**DRY RUN -- '+bills.length+' bill'+(bills.length===1?'':'s')+' would be marked paid**\n\nTotal: $'+total.toFixed(2)+'\n\n'+_formatBillsTable(bills, 50)+'\n\nRe-run with confirm:true to apply.'};
+        }
+        const today = input.pay_date || new Date().toISOString().split('T')[0];
+        const checkNum = input.check_num || '';
+        const method = input.method || (checkNum ? 'check' : 'ach');
+        const memo = input.memo || ('Batch '+method+(checkNum?' #'+checkNum:''));
+        let n = 0;
+        bills.forEach(b => {
+          if (b._isStandalone) {
+            const sop = (customSops||[]).find(s => s.id === b._sopId);
+            if (!sop) return;
+            let d = {}; try { d = JSON.parse(sop.content||'{}'); } catch {}
+            d.paid = true; d.payDate = today; if (checkNum) d.checkNum = checkNum; d.memo = memo;
+            addSop({...sop, content: JSON.stringify(d)});
+          } else {
+            const ds = _getDocStatusesBrain();
+            const existing = typeof ds[b.billDocNum] === 'object' ? ds[b.billDocNum] : {};
+            _setDocStatusBrain(b.billDocNum, {...existing, status:'paid', paid:true, payDate:today, checkNum:checkNum||existing.checkNum||'', memo});
+          }
+          n++;
+        });
+        return {success: true, message: 'Marked '+n+' bill'+(n===1?'':'s')+' paid via '+method+' (total $'+total.toFixed(2)+', date '+today+(checkNum?', check #'+checkNum:'')+')'};
+      }
+
+      // ----------- VENDOR CREDITS & STANDALONE BILLS -----------
+      if (toolName === 'create_vendor_credit' || toolName === 'create_standalone_bill') {
+        const isCredit = toolName === 'create_vendor_credit';
+        const v = vendors.find(vv => (vv.name||'').toLowerCase().includes((input.vendor_name||'').toLowerCase()));
+        if (!v) return {error: 'Vendor not found: '+input.vendor_name};
+        const job = findJob(input.job_id);
+        if (!job) return {error: 'Job not found: '+input.job_id};
+        const amt = Number(input.amount);
+        if (!isFinite(amt) || amt <= 0) return {error: 'amount must be a positive number'};
+        const id = (isCredit?'VC-':'SB-') + Math.random().toString(36).slice(2,10);
+        const dateStr = input.credit_date || input.bill_date || new Date().toISOString().split('T')[0];
+        const content = {
+          vendorId: v.id, vendorName: v.name,
+          jobId: job.id, jobName: job.name,
+          amount: amt, creditDate: dateStr,
+          refNumber: input.ref_number || '', memo: input.memo || '',
+          fileUrl: input.file_url || '', fileName: input.file_url ? (input.file_url.split('/').pop()||'') : '',
+          uploadDate: input.file_url ? new Date().toISOString() : '',
+          paid: false, payDate: '', checkNum: '',
+          createdAt: new Date().toISOString()
+        };
+        addSop({id, title: (isCredit?'Credit ':'Bill ')+v.name+' '+job.name+' $'+amt.toFixed(2), cat: isCredit?'VendorCredit':'StandaloneBill', icon:'receipt', content: JSON.stringify(content), custom:true});
+        return {success: true, message: 'Created '+(isCredit?'vendor credit':'standalone bill')+' '+id+': '+v.name+' / '+job.name+' / $'+amt.toFixed(2)};
+      }
+      if (toolName === 'update_vendor_credit') {
+        let sop = null;
+        if (input.sop_id) sop = (customSops||[]).find(s => s.id === input.sop_id);
+        if (!sop && (input.vendor_name || input.job_id)) {
+          const candidates = (customSops||[]).filter(s => s.cat==='VendorCredit' || s.cat==='StandaloneBill').map(s => {
+            let d = {}; try { d = JSON.parse(s.content||'{}'); } catch {}
+            return {sop: s, d};
+          });
+          let filtered = candidates;
+          if (input.vendor_name) { const q = input.vendor_name.toLowerCase(); filtered = filtered.filter(x => (x.d.vendorName||'').toLowerCase().includes(q)); }
+          if (input.job_id) { const job = findJob(input.job_id); if (job) filtered = filtered.filter(x => x.d.jobId === job.id); }
+          if (filtered.length === 0) return {error: 'No matching credit/bill found'};
+          if (filtered.length > 1) return {error: filtered.length+' matches -- provide sop_id to disambiguate. Candidates: '+filtered.map(x=>x.sop.id+' ($'+x.d.amount+')').join(', ')};
+          sop = filtered[0].sop;
+        }
+        if (!sop) return {error: 'Credit/bill not found. Provide sop_id or vendor_name + job_id.'};
+        let d = {}; try { d = JSON.parse(sop.content||'{}'); } catch {}
+        const u = input.updates || {};
+        if (typeof u.amount === 'number') d.amount = u.amount;
+        if (typeof u.ref_number === 'string') d.refNumber = u.ref_number;
+        if (typeof u.memo === 'string') d.memo = u.memo;
+        if (typeof u.credit_date === 'string') d.creditDate = u.credit_date;
+        if (typeof u.paid === 'boolean') d.paid = u.paid;
+        if (typeof u.pay_date === 'string') d.payDate = u.pay_date;
+        if (typeof u.check_num === 'string') d.checkNum = u.check_num;
+        addSop({...sop, content: JSON.stringify(d)});
+        return {success: true, message: 'Updated '+sop.id+': '+Object.keys(u).join(', ')};
+      }
+      if (toolName === 'delete_vendor_credit') {
+        let sop = null;
+        if (input.sop_id) sop = (customSops||[]).find(s => s.id === input.sop_id);
+        if (!sop && (input.vendor_name || input.job_id || input.amount)) {
+          const candidates = (customSops||[]).filter(s => s.cat==='VendorCredit' || s.cat==='StandaloneBill').map(s => {
+            let d = {}; try { d = JSON.parse(s.content||'{}'); } catch {}
+            return {sop: s, d};
+          });
+          let filtered = candidates;
+          if (input.vendor_name) { const q = input.vendor_name.toLowerCase(); filtered = filtered.filter(x => (x.d.vendorName||'').toLowerCase().includes(q)); }
+          if (input.job_id) { const job = findJob(input.job_id); if (job) filtered = filtered.filter(x => x.d.jobId === job.id); }
+          if (typeof input.amount === 'number') filtered = filtered.filter(x => Math.abs(Number(x.d.amount) - input.amount) < 0.01);
+          if (filtered.length === 0) return {error: 'No matching credit/bill found'};
+          if (filtered.length > 1) return {error: filtered.length+' matches -- provide sop_id. Candidates: '+filtered.map(x=>x.sop.id+' ($'+x.d.amount+')').join(', ')};
+          sop = filtered[0].sop;
+        }
+        if (!sop) return {error: 'Credit/bill not found.'};
+        deleteSop(sop.id);
+        return {success: true, message: 'Deleted '+sop.id};
+      }
+      if (toolName === 'list_vendor_credits') {
+        const kind = (input.kind||'all').toLowerCase();
+        let records = (customSops||[]).filter(s => {
+          if (kind === 'credit') return s.cat === 'VendorCredit';
+          if (kind === 'standalone_bill') return s.cat === 'StandaloneBill';
+          return s.cat === 'VendorCredit' || s.cat === 'StandaloneBill';
+        }).map(s => { let d = {}; try { d = JSON.parse(s.content||'{}'); } catch {} return {sop: s, d}; });
+        if (input.vendor_name) { const q = input.vendor_name.toLowerCase(); records = records.filter(x => (x.d.vendorName||'').toLowerCase().includes(q)); }
+        if (input.job_id) { const job = findJob(input.job_id); if (job) records = records.filter(x => x.d.jobId === job.id); }
+        const ap = (input.applied_status||'all').toLowerCase();
+        if (ap === 'applied') records = records.filter(x => x.d.appliedToBill);
+        else if (ap === 'unapplied') records = records.filter(x => !x.d.appliedToBill);
+        records.sort((a,b) => (b.d.amount||0) - (a.d.amount||0));
+        const limit = Math.min(input.limit||25, records.length);
+        let msg = '**'+records.length+' '+(kind==='all'?'credits & standalone bills':kind)+' matching**\n\n';
+        msg += '| # | ID | Kind | Vendor | Job | Amount | Date | Ref | Applied to | Paid |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n';
+        records.slice(0,limit).forEach((x,i) => {
+          msg += '| '+(i+1)+' | '+x.sop.id+' | '+(x.sop.cat==='VendorCredit'?'credit':'bill')+' | '+(x.d.vendorName||'--')+' | '+(x.d.jobName||'--')+' | $'+Number(x.d.amount||0).toFixed(2)+' | '+(x.d.creditDate||'--')+' | '+(x.d.refNumber||'--')+' | '+(x.d.appliedToBill||'--')+' | '+(x.d.paid?'yes':'no')+' |\n';
+        });
+        if (records.length > limit) msg += '\n... and '+(records.length-limit)+' more.';
+        return {success: true, message: msg};
+      }
+      if (toolName === 'apply_credit_to_bill') {
+        const sop = (customSops||[]).find(s => s.id === input.credit_sop_id);
+        if (!sop || sop.cat !== 'VendorCredit') return {error: 'Credit not found: '+input.credit_sop_id};
+        const bill = _findBill(input.bill_doc_num);
+        if (!bill) return {error: 'Bill not found: '+input.bill_doc_num};
+        if (bill._isDeleted) return {error: 'Cannot apply credit to a deleted bill. Restore the bill first.'};
+        let d = {}; try { d = JSON.parse(sop.content||'{}'); } catch {}
+        d.appliedToBill = bill.billDocNum;
+        d.appliedDate = new Date().toISOString().split('T')[0];
+        addSop({...sop, content: JSON.stringify(d)});
+        return {success: true, message: 'Applied credit '+sop.id+' ($'+Number(d.amount||0).toFixed(2)+') to bill '+bill.billDocNum+' ('+bill.vendorName+')'};
+      }
+      if (toolName === 'find_unmatched_credits') {
+        let records = (customSops||[]).filter(s => s.cat === 'VendorCredit').map(s => { let d = {}; try { d = JSON.parse(s.content||'{}'); } catch {} return {sop:s, d}; });
+        records = records.filter(x => !x.d.appliedToBill);
+        if (input.vendor_name) { const q = input.vendor_name.toLowerCase(); records = records.filter(x => (x.d.vendorName||'').toLowerCase().includes(q)); }
+        if (input.job_id) { const job = findJob(input.job_id); if (job) records = records.filter(x => x.d.jobId === job.id); }
+        records.sort((a,b) => (b.d.amount||0) - (a.d.amount||0));
+        const total = records.reduce((s,x) => s + Number(x.d.amount||0), 0);
+        let msg = '**'+records.length+' unapplied vendor credit'+(records.length===1?'':'s')+'**\n\nTotal unapplied: $'+total.toFixed(2)+'\n\n';
+        msg += '| # | ID | Vendor | Job | Amount | Date | Ref |\n| --- | --- | --- | --- | --- | --- | --- |\n';
+        records.forEach((x,i) => { msg += '| '+(i+1)+' | '+x.sop.id+' | '+(x.d.vendorName||'--')+' | '+(x.d.jobName||'--')+' | $'+Number(x.d.amount||0).toFixed(2)+' | '+(x.d.creditDate||'--')+' | '+(x.d.refNumber||'--')+' |\n'; });
+        return {success: true, message: msg};
       }
 
       return{error:"Unknown tool: "+toolName};
