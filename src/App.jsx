@@ -8,13 +8,13 @@ const DEFAULT_SOPS=[
     {id:"company-overview",cat:"Company",title:"Company Overview & Mission",icon:"shield",content:"MIDWEST EDUCATIONAL FURNISHINGS, INC.\nFull-service school furniture and equipment for K-12 districts and universities.\n\nMISSION\nTo enhance and improve learning experiences for students of all ages by providing full-service school furniture and equipment solutions that create inspiring, functional, and adaptable learning environments.\n\nWHAT WE DO\n- Design Consultation and Space Planning\n- Budgeting and Product Selection\n- Product Specification from 160 manufacturer partners\n- Project Management from quote to installation\n- Delivery Coordination and Installation Oversight\n\nWHO WE SERVE\nK-12 school districts (primary) and universities across the Midwest and beyond. Facilities directors, superintendents, purchasing managers, and project managers.\n\nTHE BUSINESS MODEL\nMidwest is a purchasing agent. We sit between the manufacturer and the school district. Revenue is generated on the margin between dealer cost (after vendor discount) and customer price. We do not manufacture or warehouse inventory.\n\nSCALE\n14+ years in operation. 160 manufacturer partners. Primarily IL and WI territory with national reach through rep network. Small founder-operated team. Busy season May through September aligned to school calendar."},
     {id:"brand-voice",cat:"Company",title:"Brand Voice & Communication",icon:"send",content:"PERSONALITY\nIf Midwest were a person, they would be the most reliable contractor you have ever worked with. Direct, warm, confident, practical, can-do, professional without being stiff.\n\nVOICE GUIDELINES\n- Say the thing. Get to the point. Lean toward solutions.\n- No corporate filler. No hedging. No apologetic language.\n- Warm but efficient. Friendly but professional.\n\nON BRAND EXAMPLES\n- \"We can get that spec to you by end of day.\"\n- \"Here is what I recommend for that space.\"\n- \"We will figure it out.\"\n\nOFF BRAND EXAMPLES\n- \"We would like to take this opportunity to thank you.\"\n- \"Per our last conversation, please find attached...\"\n- \"I am sorry to bother you but...\"\n\nBRAND PHRASES\n- We will figure it out.\n- A small company that does big things.\n- Things are going to happen. It is how you handle it."},
     {id:"team",cat:"Company",title:"Team Directory & Roles",icon:"users",content:"LEADERSHIP\n- Maureen Welter: Owner and primary operator. Handles all quoting, PO management, invoicing, commission tracking.\n- Dave Welter: Co-owner and key salesperson. Broad territory coverage.\n- Lisa Monchunski: Primary operator and sales support.\n\nSALES REPRESENTATIVES\n- Jim Lindner: Milwaukee, WI territory. Commission rate set in Directory.\n- Jackie Biller: Lake Geneva, WI territory. Commission rate set in Directory.\n- Jim Harris: Arizona-based, sells into IL and Chicago. Commission rate set in Directory.\n- Dave Welter: Broad IL and WI territory.\n\nKEY NOTES\n- Commission rates are managed in the Directory tab under Sales Reps.\n- All team members should have their territory and tier documented.\n- Exit readiness goal: reduce Maureen's weekly hours from 15-20 to under 5."},
-    {id:"quote-to-invoice",cat:"Workflow",title:"Quote-to-Invoice Complete Workflow",icon:"receipt",content:"COMPLETE WORKFLOW: QUOTE TO INVOICE\n\n1. VENDOR QUOTE: Manufacturer provides list price. Midwest receives dealer discount off list.\n2. BUILD CUSTOMER QUOTE: Lisa builds Excel spreadsheet with all line items. Upload to AIOS via Data Import.\n3. QUOTE APPROVAL: Go to Documents then Quotes. Generate the quote. Mark as Sent. Customer reviews and approves. Mark as Approved.\n4. PURCHASE ORDERS: Go to Documents then POs. Auto-generated per vendor from approved quote. Mark as Drafted then Sent to vendor.\n5. DELIVERY TRACKING: As items arrive, update received quantities on line items in Job Detail. Partial deliveries are normal.\n6. INVOICING: Go to Documents then Invoices. Auto-generates from received quantities. Supports partial invoicing for items received so far.\n7. PAYMENT TRACKING: Track payment status on each job (unpaid, partial, paid). Set payment terms (Net 30, Net 15, Due Upon Receipt).\n8. COMMISSION CALCULATION: Go to Documents then Commissions. Auto-calculated from invoiced revenue multiplied by rep commission rate."},
+    {id:"quote-to-invoice",cat:"Workflow",title:"Quote-to-Invoice Complete Workflow",icon:"receipt",content:"COMPLETE WORKFLOW: QUOTE TO INVOICE\n\n1. VENDOR QUOTE: Manufacturer provides list price. Midwest receives dealer discount off list.\n2. BUILD CUSTOMER QUOTE: Lisa builds Excel spreadsheet with all line items. Upload to AIOS via Data Import.\n3. QUOTE APPROVAL: Go to Documents then Quotes. Generate the quote. Mark as Sent. Customer reviews and approves. Mark as Approved.\n4. PURCHASE ORDERS: Go to Documents then POs. Auto-generated per vendor from approved quote. Mark as Drafted then Sent to vendor.\n5. DELIVERY TRACKING: As items arrive, update received quantities on line items in Job Detail. Partial deliveries are normal.\n6. INVOICING: Go to Documents then Invoices. Auto-generates from received quantities. Supports partial invoicing for items received so far.\n7. PAYMENT TRACKING: Track payment status on each job (unpaid, partial, paid). Set payment terms (Net 30, Net 15, Due Upon Receipt).\n8. COMMISSION CALCULATION: Go to Documents then Commissions. Auto-calculated from job PROFIT (revenue minus cost) multiplied by rep commission rate. Loss-making jobs do not generate negative commissions (profit clamps at zero)."},
     {id:"excel-upload",cat:"Workflow",title:"Excel Quote Upload Process",icon:"download",content:"EXCEL QUOTE UPLOAD SOP\nPURPOSE: Convert Lisa's Excel quote spreadsheets into live jobs in the AIOS with all line items.\n\n1. Navigate to Data Import from the sidebar\n2. Click Choose File and select the .xls or .xlsx file\n3. System automatically parses all sheets and shows a preview\n4. Name the job (auto-detected from the spreadsheet if possible)\n5. Toggle individual sheets on or off if needed\n6. Review the items preview table for accuracy\n7. Click Import to create the job with all line items\n\nWHAT THE PARSER CAPTURES\n- Tag number\n- Manufacturer name\n- Model number\n- Full description\n- Color\n- Quantity ordered\n- List price\n- Net cost (after vendor discount)\n- Shipping per unit\n- Installation per unit\n- Customer price\n\nFILTERED AUTOMATICALLY\n- Freight charges (FRT)\n- Surcharges and tariffs\n- Address rows\n- Subtotals and totals\n- Header rows\n\nAFTER IMPORT\n- New vendors are auto-created in the Directory\n- Job appears in Quoting phase on Job Records\n- All line items are ready for quote generation"},
     {id:"discount-math",cat:"Workflow",title:"Vendor Discount Calculations",icon:"dollar",content:"VENDOR DISCOUNT MATH (VENDRUM MATH)\nEach manufacturer has a specific discount rate off their list price. This is Midwest's dealer cost.\n\nFORMULA\nNet Cost = List Price x (1 - Discount Rate)\n\nEXAMPLE\n- List Price: $1,000\n- Vendor Discount: 45%\n- Net Cost: $1,000 x 0.55 = $550\n\nMARGIN CALCULATION\nMargin = (1 - Net Cost / Customer Price) x 100\n\nEXAMPLE\n- Net Cost: $550\n- Customer Price: $850\n- Margin: (1 - 550/850) x 100 = 35.3%\n\nIN THE AIOS\n- Discount rates are stored per vendor in Directory\n- The Disc % field on line items allows per-item override\n- Edit All mode updates vendor rate and propagates to all items\n- Bidirectional: enter List + Disc to get Net, or enter List + Net to back-calculate Disc"},
-    {id:"documents",cat:"Workflow",title:"Document Generation & Management",icon:"file",content:"DOCUMENT MANAGEMENT SOP\nALL DOCUMENTS follow this status lifecycle:\n\n1. New: Document has been generated but not reviewed\n2. Drafted: Document reviewed and ready to send\n3. Sent: Document has been sent to customer or vendor\n4. Approved: Customer has approved (quotes) or vendor has acknowledged (POs)\n\nDOCUMENT TYPES\n- Quotes: Customer-facing price proposals. Generated from job line items.\n- Purchase Orders: Vendor-facing orders. Auto-grouped by vendor from approved quotes.\n- Invoices: Customer billing. Auto-generated from received quantities. Supports partial invoicing.\n- Commission Statements: Rep earning reports. Calculated from invoiced revenue times commission rate.\n\nKEY FEATURES\n- Filter bar (All, Pending, Sent, Approved) persists across sessions\n- All documents exportable as PDF via the preview window\n- Invoice PO number selector lets you attach vendor PO numbers to invoices\n- Print and email functionality available from preview"},
+    {id:"documents",cat:"Workflow",title:"Document Generation & Management",icon:"file",content:"DOCUMENT MANAGEMENT SOP\nALL DOCUMENTS follow this status lifecycle:\n\n1. New: Document has been generated but not reviewed\n2. Drafted: Document reviewed and ready to send\n3. Sent: Document has been sent to customer or vendor\n4. Approved: Customer has approved (quotes) or vendor has acknowledged (POs)\n\nDOCUMENT TYPES\n- Quotes: Customer-facing price proposals. Generated from job line items.\n- Purchase Orders: Vendor-facing orders. Auto-grouped by vendor from approved quotes.\n- Invoices: Customer billing. Auto-generated from received quantities. Supports partial invoicing.\n- Commission Statements: Rep earning reports. Calculated from job PROFIT (revenue minus cost) times commission rate. The statement PDF shows a Profit column so reps can audit the math.\n\nKEY FEATURES\n- Filter bar (All, Pending, Sent, Approved) persists across sessions\n- All documents exportable as PDF via the preview window\n- Invoice PO number selector lets you attach vendor PO numbers to invoices\n- Print and email functionality available from preview"},
     {id:"delivery",cat:"Workflow",title:"Delivery Tracking Process",icon:"truck",content:"DELIVERY TRACKING SOP\n\n1. Open the job in Job Records and click into Job Detail\n2. Find the line item that was delivered\n3. Click the Receive button next to the item\n4. Enter the quantity received\n5. System auto-stamps today's date as delivery date\n6. Repeat for each item in the shipment\n\nBULK RECEIVING\n- Use the Mark All Complete button on the Delivery Tracker to receive all items for a job at once\n- Only use this when the entire shipment has been verified\n\nPARTIAL DELIVERIES\n- Partial deliveries are standard in this industry\n- Items show partial status with received vs ordered counts\n- Invoice immediately for received items (do not wait for full delivery)\n\nSEASONAL NOTES\n- May through September is the critical delivery window\n- Everything must be installed before school starts in September\n- Confirm delivery dates with vendors 2 weeks before scheduled date\n- Order by May for standard lead time items"},
     {id:"sales-portal",cat:"Workflow",title:"Sales Rep Portal & Job Creation",icon:"users",content:"SALES PORTAL SOP\n\n1. OVERVIEW MODE: Shows all team performance metrics and pipeline summary\n2. Click any rep name to filter to their jobs only\n3. Click any job card to navigate directly to the full Job Detail\n\nCREATING A NEW JOB\n1. Click New Job button in the header\n2. Fill in job name, customer, sales rep\n3. Add payment terms, PO number, ship-to address\n4. Click Create Job Record\n\nADDING A NEW CUSTOMER\n1. Click New Customer button or type a new name in the customer field\n2. Fill in name, contact, email, phone, type, address\n3. Click Add Customer\n4. Customer is immediately available for job assignment\n\nUPLOADING A QUOTE\n- Click Upload Quote button to go directly to Data Import\n- Follow the Excel Upload SOP from there"},
-    {id:"commission",cat:"Financial",title:"Commission Calculation & Statements",icon:"dollar",content:"COMMISSION CALCULATION SOP\n\nFORMULA\nCommission = Invoiced Revenue x Rep Commission Rate\n\nKEY RULES\n- Commission is calculated on INVOICED revenue only (not quoted, not ordered)\n- Paid jobs = earned commission\n- Unpaid jobs = pending commission\n- Rates are set per rep in Directory under Sales Reps\n\nGENERATING STATEMENTS\n1. Go to Commissions page\n2. Select the rep\n3. Review earned vs pending amounts\n4. Generate statement from Documents tab under Commissions\n5. Export as PDF for rep records"},
+    {id:"commission",cat:"Financial",title:"Commission Calculation & Statements",icon:"dollar",content:"COMMISSION CALCULATION SOP\n\nFORMULA\nCommission = Job Profit x Rep Commission Rate\n\nwhere Job Profit = max(0, Revenue - Cost)\n\nKEY RULES\n- Commission is paid on PROFIT (revenue minus cost), NOT on revenue or gross sales.\n- Profit clamps at zero -- a loss-making job does NOT generate a negative commission claim against the rep.\n- Cost includes everything in the job financials: vendor costs, freight, install, plus any vendor credits or standalone bills that flow through getJobFinancials.\n- Paid jobs = earned commission\n- Unpaid jobs = pending commission\n- Rates are set per rep in Directory under Sales Reps\n\nWHY PROFIT NOT REVENUE\nA rep selling a $100K job at 5% margin should not earn the same commission as a rep selling a $100K job at 35% margin. Profit-based commission aligns the rep's incentive with the company's profitability: bigger discounts to win a deal directly reduce the rep's commission, so reps push for healthy margins.\n\nGENERATING STATEMENTS\n1. Go to Commissions page\n2. Each rep card shows Pipeline (revenue), Earned (paid), Pending, and Total Commission\n3. Click Generate Statement to create a PDF showing per-job Profit and Commission columns\n4. The statement is what reps see -- the Profit column lets them audit the math line by line\n5. Mark statement as Drafted/Sent/Approved as you finalize\n6. Export as PDF for rep records"},
     {id:"payment",cat:"Financial",title:"Payment Tracking & Reminders",icon:"alert",content:"PAYMENT TRACKING SOP\n\nPAYMENT STATUSES\n- Unpaid: Invoice sent, no payment received\n- Partial: Some payment received\n- Paid: Full payment received\n\nPAYMENT TERMS\n- Net 30: Payment due 30 days after invoice\n- Net 15: Payment due 15 days after invoice\n- Due Upon Receipt: Payment due immediately\n\nOVERDUE MANAGEMENT\n1. Dashboard shows overdue invoice alerts automatically\n2. Click Send Reminders to draft follow-up\n3. Log internal reminder notes in the job activity feed\n4. Escalate to phone call after second reminder\n\nBEST PRACTICES\n- Invoice immediately when items are received\n- Do not wait for full delivery to start invoicing\n- Track partial payments and update status promptly\n- Review overdue accounts weekly during busy season"},
     {id:"customer-mgmt",cat:"Operations",title:"Customer Relationship Management",icon:"users",content:"CUSTOMER MANAGEMENT SOP\n\n1. ADDING A NEW CUSTOMER: Go to Directory then Customers. Click Add Customer. Fill in name, contact person, email, phone, type (K-12, University, etc), and address.\n2. EDITING A CUSTOMER: Click Edit next to any customer row. Update fields and save.\n3. CUSTOMER 360 VIEW: Click any customer name (teal text) to see their full profile with lifetime spend, all jobs, vendor breakdown, delivery progress, and activity timeline.\n4. CUSTOMER TYPES: K-12 District, University, Government, Private, Non-Profit, Corporate, Other.\n\nBEST PRACTICES\n- Keep contact info current after each interaction\n- Use the Customer 360 view before sales calls to review history\n- Track all customer types accurately for reporting\n- Remove duplicate entries when found"},
     {id:"vendor-mgmt",cat:"Operations",title:"Vendor & Manufacturer Management",icon:"package",content:"VENDOR MANAGEMENT SOP\n160 MANUFACTURER PARTNERS across every furniture category and price point.\n\n1. ADDING A VENDOR: Go to Directory then Vendors. Click Add Vendor. Enter name, contact, email, phone, category, address, and discount rate.\n2. DISCOUNT RATES: Set the dealer discount percentage for each vendor. This is used to calculate net cost from list price.\n3. CATEGORIES: Collaborative Tables, Classroom Furniture, Seating, Science Lab, Early Childhood, AV Equipment, Storage, Music, Cafeteria, Library, Office, Room Dividers, Technology.\n\nKEY VENDORS\n- Smith System: Collaborative and flexible learning\n- Haskell Education: Classroom furniture\n- National Public Seating: Seating and staging\n- KI: Education and office\n- MooreCo: Whiteboards and AV\n- Jonti-Craft: Early childhood\n- Bretford: Technology charging\n- Diversified Spaces: Science labs"},
@@ -1379,12 +1379,15 @@ function MidwestAIOSInner() {
           if (cancelled) return prev;
           const manualTxns = (prev || []).filter(s => s.cat === "ManualTxn").map(s => { try { return { id: s.id, ...JSON.parse(s.content) }; } catch { return null; } }).filter(Boolean);
           const existingPlaidIds = new Set(manualTxns.filter(mt => mt.plaidId).map(mt => mt.plaidId));
-          const existingHashes = new Set(manualTxns.map(mt => (mt.date || "") + "|" + (mt.amount || "") + "|" + (mt.description || "").slice(0, 12).toLowerCase()));
+          // Use shared _bankTxnHash for both build and candidate-check so manual entries
+          // (amount stored as string "125") and Plaid records (amount as number 125.00)
+          // collapse into the same key "...|125.00|...".
+          const existingHashes = new Set(manualTxns.map(mt => _bankTxnHash(mt)));
           const additions = [];
           let imported = 0;
           for (const t of txns) {
             if (t.transaction_id && existingPlaidIds.has(t.transaction_id)) continue;
-            const hash = (t.date || "") + "|" + String(Math.abs(t.amount || 0).toFixed(2)) + "|" + (t.name || t.merchant_name || "").slice(0, 12).toLowerCase();
+            const hash = _bankTxnHash({date: t.date, amount: t.amount, description: t.name || t.merchant_name || ''});
             if (existingHashes.has(hash)) continue;
             if (t.transaction_id) existingPlaidIds.add(t.transaction_id);
             existingHashes.add(hash);
@@ -1469,6 +1472,89 @@ function MidwestAIOSInner() {
   };
   const getJobPOStatus = jobId => { const items=getJobItems(jobId); if(!items.length) return "not_started"; return items.every(i=>i.qtyReceived>=i.qtyOrdered)?"complete":items.some(i=>i.qtyReceived>0)?"partial":"ordered"; };
   const getJobInvStatus = jobId => { const items=getJobItems(jobId); if(!items.length) return "not_started"; return items.every(i=>i.qtyInvoiced>=i.qtyOrdered)?"complete":items.some(i=>i.qtyInvoiced>0)?"partial":"not_started"; };
+
+  // Commission is paid on PROFIT (revenue - cost), NOT revenue. Single source of truth --
+  // every UI surface (Dashboard, Sales Portal, Commissions page, statement PDF, dashboard
+  // KPIs, Brain summaries, exports) routes through this. Profit clamped at >= 0 so a
+  // loss-making job does NOT generate a negative commission claim against the rep.
+  const _commissionFor = (jobId, rate) => {
+    const f = getJobFinancials(jobId);
+    const profit = (f.totalRevenue || 0) - (f.totalCost || 0);
+    return Math.max(0, profit) * (rate || 0);
+  };
+
+  // Banking transaction dedup key. Single source of truth used by every code path that
+  // either checks for or builds dedup keys for ManualTxn records:
+  //   1. Top-level auto-Plaid-sync (line ~1380)
+  //   2. FinancialsPage manual Plaid-sync handler (line ~10019)
+  //   3. Manual UI add via saveTxn (line ~9944)
+  //   4. Brain create_transaction tool (line ~6708)
+  // Format: date|amount-abs-to-2-decimals|description-first-12-chars-lowercase.
+  // Manual entries store amount as a string ("125"); Plaid pushes a number (125.00).
+  // Without identical normalization, a manual record at "125" and a Plaid record at
+  // 125.00 produce different hashes and bypass dedup. Math.abs(parseFloat).toFixed(2)
+  // normalizes both into the same key "125.00". The 12-char description prefix matches
+  // the prior Plaid implementation to avoid collapsing distinct same-day same-amount
+  // transactions (e.g., two separate Amazon purchases) into a single record.
+  const _bankTxnHash = (rec) => {
+    const date = String(rec?.date || '').trim();
+    const amt = Math.abs(parseFloat(rec?.amount) || 0).toFixed(2);
+    const desc = String(rec?.description || '').slice(0, 12).toLowerCase().trim();
+    return date + '|' + amt + '|' + desc;
+  };
+
+
+  // BANKING TRANSACTION DEDUP -- Single source of truth used by:
+  //   1. FinancialsPage manual "Add Entry" form (saveTxn)
+  //   2. Brain create_transaction tool (executeTool branch)
+  //   3. FinancialsPage Plaid sync (handlePlaidSync)
+  //   4. App-level silent Plaid auto-sync (1378+)
+  //
+  // Three key types:
+  //   - plaid:<plaidId>          -- Canonical Plaid identity. Use whenever present.
+  //   - acct:<date>|<amt>|<desc12>|<account>  -- Per-account hash (NEW, hardens against
+  //                                              two same-day same-amount same-merchant
+  //                                              transfers between different accounts).
+  //   - hash:<date>|<amt>|<desc12>            -- Legacy hash (date+amount+desc only).
+  //                                              Kept for backward compatibility with
+  //                                              records imported before per-account keys.
+  //
+  // Amount is always normalized to absolute value with 2 decimals to avoid sign and
+  // float-precision collisions ("123" vs "123.00" vs "-123").
+  const _normTxnAmt = (a) => { const n = Number(String(a||'').replace(/[^0-9.\-]/g,'')); return isFinite(n) ? String(Math.abs(n).toFixed(2)) : '0.00'; };
+  const _normTxnDesc = (d) => String(d||'').toLowerCase().trim().slice(0, 12);
+  const _buildTxnKeys = (t) => {
+    const keys = [];
+    if (t.plaidId) keys.push('plaid:' + t.plaidId);
+    const date = String(t.date || '');
+    const amt = _normTxnAmt(t.amount);
+    const desc = _normTxnDesc(t.description || t.name || t.merchant_name || '');
+    const acct = String(t.account || '');
+    if (date && amt !== '0.00') {
+      keys.push('hash:' + date + '|' + amt + '|' + desc);
+      if (acct) keys.push('acct:' + date + '|' + amt + '|' + desc + '|' + acct);
+    }
+    return keys;
+  };
+  // Build a Set of every existing transaction's dedup keys. Reads from current customSops
+  // state. Callers that need atomicity (e.g. inside setCustomSops updater) should pass the
+  // updater-provided prev array; otherwise pass the latest customSops.
+  const _buildExistingTxnKeys = (sopsArr) => {
+    const set = new Set();
+    (sopsArr || customSops || []).filter(s => s.cat === 'ManualTxn').forEach(s => {
+      try { const t = { id: s.id, ...JSON.parse(s.content) }; _buildTxnKeys(t).forEach(k => set.add(k)); } catch {}
+    });
+    return set;
+  };
+  // Test a candidate against an existing-keys Set. Mutates the set with the candidate's
+  // keys so subsequent candidates in the same batch also collide. Returns the matching
+  // key (truthy) on dup, or null if the candidate is new.
+  const _checkTxnDup = (candidate, keysSet) => {
+    const keys = _buildTxnKeys(candidate);
+    for (const k of keys) { if (keysSet.has(k)) return k; }
+    keys.forEach(k => keysSet.add(k));
+    return null;
+  };
 
 
   // --- MUTATORS (update state + save to Supabase) ------------
@@ -1633,7 +1719,7 @@ function MidwestAIOSInner() {
 
   
   const visibleJobs = userRole === "sales" && userRepId ? jobs.filter(j => j.salesRep === userRepId) : jobs;
-  const ctx = {jobs:visibleJobs,allJobs:jobs,setJobs,jobNum,currentUser,userRole,userRepId,logout,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,forceDeleteVendor,forceDeleteLineItem,forceDeleteCustomer,forceDeleteRep,db,lineItemShipTos,setLineItemShipTo,setPage:p=>{setPage(p);setMobileMenuOpen(false);window.scrollTo(0,0);const mc=document.querySelector('.main-content');if(mc)mc.scrollTop=0},viewCustomer:id=>{setPage("customer360");window._viewCustId=id;window.scrollTo(0,0)},brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter,pendingCommPreview,setPendingCommPreview,pendingBrainFile,setPendingBrainFile,pendingBrainEmail,setPendingBrainEmail};
+  const ctx = {jobs:visibleJobs,allJobs:jobs,setJobs,jobNum,currentUser,userRole,userRepId,logout,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,_commissionFor,_bankTxnHash,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,forceDeleteVendor,forceDeleteLineItem,forceDeleteCustomer,forceDeleteRep,db,lineItemShipTos,setLineItemShipTo,setPage:p=>{setPage(p);setMobileMenuOpen(false);window.scrollTo(0,0);const mc=document.querySelector('.main-content');if(mc)mc.scrollTop=0},viewCustomer:id=>{setPage("customer360");window._viewCustId=id;window.scrollTo(0,0)},brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter,pendingCommPreview,setPendingCommPreview,pendingBrainFile,setPendingBrainFile,pendingBrainEmail,setPendingBrainEmail};
 
 
   const loadingScreen = (
@@ -1978,8 +2064,8 @@ function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJo
   const pendingCount=fLineItems.filter(i=>i.qtyReceived<i.qtyOrdered).length;
   const overdueInvJobs=filtered.filter(j=>{if(j.paymentStatus==="paid")return false;const jItems=getJobItems(j.id);const hasInv=jItems.some(i=>i.qtyInvoiced>0);if(!hasInv)return false;const terms2=j.terms||"Net 30";const days=terms2.includes("15")?15:terms2.includes("Receipt")?0:30;const created=new Date(j.createdDate);const due=new Date(created);due.setDate(due.getDate()+days);return new Date()>due});
   const overdueTotal=overdueInvJobs.reduce((s,j)=>s+getJobItems(j.id).reduce((s2,i)=>s2+i.unitPrice*i.qtyInvoiced,0),0);
-  const commEarned=reps.filter(r=>!r.id.includes("SEED_FLAG")&&isSalesRep(r)).reduce((s,r)=>{const paid=jobs.filter(j=>j.salesRep===r.id&&j.paymentStatus==="paid");return s+paid.reduce((s2,j)=>s2+getJobFinancials(j.id).totalRevenue*(r.commissionRate||0),0)},0);
-  const commPending=reps.filter(r=>!r.id.includes("SEED_FLAG")&&isSalesRep(r)).reduce((s,r)=>{const unpaid=jobs.filter(j=>j.salesRep===r.id&&j.paymentStatus!=="paid");return s+unpaid.reduce((s2,j)=>s2+getJobFinancials(j.id).totalRevenue*(r.commissionRate||0),0)},0);
+  const commEarned=reps.filter(r=>!r.id.includes("SEED_FLAG")&&isSalesRep(r)).reduce((s,r)=>{const paid=jobs.filter(j=>j.salesRep===r.id&&j.paymentStatus==="paid");return s+paid.reduce((s2,j)=>s2+_commissionFor(j.id,r.commissionRate||0),0)},0);
+  const commPending=reps.filter(r=>!r.id.includes("SEED_FLAG")&&isSalesRep(r)).reduce((s,r)=>{const unpaid=jobs.filter(j=>j.salesRep===r.id&&j.paymentStatus!=="paid");return s+unpaid.reduce((s2,j)=>s2+_commissionFor(j.id,r.commissionRate||0),0)},0);
   const cs=s=>({padding:"4px 10px",borderRadius:6,border:"1px solid #1a1a1a",background:"#0a0a0a",color:"#737373",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.2s",display:"flex",alignItems:"center",gap:4});
   const hoverCard=e=>{e.currentTarget.style.borderColor="rgba(45,212,191,0.2)";e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow="0 8px 32px rgba(0,0,0,0.3)"};
   const unhoverCard=e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.06)";e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="none"};
@@ -2028,7 +2114,7 @@ function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJo
         <div style={{display:"flex",flexDirection:"column",gap:8}}>{filtered.filter(j=>j.phase!=='Complete').sort((a,b)=>getJobFinancials(b.id).totalRevenue-getJobFinancials(a.id).totalRevenue).slice(0,10).map(job=>{const f=getJobFinancials(job.id);return <div key={job.id} onClick={()=>{setSelectedJob(job.id);setPage("jobs")}} style={{padding:"10px 12px",background:"#000",borderRadius:10,cursor:"pointer",transition:"all 0.2s",border:"1px solid rgba(255,255,255,0.04)"}} onMouseEnter={e=>{e.currentTarget.style.background="#0a0a0a";e.currentTarget.style.borderColor="rgba(45,212,191,0.15)";e.currentTarget.style.transform="translateY(-1px)"}} onMouseLeave={e=>{e.currentTarget.style.background="#000";e.currentTarget.style.borderColor="rgba(255,255,255,0.04)";e.currentTarget.style.transform="translateY(0)"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}><span style={{fontSize:14,fontWeight:600,color:"#f0f0f0"}}><span style={{fontFamily:"'JetBrains Mono',monospace",color:"#737373",fontSize:11,marginRight:6}}>{jobNum(job.id)}</span>{job.name}</span><Badge label={job.phase} color={statusColor(job.phase)}/></div><Bar value={f.totalReceived} max={f.totalOrdered||1} color={statusColor(job.phase)} height={5}/><div style={{display:"flex",justifyContent:"space-between",marginTop:4}}><span style={{fontSize:12,color:"#a3a3a3"}}>{fmtN(f.totalReceived)}/{fmtN(f.totalOrdered)} units</span><span style={{fontSize:13,fontWeight:700,color:"#e5e5e5",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(f.totalRevenue)}</span></div></div>})}</div>
       </Card>
       <Card style={{padding:16}} hover><div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:14,fontFamily:"'JetBrains Mono',monospace"}}>Team Leaderboard</div>
-        {[...reps].filter(r=>!r.id.includes("SEED_FLAG")).sort((a,b)=>{const ar=jobs.filter(j=>j.salesRep===b.id).reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const br=jobs.filter(j=>j.salesRep===a.id).reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);return ar-br}).map((r,i)=>{const rv=jobs.filter(j=>j.salesRep===r.id).reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const jc=jobs.filter(j=>j.salesRep===r.id).length;const comm=rv*(r.commissionRate||0);return <div key={r.id} style={{padding:"10px 0",borderBottom:"1px solid #111",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.background="#0a0a0a"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}><div style={{display:"flex",alignItems:"center",gap:10}}><div style={{width:30,height:30,borderRadius:"50%",background:["#2dd4bf","#a78bfa","#fbbf24","#34d399","#f87171","#8b5cf6"][i%6]+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,color:["#2dd4bf","#a78bfa","#fbbf24","#34d399","#f87171","#8b5cf6"][i%6],fontWeight:800,fontFamily:"'JetBrains Mono',monospace"}}>{i+1}</div><div style={{flex:1}}><div style={{fontSize:14,fontWeight:600,color:"#f0f0f0"}}>{r.name}</div><div style={{fontSize:12,color:"#a3a3a3"}}>{r.territory||""} - {jc} job{jc!==1?"s":""} - {((r.commissionRate||0)*100).toFixed(1)}%</div></div><div style={{textAlign:"right"}}><div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(rv)}</div><div style={{fontSize:11,color:"#737373"}}>comm: {fmt(comm)}</div></div></div></div>})}
+        {[...reps].filter(r=>!r.id.includes("SEED_FLAG")).sort((a,b)=>{const ar=jobs.filter(j=>j.salesRep===b.id).reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const br=jobs.filter(j=>j.salesRep===a.id).reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);return ar-br}).map((r,i)=>{const rv=jobs.filter(j=>j.salesRep===r.id).reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const jc=jobs.filter(j=>j.salesRep===r.id).length;const comm=jobs.filter(j=>j.salesRep===r.id).reduce((s,j)=>s+_commissionFor(j.id,r.commissionRate||0),0);return <div key={r.id} style={{padding:"10px 0",borderBottom:"1px solid #111",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.background="#0a0a0a"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}><div style={{display:"flex",alignItems:"center",gap:10}}><div style={{width:30,height:30,borderRadius:"50%",background:["#2dd4bf","#a78bfa","#fbbf24","#34d399","#f87171","#8b5cf6"][i%6]+"18",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,color:["#2dd4bf","#a78bfa","#fbbf24","#34d399","#f87171","#8b5cf6"][i%6],fontWeight:800,fontFamily:"'JetBrains Mono',monospace"}}>{i+1}</div><div style={{flex:1}}><div style={{fontSize:14,fontWeight:600,color:"#f0f0f0"}}>{r.name}</div><div style={{fontSize:12,color:"#a3a3a3"}}>{r.territory||""} - {jc} job{jc!==1?"s":""} - {((r.commissionRate||0)*100).toFixed(1)}%</div></div><div style={{textAlign:"right"}}><div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(rv)}</div><div style={{fontSize:11,color:"#737373"}}>comm: {fmt(comm)}</div></div></div></div>})}
       </Card>
     </div>
 
@@ -2085,7 +2171,7 @@ function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJo
           <div style={{padding:14,background:"#000",borderRadius:10,textAlign:"center"}}><div style={{fontSize:22,fontWeight:800,color:"#34d399",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(commEarned)}</div><div style={{fontSize:12,color:"#a3a3a3"}}>Earned</div></div>
           <div style={{padding:14,background:"#000",borderRadius:10,textAlign:"center"}}><div style={{fontSize:22,fontWeight:800,color:"#fbbf24",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(commPending)}</div><div style={{fontSize:12,color:"#a3a3a3"}}>Pending</div></div>
         </div>
-        <div style={{display:"flex",flexDirection:"column",gap:6}}>{reps.filter(r=>!r.id.includes("SEED_FLAG")&&isSalesRep(r)).map(r=>{const rv=jobs.filter(j=>j.salesRep===r.id).reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const jc=jobs.filter(j=>j.salesRep===r.id).length;const earned=jobs.filter(j=>j.salesRep===r.id&&j.paymentStatus==="paid").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue*(r.commissionRate||0),0);const pending=jobs.filter(j=>j.salesRep===r.id&&j.paymentStatus!=="paid").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue*(r.commissionRate||0),0);return <div key={r.id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 0",borderBottom:"1px solid #111"}}><span style={{fontSize:13,color:"#e5e5e5",flex:1,fontWeight:500}}>{r.name}</span><span style={{fontSize:12,color:"#737373"}}>{jc} job{jc!==1?"s":""}</span><span style={{fontSize:12,fontWeight:700,color:"#34d399",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(earned)}</span>{pending>0&&<span style={{fontSize:11,color:"#fbbf24"}}>{fmt(pending)} pending</span>}</div>})}</div>
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>{reps.filter(r=>!r.id.includes("SEED_FLAG")&&isSalesRep(r)).map(r=>{const rv=jobs.filter(j=>j.salesRep===r.id).reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const jc=jobs.filter(j=>j.salesRep===r.id).length;const earned=jobs.filter(j=>j.salesRep===r.id&&j.paymentStatus==="paid").reduce((s,j)=>s+_commissionFor(j.id,r.commissionRate||0),0);const pending=jobs.filter(j=>j.salesRep===r.id&&j.paymentStatus!=="paid").reduce((s,j)=>s+_commissionFor(j.id,r.commissionRate||0),0);return <div key={r.id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 0",borderBottom:"1px solid #111"}}><span style={{fontSize:13,color:"#e5e5e5",flex:1,fontWeight:500}}>{r.name}</span><span style={{fontSize:12,color:"#737373"}}>{jc} job{jc!==1?"s":""}</span><span style={{fontSize:12,fontWeight:700,color:"#34d399",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(earned)}</span>{pending>0&&<span style={{fontSize:11,color:"#fbbf24"}}>{fmt(pending)} pending</span>}</div>})}</div>
       </Card>
     </div>
 
@@ -2608,7 +2694,7 @@ function QuoteColToggle({job, updateJob}){
 }
 function JobDetail({job,ctx}){
   if(!job||!ctx)return <div style={{padding:40,textAlign:"center",color:"#f87171"}}>Missing job data. <button onClick={()=>ctx?.setSelectedJob?.(null)} style={{color:"#2dd4bf",background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",textDecoration:"underline"}}>Back to jobs</button></div>;
-  const {getJobFinancials,getJobItems,getItemStatus,vendors,customers,reps,updateJob,addJob,addLineItem,updateLineItem,deleteLineItem,deleteJob,setSelectedJob,notify,lineItems,jobs,triggerPrint,updateVendor,lineItemShipTos,setLineItemShipTo}=ctx;
+  const {getJobFinancials,getJobItems,getItemStatus,vendors,customers,reps,updateJob,addJob,addLineItem,updateLineItem,deleteLineItem,deleteJob,setSelectedJob,notify,lineItems,jobs,triggerPrint,updateVendor,lineItemShipTos,setLineItemShipTo,_commissionFor}=ctx;
   // Line-item ship-to fallback: read prefers a value from the sops-backed lineItemShipTos
   // store, falling back to the column value on the line item. Writes go to BOTH the store
   // (sops, reliable) AND updateLineItem (forward-compat for when the supabase.js write path
@@ -2815,7 +2901,7 @@ function JobDetail({job,ctx}){
       <Card style={{padding:14,textAlign:"center"}}><div style={{fontSize:12,color:"#a3a3a3",marginBottom:4}}>Cost</div><div style={{fontSize:18,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:"#e5e5e5"}}>{fmt(f.totalCost)}</div></Card>
       <Card style={{padding:14,textAlign:"center"}}><div style={{fontSize:12,color:"#a3a3a3",marginBottom:4}}>Margin</div><div style={{fontSize:18,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:"#34d399"}}>{pct(f.margin)}</div></Card>
       <Card style={{padding:14,textAlign:"center"}}><div style={{fontSize:12,color:"#a3a3a3",marginBottom:4}}>Line Items</div><div style={{fontSize:18,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:"#e5e5e5"}}>{f.itemCount}</div></Card>
-      <Card style={{padding:14,textAlign:"center"}}><div style={{fontSize:12,color:"#a3a3a3",marginBottom:4}}>Commission</div><div style={{fontSize:18,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:"#2dd4bf"}}>{fmt(f.totalRevenue*(rep?.commissionRate||0))}</div></Card>
+      <Card style={{padding:14,textAlign:"center"}}><div style={{fontSize:12,color:"#a3a3a3",marginBottom:4}}>Commission</div><div style={{fontSize:18,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:"#2dd4bf"}}>{fmt(_commissionFor(job.id,rep?.commissionRate||0))}</div></Card>
     </div>
     {/* Vendor Credits & Adjustments. Only renders when this job has any standalone
         credits or bills attached. Created from Documents > Vendor Bills tab via
@@ -3196,7 +3282,7 @@ function DeliveryPage({jobs,lineItems,vendors,customers,reps,userRole,userRepId,
 // ===============================================================
 // DOCUMENTS -- Quotes, POs, Invoices, Commission Statements
 // ===============================================================
-function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItems,getJobFinancials,updateJob,updateLineItem,notify,setPage,triggerPrint,pendingCommPreview,setPendingCommPreview,customSops,addSop,deleteSop,lineItemShipTos,setLineItemShipTo,...ctx}){
+function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItems,getJobFinancials,_commissionFor,updateJob,updateLineItem,notify,setPage,triggerPrint,pendingCommPreview,setPendingCommPreview,customSops,addSop,deleteSop,lineItemShipTos,setLineItemShipTo,...ctx}){
   const [tab,setTab]=useState("quotes");
   const [hiddenCols,setHiddenCols]=useState({netCost:true,netTotal:true,shippingEach:true,shippingTotal:true,installEach:true,installTotal:true});
   const [previewDoc,setPreviewDoc]=useState(null);
@@ -3488,10 +3574,12 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
       html=mwHdr+'<div style="text-align:'+(forEmail?'left':'center')+';margin:12px 0 20px"><div style="font-size:12px;color:#666">Designing Spaces | Building Futures | WBE Certified Enterprise</div></div><div style="display:flex;justify-content:space-between;gap:16px;margin-bottom:16px"><div style="flex:1;min-width:0"><div style="font-weight:700;font-size:12px;text-transform:uppercase;margin-bottom:4px">PREPARED FOR</div><div style="font-size:13px;line-height:1.6">'+fmtAddrHtml(job.billTo||customer2.name||'',customer2.address||'',customer2.contact||'')+'</div></div><div style="flex:1;min-width:0"><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:6px">SHIP TO</div><div style="font-size:13px;line-height:1.6">'+fmtShipHtml(job.shipTo,customer2.name||'',customer2.address||'',customer2.contact||'')+'</div></div><div style="text-align:right;flex-shrink:0;max-width:220px"><div style="font-size:22px;font-weight:700;margin-bottom:4px">QUOTE</div><div style="font-size:13px">'+(doc.data.docNum||'')+'</div><div style="font-size:13px;margin-top:4px">Date: '+todayStr+'</div><div style="font-size:11px;word-wrap:break-word">Project: '+(projectNum?.(job.id)||'')+ ' '+job.name+'</div>'+(job.poNumber?'<div style="font-size:13px">PO#: '+job.poNumber+'</div>':'')+'</div></div><table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:16px"><thead><tr style="border-bottom:2px solid #222">'+qH+'</tr></thead><tbody>'+qR+'</tbody></table><div style="margin-top:16px;text-align:right;font-size:16px;font-weight:700">TOTAL: '+fmt(total)+'</div>'+(job.shipVia?'<div style="margin-top:8px;font-size:12px;color:#666"><strong>Ship Via:</strong> '+job.shipVia+'</div>':'')+'<div style="margin-top:24px;padding:16px;background:#f9f8f6;border-radius:8px;font-size:12px;color:#666"><strong>Terms:</strong> Quote valid for 30 days. Prices subject to manufacturer availability.</div>';
     }catch(e){console.error('Quote PDF error:',e);html='<div style="padding:40px;text-align:center;color:#c00">Quote rendering error: '+e.message+'</div>'}} else {
       const rep=doc.data.rep||{};const commJobs=jobs.filter(j=>j.salesRep===rep.id);
-      const paidRev=commJobs.filter(j=>j.paymentStatus==="paid").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
-      const paidComm=paidRev*rep.commissionRate;const unpaidComm=total-paidComm;
-      const rows=commJobs.map(j=>{const f=getJobFinancials(j.id);const cust=customers.find(c=>c.id===j.customer);const isPaid=j.paymentStatus==="paid";const comm=f.totalRevenue*(rep.commissionRate||0);return '<tr><td style="padding:10px 8px;border-bottom:1px solid #eee">'+(j.name||'')+'</td><td style="padding:10px 8px;border-bottom:1px solid #eee">'+(cust?.name||'')+'</td><td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right">'+fmt(f.totalRevenue)+'</td><td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:center;color:'+(isPaid?'#059669':'#d97706')+'">'+(isPaid?'PAID':'PENDING')+'</td><td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right;font-weight:600">'+fmt(comm)+'</td></tr>'}).join('');
-      html=mwHdr+'<div style="font-size:24px;font-weight:300;color:#888;letter-spacing:1;margin:24px 0 20px">Commission Statement</div><div style="display:flex;justify-content:space-between;margin-bottom:24px"><div><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:6px">SALES REP</div><div style="font-size:16px;font-weight:700">'+(rep.name||'')+'</div><div style="font-size:13px;color:#888">'+(rep.territory||'')+'</div><div style="font-size:13px;color:#888">Rate: '+(rep.commissionRate?((rep.commissionRate*100).toFixed(1)):'0')+'%</div></div><div style="text-align:right"><div style="font-size:12px;color:#888">Date: '+todayStr+'</div><div style="font-size:12px;color:#888">Period: Current</div>'+(doc.data.docNum?'<div style="font-size:12px;color:#888">Ref: '+doc.data.docNum+'</div>':'')+'</div></div><div style="display:flex;gap:24px;margin-bottom:24px"><div style="flex:1;padding:12px;background:#fafafa;border-radius:8px;text-align:center"><div style="font-size:11px;color:#888;text-transform:uppercase">Earned (Paid)</div><div style="font-size:18px;font-weight:700;color:#059669">'+fmt(paidComm)+'</div></div><div style="flex:1;padding:12px;background:#fafafa;border-radius:8px;text-align:center"><div style="font-size:11px;color:#888;text-transform:uppercase">Pending</div><div style="font-size:18px;font-weight:700;color:#d97706">'+fmt(unpaidComm)+'</div></div><div style="flex:1;padding:12px;background:#fafafa;border-radius:8px;text-align:center"><div style="font-size:11px;color:#888;text-transform:uppercase">Total Commission</div><div style="font-size:18px;font-weight:700">'+fmt(total)+'</div></div></div><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="border-bottom:2px solid #e5e5e5"><th style="text-align:left;padding:8px;font-size:10px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:0.5px">Job</th><th style="text-align:left;padding:8px;font-size:10px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:0.5px">Customer</th><th style="text-align:right;padding:8px;font-size:10px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:0.5px">Revenue</th><th style="text-align:center;padding:8px;font-size:10px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:0.5px">Status</th><th style="text-align:right;padding:8px;font-size:10px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:0.5px">Commission</th></tr></thead><tbody>'+rows+'</tbody></table><div style="margin-top:16px;text-align:right;border-top:2px solid #e5e5e5;padding-top:12px"><div style="font-size:18px;font-weight:700">TOTAL COMMISSION: '+fmt(total)+'</div></div>';
+      // Commission paid on PROFIT (revenue - cost), not revenue. Statement shows the
+      // Profit column instead of Revenue so the rep can audit the math line by line.
+      const paidProfit=commJobs.filter(j=>j.paymentStatus==="paid").reduce((s,j)=>{const f=getJobFinancials(j.id);return s+Math.max(0,(f.totalRevenue||0)-(f.totalCost||0))},0);
+      const paidComm=paidProfit*(rep.commissionRate||0);const unpaidComm=total-paidComm;
+      const rows=commJobs.map(j=>{const f=getJobFinancials(j.id);const cust=customers.find(c=>c.id===j.customer);const isPaid=j.paymentStatus==="paid";const profit=Math.max(0,(f.totalRevenue||0)-(f.totalCost||0));const comm=profit*(rep.commissionRate||0);return '<tr><td style="padding:10px 8px;border-bottom:1px solid #eee">'+(j.name||'')+'</td><td style="padding:10px 8px;border-bottom:1px solid #eee">'+(cust?.name||'')+'</td><td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right">'+fmt(profit)+'</td><td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:center;color:'+(isPaid?'#059669':'#d97706')+'">'+(isPaid?'PAID':'PENDING')+'</td><td style="padding:10px 8px;border-bottom:1px solid #eee;text-align:right;font-weight:600">'+fmt(comm)+'</td></tr>'}).join('');
+      html=mwHdr+'<div style="font-size:24px;font-weight:300;color:#888;letter-spacing:1;margin:24px 0 20px">Commission Statement</div><div style="display:flex;justify-content:space-between;margin-bottom:24px"><div><div style="font-size:10px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:6px">SALES REP</div><div style="font-size:16px;font-weight:700">'+(rep.name||'')+'</div><div style="font-size:13px;color:#888">'+(rep.territory||'')+'</div><div style="font-size:13px;color:#888">Rate: '+(rep.commissionRate?((rep.commissionRate*100).toFixed(1)):'0')+'% of job profit</div></div><div style="text-align:right"><div style="font-size:12px;color:#888">Date: '+todayStr+'</div><div style="font-size:12px;color:#888">Period: Current</div>'+(doc.data.docNum?'<div style="font-size:12px;color:#888">Ref: '+doc.data.docNum+'</div>':'')+'</div></div><div style="display:flex;gap:24px;margin-bottom:24px"><div style="flex:1;padding:12px;background:#fafafa;border-radius:8px;text-align:center"><div style="font-size:11px;color:#888;text-transform:uppercase">Earned (Paid)</div><div style="font-size:18px;font-weight:700;color:#059669">'+fmt(paidComm)+'</div></div><div style="flex:1;padding:12px;background:#fafafa;border-radius:8px;text-align:center"><div style="font-size:11px;color:#888;text-transform:uppercase">Pending</div><div style="font-size:18px;font-weight:700;color:#d97706">'+fmt(unpaidComm)+'</div></div><div style="flex:1;padding:12px;background:#fafafa;border-radius:8px;text-align:center"><div style="font-size:11px;color:#888;text-transform:uppercase">Total Commission</div><div style="font-size:18px;font-weight:700">'+fmt(total)+'</div></div></div><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="border-bottom:2px solid #e5e5e5"><th style="text-align:left;padding:8px;font-size:10px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:0.5px">Job</th><th style="text-align:left;padding:8px;font-size:10px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:0.5px">Customer</th><th style="text-align:right;padding:8px;font-size:10px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:0.5px">Profit</th><th style="text-align:center;padding:8px;font-size:10px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:0.5px">Status</th><th style="text-align:right;padding:8px;font-size:10px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:0.5px">Commission</th></tr></thead><tbody>'+rows+'</tbody></table><div style="margin-top:16px;text-align:right;border-top:2px solid #e5e5e5;padding-top:12px"><div style="font-size:18px;font-weight:700">TOTAL COMMISSION: '+fmt(total)+'</div></div>';
     }
     const docTitle=isPO?"Purchase Order":isInvoice?(isCreditMemo?"Credit Memo":isProforma?"Proforma Invoice":isAdvanceInvoice?"Advance Invoice":"Invoice"):isQuote?"Quote":"Commission Statement";
     return {html,docTitle,job};
@@ -4656,7 +4744,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
           <div style={{flex:1}}><div style={{fontSize:10,fontWeight:700,color:"#888",textTransform:"uppercase",letterSpacing:1.5,marginBottom:6}}>SALES REP</div><div style={{fontSize:16,fontWeight:700}}>{previewDoc.data.rep?.name||""}</div><div style={{fontSize:12,color:"#888"}}>{previewDoc.data.rep?.territory||""}</div><div style={{fontSize:12,color:"#888"}}>Rate: {previewDoc.data.rep?.commissionRate?((previewDoc.data.rep.commissionRate*100).toFixed(1)):0}%</div></div>
           <div style={{textAlign:"right"}}><div style={{fontSize:12,color:"#888"}}>Date: {new Date().toLocaleDateString()}</div>{previewDoc.data.docNum&&<div style={{fontSize:12,color:"#888"}}>Ref: {previewDoc.data.docNum}</div>}</div>
         </div>
-        {(()=>{const rep2=previewDoc.data.rep||{};const cJobs=jobs.filter(j=>j.salesRep===rep2.id);const pRev=cJobs.filter(j=>j.paymentStatus==="paid").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const pComm=pRev*(rep2.commissionRate||0);const uComm=(previewDoc.data.total||0)-pComm;return <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}><div style={{flex:"1 1 80px",padding:10,background:"#fafafa",borderRadius:8,textAlign:"center",minWidth:80}}><div style={{fontSize:11,color:"#888",textTransform:"uppercase"}}>Earned</div><div style={{fontSize:"clamp(14px,3vw,18px)",fontWeight:700,color:"#059669"}}>{fmt(pComm)}</div></div><div style={{flex:"1 1 80px",padding:10,background:"#fafafa",borderRadius:8,textAlign:"center",minWidth:80}}><div style={{fontSize:11,color:"#888",textTransform:"uppercase"}}>Pending</div><div style={{fontSize:"clamp(14px,3vw,18px)",fontWeight:700,color:"#d97706"}}>{fmt(uComm)}</div></div><div style={{flex:"1 1 80px",padding:10,background:"#fafafa",borderRadius:8,textAlign:"center",minWidth:80}}><div style={{fontSize:11,color:"#888",textTransform:"uppercase"}}>Total</div><div style={{fontSize:"clamp(14px,3vw,18px)",fontWeight:700}}>{fmt(previewDoc.data.total)}</div></div></div>})()}</>}
+        {(()=>{const rep2=previewDoc.data.rep||{};const cJobs=jobs.filter(j=>j.salesRep===rep2.id);const pComm=cJobs.filter(j=>j.paymentStatus==="paid").reduce((s,j)=>s+_commissionFor(j.id,rep2.commissionRate||0),0);const uComm=(previewDoc.data.total||0)-pComm;return <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}}><div style={{flex:"1 1 80px",padding:10,background:"#fafafa",borderRadius:8,textAlign:"center",minWidth:80}}><div style={{fontSize:11,color:"#888",textTransform:"uppercase"}}>Earned</div><div style={{fontSize:"clamp(14px,3vw,18px)",fontWeight:700,color:"#059669"}}>{fmt(pComm)}</div></div><div style={{flex:"1 1 80px",padding:10,background:"#fafafa",borderRadius:8,textAlign:"center",minWidth:80}}><div style={{fontSize:11,color:"#888",textTransform:"uppercase"}}>Pending</div><div style={{fontSize:"clamp(14px,3vw,18px)",fontWeight:700,color:"#d97706"}}>{fmt(uComm)}</div></div><div style={{flex:"1 1 80px",padding:10,background:"#fafafa",borderRadius:8,textAlign:"center",minWidth:80}}><div style={{fontSize:11,color:"#888",textTransform:"uppercase"}}>Total</div><div style={{fontSize:"clamp(14px,3vw,18px)",fontWeight:700}}>{fmt(previewDoc.data.total)}</div></div></div>})()}</>}
 
 
         <div style={{height:1,background:"#e5e5e5",marginBottom:20}}/>
@@ -4807,7 +4895,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
 // ===============================================================
 // COMMISSIONS -- Editable Reps + PDF Export
 // ===============================================================
-function CommissionsPage({jobs,reps,customers,updateRep,addRep,deleteRep,getJobFinancials,getJobItems,setJobs,db,customSops,addSop,notify,triggerPrint,setPage,onGenerateStatement}){
+function CommissionsPage({jobs,reps,customers,updateRep,addRep,deleteRep,getJobFinancials,getJobItems,_commissionFor,setJobs,db,customSops,addSop,notify,triggerPrint,setPage,onGenerateStatement}){
   const [editingRep,setEditingRep]=useState(null);
   const [editForm,setEditForm]=useState({});
   const [addingRep,setAddingRep]=useState(false);
@@ -4846,9 +4934,10 @@ function CommissionsPage({jobs,reps,customers,updateRep,addRep,deleteRep,getJobF
     <div>{reps.filter(r=>!r.id.includes("SEED_FLAG")&&isSalesRep(r)&&r.commissionRate>0).map(rep=>{
       const rj=jobs.filter(j=>j.salesRep===rep.id);
       const totalRev=rj.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
-      const comm=totalRev*rep.commissionRate;
+      const totalProfit=rj.reduce((s,j)=>{const f=getJobFinancials(j.id);return s+Math.max(0,(f.totalRevenue||0)-(f.totalCost||0))},0);
+      const comm=rj.reduce((s,j)=>s+_commissionFor(j.id,rep.commissionRate||0),0);
       const paidRev=rj.filter(j=>j.paymentStatus==="paid").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
-      const paidComm=paidRev*rep.commissionRate;
+      const paidComm=rj.filter(j=>j.paymentStatus==="paid").reduce((s,j)=>s+_commissionFor(j.id,rep.commissionRate||0),0);
       const unpaidComm=comm-paidComm;
       const docNum=stableNum('COMM-',rep.id,'stmt');
       const isEd=editingRep===rep.id;
@@ -4887,14 +4976,14 @@ function CommissionsPage({jobs,reps,customers,updateRep,addRep,deleteRep,getJobF
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:6,marginLeft:0,marginTop:8,minWidth:180}}>
             <Btn onClick={()=>{
-              const items=rj.map(j=>{const f=getJobFinancials(j.id);const isPaid=j.paymentStatus==="paid";return{description:j.name+' -- '+(customers.find(c=>c.id===j.customer)?.name||'')+' -- '+(isPaid?'PAID':'PENDING'),displayQty:1,displayPrice:f.totalRevenue*rep.commissionRate}});
+              const items=rj.map(j=>{const f=getJobFinancials(j.id);const isPaid=j.paymentStatus==="paid";return{description:j.name+' -- '+(customers.find(c=>c.id===j.customer)?.name||'')+' -- '+(isPaid?'PAID':'PENDING'),displayQty:1,displayPrice:_commissionFor(j.id,rep.commissionRate||0)}});
               if(onGenerateStatement){onGenerateStatement({type:"commission",data:{rep,items,total:comm,docNum},job:{id:'ALL',name:rep.name+' Commission Statement',notes:'Period: '+new Date().toLocaleDateString()+'\nEarned (paid jobs): '+fmt(paidComm)+'\nPending (unpaid jobs): '+fmt(unpaidComm)+'\nTotal commission: '+fmt(comm)}});setPage("documents")}
             }}><I n="file" s={14}/> Generate Statement</Btn>
             {rj.length>0&&<div style={{display:"flex",gap:4}}>{["drafted","sent","approved"].map(s=><button key={s} onClick={()=>setCommDocStatus(docNum,s)} style={{padding:"4px 10px",borderRadius:6,flex:1,textAlign:"center",border:"1px solid "+(docStatuses[docNum]===s?"#2dd4bf":"#444"),background:docStatuses[docNum]===s?"#2dd4bf15":"transparent",color:docStatuses[docNum]===s?"#2dd4bf":"#c4c4c4",fontSize:12,fontFamily:"inherit",cursor:"pointer"}}>{s}</button>)}</div>}
           </div>
         </div>
         {rj.length>0&&<div style={{marginTop:10}}><Bar value={paidRev} max={totalRev||1} color="#34d399" height={3}/></div>}
-        {rj.length>0&&<div style={{marginTop:8,fontSize:12,color:"#a3a3a3"}}><strong>Jobs:</strong> {rj.map(j=>{const isPaid=j.paymentStatus==="paid";return <span key={j.id} style={{marginRight:8}}><span style={{color:isPaid?"#34d399":"#fbbf24"}}>{isPaid?"*":"o"}</span> {j.name} ({fmt(getJobFinancials(j.id).totalRevenue*rep.commissionRate)})</span>})}</div>}
+        {rj.length>0&&<div style={{marginTop:8,fontSize:12,color:"#a3a3a3"}}><strong>Jobs:</strong> {rj.map(j=>{const isPaid=j.paymentStatus==="paid";return <span key={j.id} style={{marginRight:8}}><span style={{color:isPaid?"#34d399":"#fbbf24"}}>{isPaid?"*":"o"}</span> {j.name} ({fmt(_commissionFor(j.id,rep.commissionRate||0))})</span>})}</div>}
         </>}
       </Card>;
     })}
@@ -4907,7 +4996,7 @@ function CommissionsPage({jobs,reps,customers,updateRep,addRep,deleteRep,getJobF
 // ===============================================================
 // SALES PORTAL
 // ===============================================================
-function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobItems,vendors,setPage,setSelectedJob,updateJob,notify,addSop,deleteSop,customSops,triggerPrint,jobNum,userRole,userRepId}){
+function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobItems,_commissionFor,vendors,setPage,setSelectedJob,updateJob,notify,addSop,deleteSop,customSops,triggerPrint,jobNum,userRole,userRepId}){
   // Sales-role users only ever see their own tab. Default activeRep to their
   // rep id so they land directly on their own portal instead of the global Overview.
   const isSalesRole=userRole==="sales"&&!!userRepId;
@@ -4978,7 +5067,7 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
         {kpi("Active",activeJobs.length,"#a78bfa")}
         {kpi("Quoting",quotingJobs.length,"#8b5cf6")}
         {kpi("Win Rate",winRate+"%",winRate>=70?"#34d399":"#fbbf24")}
-        {!isOverview&&commRate>0&&kpi("Commission",fmt(totalRev*commRate),"#fbbf24")}
+        {!isOverview&&commRate>0&&kpi("Commission",fmt(rj.reduce((s,j)=>s+_commissionFor(j.id,commRate),0)),"#fbbf24")}
       </div>
     </Card>
 
@@ -5037,7 +5126,7 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
         the Team tab button is filtered out for them above. */}
     {crmTab==="team"&&!repDetail&&!isSalesRole&&<Card>
       <div style={{fontSize:15,fontWeight:700,color:"#f0f0f0",marginBottom:14}}>Team Directory</div>
-      {reps.filter(r=>!r.id.includes("SEED_FLAG")&&isSalesRep(r)).map(r=>{const rJobs=jobs.filter(j=>j.salesRep===r.id);const rv=rJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const pRev=rJobs.filter(j=>j.paymentStatus==="paid").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const comm=rv*(r.commissionRate||0);const costTotal=rJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalCost,0);const margin=rv>0?(1-costTotal/rv)*100:0;return <div key={r.id} onClick={()=>setRepDetail(r)} className="hover-lift" style={{display:"flex",alignItems:"center",gap:14,padding:"16px",background:"#0a0a0a",borderRadius:12,marginBottom:10,cursor:"pointer",border:"1px solid rgba(255,255,255,0.04)",transition:"all 0.2s"}}>
+      {reps.filter(r=>!r.id.includes("SEED_FLAG")&&isSalesRep(r)).map(r=>{const rJobs=jobs.filter(j=>j.salesRep===r.id);const rv=rJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const pRev=rJobs.filter(j=>j.paymentStatus==="paid").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const comm=rJobs.reduce((s,j)=>s+_commissionFor(j.id,r.commissionRate||0),0);const costTotal=rJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalCost,0);const margin=rv>0?(1-costTotal/rv)*100:0;return <div key={r.id} onClick={()=>setRepDetail(r)} className="hover-lift" style={{display:"flex",alignItems:"center",gap:14,padding:"16px",background:"#0a0a0a",borderRadius:12,marginBottom:10,cursor:"pointer",border:"1px solid rgba(255,255,255,0.04)",transition:"all 0.2s"}}>
         <div style={{width:48,height:48,borderRadius:12,background:"linear-gradient(135deg,rgba(45,212,191,0.12),rgba(167,139,250,0.12))",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontWeight:800,color:"#2dd4bf",flexShrink:0}}>{r.name.split(" ").map(n=>n[0]).join("")}</div>
         <div style={{flex:1,minWidth:0}}><div style={{fontSize:15,fontWeight:600,color:"#f0f0f0"}}>{r.name}</div><div style={{fontSize:12,color:"#9a9a9a"}}>{r.territory} -- {r.tier} -- {rJobs.length} jobs</div></div>
         <div style={{display:"flex",gap:14,flexWrap:"wrap",flexShrink:0}}>
@@ -5056,7 +5145,7 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
       const costTotal=rJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalCost,0);
       const margin=rv>0?(1-costTotal/rv)*100:0;
       const pRev=rJobs.filter(j=>j.paymentStatus==="paid").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
-      const comm=rv*(r.commissionRate||0);const earnedComm=pRev*(r.commissionRate||0);
+      const comm=rJobs.reduce((s,j)=>s+_commissionFor(j.id,r.commissionRate||0),0);const earnedComm=rJobs.filter(j=>j.paymentStatus==="paid").reduce((s,j)=>s+_commissionFor(j.id,r.commissionRate||0),0);
       const custBreak={};rJobs.forEach(j=>{const c=customers.find(c=>c.id===j.customer);if(c)custBreak[c.name]=(custBreak[c.name]||0)+getJobFinancials(j.id).totalRevenue});
       const topCusts=Object.entries(custBreak).sort((a,b)=>b[1]-a[1]).slice(0,5);
       const activities=rJobs.flatMap(j=>(j.auditTrail||[]).map(a=>({...a,jobName:(jobNum?.(j.id)||"")+" "+j.name}))).sort((a,b)=>new Date(b.time)-new Date(a.time)).slice(0,15);
@@ -6560,7 +6649,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
           totalRev2+=f.totalRevenue;totalCost2+=f.totalCost;
           totalShip+=items.reduce((s,i)=>(s+(i.shippingPerUnit||0)*i.qtyOrdered),0);
           totalInstall+=items.reduce((s,i)=>(s+(i.installPerUnit||0)*i.qtyOrdered),0);
-          const rep2=reps.find(r=>r.id===j.salesRep);totalComm+=f.totalRevenue*(rep2?.commissionRate||0);
+          const rep2=reps.find(r=>r.id===j.salesRep);totalComm+=_commissionFor(j.id,rep2?.commissionRate||0);
           if(input.include_vendor_breakdown)items.forEach(i=>{const v=vendors.find(v2=>v2.id===i.vendor);const vn=v?.name||'Unknown';vendorSpend[vn]=(vendorSpend[vn]||0)+i.unitCost*i.qtyOrdered});
         });
         const margin=totalRev2>0?((totalRev2-totalCost2)/totalRev2*100):0;
@@ -6645,6 +6734,16 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         const txnCat=input.category||(txnType==='revenue'?'Revenue - Product Sales':'Uncategorized');
         const txnAcct=input.account||'Operating';
         const txnAmt=String(Math.abs(Number(input.amount)||0));
+        // Dedup against current ManualTxn store. Same shared _bankTxnHash that
+        // the manual UI add and Plaid sync use. Brain can't bypass dedup -- if
+        // it's told twice or asked to create a row that already exists from
+        // Plaid sync, the duplicate is rejected with a clear message so Claude
+        // can explain to the user.
+        const _txnsNow=(customSops||[]).filter(s=>s.cat==='ManualTxn').map(s=>{try{return JSON.parse(s.content)}catch{return null}}).filter(Boolean);
+        const _candHash=_bankTxnHash({date:txnDate,amount:txnAmt,description:input.description||''});
+        if(Math.abs(Number(input.amount)||0)>0&&_txnsNow.some(t=>_bankTxnHash(t)===_candHash)){
+          return{error:'Duplicate transaction -- a record with the same date, amount, and description already exists. Use categorize_transaction to update the existing record instead, or change the date / amount / description if this is genuinely a separate transaction.'};
+        }
         const id='TXN-'+Date.now()+'-'+Math.random().toString(36).slice(2,6);
         addSop({id,title:input.description||'Transaction',cat:'ManualTxn',icon:'dollar',content:JSON.stringify({date:txnDate,description:input.description||'',category:txnCat,amount:txnAmt,type:txnType,account:txnAcct}),custom:true});
         return{success:true,message:'Created '+txnType+': $'+Number(txnAmt).toFixed(2)+' -- "'+input.description+'" ['+txnCat+'] on '+txnDate+' ('+txnAcct+' account)'};
@@ -9415,7 +9514,7 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
 }
 
 
-function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,getJobItems,notify,triggerPrint,dateFilter,jobNum,customSops,addSop,deleteSop,...fCtx}){
+function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,getJobItems,_commissionFor,_bankTxnHash,notify,triggerPrint,dateFilter,jobNum,customSops,addSop,deleteSop,...fCtx}){
   const [tab,setTab]=useState("overview");
   const now=new Date();
   const [period,setPeriod]=useState("ytd");
@@ -9536,7 +9635,8 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   const paidRev=filteredJobs.filter(j=>j.paymentStatus==="paid").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
   const partialRev=filteredJobs.filter(j=>j.paymentStatus==="partial").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
   const unpaidRev=filteredJobs.filter(j=>j.paymentStatus==="unpaid"||!j.paymentStatus).reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
-  const totalComm=reps.filter(r=>!r.id.includes("SEED_FLAG")).reduce((s,r)=>{const rv=filteredJobs.filter(j=>j.salesRep===r.id).reduce((s2,j)=>s2+getJobFinancials(j.id).totalRevenue,0);return s+rv*(r.commissionRate||0)},0);
+  // Commission is paid on PROFIT (revenue - cost), not revenue. Single source of truth via _commissionFor.
+  const totalComm=reps.filter(r=>!r.id.includes("SEED_FLAG")).reduce((s,r)=>{const rate=r.commissionRate||0;if(!rate)return s;return s+filteredJobs.filter(j=>j.salesRep===r.id).reduce((s2,j)=>s2+_commissionFor(j.id,rate),0)},0);
   const netIncome=grossProfit-totalComm;
   const arAging={current:0,t30:0,t60:0,t90:0,over90:0};
   filteredJobs.filter(j=>j.paymentStatus!=="paid").forEach(j=>{const f=getJobFinancials(j.id);const inv=j.dueDate?new Date(j.dueDate):new Date(j.createdDate||now);const days=Math.floor((now-inv)/86400000);if(days<=0)arAging.current+=f.totalRevenue;else if(days<=30)arAging.t30+=f.totalRevenue;else if(days<=60)arAging.t60+=f.totalRevenue;else if(days<=90)arAging.t90+=f.totalRevenue;else arAging.over90+=f.totalRevenue});
@@ -9875,6 +9975,25 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
         return (t.description||'').toLowerCase().includes(q)||(t.category||'').toLowerCase().includes(q)||(t.account||'').toLowerCase().includes(q)||(bankAcctMeta[t.account]?.nickname||'').toLowerCase().includes(q)||(t.amount||'').toString().includes(q);
       });
       const saveTxn=()=>{
+        // Dedup: only on NEW adds, not edits. In edit mode the user is updating an
+        // existing row and its hash will of course match itself (or a fresh-changed
+        // version of itself), so skipping the check is correct. For new entries,
+        // compare the candidate against the freshly-built hash set so the user can't
+        // double-click "Add" or re-enter the same row twice.
+        if(!manualEditing){
+          const candidateHash=_bankTxnHash(manualForm);
+          const candDateLen=String(manualForm.date||'').trim().length;
+          const candAmt=Math.abs(parseFloat(manualForm.amount)||0);
+          // Only enforce when the candidate actually has a date AND a nonzero amount.
+          // Empty/zero rows would all collide to the same key and become un-addable.
+          if(candDateLen>0&&candAmt>0){
+            const dupSet=new Set(manualTxns.map(mt=>_bankTxnHash(mt)));
+            if(dupSet.has(candidateHash)){
+              notify('Duplicate transaction -- same date, amount, and description already exists. Edit the existing entry instead, or change one of those fields.','error');
+              return;
+            }
+          }
+        }
         const id=manualEditing||'TXN-'+Date.now()+'-'+Math.random().toString(36).slice(2,6);
         addSop({id,title:manualForm.description||'Transaction',cat:'ManualTxn',icon:'dollar',content:JSON.stringify(manualForm),custom:true});
         notify(manualEditing?'Transaction updated':'Transaction added');
@@ -9947,15 +10066,19 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       };
 
 
-      // Plaid sync handler
-      // Build dedup set once: plaidIds + fallback hashes for all existing transactions
-      const existingPlaidIds=new Set(manualTxns.filter(mt=>mt.plaidId).map(mt=>mt.plaidId));
-      const existingHashes=new Set(manualTxns.map(mt=>(mt.date||'')+'|'+(mt.amount||'')+'|'+(mt.description||'').slice(0,12).toLowerCase()));
+      // Plaid sync handler. Dedup state is rebuilt FRESH inside handlePlaidSync below
+      // (not here at render scope) so back-to-back syncs always see the latest
+      // manualTxns, including any rows added by an earlier sync that hasn't yet
+      // round-tripped through React's render cycle. Uses shared _bankTxnHash so a manual
+      // entry stored as "125" and a Plaid record at 125.00 collapse into the same key.
 
 
       const handlePlaidSync=async(rangeOverride,silent)=>{
         if(!plaidAccessToken){if(!silent)notify('No access token. Reconnect bank.','error');return}
         setPlaidLoading(true);setPlaidSyncing(true);
+        // Rebuild dedup sets inline -- guarantees freshness against current manualTxns.
+        const existingPlaidIds=new Set(manualTxns.filter(mt=>mt.plaidId).map(mt=>mt.plaidId));
+        const existingHashes=new Set(manualTxns.map(mt=>_bankTxnHash(mt)));
         const range=rangeOverride||plaidSyncRange;
         const n=new Date();
         // Pad endDate to today + 2 days. Plaid sometimes reports pending or
@@ -9999,10 +10122,11 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
           txns.forEach(t=>{
             // Smart dedup: check Plaid transaction ID first
             if(t.transaction_id&&existingPlaidIds.has(t.transaction_id)){skipped++;return}
-            // Fallback dedup: stricter 12-char description prefix to avoid collapsing
-            // distinct same-day same-amount transactions (e.g., two separate Amazon
-            // purchases) into a single record.
-            const hash=(t.date||'')+'|'+String(Math.abs(t.amount||0).toFixed(2))+'|'+(t.name||t.merchant_name||'').slice(0,12).toLowerCase();
+            // Fallback dedup: shared _bankTxnHash so manual rows and Plaid pulls collapse
+            // to the same key when describing the same transaction. The 12-char description
+            // prefix avoids collapsing distinct same-day same-amount transactions (e.g.,
+            // two separate Amazon purchases).
+            const hash=_bankTxnHash({date:t.date,amount:t.amount,description:t.name||t.merchant_name||''});
             if(existingHashes.has(hash)){skipped++;return}
             // Mark as seen for this sync batch
             if(t.transaction_id)existingPlaidIds.add(t.transaction_id);
@@ -10353,7 +10477,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
           {title:"Job Margin Analysis",desc:"Revenue, cost, profit, and margin percentage for every job with color-coded health indicators",icon:"briefcase",fn:()=>generatePDF("margin")},
           {title:"Vendor Spend Report",desc:"Total spend by vendor with percentage of COGS, item counts, and discount rates",icon:"truck",fn:()=>{const csv="Vendor,Spend,% of COGS,Items,Discount\n"+vendorSpend.map(v=>v.name+","+v.spend.toFixed(2)+","+v.pct.toFixed(1)+"%,"+lineItems.filter(i=>i.vendor===vendors.find(v2=>v2.name===v.name)?.id).length+","+(vendors.find(v2=>v2.name===v.name)?.discountRate*100||0).toFixed(0)+"%").join("\n");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download="vendor-spend.csv";a.click();notify("Vendor spend exported")}},
           {title:"Customer Revenue Report",desc:"Revenue by customer with job counts and percentage of total revenue",icon:"users",fn:()=>{const csv="Customer,Revenue,Jobs,% of Total\n"+custRev.map(c=>c.name+","+c.revenue.toFixed(2)+","+c.jobs+","+c.pct.toFixed(1)+"%").join("\n");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download="customer-revenue.csv";a.click();notify("Customer revenue exported")}},
-          {title:"Commission Summary",desc:"Commission obligations by rep with earned vs pending breakdown",icon:"dollar",fn:()=>{const csv="Rep,Territory,Rate,Revenue,Commission,Earned,Pending\n"+reps.filter(r=>!r.id.includes("SEED_FLAG")&&r.commissionRate>0).map(r=>{const rv=filteredJobs.filter(j=>j.salesRep===r.id).reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const earned=filteredJobs.filter(j=>j.salesRep===r.id&&j.paymentStatus==="paid").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue*(r.commissionRate||0),0);return r.name+","+r.territory+","+(r.commissionRate*100).toFixed(1)+"%,"+rv.toFixed(2)+","+(rv*r.commissionRate).toFixed(2)+","+earned.toFixed(2)+","+(rv*r.commissionRate-earned).toFixed(2)}).join("\n");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download="commission-summary.csv";a.click();notify("Commission summary exported")}}
+          {title:"Commission Summary",desc:"Commission obligations by rep with earned vs pending breakdown (commission is paid on PROFIT, not revenue)",icon:"dollar",fn:()=>{const csv="Rep,Territory,Rate,Revenue,Profit,Commission,Earned,Pending\n"+reps.filter(r=>!r.id.includes("SEED_FLAG")&&r.commissionRate>0).map(r=>{const repJobs=filteredJobs.filter(j=>j.salesRep===r.id);const rv=repJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const profit=repJobs.reduce((s,j)=>{const f=getJobFinancials(j.id);return s+Math.max(0,(f.totalRevenue||0)-(f.totalCost||0))},0);const comm=repJobs.reduce((s,j)=>s+_commissionFor(j.id,r.commissionRate||0),0);const earned=repJobs.filter(j=>j.paymentStatus==="paid").reduce((s,j)=>s+_commissionFor(j.id,r.commissionRate||0),0);const pending=comm-earned;return r.name+","+r.territory+","+(r.commissionRate*100).toFixed(1)+"%,"+rv.toFixed(2)+","+profit.toFixed(2)+","+comm.toFixed(2)+","+earned.toFixed(2)+","+pending.toFixed(2)}).join("\n");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download="commission-summary.csv";a.click();notify("Commission summary exported")}}
         ].map(r=><Card key={r.title} style={{padding:16,cursor:"pointer",transition:"all 0.2s"}} hover onClick={r.fn}>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}><div style={{width:36,height:36,borderRadius:10,background:"#2dd4bf12",display:"flex",alignItems:"center",justifyContent:"center"}}><I n={r.icon} s={16} color="#2dd4bf"/></div><div style={{fontSize:14,fontWeight:700,color:"#f0f0f0"}}>{r.title}</div></div>
           <div style={{fontSize:12,color:"#a3a3a3",lineHeight:1.5}}>{r.desc}</div>
