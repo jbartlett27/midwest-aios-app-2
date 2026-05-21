@@ -5967,7 +5967,6 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     {name:"update_line_item",description:"Update a line item by ID or by job + description match. Can update price, cost, qty, description, color, model number, received qty, and more. Use when user says 'change the price on the desks to $300' or 'update the chair qty to 25'.",input_schema:{type:"object",properties:{item_id:{type:"string",description:"Line item ID (if known)"},job_id:{type:"string",description:"Job ID or name (used with item_description to find the item)"},item_description:{type:"string",description:"Keywords to match the line item (e.g. 'desk', 'apex chair', 'table dolly')"},updates:{type:"object",properties:{qtyOrdered:{type:"number"},qtyReceived:{type:"number"},unitPrice:{type:"number"},unitCost:{type:"number"},listPrice:{type:"number"},description:{type:"string"},color:{type:"string"},modelNumber:{type:"string"},manufacturer:{type:"string"},shippingPerUnit:{type:"number"},installPerUnit:{type:"number"},deliveryDate:{type:"string"}}}},required:["updates"]}},
     {name:"get_job_details",description:"Get full details of a job including ALL line items formatted as a table. Use when user says 'show me the Hopewell job', 'pull up job details', 'what line items are on this job', 'show me the line items'. Returns job info and a markdown table of all line items with prices, quantities, and status.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name keywords"}},required:["job_id"]}},
     {name:"bulk_edit_line_items",description:"Update multiple line items on a job at once. Use when user says 'change all prices by 10%', 'mark everything as received', 'update shipping on all items'. Can filter by description keywords and apply the same update to all matches.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name"},filter_description:{type:"string",description:"Optional keywords to filter which items to update (e.g. 'chair', 'KI'). Leave empty to update ALL items."},updates:{type:"object",properties:{qtyReceived:{type:"number"},unitPrice:{type:"number"},unitCost:{type:"number"},shippingPerUnit:{type:"number"},installPerUnit:{type:"number"},price_multiply:{type:"number",description:"Multiply current unitPrice by this factor (e.g. 1.10 for +10%)"},cost_multiply:{type:"number",description:"Multiply current unitCost by this factor"}}}},required:["job_id","updates"]}},
-    {name:"mark_items_received",description:"Mark ALL items on a job as fully received. Sets phase to Delivered.",input_schema:{type:"object",properties:{job_id:{type:"string"}},required:["job_id"]}},
     {name:"log_delivery",description:"Log a specific quantity received for a line item on a job. Use when user says 'log 25 desks received' or 'received 10 chairs on job X'. Finds the item by description keywords.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name"},item_description:{type:"string",description:"Keywords to match the line item description (e.g. 'desk', 'chair', 'table')"},quantity:{type:"number",description:"Number of units received"}},required:["job_id","item_description","quantity"]}},
     {name:"bulk_update_jobs",description:"Update multiple jobs at once based on a filter. Use for 'mark all Quoting jobs as Ordered' or 'set all delivered jobs to paid'.",input_schema:{type:"object",properties:{filter:{type:"object",description:"Filter criteria",properties:{phase:{type:"string",description:"Match jobs in this phase"},paymentStatus:{type:"string",description:"Match jobs with this payment status"},all_delivered:{type:"boolean",description:"Match jobs where all items are received"}}},updates:{type:"object",properties:{phase:{type:"string"},paymentStatus:{type:"string"},notes:{type:"string"}}}},required:["filter","updates"]}},
     {name:"create_task",description:"Create a new task/to-do.",input_schema:{type:"object",properties:{text:{type:"string"},assignees:{type:"array",items:{type:"string"}},due:{type:"string"},priority:{type:"string"},status:{type:"string"},job_id:{type:"string"}},required:["text"]}},
@@ -6038,7 +6037,26 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     {name:"delete_vendor_credit",description:"Delete a vendor credit or standalone bill record. Permanent. Match by sop_id, or by vendor + job + amount. The underlying job/PO/line items are untouched.",input_schema:{type:"object",properties:{sop_id:{type:"string",description:"The credit/bill SOP id"},vendor_name:{type:"string"},job_id:{type:"string"},amount:{type:"number",description:"Used with vendor+job to disambiguate"}}}},
     {name:"list_vendor_credits",description:"List vendor credits and standalone bills with filters. Returns a markdown table. Use when user says 'show me all open credits', 'list Marco credits', 'what credits do we have on the Sandburg job'.",input_schema:{type:"object",properties:{vendor_name:{type:"string"},job_id:{type:"string"},kind:{type:"string",description:"'credit' | 'standalone_bill' | 'all' (default all)"},applied_status:{type:"string",description:"'applied' to show only credits applied to a specific bill, 'unapplied' for unapplied, 'all' for both (default all)"},limit:{type:"number"}}}},
     {name:"apply_credit_to_bill",description:"Explicitly link a vendor credit to a specific bill. The credit will be shown on the bill detail view and counted against that bill's owed amount. Use when user says 'apply the Marco credit to BILL-XXXX'.",input_schema:{type:"object",properties:{credit_sop_id:{type:"string",description:"The VC-xxxxxx SOP id of the credit"},bill_doc_num:{type:"string",description:"The bill to link the credit to"}},required:["credit_sop_id","bill_doc_num"]}},
-    {name:"find_unmatched_credits",description:"Find vendor credits that have NOT been applied to a specific bill. Useful when reviewing what credits are still available to apply, or auditing unallocated credits at month-end. Returns a markdown table sorted by amount desc.",input_schema:{type:"object",properties:{vendor_name:{type:"string",description:"Optional vendor name filter"},job_id:{type:"string",description:"Optional job filter"}}}}
+    {name:"find_unmatched_credits",description:"Find vendor credits that have NOT been applied to a specific bill. Useful when reviewing what credits are still available to apply, or auditing unallocated credits at month-end. Returns a markdown table sorted by amount desc.",input_schema:{type:"object",properties:{vendor_name:{type:"string",description:"Optional vendor name filter"},job_id:{type:"string",description:"Optional job filter"}}}},
+    // ==============================================================
+    // PURCHASE ORDERS (6 tools, May 21 2026)
+    // ==============================================================
+    {name:"list_pos",description:"List purchase orders with filters. Returns a markdown table. Use when user says 'show me all open POs', 'list POs for Marco Group', 'what POs are still in new status', 'show me the POs for the Sandburg job'. PO status reflects docStatuses: new (default, not yet drafted), drafted, sent, approved.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name keywords (partial match)"},vendor_name:{type:"string",description:"Vendor name (partial match)"},status:{type:"string",description:"new | drafted | sent | approved | all (default: all)"},older_than_days:{type:"number",description:"Only show POs created more than N days ago"},limit:{type:"number",description:"Max rows to return (default 30)"}}}},
+    {name:"get_po",description:"Get the full record of a purchase order by its docNum (e.g. PO-1234-VENDR or PO-1234-VENDR-Sxxxx for ship-to variants). Returns vendor info, job info, all line items with cost/qty/received status, total, and current PO status. Use when user says 'pull up PO-1234-MARCO', 'show me the McCourt PO on North Shore'.",input_schema:{type:"object",properties:{po_doc_num:{type:"string",description:"The PO docNum (PO-XXXX-YYYY or with -SXXXX ship-to suffix)"}},required:["po_doc_num"]}},
+    {name:"update_po_status",description:"Set the status of a purchase order to drafted, sent, or approved. Use when user says 'mark PO-XXXX as sent', 'approve the Marco PO on Sandburg'. Once a PO transitions to drafted/sent/approved, the corresponding vendor bill becomes visible in the Vendor Bills tab.",input_schema:{type:"object",properties:{po_doc_num:{type:"string"},status:{type:"string",description:"new | drafted | sent | approved"}},required:["po_doc_num","status"]}},
+    {name:"mark_items_received",description:"Bump qtyReceived on one or more line items on a job. The programmatic equivalent of clicking Receive in the Delivery Tracker. Items can be selected by job + description keywords, or by item_id. If quantity is omitted, marks the item fully received (qtyReceived = qtyOrdered). Use when user says 'log 25 chairs received on Sandburg', 'mark the McCourt freight as received', 'receive all items on PO-XXXX'.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name keywords (used with item_description to find items)"},po_doc_num:{type:"string",description:"Alternative: receive items on a specific PO"},item_description:{type:"string",description:"Keywords matching the line item description (omit to apply to all items on the job/PO)"},item_id:{type:"string",description:"Direct line item ID (overrides job+description matching)"},quantity:{type:"number",description:"Number of units received this time. Omit to mark fully received (qtyReceived = qtyOrdered)."},delivery_date:{type:"string",description:"Optional delivery date (YYYY-MM-DD, defaults to today)"}}}},
+    {name:"create_po_from_quote",description:"Promote all of a job's POs from 'new' to 'drafted' once the underlying quote is approved or sent. This is the programmatic equivalent of opening each PO in the UI and saving the draft. Side effect: makes the associated vendor bills appear in the Vendor Bills tab. Use when user says 'draft all POs on Sandburg', 'now that the quote is approved, push the POs', 'create POs for this job'.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name keywords"}},required:["job_id"]}},
+    {name:"find_pos_awaiting_action",description:"Find purchase orders that are stuck in a state requiring action: created but never drafted, drafted but never sent, sent but never approved. Returns a markdown table sorted by age. Use when user says 'what POs need attention', 'find stuck POs', 'show me POs that have been sitting in new for a week'.",input_schema:{type:"object",properties:{older_than_days:{type:"number",description:"Only flag POs older than this many days (default 7)"},stuck_in_status:{type:"string",description:"Filter to POs stuck in a single status: new | drafted | sent (default: any of the above)"}}}},
+    // ==============================================================
+    // CUSTOMER INVOICES (7 tools, May 21 2026)
+    // ==============================================================
+    {name:"list_invoices",description:"List customer invoices with filters. Each job has an invoice (INV-XXXX docNum). Status reflects docStatuses (drafted/sent/approved) AND job.paymentStatus (unpaid/partial/paid). Use when user says 'show me unpaid invoices', 'list invoices for Pewaukee', 'what invoices have been sent but not paid'.",input_schema:{type:"object",properties:{customer_name:{type:"string",description:"Customer name (partial match)"},job_id:{type:"string",description:"Job ID or name keywords"},status:{type:"string",description:"unpaid | paid | partial | sent | drafted | overdue | all (default: unpaid)"},limit:{type:"number"}}}},
+    {name:"generate_invoice",description:"Generate a customer invoice for a job in one of five modes. PARTIAL (default): invoice only items where qtyReceived > qtyInvoiced. FULL: invoice all ordered quantities (used when allReceived). ADVANCE: real invoice for items not yet shipped (prepay scenarios), bumps qtyInvoiced to qtyOrdered when accepted. PROFORMA: non-financial 'for approval' invoice. CREDIT_MEMO: credit against prior invoice. Sets the invoice docStatus to 'drafted' and (for ADVANCE) bumps qtyInvoiced on items. Use when user says 'generate an invoice for X', 'create the advance invoice for Y', 'draft a proforma for Z'.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name keywords"},mode:{type:"string",description:"partial | full | advance | proforma | credit_memo (default: partial)"},mark_qty_invoiced:{type:"boolean",description:"For advance mode: if true, bumps qtyInvoiced = qtyOrdered on all items (recording the bill as issued). Defaults to true for advance, false for proforma/credit_memo."}},required:["job_id"]}},
+    {name:"mark_all_invoiced_for_job",description:"Set qtyInvoiced = qtyOrdered on every line item for a job. The programmatic equivalent of the 'Mark All Invoiced' button in the invoice preview. Use after generating a full or advance invoice to record that the customer has been billed for all items. Use when user says 'mark everything invoiced on Sandburg', 'we billed them in full'.",input_schema:{type:"object",properties:{job_id:{type:"string"}},required:["job_id"]}},
+    {name:"send_invoice_email",description:"Draft an email to the customer with the invoice information. The email is staged in the Brain's pending email panel for the user to review, edit, and send (not sent automatically). Use when user says 'email the Sandburg invoice', 'send the invoice to the Pewaukee contact'. The draft prefills to the customer's on-file email and pulls the invoice docNum + total into the subject/body.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name keywords"},custom_message:{type:"string",description:"Optional additional message to include in the email body"},from_email:{type:"string",description:"Sender email address (e.g. mwelter@mwfurnishings.com)"}},required:["job_id"]}},
+    {name:"record_payment",description:"Log a customer payment against a job's invoice. Sets job.paymentStatus and records payment metadata (date, amount, method, ref). Use when user says 'log $5,000 payment on Sandburg via check 8421', 'mark Pewaukee paid in full'. If amount equals or exceeds invoiced total, sets status to paid; otherwise partial.",input_schema:{type:"object",properties:{job_id:{type:"string"},amount:{type:"number",description:"Payment amount in dollars"},pay_date:{type:"string",description:"YYYY-MM-DD (defaults to today)"},method:{type:"string",description:"check | ach | wire | card | cash"},reference:{type:"string",description:"Check number, transaction ID, etc."},memo:{type:"string"}},required:["job_id","amount"]}},
+    {name:"find_overdue_invoices",description:"Find customer invoices that are past their payment terms. Returns aging buckets (1-30, 31-60, 60+ days overdue) with total outstanding per bucket. Use when user says 'show me overdue invoices', 'who owes us money', 'aging report'. Only considers jobs with hasInvoiced (qtyInvoiced > 0) and paymentStatus != 'paid'.",input_schema:{type:"object",properties:{customer_name:{type:"string",description:"Optional customer name filter"},min_days_overdue:{type:"number",description:"Only show invoices overdue by at least this many days"}}}},
+    {name:"generate_payment_reminder_email",description:"Draft a warm-but-firm payment reminder email for an overdue invoice. Stages the draft in the Brain's pending email panel for the user to review and send. Use when user says 'draft a reminder for the Pewaukee overdue invoice', 'send a payment reminder to Hopewell Valley'. Pulls customer contact, terms, amount owed, days overdue automatically.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name keywords"},tone:{type:"string",description:"warm (default) | firm | final"},from_email:{type:"string"}},required:["job_id"]}}
   ];
 
 
@@ -6115,14 +6133,6 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
           if(Object.keys(changes).length>0){updateLineItem(item.id,changes);ct++}
         });
         return{success:true,message:"Updated "+ct+" line items on "+job.name+(filter?" (filter: "+input.filter_description+")":"")};
-      }
-      if(toolName==="mark_items_received"){
-        const job=findJob(input.job_id);
-        if(!job)return{error:"Job not found: "+input.job_id};
-        const items=getJobItems(job.id);let ct=0;
-        items.forEach(item=>{if(item.qtyReceived<item.qtyOrdered){updateLineItem(item.id,{qtyReceived:item.qtyOrdered,deliveryDate:new Date().toISOString().split("T")[0]});ct++}});
-        updateJob(job.id,{phase:"Delivered"});
-        return{success:true,message:"Marked "+ct+" items as received on "+job.name+". Phase >> Delivered."};
       }
       if(toolName==="log_delivery"){
         const job=findJob(input.job_id);
@@ -6909,6 +6919,34 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
       // renders, but from primitives that ARE in ctx (customSops, jobs, lineItems,
       // vendors, addSop, deleteSop). DocumentsPage owns the canonical merge, so this
       // intentionally mirrors its logic. If DocumentsPage logic changes, update here.
+      //
+      // The PO/quote/invoice/COMM doc numbering uses the same `stableNum` formula
+      // DocumentsPage uses, inlined here so the Brain doesn't depend on DocumentsPage
+      // being mounted. The `genPOs` equivalent is also inlined (_genPOsForJob) since
+      // DocumentsPage's genPOs is in its own component scope.
+      const _stableNumBrain = (prefix, a, b) => prefix + (a||'').replace(/[^A-Z0-9]/gi,'').slice(-4).toUpperCase() + '-' + (b||'').replace(/[^A-Z0-9]/gi,'').slice(-4).toUpperCase();
+      const _genPOsForJob = (job) => {
+        const items = getJobItems(job.id);
+        const lst = lineItemShipTos || {};
+        const groups = {};
+        items.forEach(i => {
+          const sv = lst[i.id];
+          const ship = (sv && String(sv).trim()) ? sv : ((i.shipTo && String(i.shipTo).trim()) ? i.shipTo : '');
+          const key = (i.vendor||'') + '||' + (ship||'');
+          if (!groups[key]) groups[key] = { vid: i.vendor||'', shipTo: ship||'', items: [] };
+          groups[key].items.push({...i, shipTo: ship||''});
+        });
+        return Object.values(groups).map(g => {
+          const sk = (typeof shipKey === 'function') ? shipKey(g.shipTo) : '';
+          const docNum = sk ? (_stableNumBrain('PO-', job.id, g.vid) + '-S' + sk) : _stableNumBrain('PO-', job.id, g.vid);
+          return {
+            vendor: vendors.find(v => v.id === g.vid),
+            items: g.items.map(i => ({...i, displayQty: i.qtyOrdered, displayPrice: i.unitCost})),
+            total: g.items.reduce((s,i) => s + (i.unitCost||0)*i.qtyOrdered, 0),
+            job, docNum, shipTo: g.shipTo
+          };
+        });
+      };
       const _getDocStatusesBrain = () => {
         const allDS = jobs.reduce((acc, j) => ({...acc, ...(j.docStatuses || {})}), {});
         const sopRec = (customSops||[]).find(s=>s.id==='DOC_STATUSES_GLOBAL');
@@ -6937,7 +6975,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         const allBills = [];
         // PO-derived bills
         jobs.forEach(job => {
-          const jobPOs = (typeof genPOs === 'function') ? genPOs(job) : [];
+          const jobPOs = _genPOsForJob(job);
           jobPOs.forEach(po => {
             const vid = po.vendor?.id || 'unknown';
             const v = po.vendor;
@@ -7374,6 +7412,429 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         msg += '| # | ID | Vendor | Job | Amount | Date | Ref |\n| --- | --- | --- | --- | --- | --- | --- |\n';
         records.forEach((x,i) => { msg += '| '+(i+1)+' | '+x.sop.id+' | '+(x.d.vendorName||'--')+' | '+(x.d.jobName||'--')+' | $'+Number(x.d.amount||0).toFixed(2)+' | '+(x.d.creditDate||'--')+' | '+(x.d.refNumber||'--')+' |\n'; });
         return {success: true, message: msg};
+      }
+
+      // ==============================================================
+      // PURCHASE ORDERS (6 tools, May 21 2026)
+      // ==============================================================
+      // PO and Invoice tools reuse the helpers defined at the top of the vendor-bills
+      // block above: _genPOsForJob, _stableNumBrain, _getDocStatusesBrain, _setDocStatusBrain.
+      const _formatDateAge = (dateStr) => {
+        if (!dateStr) return '--';
+        const d = new Date(dateStr);
+        if (isNaN(d.getTime())) return '--';
+        const days = Math.floor((Date.now() - d.getTime()) / 86400000);
+        if (days < 1) return 'today';
+        if (days === 1) return '1 day ago';
+        return days + ' days ago';
+      };
+      const _buildAllPOs = () => {
+        const ds = _getDocStatusesBrain();
+        const out = [];
+        jobs.forEach(job => {
+          const pos = _genPOsForJob(job);
+          pos.forEach(po => {
+            const status = ds[po.docNum] || 'new';
+            const poDate = po.items?.[0]?.poDate || job.createdDate || '';
+            out.push({ ...po, status, poDate, jobId: job.id, jobName: job.name });
+          });
+        });
+        return out;
+      };
+      if (toolName === 'list_pos') {
+        let pos = _buildAllPOs();
+        if (input.job_id) { const job = findJob(input.job_id); if (!job) return {error:'Job not found: '+input.job_id}; pos = pos.filter(p => p.jobId === job.id); }
+        if (input.vendor_name) { const q = input.vendor_name.toLowerCase(); pos = pos.filter(p => (p.vendor?.name||'').toLowerCase().includes(q)); }
+        const status = (input.status||'all').toLowerCase();
+        if (status !== 'all') pos = pos.filter(p => (p.status||'new').toLowerCase() === status);
+        if (typeof input.older_than_days === 'number') {
+          const cutoff = Date.now() - input.older_than_days * 86400000;
+          pos = pos.filter(p => { const d = new Date(p.poDate); return !isNaN(d.getTime()) && d.getTime() < cutoff; });
+        }
+        pos.sort((a,b) => (a.poDate||'').localeCompare(b.poDate||''));
+        const limit = Math.min(input.limit||30, pos.length);
+        const total = pos.reduce((s,p) => s + (p.total||0), 0);
+        let msg = '**Purchase Orders ('+pos.length+' matching, status='+status+')**\n\nTotal cost across matches: $'+total.toFixed(2)+'\n\n';
+        msg += '| # | PO | Vendor | Job | Items | Total | Status | Age | Ship To |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- |\n';
+        pos.slice(0,limit).forEach((p,i) => {
+          const ship = p.shipTo ? (p.shipTo.split('\n')[0].slice(0,30)+(p.shipTo.length>30?'...':'')) : '--';
+          msg += '| '+(i+1)+' | '+p.docNum+' | '+(p.vendor?.name||'--')+' | '+p.jobName+' | '+(p.items?.length||0)+' | $'+(p.total||0).toFixed(2)+' | '+p.status+' | '+_formatDateAge(p.poDate)+' | '+ship+' |\n';
+        });
+        if (pos.length > limit) msg += '\n... and '+(pos.length-limit)+' more.';
+        return {success:true, message: msg};
+      }
+      if (toolName === 'get_po') {
+        const all = _buildAllPOs();
+        const po = all.find(p => (p.docNum||'').toLowerCase() === String(input.po_doc_num||'').toLowerCase());
+        if (!po) return {error:'PO not found: '+input.po_doc_num};
+        let msg = '**'+po.docNum+'**\n\n';
+        msg += '- Vendor: '+(po.vendor?.name||'--')+'\n- Job: '+po.jobName+' ('+po.jobId+')\n- Status: '+po.status+'\n- PO Date: '+(po.poDate||'--')+'\n- Total: $'+(po.total||0).toFixed(2)+'\n- Items: '+(po.items?.length||0);
+        if (po.shipTo) msg += '\n- Ship To: '+po.shipTo;
+        if (po.items && po.items.length) {
+          msg += '\n\n**Line items:**\n| Description | Qty Ord | Qty Recv | Unit Cost | Line Total | Status |\n| --- | --- | --- | --- | --- | --- |\n';
+          po.items.forEach(it => {
+            const lt = (it.unitCost||0)*it.qtyOrdered;
+            const st = it.qtyReceived >= it.qtyOrdered ? 'complete' : it.qtyReceived > 0 ? 'partial' : 'ordered';
+            msg += '| '+(it.description||'--')+' | '+it.qtyOrdered+' | '+it.qtyReceived+' | $'+(it.unitCost||0).toFixed(2)+' | $'+lt.toFixed(2)+' | '+st+' |\n';
+          });
+        }
+        const billDocNum = 'BILL-' + po.docNum.replace('PO-','');
+        const ds = _getDocStatusesBrain();
+        const billData = typeof ds[billDocNum] === 'object' ? ds[billDocNum] : {};
+        if (billData && Object.keys(billData).length) {
+          msg += '\n**Associated bill ('+billDocNum+'):** status='+(billData.status||(billData.paid?'paid':'unpaid'))+(billData.vendorInvNum?', vendor inv #'+billData.vendorInvNum:'')+(billData.deleted?' [DELETED]':'');
+        }
+        return {success:true, message: msg};
+      }
+      if (toolName === 'update_po_status') {
+        const all = _buildAllPOs();
+        const po = all.find(p => (p.docNum||'').toLowerCase() === String(input.po_doc_num||'').toLowerCase());
+        if (!po) return {error:'PO not found: '+input.po_doc_num};
+        const valid = ['new','drafted','sent','approved'];
+        const newStatus = String(input.status||'').toLowerCase();
+        if (!valid.includes(newStatus)) return {error:'Invalid status: '+input.status+'. Must be one of: '+valid.join(', ')};
+        _setDocStatusBrain(po.docNum, newStatus);
+        return {success:true, message:'PO '+po.docNum+' status: '+po.status+' >> '+newStatus};
+      }
+      if (toolName === 'mark_items_received') {
+        let targets = [];
+        const today = input.delivery_date || new Date().toISOString().split('T')[0];
+        // Detect the "legacy/job-only" call shape: only job_id provided, no narrower
+        // targeting. In that case preserve the prior tool's side effect of bumping
+        // job.phase to Delivered after all items are marked received. Item-level or
+        // PO-level calls do NOT touch phase.
+        const isJobLevelOnly = !!input.job_id && !input.po_doc_num && !input.item_description && !input.item_id && typeof input.quantity !== 'number';
+        let parentJob = null;
+        if (input.item_id) {
+          const it = lineItems.find(i => i.id === input.item_id);
+          if (!it) return {error:'Item not found: '+input.item_id};
+          targets = [it];
+        } else if (input.po_doc_num) {
+          const all = _buildAllPOs();
+          const po = all.find(p => (p.docNum||'').toLowerCase() === String(input.po_doc_num).toLowerCase());
+          if (!po) return {error:'PO not found: '+input.po_doc_num};
+          targets = po.items || [];
+          if (input.item_description) { const q = input.item_description.toLowerCase(); targets = targets.filter(it => (it.description||'').toLowerCase().includes(q)); }
+        } else if (input.job_id) {
+          const job = findJob(input.job_id);
+          if (!job) return {error:'Job not found: '+input.job_id};
+          parentJob = job;
+          targets = getJobItems(job.id);
+          if (input.item_description) { const q = input.item_description.toLowerCase(); targets = targets.filter(it => (it.description||'').toLowerCase().includes(q)); }
+        } else {
+          return {error:'Provide item_id, po_doc_num, or job_id'};
+        }
+        if (targets.length === 0) return {error:'No items matched the filter'};
+        if (typeof input.quantity === 'number' && targets.length > 1) return {error:targets.length+' items matched but a single quantity was given. Provide item_id, or omit quantity to mark all matched items fully received.'};
+        let updated = 0;
+        targets.forEach(it => {
+          const remaining = (it.qtyOrdered||0) - (it.qtyReceived||0);
+          if (remaining <= 0) return;
+          let qty;
+          if (typeof input.quantity === 'number') qty = Math.min(input.quantity, remaining);
+          else qty = remaining;
+          const newRecv = (it.qtyReceived||0) + qty;
+          updateLineItem(it.id, { qtyReceived: newRecv, deliveryDate: today });
+          updated++;
+        });
+        let phaseMsg = '';
+        if (isJobLevelOnly && parentJob) {
+          updateJob(parentJob.id, { phase: 'Delivered' });
+          phaseMsg = ' Phase >> Delivered.';
+        }
+        return {success:true, message:'Marked '+updated+' item'+(updated===1?'':'s')+' received'+(typeof input.quantity==='number'?(' (qty '+input.quantity+' each)'):' (fully)')+' on '+today+'.'+phaseMsg};
+      }
+      if (toolName === 'create_po_from_quote') {
+        const job = findJob(input.job_id);
+        if (!job) return {error:'Job not found: '+input.job_id};
+        const quoteDocNum = _stableNumBrain('QT-', job.id, job.customer);
+        const ds = _getDocStatusesBrain();
+        const quoteStatus = ds[quoteDocNum];
+        if (quoteStatus !== 'approved' && quoteStatus !== 'sent') {
+          return {error:'Quote '+quoteDocNum+' is not approved or sent (status: '+(quoteStatus||'new')+'). Approve or send the quote first using update_po_status on the quote docNum, or via the UI.'};
+        }
+        const pos = _genPOsForJob(job);
+        if (pos.length === 0) return {error:'No line items on this job -- nothing to PO'};
+        let drafted = 0;
+        const promoted = [];
+        pos.forEach(po => {
+          const cur = ds[po.docNum];
+          if (cur === 'drafted' || cur === 'sent' || cur === 'approved') return;
+          _setDocStatusBrain(po.docNum, 'drafted');
+          drafted++;
+          promoted.push(po.docNum+' ('+(po.vendor?.name||'?')+', $'+(po.total||0).toFixed(2)+')');
+        });
+        if (drafted === 0) return {success:true, message:'All '+pos.length+' POs on '+job.name+' are already drafted/sent/approved'};
+        return {success:true, message:'Drafted '+drafted+' PO'+(drafted===1?'':'s')+' on '+job.name+':\n- '+promoted.join('\n- ')};
+      }
+      if (toolName === 'find_pos_awaiting_action') {
+        const cutoffDays = typeof input.older_than_days === 'number' ? input.older_than_days : 7;
+        const cutoff = Date.now() - cutoffDays * 86400000;
+        const stuck = String(input.stuck_in_status||'').toLowerCase();
+        let pos = _buildAllPOs().filter(p => {
+          const status = (p.status||'new').toLowerCase();
+          if (stuck && status !== stuck) return false;
+          if (!stuck && !['new','drafted','sent'].includes(status)) return false;
+          const d = new Date(p.poDate);
+          if (isNaN(d.getTime())) return false;
+          return d.getTime() < cutoff;
+        });
+        pos.sort((a,b) => (a.poDate||'').localeCompare(b.poDate||''));
+        let msg = '**'+pos.length+' PO'+(pos.length===1?'':'s')+' awaiting action**\n\nFilter: '+(stuck||'any of new/drafted/sent')+', older than '+cutoffDays+' days\n\n';
+        if (pos.length === 0) { msg += 'All POs are moving along nicely.'; return {success:true, message: msg}; }
+        msg += '| # | PO | Vendor | Job | Status | Total | Age |\n| --- | --- | --- | --- | --- | --- | --- |\n';
+        pos.slice(0,50).forEach((p,i) => {
+          msg += '| '+(i+1)+' | '+p.docNum+' | '+(p.vendor?.name||'--')+' | '+p.jobName+' | '+p.status+' | $'+(p.total||0).toFixed(2)+' | '+_formatDateAge(p.poDate)+' |\n';
+        });
+        if (pos.length > 50) msg += '\n... and '+(pos.length-50)+' more.';
+        return {success:true, message: msg};
+      }
+
+      // ==============================================================
+      // CUSTOMER INVOICES (7 tools, May 21 2026)
+      // ==============================================================
+      // Local genInvoice equivalent so the Brain doesn't depend on DocumentsPage scope.
+      const _genInvoiceForJob = (job, full) => {
+        const allItems = getJobItems(job.id);
+        const items = full
+          ? allItems.filter(i => (i.qtyOrdered||0) > 0)
+          : allItems.filter(i => (i.qtyReceived||0) > (i.qtyInvoiced||0));
+        const isPartial = !full && allItems.some(i => (i.qtyOrdered||0) > (i.qtyReceived||0));
+        return {
+          customer: customers.find(c => c.id === job.customer),
+          items: items.map(i => ({
+            ...i,
+            displayQty: full ? (i.qtyOrdered||0) : ((i.qtyReceived||0) - (i.qtyInvoiced||0)),
+            displayPrice: i.unitPrice||0
+          })),
+          total: items.reduce((s,i) => s + (i.unitPrice||0) * (full ? (i.qtyOrdered||0) : ((i.qtyReceived||0) - (i.qtyInvoiced||0))), 0),
+          job,
+          docNum: _stableNumBrain('INV-', job.id, job.customer),
+          isPartial,
+          isFull: !!full
+        };
+      };
+      const _invoiceTermsDays = (job) => {
+        const t = (job.terms||'Net 30').toLowerCase();
+        if (t.includes('15')) return 15;
+        if (t.includes('receipt') || t.includes('cod')) return 0;
+        if (t.includes('60')) return 60;
+        if (t.includes('45')) return 45;
+        return 30;
+      };
+      if (toolName === 'list_invoices') {
+        const ds = _getDocStatusesBrain();
+        let rows = jobs.map(job => {
+          const items = getJobItems(job.id);
+          if (items.length === 0) return null;
+          const fullTotal = items.reduce((s,i) => s + (i.unitPrice||0)*(i.qtyOrdered||0), 0);
+          const invoicedTotal = items.reduce((s,i) => s + (i.unitPrice||0)*(i.qtyInvoiced||0), 0);
+          const isFullyInvoiced = items.length > 0 && items.every(i => (i.qtyInvoiced||0) >= (i.qtyOrdered||0));
+          const hasInvoiced = items.some(i => (i.qtyInvoiced||0) > 0);
+          const docNum = _stableNumBrain('INV-', job.id, job.customer);
+          const docStatus = ds[docNum] || 'new';
+          const customer = customers.find(c => c.id === job.customer);
+          const days = _invoiceTermsDays(job);
+          const created = new Date(job.createdDate||new Date());
+          const due = new Date(created.getTime() + days*86400000);
+          const overdue = hasInvoiced && job.paymentStatus !== 'paid' && Date.now() > due.getTime();
+          return { job, items, docNum, docStatus, customer, fullTotal, invoicedTotal, isFullyInvoiced, hasInvoiced, overdue, due, paymentStatus: job.paymentStatus||'unpaid', terms: job.terms||'Net 30' };
+        }).filter(Boolean);
+        if (input.customer_name) { const q = input.customer_name.toLowerCase(); rows = rows.filter(r => (r.customer?.name||'').toLowerCase().includes(q)); }
+        if (input.job_id) { const job = findJob(input.job_id); if (job) rows = rows.filter(r => r.job.id === job.id); else return {error:'Job not found: '+input.job_id}; }
+        const status = String(input.status||'unpaid').toLowerCase();
+        if (status === 'unpaid') rows = rows.filter(r => r.hasInvoiced && r.paymentStatus !== 'paid');
+        else if (status === 'paid') rows = rows.filter(r => r.paymentStatus === 'paid');
+        else if (status === 'partial') rows = rows.filter(r => r.paymentStatus === 'partial');
+        else if (status === 'overdue') rows = rows.filter(r => r.overdue);
+        else if (status === 'sent') rows = rows.filter(r => r.docStatus === 'sent');
+        else if (status === 'drafted') rows = rows.filter(r => r.docStatus === 'drafted');
+        // 'all' = keep all
+        rows.sort((a,b) => (b.invoicedTotal||0) - (a.invoicedTotal||0));
+        const limit = Math.min(input.limit||30, rows.length);
+        const totalUnpaid = rows.reduce((s,r) => r.paymentStatus !== 'paid' ? s + r.invoicedTotal : s, 0);
+        let msg = '**'+rows.length+' invoice'+(rows.length===1?'':'s')+' (status='+status+')**\n\nUnpaid total in this view: $'+totalUnpaid.toFixed(2)+'\n\n';
+        msg += '| # | INV | Customer | Job | Invoiced | Order Total | Doc Status | Payment | Terms | Overdue |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n';
+        rows.slice(0,limit).forEach((r,i) => {
+          msg += '| '+(i+1)+' | '+r.docNum+' | '+(r.customer?.name||'--')+' | '+r.job.name+' | $'+r.invoicedTotal.toFixed(2)+' | $'+r.fullTotal.toFixed(2)+' | '+r.docStatus+' | '+r.paymentStatus+' | '+r.terms+' | '+(r.overdue?'yes':'no')+' |\n';
+        });
+        if (rows.length > limit) msg += '\n... and '+(rows.length-limit)+' more.';
+        return {success:true, message: msg};
+      }
+      if (toolName === 'generate_invoice') {
+        const job = findJob(input.job_id);
+        if (!job) return {error:'Job not found: '+input.job_id};
+        const mode = String(input.mode||'partial').toLowerCase();
+        const validModes = ['partial','full','advance','proforma','credit_memo'];
+        if (!validModes.includes(mode)) return {error:'Invalid mode: '+mode+'. Must be one of: '+validModes.join(', ')};
+        const items = getJobItems(job.id);
+        if (items.length === 0) return {error:'No line items on this job'};
+        const full = (mode === 'full' || mode === 'advance' || mode === 'proforma' || mode === 'credit_memo');
+        const inv = _genInvoiceForJob(job, full);
+        if (mode === 'partial' && inv.items.length === 0) return {error:'No items ready to invoice (no qtyReceived > qtyInvoiced delta). Use mode=advance for prepay scenarios, or mark items received first.'};
+        if (inv.total <= 0 && mode !== 'credit_memo') return {error:'Invoice total is $0 -- nothing to invoice'};
+        _setDocStatusBrain(inv.docNum, 'drafted');
+        const shouldMark = (typeof input.mark_qty_invoiced === 'boolean')
+          ? input.mark_qty_invoiced
+          : (mode === 'advance');
+        let bumped = 0;
+        if (shouldMark) {
+          inv.items.forEach(it => {
+            const real = items.find(x => x.id === it.id);
+            if (!real) return;
+            const newQI = Math.min(real.qtyOrdered||0, (real.qtyInvoiced||0) + (it.displayQty||0));
+            if (newQI !== real.qtyInvoiced) {
+              updateLineItem(real.id, { qtyInvoiced: newQI });
+              bumped++;
+            }
+          });
+        }
+        const label = mode === 'partial' ? 'Partial' : mode === 'full' ? 'Full' : mode === 'advance' ? 'Advance' : mode === 'proforma' ? 'ProForma' : 'Credit Memo';
+        let msg = '**'+label+' invoice drafted: '+inv.docNum+'**\n\n';
+        msg += '- Job: '+job.name+'\n- Customer: '+(inv.customer?.name||'--')+'\n- Total: $'+inv.total.toFixed(2)+'\n- Line items in invoice: '+inv.items.length+'\n- Doc status set to: drafted';
+        if (bumped > 0) msg += '\n- Bumped qtyInvoiced on '+bumped+' line item'+(bumped===1?'':'s');
+        if (mode === 'advance') msg += '\n\nNote: this is an ADVANCE invoice. Items have not yet shipped. The customer is being billed up front.';
+        if (mode === 'proforma') msg += '\n\nNote: this is a PROFORMA invoice (for approval only -- not a real bill). qtyInvoiced was not changed.';
+        if (mode === 'credit_memo') msg += '\n\nNote: this is a CREDIT MEMO -- it should reduce the customer balance, not add to it.';
+        return {success:true, message: msg};
+      }
+      if (toolName === 'mark_all_invoiced_for_job') {
+        const job = findJob(input.job_id);
+        if (!job) return {error:'Job not found: '+input.job_id};
+        const items = getJobItems(job.id);
+        if (items.length === 0) return {error:'No line items on this job'};
+        let bumped = 0;
+        items.forEach(it => {
+          if ((it.qtyInvoiced||0) < (it.qtyOrdered||0)) {
+            updateLineItem(it.id, { qtyInvoiced: it.qtyOrdered });
+            bumped++;
+          }
+        });
+        return {success:true, message:'Marked '+bumped+' item'+(bumped===1?'':'s')+' as fully invoiced on '+job.name+' (total items: '+items.length+')'};
+      }
+      if (toolName === 'send_invoice_email') {
+        const job = findJob(input.job_id);
+        if (!job) return {error:'Job not found: '+input.job_id};
+        const customer = customers.find(c => c.id === job.customer);
+        if (!customer) return {error:'Customer not found for job: '+job.name};
+        const to = customer.email || '';
+        if (!to) return {error:'Customer '+(customer.name||'')+' has no email on file. Add one via update_customer, or pass a recipient explicitly.'};
+        const items = getJobItems(job.id);
+        const invoicedTotal = items.reduce((s,i) => s + (i.unitPrice||0)*(i.qtyInvoiced||0), 0);
+        const docNum = _stableNumBrain('INV-', job.id, job.customer);
+        const subject = 'Invoice '+docNum+' - '+job.name+' - Midwest Educational Furnishings';
+        let body = 'Dear '+(customer.contact || customer.name || 'Customer')+',\n\nPlease find the invoice for '+job.name+' (Invoice #'+docNum+', Amount: '+(new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(invoicedTotal))+').\n\nTerms: '+(job.terms||'Net 30')+'\n';
+        if (input.custom_message) body += '\n'+input.custom_message+'\n';
+        body += '\nThank you for your business.\n\nBlessings,\nMidwest Educational Furnishings\n(847) 847-1865';
+        if (typeof setPendingBrainEmail === 'function') {
+          setPendingBrainEmail({
+            to, from: input.from_email || '', subject, body, toLabel: customer.name || customer.contact || to
+          });
+          return {success:true, message:'Drafted email to '+to+' for invoice '+docNum+' ('+(new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(invoicedTotal))+'). Review and edit it in the pending email panel below, then click Send.'};
+        }
+        return {error:'Email staging is unavailable in this context.'};
+      }
+      if (toolName === 'record_payment') {
+        const job = findJob(input.job_id);
+        if (!job) return {error:'Job not found: '+input.job_id};
+        const amount = Number(input.amount);
+        if (!isFinite(amount) || amount <= 0) return {error:'amount must be a positive number'};
+        const items = getJobItems(job.id);
+        const invoicedTotal = items.reduce((s,i) => s + (i.unitPrice||0)*(i.qtyInvoiced||0), 0);
+        const today = input.pay_date || new Date().toISOString().split('T')[0];
+        const newStatus = amount + 0.005 >= invoicedTotal && invoicedTotal > 0 ? 'paid' : 'partial';
+        updateJob(job.id, { paymentStatus: newStatus });
+        const invDocNum = _stableNumBrain('INV-', job.id, job.customer);
+        // Log the payment as a docStatuses entry keyed PAY-<docNum>-<timestamp> for audit trail.
+        const payId = 'PAY-'+invDocNum+'-'+Date.now();
+        _setDocStatusBrain(payId, {
+          jobId: job.id,
+          customer: (customers.find(c => c.id === job.customer)||{}).name || '',
+          jobName: job.name,
+          amount,
+          date: today,
+          method: input.method || 'check',
+          ref: input.reference || '',
+          memo: input.memo || '',
+          invoiceNum: invDocNum
+        });
+        const fmtMoney = n => new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(n);
+        return {success:true, message:'Logged '+fmtMoney(amount)+' '+(input.method||'check')+' payment on '+job.name+' ('+invDocNum+'). Job payment status >> '+newStatus+'. Invoiced total: '+fmtMoney(invoicedTotal)+(input.reference?(', ref '+input.reference):'')};
+      }
+      if (toolName === 'find_overdue_invoices') {
+        const minDays = typeof input.min_days_overdue === 'number' ? input.min_days_overdue : 1;
+        const customerQ = (input.customer_name||'').toLowerCase();
+        const today = Date.now();
+        const rows = [];
+        jobs.forEach(job => {
+          if (job.paymentStatus === 'paid') return;
+          const items = getJobItems(job.id);
+          const hasInvoiced = items.some(i => (i.qtyInvoiced||0) > 0);
+          if (!hasInvoiced) return;
+          const days = _invoiceTermsDays(job);
+          const created = new Date(job.createdDate||new Date());
+          if (isNaN(created.getTime())) return;
+          const due = new Date(created.getTime() + days*86400000);
+          const daysOverdue = Math.floor((today - due.getTime()) / 86400000);
+          if (daysOverdue < minDays) return;
+          const customer = customers.find(c => c.id === job.customer);
+          if (customerQ && !((customer?.name||'').toLowerCase().includes(customerQ))) return;
+          const invoicedTotal = items.reduce((s,i) => s + (i.unitPrice||0)*(i.qtyInvoiced||0), 0);
+          rows.push({ job, customer, invoicedTotal, daysOverdue, terms: job.terms||'Net 30', paymentStatus: job.paymentStatus||'unpaid' });
+        });
+        rows.sort((a,b) => b.daysOverdue - a.daysOverdue);
+        const bucket = { '1-30':0, '31-60':0, '60+':0 };
+        const bucketCount = { '1-30':0, '31-60':0, '60+':0 };
+        rows.forEach(r => {
+          const b = r.daysOverdue <= 30 ? '1-30' : r.daysOverdue <= 60 ? '31-60' : '60+';
+          bucket[b] += r.invoicedTotal;
+          bucketCount[b]++;
+        });
+        const grandTotal = rows.reduce((s,r) => s + r.invoicedTotal, 0);
+        let msg = '**Overdue Invoices ('+rows.length+' total, $'+grandTotal.toFixed(2)+' outstanding)**\n\n';
+        msg += '**Aging buckets:**\n- 1-30 days: '+bucketCount['1-30']+' invoice(s), $'+bucket['1-30'].toFixed(2)+'\n- 31-60 days: '+bucketCount['31-60']+' invoice(s), $'+bucket['31-60'].toFixed(2)+'\n- 60+ days: '+bucketCount['60+']+' invoice(s), $'+bucket['60+'].toFixed(2)+'\n\n';
+        if (rows.length === 0) return {success:true, message: msg + 'No overdue invoices.'};
+        msg += '**Details:**\n| # | Customer | Job | Invoiced | Days Overdue | Terms | Status |\n| --- | --- | --- | --- | --- | --- | --- |\n';
+        rows.slice(0,50).forEach((r,i) => {
+          msg += '| '+(i+1)+' | '+(r.customer?.name||'--')+' | '+r.job.name+' | $'+r.invoicedTotal.toFixed(2)+' | '+r.daysOverdue+' | '+r.terms+' | '+r.paymentStatus+' |\n';
+        });
+        if (rows.length > 50) msg += '\n... and '+(rows.length-50)+' more.';
+        return {success:true, message: msg};
+      }
+      if (toolName === 'generate_payment_reminder_email') {
+        const job = findJob(input.job_id);
+        if (!job) return {error:'Job not found: '+input.job_id};
+        const customer = customers.find(c => c.id === job.customer);
+        if (!customer) return {error:'Customer not found for job: '+job.name};
+        const to = customer.email || '';
+        if (!to) return {error:'Customer '+(customer.name||'')+' has no email on file.'};
+        const items = getJobItems(job.id);
+        const invoicedTotal = items.reduce((s,i) => s + (i.unitPrice||0)*(i.qtyInvoiced||0), 0);
+        const docNum = _stableNumBrain('INV-', job.id, job.customer);
+        const days = _invoiceTermsDays(job);
+        const created = new Date(job.createdDate||new Date());
+        const due = new Date(created.getTime() + days*86400000);
+        const daysOverdue = Math.max(0, Math.floor((Date.now() - due.getTime()) / 86400000));
+        const tone = String(input.tone||'warm').toLowerCase();
+        const fmtMoney = n => new Intl.NumberFormat('en-US',{style:'currency',currency:'USD'}).format(n);
+        let subject, body;
+        if (tone === 'final') {
+          subject = 'FINAL NOTICE - Past Due Invoice '+docNum+' - Midwest Educational Furnishings';
+          body = 'Dear '+(customer.contact || customer.name || 'Customer')+',\n\nThis is a final notice that invoice '+docNum+' for '+job.name+' in the amount of '+fmtMoney(invoicedTotal)+' is now '+daysOverdue+' days past due.\n\nTerms: '+(job.terms||'Net 30')+'\n\nWe ask that payment be remitted within the next five business days. Please contact us immediately if there is an issue with this invoice or you need to make alternative arrangements.\n\nBlessings,\nMidwest Educational Furnishings\n(847) 847-1865';
+        } else if (tone === 'firm') {
+          subject = 'Past Due - Invoice '+docNum+' - Midwest Educational Furnishings';
+          body = 'Dear '+(customer.contact || customer.name || 'Customer')+',\n\nInvoice '+docNum+' for '+job.name+' in the amount of '+fmtMoney(invoicedTotal)+' is now '+daysOverdue+' days past due.\n\nTerms: '+(job.terms||'Net 30')+'\n\nWe would appreciate it if you could remit payment at your earliest opportunity. If you have any questions or concerns about this invoice, please reach out directly so we can resolve them quickly.\n\nBlessings,\nMidwest Educational Furnishings\n(847) 847-1865';
+        } else {
+          subject = 'Friendly Payment Reminder - Invoice '+docNum+' - Midwest Educational Furnishings';
+          body = 'Dear '+(customer.contact || customer.name || 'Customer')+',\n\nThis is a friendly reminder that invoice '+docNum+' for '+job.name+' in the amount of '+fmtMoney(invoicedTotal)+' is '+(daysOverdue>0?(daysOverdue+' days past due'):'now due')+'.\n\nTerms: '+(job.terms||'Net 30')+'\n\nIf payment has already been sent, please disregard this note. Otherwise, we appreciate you remitting at your earliest convenience.\n\nBlessings,\nMidwest Educational Furnishings\n(847) 847-1865';
+        }
+        if (typeof setPendingBrainEmail === 'function') {
+          setPendingBrainEmail({
+            to, from: input.from_email || '', subject, body, toLabel: customer.name || customer.contact || to
+          });
+          return {success:true, message:'Drafted '+tone+' reminder email to '+to+' for '+docNum+' ('+fmtMoney(invoicedTotal)+', '+daysOverdue+' days overdue). Review and edit it in the pending email panel below, then click Send.'};
+        }
+        return {error:'Email staging is unavailable in this context.'};
       }
 
       return{error:"Unknown tool: "+toolName};
