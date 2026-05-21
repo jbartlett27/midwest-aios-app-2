@@ -3687,8 +3687,23 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           const isPoActive=poStatus&&poStatus!=="new";
           if(!isPoActive&&!anyReceived)return;
           const vItems=po.items;
-          const cost=vItems.reduce((s,i)=>s+(i.unitCost||0)*i.qtyOrdered,0);
-          if(cost<=0)return;
+          // Bill amount reflects what's been RECEIVED, not what's been ordered. Vendors
+          // invoice on shipment, so a partial delivery means a partial bill. Reported by
+          // Maureen May 21 2026 for the McCourt bill on the McCourt Series 5 Folding
+          // Chairs job: bill was showing full $4,678 PO total but only some chairs had
+          // arrived. The Delivery Tracker had the correct received counts; the bill
+          // just wasn't reading from them. With this change, as items are received via
+          // Delivery Tracker the bill amount climbs to match -- no manual override needed.
+          const cost=vItems.reduce((s,i)=>s+(i.unitCost||0)*(Number(i.qtyReceived)||0),0);
+          // orderValue = the full PO commitment (unitCost * qtyOrdered). Surfaced on the
+          // bill object so any UI that wants to show "currently owed $X of $Y total" has
+          // access to both numbers. Also drives the structurally-empty PO guard below.
+          const orderValue=vItems.reduce((s,i)=>s+(i.unitCost||0)*(Number(i.qtyOrdered)||0),0);
+          // Skip ONLY structurally-empty POs (no value committed at all). A PO with
+          // value committed but nothing yet received is a legitimate bill that should
+          // appear with $0 currently owed -- the user can see the bill exists, watch
+          // it climb as items arrive, and pay when ready.
+          if(orderValue<=0)return;
           const poDate=vItems[0]?.poDate||job.createdDate||'';
           const billDocNum='BILL-'+poDocNum.replace('PO-','');
           const billDateOverride=docStatuses[billDocNum+'__date']||'';
@@ -3731,7 +3746,7 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           // Clamp to [0, cost] to prevent malformed input from breaking totalOwed calculations.
           const _credRaw=(billData.creditAmount!==undefined&&billData.creditAmount!==null&&billData.creditAmount!=='')?Number(billData.creditAmount):cost;
           const _credAmt=isNaN(_credRaw)?cost:Math.max(0,Math.min(cost,_credRaw));
-          allBills.push({job,vendor:v,vendorId:vid,vendorName:v?.name||'Unknown',items:vItems,cost,poDocNum,billDocNum,poDate,
+          allBills.push({job,vendor:v,vendorId:vid,vendorName:v?.name||'Unknown',items:vItems,cost,orderValue,poDocNum,billDocNum,poDate,
             dueDate:_safeDueDateStr,daysUntil,paid,voided:isVoidBill,itemCount:vItems.length,
             vendorInvNum:billData.vendorInvNum||'',checkNum:billData.checkNum||'',payDate:billData.payDate||'',memo:billData.memo||'',checkPrinted:billData.checkPrinted||'',isCredit:billData.isCredit||false,creditAmount:_credAmt,
             _isDeleted:billData.deleted===true});
@@ -3783,6 +3798,7 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
             vendorName: d.vendorName || (v2 ? v2.name : 'Unknown'),
             items: [],
             cost: amtNum,
+            orderValue: amtNum,
             poDocNum: d.refNumber || '',
             billDocNum: s.id, // SOP id doubles as the bill row id
             poDate: dateStrRaw,
@@ -4298,9 +4314,10 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
           </Card>
           <Card style={{padding:16,marginBottom:16}}>
             <div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:12,fontFamily:"'JetBrains Mono',monospace"}}>Line Items on This PO</div>
-            <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><thead><tr style={{borderBottom:"2px solid #222"}}>{["Description","Model #","Qty","Net Each","Total"].map((h,i)=><th key={i} style={{padding:"6px 8px",textAlign:i>=2?"right":"left",color:"#737373",fontSize:11,fontWeight:600}}>{h}</th>)}</tr></thead><tbody>
-              {bill.items.map((item,idx)=><tr key={idx} style={{borderBottom:"1px solid #111"}}><td style={{padding:"6px 8px",color:"#e5e5e5"}}>{item.description}</td><td style={{padding:"6px 8px",color:"#a3a3a3",fontFamily:"'JetBrains Mono',monospace",fontSize:11}}>{item.modelNumber||'--'}</td><td style={{padding:"6px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace"}}>{item.qtyOrdered}</td><td style={{padding:"6px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(item.unitCost)}</td><td style={{padding:"6px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",fontWeight:600}}>{fmt((item.unitCost||0)*item.qtyOrdered)}</td></tr>)}
-              <tr style={{borderTop:"2px solid #222"}}><td colSpan={4} style={{padding:"6px 8px",fontWeight:700}}>TOTAL</td><td style={{padding:"6px 8px",textAlign:"right",fontWeight:800,fontFamily:"'JetBrains Mono',monospace",color:"#f97316"}}>{fmt(bill.cost)}</td></tr>
+            <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}><thead><tr style={{borderBottom:"2px solid #222"}}>{["Description","Model #","Recv / Ord","Net Each","Bill Now"].map((h,i)=><th key={i} style={{padding:"6px 8px",textAlign:i>=2?"right":"left",color:"#737373",fontSize:11,fontWeight:600}}>{h}</th>)}</tr></thead><tbody>
+              {bill.items.map((item,idx)=>{const qr=Number(item.qtyReceived)||0;const qo=Number(item.qtyOrdered)||0;const lineTotal=(item.unitCost||0)*qr;const fullCommitted=qr>=qo;return <tr key={idx} style={{borderBottom:"1px solid #111"}}><td style={{padding:"6px 8px",color:"#e5e5e5"}}>{item.description}</td><td style={{padding:"6px 8px",color:"#a3a3a3",fontFamily:"'JetBrains Mono',monospace",fontSize:11}}>{item.modelNumber||'--'}</td><td style={{padding:"6px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",color:fullCommitted?"#34d399":qr>0?"#fbbf24":"#737373"}}>{qr} / {qo}</td><td style={{padding:"6px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(item.unitCost)}</td><td style={{padding:"6px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,color:qr===0?"#525252":"#e5e5e5"}}>{fmt(lineTotal)}</td></tr>})}
+              <tr style={{borderTop:"2px solid #222"}}><td colSpan={4} style={{padding:"6px 8px",fontWeight:700}}>BILL NOW (received)</td><td style={{padding:"6px 8px",textAlign:"right",fontWeight:800,fontFamily:"'JetBrains Mono',monospace",color:"#f97316"}}>{fmt(bill.cost)}</td></tr>
+              {bill.orderValue>bill.cost+0.005&&<tr style={{borderBottom:"1px solid #111"}}><td colSpan={4} style={{padding:"4px 8px",fontWeight:500,color:"#737373",fontSize:11}}>Full PO commitment (when all items received)</td><td style={{padding:"4px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",fontWeight:500,color:"#737373",fontSize:11}}>{fmt(bill.orderValue)}</td></tr>}
             </tbody></table></div>
           </Card>
           <Card style={{padding:16}}>
@@ -7084,8 +7101,15 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
             const isPoActive = poStatus && poStatus !== 'new';
             if (!isPoActive && !anyReceived) return;
             const vItems = po.items;
-            const cost = vItems.reduce((s,i) => s + (i.unitCost||0)*i.qtyOrdered, 0);
-            if (cost <= 0) return;
+            // Match the UI: bill on RECEIVED quantity, not ordered. Vendors invoice on
+            // shipment, so the bill amount is unitCost * qtyReceived. The full PO
+            // commitment is also exposed as orderValue.
+            const cost = vItems.reduce((s,i) => s + (i.unitCost||0)*(Number(i.qtyReceived)||0), 0);
+            const orderValue = vItems.reduce((s,i) => s + (i.unitCost||0)*(Number(i.qtyOrdered)||0), 0);
+            // Structurally-empty PO guard: skip only if no value committed at all. A PO
+            // with value committed but nothing yet received is a valid $0-currently-owed
+            // bill that should still appear in the Brain's tool output.
+            if (orderValue <= 0) return;
             const poDate = vItems[0]?.poDate || job.createdDate || '';
             const billDocNum = 'BILL-' + poDocNum.replace('PO-','');
             const billDateOverride = docStatuses[billDocNum+'__date'] || '';
@@ -7101,7 +7125,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
             const daysUntil = isNaN(dueDate2.getTime()) ? 0 : Math.floor((dueDate2 - new Date())/86400000);
             allBills.push({
               job, vendor: v, vendorId: vid, vendorName: v?.name||'Unknown',
-              items: vItems, cost, poDocNum, billDocNum, poDate, dueDate: dueStr, daysUntil,
+              items: vItems, cost, orderValue, poDocNum, billDocNum, poDate, dueDate: dueStr, daysUntil,
               paid, voided: billData.status==='void',
               vendorInvNum: billData.vendorInvNum||'', checkNum: billData.checkNum||'',
               payDate: billData.payDate||'', memo: billData.memo||'',
@@ -7126,7 +7150,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
           allBills.push({
             job: job2, vendor: v2, vendorId: d.vendorId||'unknown',
             vendorName: d.vendorName || (v2?v2.name:'Unknown'),
-            items: [], cost: amt,
+            items: [], cost: amt, orderValue: amt,
             poDocNum: d.refNumber||'', billDocNum: s.id,
             poDate: d.creditDate||'', dueDate: d.creditDate||'',
             daysUntil: 0, paid: d.paid===true, voided: false,
