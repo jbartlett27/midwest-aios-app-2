@@ -2019,7 +2019,7 @@ function AnimatedPct({value,duration=600}){
 }
 
 
-function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJobItems,setPage,setSelectedJob,dateFilter,setDateFilter,jobNum,notify}){
+function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJobItems,_commissionFor,setPage,setSelectedJob,dateFilter,setDateFilter,jobNum,notify}){
   // Date filtering
   const now = new Date();
   const filterJob = (j) => {
@@ -5886,7 +5886,7 @@ function NotesPage({customSops,addSop,deleteSop,jobs,reps,notify,triggerPrint}){
 }
 
 
-function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJobItems,brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory,updateJob,addJob,updateLineItem,addLineItem,deleteLineItem,updateRep,addRep,addCustomer,updateCustomer,addVendor,updateVendor,notify,setPage,deleteJob,pendingBrainFile,setPendingBrainFile,pendingBrainEmail,setPendingBrainEmail,currentUser}){
+function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJobItems,_commissionFor,_bankTxnHash,brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory,updateJob,addJob,updateLineItem,addLineItem,deleteLineItem,updateRep,addRep,addCustomer,updateCustomer,addVendor,updateVendor,notify,setPage,deleteJob,pendingBrainFile,setPendingBrainFile,pendingBrainEmail,setPendingBrainEmail,currentUser}){
   const [brainFile, setBrainFile] = useState(null);
   const [brainFilePreview, setBrainFilePreview] = useState(null);
   const [brainFileContext, setBrainFileContext] = useState(null);
