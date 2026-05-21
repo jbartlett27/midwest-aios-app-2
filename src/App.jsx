@@ -5494,7 +5494,25 @@ function PlaybookPage({jobs,reps,vendors,customers,lineItems,getJobFinancials,se
   // DEFAULT_SOPS defined at module level
 
 
-  const internalCats=new Set(["Notes","Task","DocStatuses","ManualTxn","HistoricalDoc","Settings"]);
+  // Categories that share the `sops` table but are NOT user-facing SOPs. The sops table is
+  // polymorphic -- it stores actual SOPs alongside internal infrastructure records (Brain
+  // memories, prospects, file index, line item ship-to overrides, Plaid connection state,
+  // doc status registry, vendor credit/bill SOP entries, etc). These categories MUST be
+  // filtered out so the Playbook & SOPs page only shows real SOP documents to the user.
+  // Each of these categories has its own dedicated page or is purely internal:
+  //   Notes / Task -> Tasks + Notes pages
+  //   DocStatuses -> internal doc state registry (not user-facing)
+  //   ManualTxn -> Financials page (28k+ Plaid transactions)
+  //   HistoricalDoc -> internal archive
+  //   Settings -> internal config
+  //   BrainMemory -> Brain page memory store
+  //   Prospect -> Prospects page (295 records)
+  //   Config -> internal config
+  //   File -> Files page
+  //   LineItemShipTo -> per-line ship-to overrides applied silently in PO generation
+  //   PlaidConn -> Plaid connection token storage
+  //   VendorCredit / StandaloneBill -> Documents > Vendor Bills tab
+  const internalCats=new Set(["Notes","Task","DocStatuses","ManualTxn","HistoricalDoc","Settings","BrainMemory","Prospect","Config","File","LineItemShipTo","PlaidConn","VendorCredit","StandaloneBill"]);
   const customIds=new Set((customSops||[]).filter(s=>!internalCats.has(s.cat)).map(s=>s.overrideId||s.id));const allSops=[...DEFAULT_SOPS.filter(d=>!customIds.has(d.id)),...(customSops||[])].filter(s=>!internalCats.has(s.cat));
   const cats=[...new Set(allSops.map(s=>s.cat))];
   const filtered=search?allSops.filter(s=>s.title.toLowerCase().includes(search.toLowerCase())||s.content.toLowerCase().includes(search.toLowerCase())):allSops;
