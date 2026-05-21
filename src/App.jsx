@@ -8620,6 +8620,59 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify}){
   const handleSort=(col)=>{if(sortCol===col)setSortDir(d=>d==='asc'?'desc':'asc');else{setSortCol(col);setSortDir('asc')}};
 
 
+  // ---------- Prospect duplicate detection ----------
+  // A prospect is considered a duplicate of an existing one if ANY of three keys collide:
+  // Strict normalization for dedup:
+  //   1. Normalized name + normalized company (case-insensitive, punctuation-stripped, org-suffix-stripped)
+  //   2. Normalized email (case-insensitive, trimmed)
+  //   3. Normalized LinkedIn URL (scheme/www/trailing-slash stripped, lowercased)
+  //   4. Normalized phone (digits-only, last 10) -- catches cross-source dupes (LinkedIn export + Apollo export
+  //      of the same person where the work-vs-personal email differs but mobile is the same).
+  //   5. Name-only fallback (n:<normalized-name>) -- ONLY when no other identifier is present, so bare lead
+  //      lists with just names don't bypass dedup entirely. Two rows of "John Smith" with nothing else will
+  //      now be caught. (Two genuinely-different "John Smith"s with company/email differ would each have
+  //      their own nc:/e:/l:/p: key and never fall back to n:, so they remain distinct.)
+  // Apostrophes (including curly U+2019) are removed entirely so "Bobby's School" === "Bobbys School".
+  // Other punctuation becomes whitespace, then whitespace is collapsed. Common org suffixes
+  // (Inc, LLC, Corp, Co, Ltd, "The") are stripped so "ABC Schools, Inc." === "ABC Schools".
+  const _normProspectText=(s)=>String(s||'').toLowerCase().replace(/['\u2018\u2019`]/g,'').replace(/[.,"\u201C\u201D&()\/\\]/g,' ').replace(/\s+/g,' ').trim();
+  const _normProspectCompany=(s)=>{let n=_normProspectText(s);if(n.startsWith('the '))n=n.slice(4);n=n.replace(/\b(inc|incorporated|llc|ltd|limited|corp|corporation|co|company|the)\b/g,' ').replace(/\s+/g,' ').trim();return n};
+  const _normProspectEmail=(s)=>String(s||'').toLowerCase().trim();
+  const _normProspectLinkedin=(s)=>String(s||'').toLowerCase().trim().replace(/^https?:\/\//,'').replace(/^www\./,'').replace(/\/+$/,'');
+  const _normProspectPhone=(s)=>{const d=String(s||'').replace(/\D/g,'');return d.length>=10?d.slice(-10):''};
+  const _prospectKeys=(p)=>{
+    const name=_normProspectText(p.name);
+    const company=_normProspectCompany(p.company);
+    const email=_normProspectEmail(p.email);
+    const linkedin=_normProspectLinkedin(p.linkedin);
+    const phone=_normProspectPhone(p.phone);
+    const keys=[];
+    if(name&&company)keys.push('nc:'+name+'|'+company);
+    if(email)keys.push('e:'+email);
+    if(linkedin)keys.push('l:'+linkedin);
+    if(phone)keys.push('p:'+phone);
+    // Name-only fallback ONLY when the row has no other identifier at all. Without this, a bare name-only
+    // row produced zero keys and was un-dedup-able.
+    if(name&&!company&&!email&&!linkedin&&!phone)keys.push('n:'+name);
+    return keys;
+  };
+  // Build a Set of all existing prospect keys, ready to test new uploads against.
+  const _buildExistingProspectKeys=()=>{
+    const set=new Set();
+    prospects.forEach(p=>_prospectKeys(p).forEach(k=>set.add(k)));
+    return set;
+  };
+  // Test a candidate against an existing-keys Set. Returns either null (not a dup) or the
+  // first matching key so we can report WHY it was flagged. The same Set is mutated as we
+  // add new prospects, which also catches in-batch duplicates within a single CSV.
+  const _checkProspectDup=(candidate,keysSet)=>{
+    const keys=_prospectKeys(candidate);
+    for(const k of keys){if(keysSet.has(k))return k}
+    keys.forEach(k=>keysSet.add(k));
+    return null;
+  };
+
+
   const handleCsv=async(e)=>{
     const file=e.target.files?.[0];if(!file)return;e.target.value='';
     try{
@@ -8634,13 +8687,15 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify}){
         emp:col(['employee','# employees']),city:col(['city']),state:col(['state']),address:col(['address']),
         tier:col(['tier']),status:col(['status']),notes:col(['notes']),rank:col(['rank','#'])};
       const g=(row,idx)=>(idx>=0?(row[idx]||''):'').replace(/^"|"$/g,'').trim();
-      const existing=new Set(prospects.map(p=>(p.name||'').toLowerCase()+(p.company||'').toLowerCase()));
-      let added=0,skipped=0;
+      const existingKeys=_buildExistingProspectKeys();
+      let added=0,skipped=0;const skipReasons={nc:0,e:0,l:0,p:0,n:0};
       for(let i=1;i<lines.length;i++){
         const row=parseRow(lines[i]);if(row.length<3)continue;
         const name=g(row,ci.name);const company=g(row,ci.company);if(!name)continue;
-        const key=name.toLowerCase()+company.toLowerCase();if(existing.has(key)){skipped++;continue}existing.add(key);
         const phone=g(row,ci.mobile)||g(row,ci.directPhone)||g(row,ci.corpPhone)||g(row,ci.compPhone)||g(row,ci.otherPhone);
+        const candidate={name,company,email:g(row,ci.email),linkedin:g(row,ci.linkedin),phone};
+        const dupKey=_checkProspectDup(candidate,existingKeys);
+        if(dupKey){skipped++;const prefix=dupKey.split(':')[0];if(skipReasons[prefix]!==undefined)skipReasons[prefix]++;continue}
         save('PROS-'+Date.now()+'-'+Math.random().toString(36).slice(2,7),{
           rank:parseInt(g(row,ci.rank))||i,name,title:g(row,ci.title),company,email:g(row,ci.email),phone,
           linkedin:g(row,ci.linkedin),companyLinkedin:g(row,ci.compLinkedin),website:g(row,ci.website),twitter:g(row,ci.twitter),
@@ -8648,12 +8703,39 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify}){
           status:g(row,ci.status)||'New',notes:g(row,ci.notes),assignedRep:'',addedAt:new Date().toISOString()
         });added++;
       }
+      // Primary notification: always shown, same shape as before so existing UX is preserved.
       notify(added+' prospects imported'+(skipped>0?', '+skipped+' duplicates skipped':''));
+      // Secondary breakdown only when matches happened on email, LinkedIn, phone, or name-only.
+      if(skipped>0&&(skipReasons.e>0||skipReasons.l>0||skipReasons.p>0||skipReasons.n>0)){
+        const bits=[];
+        if(skipReasons.nc>0)bits.push(skipReasons.nc+' by name+company');
+        if(skipReasons.e>0)bits.push(skipReasons.e+' by email');
+        if(skipReasons.l>0)bits.push(skipReasons.l+' by LinkedIn');
+        if(skipReasons.p>0)bits.push(skipReasons.p+' by phone');
+        if(skipReasons.n>0)bits.push(skipReasons.n+' by name (no other identifier)');
+        notify('Duplicates: '+bits.join(', '));
+      }
     }catch(err){notify('CSV error: '+err.message,'error')}
   };
 
 
-  const addSingle=()=>{if(!addForm.name.trim()){notify('Name required');return}save('PROS-'+Date.now()+'-'+Math.random().toString(36).slice(2,7),{...addForm,rank:prospects.length+1,addedAt:new Date().toISOString()});setAddForm({name:'',title:'',company:'',email:'',phone:'',city:'',state:'',linkedin:'',website:'',twitter:'',employees:'',status:'New',notes:'',address:'',assignedRep:'',revenue:'',funding:''});setShowAdd(false);notify('Added: '+addForm.name)};
+  const addSingle=()=>{
+    if(!addForm.name.trim()){notify('Name required');return}
+    // Dedup: rebuild the keys-set fresh each time (prospects state changes between renders).
+    const existingKeys=_buildExistingProspectKeys();
+    const candidate={name:addForm.name,company:addForm.company,email:addForm.email,linkedin:addForm.linkedin,phone:addForm.phone};
+    const dupKey=_checkProspectDup(candidate,existingKeys);
+    if(dupKey){
+      const prefix=dupKey.split(':')[0];
+      const reason=prefix==='e'?'email already exists':prefix==='l'?'LinkedIn already exists':prefix==='p'?'phone number already exists':prefix==='n'?'name already exists (no other identifier on the record)':'name + company already exists';
+      notify('Duplicate prospect -- '+reason,'error');
+      return;
+    }
+    save('PROS-'+Date.now()+'-'+Math.random().toString(36).slice(2,7),{...addForm,rank:prospects.length+1,addedAt:new Date().toISOString()});
+    setAddForm({name:'',title:'',company:'',email:'',phone:'',city:'',state:'',linkedin:'',website:'',twitter:'',employees:'',status:'New',notes:'',address:'',assignedRep:'',revenue:'',funding:''});
+    setShowAdd(false);
+    notify('Added: '+addForm.name);
+  };
   const bulkStatus=(s)=>{selected.forEach(id=>{const p=prospects.find(x=>x.id===id);if(p)save(id,{...p,status:s})});notify(selected.size+' >> '+s);setSelected(new Set())};
   const bulkDel=()=>{if(!confirm('Delete '+selected.size+' prospects?'))return;selected.forEach(id=>deleteSop(id));notify(selected.size+' deleted');setSelected(new Set())};
   const bulkAssign=(rid)=>{selected.forEach(id=>{const p=prospects.find(x=>x.id===id);if(p)save(id,{...p,assignedRep:rid})});notify(selected.size+' assigned');setSelected(new Set())};
