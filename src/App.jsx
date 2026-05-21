@@ -3073,7 +3073,18 @@ function DeliveryPage({jobs,lineItems,vendors,customers,reps,userRole,userRepId,
   });
   const visibleJobIds=new Set(jobsForView.map(j=>j.id));
   const lineItemsForView=lineItems.filter(i=>visibleJobIds.has(i.jobId));
-  const allItems=(delFilter==="all"?lineItemsForView:delFilter==="delivered"?lineItemsForView.filter(i=>i.qtyReceived>=i.qtyOrdered&&i.qtyOrdered>0):lineItemsForView.filter(i=>i.qtyReceived<i.qtyOrdered)).map(i=>({...i,jobName:jobsForView.find(j=>j.id===i.jobId)?.name||"",jobId:i.jobId}));
+  // Determine which jobs match the current filter, THEN show all line items from those
+  // jobs -- not just the individual line items that match. Maureen reported May 20 2026:
+  // a 4-line PO for North Shore District 112 (McCourt Series 5 Folding Chairs, Chair Cart,
+  // and 2 freight lines) showed only 3 lines because the Chair Cart had qtyReceived=qtyOrdered
+  // and got filtered out as "not pending." A user expects to see the FULL PO context when
+  // viewing a job that still has pending work -- including the line items that have already
+  // arrived. The filter's purpose is to hide entire jobs that are 100% done, not to hide
+  // individual completed items within a partially-shipped job.
+  const jobMatchesPending=(jobId)=>lineItemsForView.some(i=>i.jobId===jobId&&i.qtyReceived<i.qtyOrdered);
+  const jobMatchesDelivered=(jobId)=>{const items=lineItemsForView.filter(i=>i.jobId===jobId);return items.length>0&&items.every(i=>i.qtyReceived>=i.qtyOrdered&&i.qtyOrdered>0)};
+  const matchingJobIds=new Set(jobsForView.filter(j=>delFilter==="all"?true:delFilter==="delivered"?jobMatchesDelivered(j.id):jobMatchesPending(j.id)).map(j=>j.id));
+  const allItems=lineItemsForView.filter(i=>matchingJobIds.has(i.jobId)).map(i=>({...i,jobName:jobsForView.find(j=>j.id===i.jobId)?.name||"",jobId:i.jobId}));
   const partials=lineItemsForView.filter(i=>i.qtyReceived>0&&i.qtyReceived<i.qtyOrdered);
 
 
