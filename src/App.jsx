@@ -3339,6 +3339,14 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
   const [billPayDate,setBillPayDate]=useState('');
   const [billMemo,setBillMemo]=useState('');
   const [billSelected,setBillSelected]=useState(new Set());
+  // New-payment form inputs (used in the Payment Trail card of the bill detail panel).
+  // Pre-populated with the bill's current balance and today's date when the panel opens.
+  // Names prefixed with billPay... to avoid collision with the unrelated Payment tab state
+  // (payDate/payMemo/payAmt/etc) declared further down.
+  const [billPayAmount,setBillPayAmount]=useState('');
+  const [billPayInputDate,setBillPayInputDate]=useState('');
+  const [billPayCheckInput,setBillPayCheckInput]=useState('');
+  const [billPayMemoInput,setBillPayMemoInput]=useState('');
   // Vendor Credit / Standalone Bill modal: lets the user attach a credit or a
   // standalone bill (one not derived from a PO) to a project. Stored in
   // customSops with cat 'VendorCredit' or 'StandaloneBill'. Both flow through
@@ -3661,6 +3669,39 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
       // Build vendor bills from PO data. Use genPOs so each (vendor, shipTo)
       // group becomes its own bill -- consistent with the POs tab.
       const allBills=[];
+      // PAYMENT HISTORY HELPERS
+      // -----------------------
+      // Bills used to track a single payment via flat fields {paid,payDate,checkNum,memo}.
+      // That broke when a bill grew over time -- e.g. Maureen's McCourt bill where a
+      // partial shipment was paid for, then the rest of the order arrived and pushed
+      // the bill amount higher. The old model couldn't represent "I paid $X with check
+      // #A on date 1, then $Y with check #B on date 2" -- it just showed one check for
+      // the full final amount, breaking reconciliation against bank statements.
+      //
+      // New model: payments:[{date,amount,checkNum,memo,method,isLegacy?}]. Each shipment
+      // payment is its own entry. totalPaid sums them; balance = cost - totalPaid; paid
+      // is fully-settled when totalPaid >= cost (penny tolerance). When a payment was
+      // recorded under the old model, _getBillPayments synthesizes a single legacy entry
+      // (amount = bill cost AT MIGRATION TIME, which may be wrong for grown bills --
+      // the user can edit that amount in the detail panel to correct the historical record).
+      const _getBillPayments = (billData, billCost) => {
+        if (Array.isArray(billData?.payments)) return billData.payments;
+        if (billData?.paid || billData?.checkNum || billData?.payDate) {
+          // Legacy single-payment bill. Synthesize one entry with amount = current cost.
+          // Marked isLegacy:true so the UI can offer an "Edit" affordance to correct it.
+          return [{
+            date: billData.payDate || '',
+            amount: Number(billCost)||0,
+            checkNum: billData.checkNum || '',
+            memo: billData.memo || '',
+            method: 'legacy',
+            isLegacy: true
+          }];
+        }
+        return [];
+      };
+      const _sumPayments = (payments) =>
+        (payments||[]).reduce((s,p) => s + (Number(p.amount)||0), 0);
       // Counter for bills that have been marked deleted. Incremented inside the loop
       // regardless of whether the "Show deleted bills" toggle is on, so the user can
       // always see how many hidden bills exist in the "Show deleted (N)" pill.
@@ -3737,7 +3778,18 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
             deletedBillsCount++;
             if(!showDeletedBills)return;
           }
-          const paid=billData.status==='paid'||billData.paid||docStatuses[billDocNum]==='paid';
+          // Payment history model. See _getBillPayments comment block above. _isFullyPaid
+          // is derived from sum(payments) >= cost (penny tolerance); legacy bills
+          // synthesize a single payment entry on first read so they slot into this model
+          // cleanly. _isPartiallyPaid means: at least one payment recorded, but balance > 0.
+          const _payments = _getBillPayments(billData, cost);
+          const _totalPaid = _sumPayments(_payments);
+          const _balance = Math.max(0, cost - _totalPaid);
+          const _isFullyPaid = _totalPaid >= cost - 0.005;
+          const _isPartiallyPaid = _totalPaid > 0.005 && !_isFullyPaid;
+          // Voided overrides everything. Outside void: paid is fully-settled OR the user
+          // explicitly cycled status to 'paid' (which the cycle-status badge does).
+          const paid = billData.status==='void' ? false : (_isFullyPaid || billData.status==='paid');
           const isVoidBill=billData.status==='void';
           const isCredit=billData.isCredit||false;
           // creditAmount: when isCredit is true, the dollar amount of credit applied. Defaults
@@ -3746,9 +3798,19 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           // Clamp to [0, cost] to prevent malformed input from breaking totalOwed calculations.
           const _credRaw=(billData.creditAmount!==undefined&&billData.creditAmount!==null&&billData.creditAmount!=='')?Number(billData.creditAmount):cost;
           const _credAmt=isNaN(_credRaw)?cost:Math.max(0,Math.min(cost,_credRaw));
+          // _lastPay surfaces the most recent payment's metadata as the display defaults
+          // (checkNum, payDate, memo). Maintains compatibility with all the existing UI
+          // surfaces that read bill.checkNum / bill.payDate. The Payment Trail card shows
+          // the full history; everywhere else continues to show "the latest payment".
+          const _lastPay = _payments.length > 0 ? _payments[_payments.length-1] : null;
           allBills.push({job,vendor:v,vendorId:vid,vendorName:v?.name||'Unknown',items:vItems,cost,orderValue,poDocNum,billDocNum,poDate,
             dueDate:_safeDueDateStr,daysUntil,paid,voided:isVoidBill,itemCount:vItems.length,
-            vendorInvNum:billData.vendorInvNum||'',checkNum:billData.checkNum||'',payDate:billData.payDate||'',memo:billData.memo||'',checkPrinted:billData.checkPrinted||'',isCredit:billData.isCredit||false,creditAmount:_credAmt,
+            vendorInvNum:billData.vendorInvNum||'',
+            checkNum:_lastPay?.checkNum||billData.checkNum||'',
+            payDate:_lastPay?.date||billData.payDate||'',
+            memo:_lastPay?.memo||billData.memo||'',
+            checkPrinted:billData.checkPrinted||'',isCredit:billData.isCredit||false,creditAmount:_credAmt,
+            payments:_payments, totalPaid:_totalPaid, balance:_balance, isPartiallyPaid:_isPartiallyPaid,
             _isDeleted:billData.deleted===true});
         });
       });
@@ -3814,6 +3876,13 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
             checkPrinted: '',
             isCredit: s.cat === 'VendorCredit',
             creditAmount: s.cat === 'VendorCredit' ? amtNum : 0,
+            // Standalone bills don't track multi-payment history (they're flat single
+            // amounts). Surface the same shape as PO-derived bills for downstream
+            // uniformity: balance is full amount if unpaid, zero if paid.
+            payments: paid3 ? [{date: d.payDate||'', amount: amtNum, checkNum: d.checkNum||'', memo: d.memo||'', method:'standalone'}] : [],
+            totalPaid: paid3 ? amtNum : 0,
+            balance: paid3 ? 0 : amtNum,
+            isPartiallyPaid: false,
             _standalone: true,
             _sopId: s.id,
             _standaloneKind: s.cat,
@@ -3828,13 +3897,40 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
       const unpaidBills=allBills.filter(b=>!b.paid&&!b.voided&&!b._isDeleted);
       // Credits reduce the total balance owed by the credit amount (defaults to full bill cost
       // when no custom amount is entered, allowing partial-credit support).
-      // Use explicit number check (not || fallback) so a creditAmount of 0 stays 0
-      // instead of falling back to bill.cost.
-      const totalOwed=unpaidBills.reduce((s,b)=>s+(b.isCredit?-(typeof b.creditAmount==='number'?b.creditAmount:b.cost):b.cost),0);
-      const overdueAmt=overdueBills.reduce((s,b)=>s+b.cost,0);
+      // For non-credit bills, use balance (cost minus payments already recorded) so partial
+      // payments correctly reduce Total Owed. Standalone bills (no payment history) have
+      // balance == cost.
+      const totalOwed=unpaidBills.reduce((s,b)=>s+(b.isCredit?-(typeof b.creditAmount==='number'?b.creditAmount:b.cost):(typeof b.balance==='number'?b.balance:b.cost)),0);
+      const overdueAmt=overdueBills.reduce((s,b)=>s+(typeof b.balance==='number'?b.balance:b.cost),0);
       const toggleSelect=(idx)=>{const next=new Set(billSelected);if(next.has(idx))next.delete(idx);else next.add(idx);setBillSelected(next)};
       const selectAll=()=>{if(billSelected.size===unpaidBills.length)setBillSelected(new Set());else setBillSelected(new Set(unpaidBills.map((_,i)=>i)))};
-      const markSelectedPaid=()=>{const today=new Date().toISOString().split('T')[0];unpaidBills.forEach((bill,i)=>{if(billSelected.has(i)){setDocStatus(bill.billDocNum,{paid:true,payDate:today,vendorInvNum:bill.vendorInvNum,checkNum:'',memo:'Batch payment'})}});notify(billSelected.size+' bill'+(billSelected.size!==1?'s':'')+' marked as paid');setBillSelected(new Set())};
+      const markSelectedPaid=()=>{
+        const today=new Date().toISOString().split('T')[0];
+        unpaidBills.forEach((bill,i)=>{
+          if(!billSelected.has(i))return;
+          if(bill._standalone){
+            // Standalone bills: use the existing flat-paid pathway.
+            const sop=(customSops||[]).find(s=>s.id===bill._sopId);
+            if(!sop)return;
+            let d={};try{d=JSON.parse(sop.content||'{}')}catch{}
+            const updated={...d,paid:true,payDate:today};
+            addSop({id:sop.id,title:sop.title,cat:sop.cat,icon:sop.icon,content:JSON.stringify(updated),custom:true});
+            return;
+          }
+          // PO-derived bills: append a payment for the REMAINING BALANCE so the bill
+          // settles to fully paid without double-counting prior partial payments.
+          const bal = typeof bill.balance==='number' ? bill.balance : bill.cost;
+          if (bal <= 0.005) return;  // already paid in full
+          const existing = typeof docStatuses[bill.billDocNum]==='object' ? docStatuses[bill.billDocNum] : {};
+          const prevPayments = _getBillPayments(existing, bill.cost);
+          const newPayments = [...prevPayments, {date: today, amount: bal, checkNum: '', memo: 'Batch payment', method: 'batch'}];
+          const total = _sumPayments(newPayments);
+          const fullyPaid = total >= bill.cost - 0.005;
+          setDocStatus(bill.billDocNum,{...existing, payments: newPayments, paid: fullyPaid, payDate: today, vendorInvNum: bill.vendorInvNum, checkNum: '', memo: 'Batch payment', status: fullyPaid?'paid':'partial'});
+        });
+        notify(billSelected.size+' bill'+(billSelected.size!==1?'s':'')+' marked as paid');
+        setBillSelected(new Set());
+      };
       const selectByVendor=(vendorName)=>{const next=new Set();unpaidBills.forEach((b,i)=>{if(b.vendorName===vendorName)next.add(i)});setBillSelected(next)};
       const selectByJob=(jobName)=>{const next=new Set();unpaidBills.forEach((b,i)=>{if(b.job.name===jobName)next.add(i)});setBillSelected(next)};
       // Standalone Vendor Credit / Vendor Bill handlers. Records live in customSops
@@ -3886,7 +3982,9 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
       const printBatchCheck=()=>{
         const selectedBills=Array.from(billSelected).map(i=>unpaidBills[i]).filter(Boolean);
         if(selectedBills.length===0)return;
-        const totalCost=selectedBills.reduce((s,b)=>s+b.cost,0);
+        // Total = sum of remaining balances (not full bill costs), so partial-paid bills
+        // print a check for what's actually outstanding.
+        const totalCost=selectedBills.reduce((s,b)=>s+(typeof b.balance==='number'?b.balance:b.cost),0);
         const vendorName=selectedBills[0].vendorName;
         const vendorAddr=selectedBills[0].vendor?(selectedBills[0].vendor.contact?(selectedBills[0].vendor.contact+'\n'):'')+(vendorName||'')+'\n'+(selectedBills[0].vendor.address||''):'';
         const vendorAddrHtml=vendorAddr.split('\n').filter(Boolean).join('<br>');
@@ -3912,7 +4010,7 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
         const micrCheckNum=String(checkNo).padStart(6,'0');
         const micrFontStr='C'+micrCheckNum+'C   A071926155A   C01597962C';
         // Build stub rows for all included POs
-        const stubRows=selectedBills.map(b=>{const bDate=b.payDate||b.poDate||dateStr;const ref=b.vendorInvNum||b.poDocNum||'';const af=b.cost.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});return '<tr><td>'+bDate+'</td><td>Bill</td><td>'+ref+'</td><td class="amt">'+af+'</td><td class="amt">'+af+'</td><td class="amt">'+af+'</td></tr>'}).join('');
+        const stubRows=selectedBills.map(b=>{const bDate=b.payDate||b.poDate||dateStr;const ref=b.vendorInvNum||b.poDocNum||'';const amt=typeof b.balance==='number'?b.balance:b.cost;const af=amt.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});return '<tr><td>'+bDate+'</td><td>Bill</td><td>'+ref+'</td><td class="amt">'+af+'</td><td class="amt">'+af+'</td><td class="amt">'+af+'</td></tr>'}).join('');
         const fontB64=(() => { try { const m=document.querySelector('style'); return ''; } catch(e) { return ''; }})();
         const html=`<!DOCTYPE html><html><head><title>Batch Check ${checkNo}</title><style>
 @font-face{font-family:'MICR';src:url(data:font/truetype;base64,AAEAAAAKAIAAAwAgT1MvMhrDB94AAACsAAAATmNtYXBVqb7oAAAA/AAAA6ZnbHlmVzPUWAAABKQAADVAaGVhZODmvhYAADnkAAAANmhoZWEdMxCSAAA6HAAAACRobXR4ugQhhAAAOkAAAABcbG9jYYSUk8YAADqcAAAAMG1heHAAHADwAAA6zAAAACBuYW1lCAdeTwAAOuwAAAHQcG9zdAADAAAAADy8AAAAIAAACBYBkAAFAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgsGAAUDAgICBAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAIPACB38AAAiBB38AAAAAAAAAAgABAAAAAAAUAAMAAQAAARoAAAEGAAABAAAAAAAAAAEDAAAAAgAAAAAAAAAAAAAAAAAAAAEAAAMAAAAAAAAAAAAAAAAAAAAEBQYHCAkKCwwNAAAAAAAAAA4REhUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADxATFAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQCjAAAACIAIAAEAAIA/wFTAWEBeAGSAsYC3CAUIBogHiAiICYgMCA6ISIiGf//AAAAIAFSAWABeAGSAsYC3CATIBggHCAgICYgMCA5ISIiGf//AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAiAeAB4gHkAeQB5AHkAeQB5gHqAe4B8gHyAfIB9AH0AfQAAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAUABgAHAAgACQAKAAsADAANAAAAAAAAAAAAAAAAAAAADgARABIAFQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8AEAATABQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAgABB38HfwAvAI8AAAEAAAEAAAEAAAEAAAEAAAEAAAEAAAEAAAEAAAEAAAEAAAEAAAEAAAEAAAEAAAEAAAEAAAAAAAAAAAEAAAEAAAEAAAAAAAAAAAEAAAAAAAAAAAEAAAEAAAEAAAAAAAAAAAEAAAAAAAAAAAEAAAEAAAEAAAAAAAAAAAEAAAAAAAAAAAEAAAEAAAEAAAAAAAAAAAPB/53/RP+q/6v/Zv++/7//mP/b/9z/2QAAAAAAJwAkACUAaABBAEIAmgBVAFYAvABjAGMAuwBWAFUAmgBCAEEAaAAlACQAJwAAAAD/2f/c/9z/l/+//77/Zv+r/6r/Rf+dABMAJwAnACUAJgAkACQAIwARAEQAewA0ADMAVAAdAAf/+//v/+X/4v/h/+j/8AAAAAAAEAAYAB8AHgAbABEABf/5/+P/rf/M/8z/hf+8/+//3f/c/9z/2v/b/9n/2f/t/+z/2f/Z/9v/2v/c/9z/3f/v/7z/hP/N/8z/rf/j//gABQASABsAHwAfABgAEAAAAAD/8P/o/+H/4f/l/+7/+wAIAB0AUwA0ADQAegBFABEAIwAkACQAJgAlACcAJwABAAAAKAAkACQAaABCAEEAmgBVAFYAvABjAGMAvABVAFYAmgBBAEEAaQAkACUAJwAAAAD/2f/b/9z/l/+//7//Zv+q/6v/RP+d/53/RP+q/6v/Zv+//77/mP/c/9z/2AGQAAD/8P/n/+H/4v/l/+7/+wAHAB0AUwA0ADMAewBFABEAIwAkACUAJQAmACcAJgAUABQAJwAmACYAJQAlACQAIgASAEQAewA0ADMAVAAcAAj/+//u/+X/4f/i/+f/8QAAAAAADwAZAB4AHwAbABIABf/4/+T/rP/N/8z/hf+8/+7/3v/c/9v/2//a/9r/2f/s/+z/2v/Z/9r/2//b/9z/3f/v/7v/hv/M/83/rP/j//kABQASABsAHgAfABkAEAACASoAAAbRB1EANABrAAABAQEAAQABAAABAAABAQEAAAEAAAEAAAEAAAEBAQABAAABAAABAAABAQEAAAEAAAEAAAEAAAEAAAEAAAEAAAEAAAEBAQAAAQAAAQAAAQAAAQEBAAABAAABAAABAAABAQEAAAEAAQAAAQAAAQECvAE5ATgAOAAuAC8AJAAOABYACAAHAAkAAAAAAAAAAP/0//X/9v/l//D/7v/V/+j/6P/L/+P+4P7h/8T/zv/n/9X/7//0/+n/9//4//UAAAAAAAAAAAANAAkACQAZAA0AEAAiABQAEwAuAAb/0f+z/+D/4P/L/+j/5v/V//H/8P/vAAAAAAAAAAAADwAOAA4ALAAcABgAOwAiACIAUgAvATwBOwAxAFMAIwAjAD4AGgAcAC8AEQAQABQAAAABAAIAAP/x//L/5P/I/+v/xf/e/9//uv/g/qAAqgAAAAAAAAATABMAKQAQACYAEwAUACgAEwIXAhYAGwAyABYAFQAmAA4AEAAYAAcABwAIAAAAAAAAAAD/7//4/+T/7P/y/9v/7//v/+P/+P3D/cL/+f/h/+7/7v/b//T/8f/n//f/9//1/1YAAAATAA8AEAApABYAGABAACEAIQBBABgCRwJHABIAOgAgACEARAAdABcAKgAPAA8AEgAAAAAAAAAA//L/8//z/9n/6P/m/7//4P/f/7//5P3L/cv/2P+1/97/vf/G/+r/1f/w//D/7AAAAAAAAQOqAAAGzQdSAIYAAAEBAQAAAQAAAQAAAQAAAQEBAAABAAEAAAEAAQEBAAABAAEAAQABAQEAAAEAAAEAAAEAAAEBAQAAAQAAAQAAAQABAQEBAQAAAQAAAQAAAQABAQEAAAEAAAEAAAEAAAEBAQAAAQAAAQAAAQAAAQEBAAABAAABAAEAAAEBAQEBAAABAAABAAABAAUdAAAAAAAAAAYABgAFAA8ACAAIABYACwALABYACQBxAHEACQAQAAgAEAARAAQABwACAAQAAAAAAAAAAP/9//z/+v/2//T/8v/x//T+t/64//z/9P/6//v/8v/7//v/+P/8//3//AAAAAAAAAAAAAQAAwADAAkABAAEAA4ABwAPAAwACQAIAAoACQADAA0ABwAGAA8ABQAEAAoAAwAGAAAAAAAAAAD//P/8//3/9//7//v/8v/5//n/9P/9/+//7v/7//L/+f/6//L/+//7//f//f/9//wAAAAAAAAAAAAEAAMAAwAKAAUACQAMAAYADwAIADcANwA3ADYABgAPAAYABwAOAAUABgAIAAMABwcH/lD+T//0/+f/9P/1/+r/+P/4//L/+//8//oAAAAAAAAAAP////3/+f/p//v/9v/7//X/8/66/rr/+f/x//r/8//2//T/+f/5AAAAAAAAAAAAAwADAAMACAAGAAQADgAHAAYADgAFAUkBSQAGAA8ABgAHAA0ABAAFAAoAAwAHAAAAAAAAAAAAAAAAAAUAAwADAAoABQAFAAwABgAMAAkBSAFIAAcADQAGAAYADAAEAAUACQADAAMABAAAAAAAAAAAAAQAAwADAAkABQAFAA4ABgAHAA4ABgA6ADoACgAPAAYABgAMAAUACQAHAAMABAAAAAAAAAAAAAAAAP/8//3//f/4//v/+v/z//r/8gAAAQOqABkGzgdsAIYAAAEBAQABAAEAAAEAAAEBAQAAAQABAAABAAABAQEAAQABAAABAAABAQEAAAEAAAEAAQAAAQEBAAABAAABAAABAAABAQEAAQAAAQAAAQABAQEAAAEAAAEAAAEAAQEBAAABAAEAAAEAAAEBAQAAAQABAAABAAABAQEAAQAAAQAAAQABAAEAAQABAAP4AUMBQwAPAA0ADgALAA0ADAABAAH//wAAAAAAAAAA//v//f/5//X/+//0//r/+v/y//j/LP8r/+j/6f/p/+7/9//x//r/+//6AAAAAAAAAAAABQAEAAUADQAHABAAGQAMABYACQDaANoADwAcAAoACwAOAAAAAP/1//b/9v/j/+7+vv69//P/8f/5//L/+v/7//b//f/5AAD//wAAAAAABAAEAAMACwAFAAYADgAHAA8ACgDVANYADAAXAAwAGAARAAgADAAEAAUABQAAAAAAAAAA//v//P/3/+3/+v/t//X/9v/o//X/J/8o//f/8f/5//L/+v/6//f//P/5AAAAAAAHAAgADAALAA4AEAdsAAAAAAAA//r/+f/1//P/6//5//n/+P///k7+Tv/8//L/+v/y//b/+//2//3//P/8AAAAAAAAAAD/9v/2/+3/9//s//T/9f/p//X/Kf8q//b/6f/1//b/6v/4/+3/9f/7//kAAAAAAAAAAP/x//X/9P/i//D/8P/g//T/9P/wAAAAAAAAAAAACAADAAoABQAGAA4ABwAPAAwBrwGvAAcAEQAHAAgADQAFAAYACgACAAcAAAAAAAAAAAAHAAUACwAUAAgAFQAKAAsAGAAMANMA0gALABcADAAWABUABwAPAAUABgAIAAAAAAAAAAAABwADAAoABgAFAA8ABwAQAA8AEAASABEADAAMAAYABgAAAQLVABgGygdtAI8AAAEBAQAAAQABAAABAAEBAQAAAQABAAABAAABAQEAAAEAAQABAAABAQEAAAEAAQAAAQAAAQEBAAABAAABAAABAAABAQEAAAEAAAEAAAEAAAEBAQAAAQABAAEAAQEBAAABAAABAAABAAABAQEAAAEAAQAAAQAAAQEBAAABAAABAAABAAABAQEAAAEAAAEAAAEAAAMgAUYBRgAGAA4ABwAOAAwABgAKAAMABwAA//8AAAAAAAQAAwAHAA0ABgAQAAgACQATAAsAHgAeAAQACwAEAAoABwAHAAQAAgADAAAAAAAAAAD//f/+//r/+f/5//D/+P/4//L/+/5T/lP/9f/m//T/9f/uAAAAAAASAA0ADAAaAAgA2gDbAAQAFgAMAA0AGQAHAAkADQAFAAUABQAAAAAAAAAA//r/+//2/+7/8P/q/+r/5v8p/yn/6v/g//f/9//4AAAAAQAOAAoACwAdAA8A1gDXAA4AGAALABYAEgAJAA4ABAAFAAUAAAABAAIAAP/7//z//P/z//j/9f/m//T/8//n//b/Kf8p//X/5v/1//T/8AAAAAAAEAAMAAsAGgdtAAAAAAAA//3//f/6//X/+//0//r/8//z/n7+fv/3/+r/9//r/+7/+P/x//z/+//5AAAAAP//AAD//P/9//r/9v/3//P/+v/0//v+gf6B//r/9P/6//P/9//4//T//P/7//sAAAAAAAAAAAAKAAoACgAhABcAGgAiAAkACQAHAAAAAAABAAAABgAFAAUADwAJAAgAFQALAAoAFgAKANcA1wAMABgACwAZABIAEgAKAAsAAAAAAAAAAAAVAA4ADgAdAAkAEQAgAAsACwAOAAAAAAAAAAAABgAFAAkAEgAJABcACwAMABsADQDPANAADgAYAAoACgATAAkADAASAAYABQAFAAAAAAAAAAAACgAKAAoAIQAXABcAIQAKAAsACQABAf4AGQbPB20AewAAAQABAAABAAABAAABAQEAAAEAAQAAAQABAQEAAAEAAAEAAAEAAQEBAAABAAABAAABAAABAQEAAQABAAABAAEBAQABAAEAAAEAAAEBAQABAAABAAEAAQEBAAABAAABAAABAAEBAQABAAABAAABAAEBAQAAAQABAAABAAABAQMrAAwADgAGAA4ABgAFAAoABAAEAAQAAAAAAAAAAAAFAAUACgAUAAgAFQALABYAFQB0AHUACQAXAAsACwAWAAgACQANAAQACQAAAAAAAAAAAAMAAwACAAkABQAEAA4ABgAHAA0ABQB1AHYACgAMAA0ACwAGAAoAAgAIAAD//wAAAAD/+v/6//b/+//y//r/+f/x//n/kv+S//L/8P/5//L/+v/1//n/+QAAAAAAAAAA//n//P/7//H/+P/3/+z/9f/r/+v+uv66//P/8P/4//H/+f/8//n//f/6//4AAAAAAAAABAACAAYADAAHABAABwAHAA0ABABwB20AAP/5//3/9//6//v/8v/6//n/8f/5/ef95//1/+f/9P/n/+z/9//y//z/9gAAAAAAAAAAAAUAAwAEAA0ABwAJABUACgAXABQAEQAQAAcADQAGAAYADAAEAAUABgACAAIAAgAAAAAAAAAA//r/+f/1//v/8//6//L/9P65/rr/9P/y//P/9f/6//X//P/8//wAAAAAAAAAAAAHAAMACgAFAAsADwAOAAoAcQBxAAoAFgALAAwAFAAJAAgADgAEAAkAAAABAAAAAAAHAAQACwAIAAQACwAFAA0ADQKAAn8ACwAUAAkAEgAMAAYADAADAAQABQAAAAAAAQLRABcGzQdtAH8AAAEAAAEAAAEAAAEAAAEBAQAAAQAAAQABAAABAQEAAQABAAABAAABAQEAAQAAAQAAAQAAAQEBAAABAAABAAEAAQEBAAABAAABAAABAAABAQEAAAEAAAEAAQAAAQEBAAABAAABAAABAAEBAQAAAQABAAABAAEBAQAAAQABAAABAAEBBnoADgAeAAsADAAPAAAAAf/u//T/9P/j//f+wv7D//b/6P/1//X/6//3/+v/9f/7//kAAAABAAAAAAAJAAkAEAAJABUACwAMABoADgE/AUAADQAOAAcADgAFAAYACQACAAQAAwAAAAAAAAAA//z//f/9//j//P/0//D/8f/y/lL+Uv/z/+T/9P/1//EAAAAA//8ABgAGACMAJAFAAT8ACwAYAAsACwAWAAkAEQAKAAUABgAAAAAAAAAA//r/+v/7/+//9//3/+z/9v/r/+7+vv6+//r/8f/5//H/8//7//b//f/5AAAAAAAAAAEABQADAAYADAAEAA0ABgAPABABqwdsAAD/9//1//b/3//q/+n/3//2//b/9QAAAAAAAQAA//r/+//7//L/9//u/+j/9f/o//X/LP8s/+3/6v/q/+7/9v/u//r/+f/4AAAAAAAAAAD/+f/9//X/+//6//P/+v/5//L/+f5Q/k//+P/w//v/+f/1//v/8v/4//kAAAAAAAAAAAAPAAsADAAeABAAEwAhAAsADAAOAAAAAAAAAAAABgAFAAYADgAJAA8AFgAKABgADADbANoACQAWAAsACwAWAAkACAAOAAUACQAAAAAAAAAAAAUAAwAHAAwABQAOAAYADwANAbEBsAAHAA4ABwANAAwABAAJAAQABwADAAAAAgH9ABgGzAdtAG0AjQAAAQAAAQAAAQAAAQABAQEAAAEAAAEAAAEAAAEBAQAAAQAAAQABAAEBAQABAAABAAABAAABAQEAAAEAAQABAAABAQEAAAEAAAEBAQAAAQAAAQAAAQAAAQEBAAABAAABAAEAAAEBAQAAAQABAAEAAQEBAQEAAAEAAAEBAQAAAQAAAQEBAAABAAABAQEAAAEAAATSAAcAEgAHAAkADgAGAAUACQADAAYAAAAAAAAAAP/x//T/9P/h//D/7v/h//T/9P/xAAAAAP//AAD/+v/8//v/8f/3/+3/6v/n/+r/mv+Z/+j/6f/0/+v/9//3//D/+//6//oAAAABAAAAAAAFAAQACQAQABIAGAAMABoADgGqAaoADQAdAAsACwAPAAAAAAAAAAD/+//+//3/9v/7//r/8//5//r/8f/5/en95//6//D/+f/5//H/+v/2//r//f/9AAAAAP//AAAABQADAAcACwAMAA8ADwAMAUP/lwE8ATwAGgAuABAAEQAVAAAAAAAAAAD/6//v//D/0v/m/sT+xP/m/9L/7//w/+wAAAAAAAAAAAAUABAAEQAuB20AAP/7//z//P/0//n/+v/z//r/8v/z/17/Xv/v/+P/9f/2//QAAAAAAAYACAAIACAAGQA1ADQACgAYAAsADAAYAAkAEgALAAsAAAAAAAAAAP/2//v/8v/3//f/6f/1//T/5//1/r/+wP/2/+v/9f/q/+7/7P/1//r/+QAAAAAAAAAA//H/9f/1/+X/8/68/rv/+v/x//n/+f/y//r/+v/2//3//P/8AAAAAAAAAAAABQAEAAMACwAGAAsADQAHAA0ABwNZA1oABwAQAAYADgAMAAwABwAHAAAAAflWAAAAAAAAABYAEgASADIAHABhAGEAHAAyABIAEgAVAAAAAAAAAAD/6//u/+7/zv/k/5//n//k/87/7v/u/+oAAQLYABcG1AdtAIUAAAEAAAEAAAEAAAEAAAEBAQAAAQABAAABAAABAQEBAQAAAQABAAABAAABAQEAAAEAAAEAAAEAAAEBAQAAAQAAAQAAAQAAAQEBAAABAAABAAABAAEBAQAAAQAAAQAAAQABAQEAAQABAAABAAABAQEAAAEAAAEAAAEAAAEBAQAAAQAAAQABAAEBBngACgATAAgACAAPAAYABwAJAAMAAwAEAAAAAP//AAD//wAA//7/+//+//j/+//8//f/+/+z/7P/s/+z//j/8f/5//L/9v/8//f//v/+//wAAAABAAAAAP/x//T/9P/h/+//8P/g//T/8//xAAAAAAAAAAAABAACAAQACAAFAAUADAAFAAYADAAEAI0AjAAHABMACQAJABEABQACAAQAAAACAAAAAAAAAAD/+//8//z/8f/4//f/6v/0/+f/6P8u/y//7P/p/+n/7//3//D/+//7//sAAAAAAAAAAP/z//X/9f/j/+//6v/d//X/9P/0AAAAAAABAAAABAAEAAQACwAGAA0ADwAPABEBowdtAAD//P/9//z/9v/7//r/8v/6//n/8P/5/pz+nP/8//T/+v/z//b/+//2//3//P/5//7/3P/d/9z/3P/9//f/+//2//X/+v/z//r/+v/z//r+pP6k/+r/4f/3//b/9wAAAAAAEAALAAsAHQAOAZsBmwAHAA0ABgAHAA0ABQAFAAsABAAEAAcAAgA/AD4AAwAIAAUABQAQAAwAAwAKAAQACgAMALkAuQALABcADAAMABYACQAKABIABQANAAAAAAAAAAD/9f/2/+//9v/o//X/8//m//X/lv+X//H/4//1//T/8v////8AEgANAA0AHQAKANMA0gAPABYABwAIAAwABwAMAAYABwAAAAAAAwEhABkG0wd5AB8APwCqAAABAQEAAAEAAAEBAQAAAQAAAQEBAAABAAABAQEAAAEAAAEBAQAAAQAAAQEBAAABAAABAQEAAAEAAAEBAQAAAQAAAQEBAAEAAQAAAQABAQEAAAEAAAEAAAEAAQEBAAABAAABAAABAAABAQEAAQAAAQAAAQAAAQEBAAABAAABAAABAAABAQEAAAEAAAEAAQABAQEBAQAAAQAAAQABAAABAQEBAQAAAQAAAQAAAQADHQDcAN0AFwAqAA8ADwASAAAAAAAAAAD/7v/x//H/1v/p/yP/JP/o/9f/8f/x/+0AAAAAAAAAAAATAA8ADwApAB4A1gDXABgALAAQABEAEwAAAAAAAAAA/+3/7//w/9T/6P8p/yr/5//V/+//8P/tAAAAAAAAAAAAEwAQABEAK/4XAAAAAAAAAAcABQALAAcAEAAIABEADwAdAB0ABQAOAAYABwAPAAYABgAKAAQACAAAAAAAAAAAAAUABAAEAAoABgAFABAABgAHAAwAAgGqAaoADwARAAgAEgAHAAwADAADAAIAAQAAAAAAAAAAAAUAAwADAAsABQAFAAwABwAIABAACAAZABoACAAPAAYABgAMAAYACwAFAAYAAP//AAAAAAAAAAD/+//9//z/9v/6//P/8f/4//D/+P7C/sL+w/7C//f/7v/3//f/8P/5//n/9f/8//gEKQAAAAAAAAASABAAEAArABkA1ADUABkAKwAQABAAEwAAAAAAAAAA/+3/8P/w/9X/5/8s/yz/5//V//D/8P/u/KsAAAAAAAAAEwAPABAAKwAYAOAA3wAYACsAEAAPABMAAAAAAAAAAP/t//H/8f/U/+j/If8g/+j/1f/w//H/7f+mAYsBiwAMAAsACgAIAAUACgADAAYAAAAAAAAAAAAGAAMABAALAAYABgAMAAYADQAKAX4BfwAJABMACAAIABAABQAGAAsAAwAEAAQAAAAAAAEAAP/2//v/9P/4//X/6f/3//f/8v/8/ob+h//5//H/+v/5//T/+//8//j//P/9//sAAAAAAAAAAP/7//z//f/2//z/9v/y//H/8/8m/yX/Vf9V//j/7//4//j/8P/5//H/+f/8//sAAAAAAAAAAAAAAAAABgAEAAQADAAHAAcAEAAIABIAAAICAAAZBtMHbwBLAH8AAAEBAQABAAEAAAEAAAEBAQAAAQAAAQABAAEBAQAAAQAAAQABAAEBAQABAAABAAABAAABAQEAAAEAAQAAAQAAAQEBAAABAAABAAABAAABAQEAAAEAAAEAAQAAAQEBAAABAAABAAABAAABAQEAAQAAAQAAAQAAAQEBAAEAAAEAAQAAAloCDgIPABMAEAAQAA0ABgALAAMAAwAFAAAAAAAAAAD//f/9//3/+P/7//T/7f/u/+z/lv+X//r/8f/5//r/8f/7//X/+f/6AAAAAAAAAAD/9v/8//L/+P/3/+r/9f/0/+f/9P7B/sH/9//s//j/7//z//v/9//+//3//AAAAAAAAAAAAAUABAADAAsABwAGAA4ABwAIABEA2wE5ATkADQAbAAsADAAVAAkAEgAKAAUABgAAAAAAAAAA//r/+//8//H/9//3/+v/9P/1/+X/8/7H/sf/6P/r//X/7f/3//b/7f/6//r/+QAAAAAAAAAAAAoABQAPAAkAEwAWAAwAGgdvAAAAAAAA//n/+f/z//r/8f/4//n/7v/2/K78rv/4//H/+f/5//L/+//y//j/9wAAAAAAAAAAAAQABAAEAAsABQAKAA0ADAAMAUMBQgAZABgACwAVAAgACgARAAUABQAHAAAAAAAAAAAABAAEAAcADwAFAA8ACAAIABAABwGnAacACgATAAgACAAPAAYABgAJAAIAAwAE/KwAAAAAAAAABgAFAAUADwAJABIAGAAMABoADgDOAMwADgAbAAwADAAVAAkACQAPAAUABQAFAAAAAAAAAAD/+P/8//X/+f/3/+n/8//z/+L/8P80/zL/5v/n//T/6v/3/+3/9v/8//kAAwEqABcGwwdmACsAWACGAAABAAEAAQABAAEBAQABAAEAAQAAAQEBAAEAAQABAAEBAQAAAQABAAABAAABAQEAAAEAAQABAAEBAQAAAQABAAABAAABAQEAAAEAAQABAAEBAQABAAEAAQABAQEAAAEAAAEAAQABAQEAAAEAAQAAAQAAAQEBAAABAAEAAQABAQEAAQABAAEAAQEBdv/x//L/8v/1//X/+//6AAAAAAAAAAAABgAGAAoACgAPAAcADwAHAGoAawAPAA8ADgAKAAsABgAGAAAAAAAAAAD/+//9//n/8//7//T/+v/6//P/+f+VAun/+P/v//n/8f/1//T/+v/6AAAAAAAAAAAABAADAAYACwAGAA0ABwAHABEACADUANQACAAQAAgADwALAAwABgAGAAAAAAAAAAD/+v/5//X/9v/w//D/8P8s/yz/+P/v//n/+f/z//r/9P/6//oAAAAAAAAAAAAEAAMABgALAAYADQAHAAcAEQAIANQA1AAIABAACAAPAAsADAAGAAYAAAAAAAAAAP/6//r/9P/1//H/8f/v/ywBWwAAAAYABQALAAsADQAPAA8CHAIbAA4ADwAPAAoACgAGAAMABAAAAAAAAAAA//n/+//1//X/8v/x//L95f3k//f/7//5//H/9f/8//n//v////0AAAAA/rwAAAADAAMABwAKAAwADwAPABAA1QDVAAgAEAAHAA8ACwAGAAkAAwADAAQAAAAAAAAAAP/8//3/+f/1//X/8f/x//D/K/8r//D/8P/x//X/9v/5//oAAAAABQIAAAADAAMAAwAJAAYADAAOAA8AEQDUANUACAARAAcADwALAAYACQACAAQAAwAAAAAAAAAA//3//P/6//X/9f/x//D/8P8r/yz/7//x//L/9P/0//r/+gAAAAAAAAMBKgAXBsMHZgArAFgAhgAAAQABAAEAAQABAQEAAQABAAEAAAEBAQABAAEAAQABAQEAAAEAAQAAAQAAAQEBAAABAAEAAQABAQEAAAEAAQAAAQAAAQEBAAABAAEAAQABAQEAAQABAAEAAQEBAAABAAABAAEAAQEBAAABAAEAAAEAAAEBAQAAAQABAAEAAQEBAAEAAQABAAEBAXb/8f/y//L/9f/1//v/+gAAAAAAAAAAAAYABgAKAAoADwAHAA8ABwBqAGsADwAPAA4ACgALAAYABgAAAAAAAAAA//v//f/5//P/+//0//r/+v/z//n/lQLp//j/7//5//H/9f/0//r/+gAAAAAAAAAAAAQAAwAGAAsABgANAAcABwARAAgA1ADUAAgAEAAIAA8ACwAMAAYABgAAAAAAAAAA//r/+f/1//b/8P/w//D/LP8s//j/7//5//n/8//6//T/+v/6AAAAAAAAAAAABAADAAYACwAGAA0ABwAHABEACADUANQACAAQAAgADwALAAwABgAGAAAAAAAAAAD/+v/6//T/9f/x//H/7/8sAVsAAAAGAAUACwALAA0ADwAPAhwCGwAOAA8ADwAKAAoABgADAAQAAAAAAAAAAP/5//v/9f/1//L/8f/y/eX95P/3/+//+f/x//X//P/5//7////9AAAAAP68AAAAAwADAAcACgAMAA8ADwAQANUA1QAIABAABwAPAAsABgAJAAMAAwAEAAAAAAAAAAD//P/9//n/9f/1//H/8f/w/yv/K//w//D/8f/1//b/+f/6AAAAAAUCAAAAAwADAAMACQAGAAwADgAPABEA1ADVAAgAEQAHAA8ACwAGAAkAAgAEAAMAAAAAAAAAAP/9//z/+v/1//X/8f/w//D/K/8s/+//8f/y//T/9P/6//oAAAAAAAADASkAFwbFB2sAHwA/AF0AAAEAAAEAAAEBAQAAAQAAAQEBAAABAAABAQEAAAEAAAEBAQAAAQAAAQEBAAABAAABAQEAAAEAAAEBAQAAAQAAAQEBAQAAAQAAAQEBAAABAAABAQAAAQAAAQEBAAABAAABfv/v/+D/9f/0//MAAAAAAAAAAAANAAwACwAgABEAZwBmABIAHwALAAwADQAAAAAAAAAA//P/9P/1/+H/7v+aA77/7//g//X/9P/zAAAAAAAAAAAADQAMAAsAIAARAGcAZgASAB8ACwAMAA0AAAAAAAAAAP/z//T/9f/h/+7/mv3tAAEAEQAeAAwACwAOAAAAAAAAAAD/8v/1//X/4f/v////7//h//X/9f/yAAAAAAAAAAAADgALAAsAHwAXAAAADQAMAAwAHwASAT4BPgASACAADAALAA4AAAAAAAAAAP/y//X/9P/g/+7+wv7C/+7/4f/0//T/8wAAAAAEKgAAAA4ADAALACAAEgE+AT4AEgAgAAsADAAOAAAAAAAAAAD/8v/0//X/4P/u/sL+wv/u/+D/9f/0//IAAAAAAUsAAAAA//D/8v/z/9v/6/6Z/pj/7P/b//L/8//wAAAAAAAAABAADQANACYAFAFoAWcAFQAlAA0ADQARAAMBKQAXBsUHawAfAD8AXQAAAQAAAQAAAQEBAAABAAABAQEAAAEAAAEBAQAAAQAAAQEBAAABAAABAQEAAAEAAAEBAQAAAQAAAQEBAAABAAABAQEBAAABAAABAQEAAAEAAAEBAAABAAABAQEAAAEAAAF+/+//4P/1//T/8wAAAAAAAAAAAA0ADAALACAAEQBnAGYAEgAfAAsADAANAAAAAAAAAAD/8//0//X/4f/u/5oDvv/v/+D/9f/0//MAAAAAAAAAAAANAAwACwAgABEAZwBmABIAHwALAAwADQAAAAAAAAAA//P/9P/1/+H/7v+a/e0AAQARAB4ADAALAA4AAAAAAAAAAP/y//X/9f/h/+/////v/+H/9f/1//IAAAAAAAAAAAAOAAsACwAfABcAAAANAAwADAAfABIBPgE+ABIAIAAMAAsADgAAAAAAAAAA//L/9f/0/+D/7v7C/sL/7v/h//T/9P/zAAAAAAQqAAAADgAMAAsAIAASAT4BPgASACAACwAMAA4AAAAAAAAAAP/y//T/9f/g/+7+wv7C/+7/4P/1//T/8gAAAAABSwAAAAD/8P/y//P/2//r/pn+mP/s/9v/8v/z//AAAAAAAAAAEAANAA0AJgAUAWgBZwAVACUADQANABEAAwErAVwGzAcDAC4ASgBmAAABAAABAAABAAEAAAEBAQAAAQABAAEAAQEBAAABAAEAAQABAQEAAQABAAABAAABAQEAAAEAAAEBAQAAAQAAAQAAAQAAAQEBAAABAAABAAABAAABAQEAAAEAAAEAAAEAAAEBAQAAAQAABNL/+P/w//n/+f/z//v/9f/6//3//AAAAAAAAAAAAAQAAwAGAAsACgAPAA8AEADVANUACAAPAAcAEAAKAAoABwAHAAAAAAAAAAD/+f/7//T/+//y//n/+f/x//j/K/2E/+7/4v/0//X/8wAAAAAAAAAAAA0ACwAMAB4AEgARAB8ACwALAA4AAAAAAAAAAP/y//X/9f/h/kP/7v/i//X/9P/zAAAAAAAAAAAADQAMAAsAHgASABIAHgALAAwADQAAAAAAAAAA//P/9P/1/+ID4QAAAAMAAgACAAkABQAJAA4ABgAOAAgBSQFJAAgADgAGAA0ACgAKAAYABQAAAAAAAAAA//3//f/6//f/9//y//L/8v63/rf/8f/z//P/9v/7//f//v/+//0AAAAA/XsAAAAMAAsACgAcABACHAIbABAAHAAKAAsADAAAAAD/9P/1//b/5P/w/eX95P/w/+T/9v/1//QAAAAAAAwACwAKABwAEAIcAhsAEAAcAAoACwAMAAAAAP/0//X/9v/k//D95f3k//D/5P/2//X/9AAAAwErAVwGzAcDAC4ASgBmAAABAAABAAABAAEAAAEBAQAAAQABAAEAAQEBAAABAAEAAQABAQEAAQABAAABAAABAQEAAAEAAAEBAQAAAQAAAQAAAQAAAQEBAAABAAABAAABAAABAQEAAAEAAAEAAAEAAAEBAQAAAQAABNL/+P/w//n/+f/z//v/9f/6//3//AAAAAAAAAAAAAQAAwAGAAsACgAPAA8AEADVANUACAAPAAcAEAAKAAoABwAHAAAAAAAAAAD/+f/7//T/+//y//n/+f/x//j/K/2E/+7/4v/0//X/8wAAAAAAAAAAAA0ACwAMAB4AEgARAB8ACwALAA4AAAAAAAAAAP/y//X/9f/h/kP/7v/i//X/9P/zAAAAAAAAAAAADQAMAAsAHgASABIAHgALAAwADQAAAAAAAAAA//P/9P/1/+ID4QAAAAMAAgACAAkABQAJAA4ABgAOAAgBSQFJAAgADgAGAA0ACgAKAAYABQAAAAAAAAAA//3//f/6//f/9//y//L/8v63/rf/8f/z//P/9v/7//f//v/+//0AAAAA/XsAAAAMAAsACgAcABACHAIbABAAHAAKAAsADAAAAAD/9P/1//b/5P/w/eX95P/w/+T/9v/1//QAAAAAAAwACwAKABwAEAIcAhsAEAAcAAoACwAMAAAAAP/0//X/9v/k//D95f3k//D/5P/2//X/9AAAAwEqAjEGwAVUAC8AYACLAAABAAEAAAEAAAEAAQEBAAABAAEAAQAAAQEBAAABAAEAAAEAAAEBAQAAAQABAAEAAQEBAAEAAAEAAAEAAQEBAAABAAEAAAEAAAEBAQAAAQABAAABAAABAQEAAAEAAQABAAEBAQABAAABAAABAAEBAQAAAQABAAEAAAEAAQAAAQABAAABAQEAAQABAAEAAAF+/+//8P/5//L/+//6//f//f/5AAAAAAAAAAAABAADAAcACwALAA8ACAAQAAkAZQBmAAkAEQAHAA4ADAAGAAkAAwAEAAMAAAAAAAAAAP/8//3/+v/0//X/8f/w/+//mgIR/+//8P/5//P/+v/7//b//f/6AAAAAAAAAAAAAwADAAcACwAFAA4ABwAIABEACABmAGYACAARAAcADwAMAAUACgADAAMABAAAAAAAAAAA//z//f/6//T/9P/x//D/8P+aAhH/7//w//n/8v/7//r/9v/9//oAAAAAAAAAAAADAAIABAAKAAwAEAAJABIACgASAA8ABwAPAAUADAAGAAMABAAAAAAAAAAA//z//P/5//X/7f/3/+wCMQAAAAUAAwAIAAQABQAMAAUADQAPAUwBSwAHAA8ABQANAAkACgAFAAMAAwAAAAAAAAAA//3//f/7//b//P/0//r/+v/y//n+tf60//j/8v/6//T/9v/3//r/+wAAAAAAAAAAAAUAAwAIAAQABQAMAAUADQAPAUwBSwAHAA8ABQANAAkABQAIAAIAAwADAAAAAAAAAAD//f/9//v/9v/8//T/+v/6//L/+f61/rT/+P/y//r/9P/2//f/+v/7AAAAAAAAAAAABwADAAoABgAGAA8ACAAQABMBNwE4AAgAEAAHAA4ADAAQAAgABAAFAAAAAP/4//3/9v/6//T/8P/4/+7/9/7I/sn/8v/z//P/9f/u//b/+//6AAMBKgIxBsAFVAAvAGAAiwAAAQABAAABAAABAAEBAQAAAQABAAEAAAEBAQAAAQABAAABAAABAQEAAAEAAQABAAEBAQABAAABAAABAAEBAQAAAQABAAABAAABAQEAAAEAAQAAAQAAAQEBAAABAAEAAQABAQEAAQAAAQAAAQABAQEAAAEAAQABAAABAAEAAAEAAQAAAQEBAAEAAQABAAABfv/v//D/+f/y//v/+v/3//3/+QAAAAAAAAAAAAQAAwAHAAsACwAPAAgAEAAJAGUAZgAJABEABwAOAAwABgAJAAMABAADAAAAAAAAAAD//P/9//r/9P/1//H/8P/v/5oCEf/v//D/+f/z//r/+//2//3/+gAAAAAAAAAAAAMAAwAHAAsABQAOAAcACAARAAgAZgBmAAgAEQAHAA8ADAAFAAoAAwADAAQAAAAAAAAAAP/8//3/+v/0//T/8f/w//D/mgIR/+//8P/5//L/+//6//b//f/6AAAAAAAAAAAAAwACAAQACgAMABAACQASAAoAEgAPAAcADwAFAAwABgADAAQAAAAAAAAAAP/8//z/+f/1/+3/9//sAjEAAAAFAAMACAAEAAUADAAFAA0ADwFMAUsABwAPAAUADQAJAAoABQADAAMAAAAAAAAAAP/9//3/+//2//z/9P/6//r/8v/5/rX+tP/4//L/+v/0//b/9//6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) format('truetype');font-weight:normal;font-style:normal}
@@ -3985,6 +4083,75 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
         setBillSelected(new Set());
       };
       const saveBillDetail=(bill)=>{const existing=typeof docStatuses[bill.billDocNum]==='object'?docStatuses[bill.billDocNum]:{};setDocStatus(bill.billDocNum,{...existing,vendorInvNum:billInvNum,checkNum:billCheckNum,payDate:billPayDate,memo:billMemo,paid:existing.status==='paid'||!!billPayDate});notify('Bill updated: '+bill.vendorName);setBillDetail(null)};
+      // PAYMENT HISTORY MUTATORS
+      // ------------------------
+      // Append/remove/edit individual payments on a bill. All three write the full
+      // updated payments[] back to docStatuses and recompute paid/status from the new
+      // running total. The display-default flat fields (payDate, checkNum, memo) get
+      // resynced to the most recent payment so other UI surfaces stay consistent.
+      const _persistPayments = (bill, newPayments) => {
+        const existing=typeof docStatuses[bill.billDocNum]==='object'?docStatuses[bill.billDocNum]:{};
+        const total = _sumPayments(newPayments);
+        const fullyPaid = total >= bill.cost - 0.005;
+        const last = newPayments.length > 0 ? newPayments[newPayments.length-1] : null;
+        setDocStatus(bill.billDocNum, {
+          ...existing,
+          payments: newPayments,
+          paid: fullyPaid,
+          status: fullyPaid ? 'paid' : (newPayments.length>0 ? 'partial' : 'unpaid'),
+          payDate: last?.date || '',
+          checkNum: last?.checkNum || '',
+          memo: last?.memo || existing.memo || ''
+        });
+      };
+      const addPayment = (bill, {date, amount, checkNum, memo, method}) => {
+        // Standalone bills don't use payment history -- they're flat single records.
+        // Just toggle their flat paid flag via the existing path.
+        if (bill._standalone) {
+          const sop=(customSops||[]).find(s=>s.id===bill._sopId);
+          if(!sop){notify('Record not found','error');return}
+          let d={};try{d=JSON.parse(sop.content||'{}')}catch{}
+          const updated={...d,paid:true,payDate:date||new Date().toISOString().split('T')[0],checkNum:checkNum||d.checkNum||''};
+          addSop({id:sop.id,title:sop.title,cat:sop.cat,icon:sop.icon,content:JSON.stringify(updated),custom:true});
+          notify('Standalone bill marked paid: '+(d.vendorName||'vendor'));
+          return;
+        }
+        const amt = Number(amount)||0;
+        if (amt <= 0) { notify('Payment amount must be greater than zero','error'); return; }
+        const newPayment = {
+          date: date || new Date().toISOString().split('T')[0],
+          amount: amt,
+          checkNum: checkNum || '',
+          memo: memo || '',
+          method: method || 'check'
+        };
+        const newPayments = [...(bill.payments||[]), newPayment];
+        _persistPayments(bill, newPayments);
+        const total = _sumPayments(newPayments);
+        const fullyPaid = total >= bill.cost - 0.005;
+        notify('Payment recorded: '+fmt(amt)+(fullyPaid?' >> bill fully paid':' >> '+fmt(bill.cost-total)+' remaining'));
+      };
+      const removePayment = (bill, idx) => {
+        if (bill._standalone) { notify('Standalone bills do not have payment history','error'); return; }
+        const cur = bill.payments || [];
+        if (idx<0 || idx>=cur.length) return;
+        const newPayments = cur.filter((_,i)=>i!==idx);
+        _persistPayments(bill, newPayments);
+        notify('Payment removed');
+      };
+      const editPayment = (bill, idx, patch) => {
+        if (bill._standalone) { notify('Standalone bills do not have payment history','error'); return; }
+        const cur = bill.payments || [];
+        if (idx<0 || idx>=cur.length) return;
+        const updated = {...cur[idx], ...patch};
+        // Clear isLegacy flag once the user has touched/confirmed the entry
+        if (cur[idx].isLegacy) delete updated.isLegacy;
+        if (updated.method === 'legacy') updated.method = 'check';
+        updated.amount = Number(updated.amount)||0;
+        const newPayments = cur.map((p,i)=>i===idx?updated:p);
+        _persistPayments(bill, newPayments);
+        notify('Payment updated');
+      };
 
 
       // Detail view for a single bill
@@ -4035,7 +4202,14 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
             try{localStorage.setItem('mw_check_high_water',String(nextCheck))}catch{}
           }
           setBillCheckNum(checkNo);
-          const costVal=Number(bill2.cost)||0;
+          // Check amount = current payment form input, defaulting to remaining balance.
+          // For partial-paid bills, this prints a check for the balance only (matches
+          // what gets recorded as the next payment). Falls back to bill.cost only for
+          // edge cases where balance is somehow undefined.
+          const _payAmtNum = Number(billPayAmount);
+          const costVal = (isFinite(_payAmtNum) && _payAmtNum > 0)
+            ? _payAmtNum
+            : (typeof bill2.balance==='number' && bill2.balance>0 ? bill2.balance : (Number(bill2.cost)||0));
           const amtDollars=Math.floor(costVal);const amtCents=Math.round((costVal-amtDollars)*100);
           const amtWords=(()=>{const ones=['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];const tens=['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
             const convert=(n)=>{if(n<20)return ones[n];if(n<100)return tens[Math.floor(n/10)]+(n%10?' '+ones[n%10]:'');if(n<1000)return ones[Math.floor(n/100)]+' Hundred'+(n%100?' '+convert(n%100):'');if(n<1000000)return convert(Math.floor(n/1000))+' Thousand'+(n%1000?' '+convert(n%1000):'');return String(n)};
@@ -4321,15 +4495,75 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
             </tbody></table></div>
           </Card>
           <Card style={{padding:16}}>
-            <div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:12,fontFamily:"'JetBrains Mono',monospace"}}>Payment Trail</div>
-            <div style={{display:"flex",gap:24,flexWrap:"wrap"}}>
-              <div style={{display:"flex",alignItems:"center",gap:10}}><div style={{width:32,height:32,borderRadius:8,background:"#a78bfa12",display:"flex",alignItems:"center",justifyContent:"center"}}><I n="file" s={14} color="#a78bfa"/></div><div><div style={{fontSize:10,color:"#737373"}}>Purchase Order</div><div style={{fontSize:13,fontWeight:600,color:"#a78bfa",fontFamily:"'JetBrains Mono',monospace"}}>{bill.poDocNum}</div></div></div>
-              <div style={{color:"#333",display:"flex",alignItems:"center"}}>&rarr;</div>
-              <div style={{display:"flex",alignItems:"center",gap:10}}><div style={{width:32,height:32,borderRadius:8,background:"#f9731612",display:"flex",alignItems:"center",justifyContent:"center"}}><I n="receipt" s={14} color="#f97316"/></div><div><div style={{fontSize:10,color:"#737373"}}>Vendor Invoice</div><div style={{fontSize:13,fontWeight:600,color:"#f97316",fontFamily:"'JetBrains Mono',monospace"}}>{billInvNum||bill.vendorInvNum||'Not entered'}</div></div></div>
-              <div style={{color:"#333",display:"flex",alignItems:"center"}}>&rarr;</div>
-              <div style={{display:"flex",alignItems:"center",gap:10}}><div style={{width:32,height:32,borderRadius:8,background:currentStatus==='paid'?"#34d39912":currentStatus==='void'?"#52525212":"#fbbf2412",display:"flex",alignItems:"center",justifyContent:"center"}}><I n={currentStatus==='void'?"x":"dollar"} s={14} color={currentStatus==='paid'?"#34d399":currentStatus==='void'?"#525252":"#fbbf24"}/></div><div><div style={{fontSize:10,color:"#737373"}}>{currentStatus==='void'?'Voided':'Payment Sent'}</div><div style={{fontSize:13,fontWeight:600,color:currentStatus==='paid'?"#34d399":currentStatus==='void'?"#525252":"#fbbf24",fontFamily:"'JetBrains Mono',monospace"}}>{currentStatus==='void'?'VOID':(billCheckNum||bill.checkNum||'Not entered')+(billPayDate||bill.payDate?' -- '+(billPayDate||bill.payDate):'')}</div></div></div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+              <div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>Payment Trail</div>
+              {(()=>{const tp=bill.totalPaid||0;const bl=bill.balance||0;const fp=tp>=bill.cost-0.005;const pp=tp>0.005&&!fp;
+                const col=fp?'#34d399':pp?'#fbbf24':'#737373';
+                const label=fp?'FULLY PAID':pp?'PARTIAL':'UNPAID';
+                return <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <div style={{textAlign:"right"}}>
+                    <div style={{fontSize:10,color:"#737373"}}>Status</div>
+                    <div style={{fontSize:13,fontWeight:700,color:col,fontFamily:"'JetBrains Mono',monospace"}}>{label}</div>
+                  </div>
+                  <div style={{padding:"6px 12px",borderRadius:8,background:col+'12',border:'1px solid '+col+'40',textAlign:"right",minWidth:120}}>
+                    <div style={{fontSize:10,color:"#737373"}}>{fp?'Paid in full':'Balance remaining'}</div>
+                    <div style={{fontSize:14,fontWeight:800,color:col,fontFamily:"'JetBrains Mono',monospace"}}>{fp?fmt(tp):fmt(bl)}</div>
+                    {pp&&<div style={{fontSize:10,color:"#737373",marginTop:2}}>{fmt(tp)} of {fmt(bill.cost)}</div>}
+                  </div>
+                </div>})()}
             </div>
-            {billData.checkPrinted&&<div style={{marginTop:10,fontSize:11,color:"#737373"}}>Check printed: {new Date(billData.checkPrinted).toLocaleString()}</div>}
+            {/* PO -> Invoice quick reference row (PO num, vendor invoice num) */}
+            <div style={{display:"flex",gap:16,flexWrap:"wrap",paddingBottom:12,borderBottom:"1px solid #1a1a1a",marginBottom:12}}>
+              <div style={{display:"flex",alignItems:"center",gap:8}}><I n="file" s={12} color="#a78bfa"/><span style={{fontSize:11,color:"#737373"}}>PO:</span><span style={{fontSize:12,fontWeight:600,color:"#a78bfa",fontFamily:"'JetBrains Mono',monospace"}}>{bill.poDocNum}</span></div>
+              <div style={{display:"flex",alignItems:"center",gap:8}}><I n="receipt" s={12} color="#f97316"/><span style={{fontSize:11,color:"#737373"}}>Vendor Invoice:</span><span style={{fontSize:12,fontWeight:600,color:"#f97316",fontFamily:"'JetBrains Mono',monospace"}}>{billInvNum||bill.vendorInvNum||'Not entered'}</span></div>
+              {billData.checkPrinted&&<div style={{display:"flex",alignItems:"center",gap:8}}><I n="check" s={12} color="#737373"/><span style={{fontSize:11,color:"#737373"}}>Last check printed:</span><span style={{fontSize:12,color:"#a3a3a3"}}>{new Date(billData.checkPrinted).toLocaleString()}</span></div>}
+            </div>
+            {/* Payment history: itemized list of every payment recorded against this bill.
+                Empty state when nothing's been paid. Each row shows date, check#, amount,
+                memo, plus a small Delete button. Legacy entries (synthesized from old
+                single-payment flat fields) get an Edit pencil so the user can correct
+                the amount when the prior single payment was actually partial. */}
+            {(()=>{const payments=bill.payments||[];
+              if (payments.length===0) {
+                return <div style={{padding:"16px 12px",background:"#0a0a0a",borderRadius:8,fontSize:13,color:"#737373",textAlign:"center",marginBottom:12,border:"1px dashed rgba(255,255,255,0.06)"}}>No payments recorded yet</div>;
+              }
+              return <div style={{marginBottom:12}}>
+                <div style={{fontSize:10,color:"#737373",letterSpacing:1.2,fontWeight:600,marginBottom:6,textTransform:"uppercase"}}>Payments ({payments.length})</div>
+                {payments.map((p,idx)=>{const amt=Number(p.amount)||0;const isLeg=p.isLegacy===true;return <div key={idx} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",background:"#0a0a0a",borderRadius:8,marginBottom:6,border:isLeg?"1px solid #fbbf2440":"1px solid rgba(255,255,255,0.04)"}}>
+                  <div style={{width:28,height:28,borderRadius:6,background:isLeg?"#fbbf2412":"#34d39912",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    <I n={isLeg?"alert":"check"} s={12} color={isLeg?"#fbbf24":"#34d399"}/>
+                  </div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
+                      <span style={{fontSize:13,fontWeight:700,color:isLeg?"#fbbf24":"#e5e5e5",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(amt)}</span>
+                      {p.checkNum&&<span style={{fontSize:11,color:"#a3a3a3"}}>check #{p.checkNum}</span>}
+                      <span style={{fontSize:11,color:"#737373"}}>{p.date||'no date'}</span>
+                      {isLeg&&<span style={{fontSize:9,fontWeight:700,color:"#fbbf24",letterSpacing:1,padding:"1px 6px",border:"1px solid #fbbf2440",borderRadius:4}}>LEGACY -- VERIFY AMOUNT</span>}
+                    </div>
+                    {p.memo&&<div style={{fontSize:11,color:"#737373",marginTop:3}}>{p.memo}</div>}
+                  </div>
+                  <button onClick={()=>{const newAmt=prompt('Edit payment amount (this payment was originally recorded as '+fmt(amt)+(isLeg?'; legacy bills default to the full bill amount -- enter the actual amount of check '+(p.checkNum||'(no #)')+' if it was partial':'')+'):',String(amt));if(newAmt===null)return;const n=Number(newAmt);if(!isFinite(n)||n<0){notify('Invalid amount','error');return}editPayment(bill,idx,{amount:n})}} style={{padding:"4px 8px",borderRadius:5,border:"1px solid rgba(255,255,255,0.08)",background:"transparent",color:"#a3a3a3",fontSize:10,cursor:"pointer",fontFamily:"inherit"}} title="Edit payment amount">Edit</button>
+                  <button onClick={()=>{if(confirm('Remove this payment? The bill balance will increase by '+fmt(amt)+'.')){removePayment(bill,idx)}}} style={{padding:"4px 8px",borderRadius:5,border:"1px solid #f8717125",background:"transparent",color:"#f87171",fontSize:10,cursor:"pointer",fontFamily:"inherit"}} title="Delete this payment">Delete</button>
+                </div>})}
+              </div>;
+            })()}
+            {/* Inline Record Payment form. Only when there's still a balance to pay.
+                Defaults: amount = current balance, date = today, check# blank, memo blank.
+                Submitting calls addPayment which appends to the payments[] array and
+                recomputes the paid flag from the new running total. */}
+            {!isVoid&&bill.balance>0.005&&<div style={{padding:12,background:"#0a0a0a",borderRadius:8,border:"1px solid rgba(45,212,191,0.15)"}}>
+              <div style={{fontSize:11,color:"#34d399",fontWeight:700,letterSpacing:1.2,marginBottom:8,textTransform:"uppercase"}}>Record a Payment</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:8,marginBottom:8}}>
+                <div><label style={{fontSize:10,color:"#737373",display:"block",marginBottom:2}}>Amount</label><input type="number" step="0.01" value={billPayAmount} onChange={e=>setBillPayAmount(e.target.value)} placeholder={fmt(bill.balance)} style={inputStyle}/></div>
+                <div><label style={{fontSize:10,color:"#737373",display:"block",marginBottom:2}}>Date</label><input type="date" value={billPayInputDate} onChange={e=>setBillPayInputDate(e.target.value)} style={inputStyle}/></div>
+                <div><label style={{fontSize:10,color:"#737373",display:"block",marginBottom:2}}>Check #</label><input value={billPayCheckInput} onChange={e=>setBillPayCheckInput(e.target.value)} placeholder="optional" style={inputStyle}/></div>
+                <div><label style={{fontSize:10,color:"#737373",display:"block",marginBottom:2}}>Memo</label><input value={billPayMemoInput} onChange={e=>setBillPayMemoInput(e.target.value)} placeholder="optional" style={inputStyle}/></div>
+              </div>
+              <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                <button onClick={()=>{const amt=Number(billPayAmount)||bill.balance;if(amt<=0){notify('Enter a payment amount','error');return}addPayment(bill,{date:billPayInputDate||new Date().toISOString().split('T')[0],amount:amt,checkNum:billPayCheckInput,memo:billPayMemoInput,method:'check'});setBillPayAmount('');setBillPayCheckInput('');setBillPayMemoInput('');setBillPayInputDate(new Date().toISOString().split('T')[0])}} style={{padding:"6px 14px",borderRadius:6,border:"1px solid #34d39940",background:"#34d39915",color:"#34d399",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>+ Record Payment</button>
+                <span style={{fontSize:11,color:"#737373"}}>Default fills the full balance ({fmt(bill.balance)}). Enter a smaller amount for partial payments.</span>
+              </div>
+            </div>}
           </Card>
         </div>}
 
@@ -4359,7 +4593,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
           <span style={{fontSize:11,color:"#a3a3a3",fontWeight:700,letterSpacing:1}}>SELECT BY VENDOR:</span>
           {[...new Set(unpaidBills.map(b=>b.vendorName))].sort().map(v=>{const ct=unpaidBills.filter(b=>b.vendorName===v).length;const isActive=billSelected.size>0&&Array.from(billSelected).every(i=>unpaidBills[i]?.vendorName===v)&&unpaidBills.filter(b=>b.vendorName===v).length===billSelected.size;return ct>1?<button key={v} onClick={()=>selectByVendor(v)} style={{padding:"5px 12px",borderRadius:6,border:"1px solid "+(isActive?"#a78bfa":"#333"),background:isActive?"#a78bfa20":"#111",color:isActive?"#a78bfa":"#e5e5e5",fontSize:12,fontWeight:isActive?600:500,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}} onMouseEnter={e=>{if(!isActive){e.currentTarget.style.background="#1a1a1a";e.currentTarget.style.borderColor="#a78bfa60"}}} onMouseLeave={e=>{if(!isActive){e.currentTarget.style.background="#111";e.currentTarget.style.borderColor="#333"}}}>{v} <span style={{color:isActive?"#a78bfa":"#737373",fontWeight:700}}>({ct})</span></button>:null})}
         </div>
-        {billSelected.size>0&&<div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12,padding:"10px 14px",background:"#f9731610",border:"1px solid #f9731625",borderRadius:8,flexWrap:"wrap"}}><span style={{fontSize:13,color:"#f97316",fontWeight:600}}>{billSelected.size} bill{billSelected.size!==1?'s':''} selected</span><span style={{fontSize:13,color:"#a3a3a3"}}>({fmt(Array.from(billSelected).reduce((s,i)=>s+(unpaidBills[i]?.cost||0),0))})</span><Btn onClick={printBatchCheck} style={{fontSize:12,padding:"4px 12px",background:"#14b8a6",color:"#000"}}><I n="file" s={12}/> Print Batch Check</Btn><Btn onClick={markSelectedPaid} style={{fontSize:12,padding:"4px 12px",background:"#34d399",color:"#000"}}>Mark Paid</Btn><button onClick={()=>setBillSelected(new Set())} style={{background:"none",border:"none",color:"#737373",cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>Clear</button></div>}
+        {billSelected.size>0&&<div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12,padding:"10px 14px",background:"#f9731610",border:"1px solid #f9731625",borderRadius:8,flexWrap:"wrap"}}><span style={{fontSize:13,color:"#f97316",fontWeight:600}}>{billSelected.size} bill{billSelected.size!==1?'s':''} selected</span><span style={{fontSize:13,color:"#a3a3a3"}}>({fmt(Array.from(billSelected).reduce((s,i)=>{const b=unpaidBills[i];return s+(b?(typeof b.balance==='number'?b.balance:b.cost):0)},0))})</span><Btn onClick={printBatchCheck} style={{fontSize:12,padding:"4px 12px",background:"#14b8a6",color:"#000"}}><I n="file" s={12}/> Print Batch Check</Btn><Btn onClick={markSelectedPaid} style={{fontSize:12,padding:"4px 12px",background:"#34d399",color:"#000"}}>Mark Paid</Btn><button onClick={()=>setBillSelected(new Set())} style={{background:"none",border:"none",color:"#737373",cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>Clear</button></div>}
         {allBills.length===0?<Card style={{padding:40,textAlign:"center"}}><div style={{fontSize:14,color:"#525252"}}>No vendor bills yet. Bills appear after POs are drafted or sent.</div></Card>:
         <Card style={{padding:0,overflow:"hidden"}}>
           <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:900}}>
@@ -4368,7 +4602,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
               const isOverdue=bill.daysUntil<0&&!bill.paid;
               const isDueSoon=bill.daysUntil>=0&&bill.daysUntil<=14&&!bill.paid;
               const unpaidIdx=unpaidBills.indexOf(bill);
-              return <tr key={idx} style={{borderBottom:"1px solid #111",background:bill._isDeleted?"#f8717108":bill.voided?"#52525208":bill.paid?"#34d39905":isOverdue?"#f8717108":billSelected.has(unpaidIdx)?"#f9731610":"transparent",transition:"background 0.15s",cursor:"pointer",opacity:bill._isDeleted?0.55:bill.voided?0.5:1}} onClick={()=>{if(bill._standalone){openAdjustModal(bill._standaloneKind==='VendorCredit'?'credit':'bill',bill);return}setBillInvNum(bill.vendorInvNum);setBillCheckNum(bill.checkNum);setBillPayDate(bill.payDate);setBillMemo(bill.memo);setBillDetail(bill)}} onMouseEnter={e=>{if(!bill.paid&&!bill.voided&&!bill._isDeleted&&!billSelected.has(unpaidIdx))e.currentTarget.style.background=isOverdue?"#f8717112":"#111"}} onMouseLeave={e=>{e.currentTarget.style.background=bill._isDeleted?"#f8717108":bill.voided?"#52525208":bill.paid?"#34d39905":isOverdue?"#f8717108":billSelected.has(unpaidIdx)?"#f9731610":"transparent"}}>
+              return <tr key={idx} style={{borderBottom:"1px solid #111",background:bill._isDeleted?"#f8717108":bill.voided?"#52525208":bill.paid?"#34d39905":isOverdue?"#f8717108":billSelected.has(unpaidIdx)?"#f9731610":"transparent",transition:"background 0.15s",cursor:"pointer",opacity:bill._isDeleted?0.55:bill.voided?0.5:1}} onClick={()=>{if(bill._standalone){openAdjustModal(bill._standaloneKind==='VendorCredit'?'credit':'bill',bill);return}setBillInvNum(bill.vendorInvNum);setBillCheckNum(bill.checkNum);setBillPayDate(bill.payDate);setBillMemo(bill.memo);setBillPayAmount(String(bill.balance||bill.cost));setBillPayInputDate(new Date().toISOString().split('T')[0]);setBillPayCheckInput('');setBillPayMemoInput('');setBillDetail(bill)}} onMouseEnter={e=>{if(!bill.paid&&!bill.voided&&!bill._isDeleted&&!billSelected.has(unpaidIdx))e.currentTarget.style.background=isOverdue?"#f8717112":"#111"}} onMouseLeave={e=>{e.currentTarget.style.background=bill._isDeleted?"#f8717108":bill.voided?"#52525208":bill.paid?"#34d39905":isOverdue?"#f8717108":billSelected.has(unpaidIdx)?"#f9731610":"transparent"}}>
                 <td style={{padding:"10px 8px",textAlign:"center",width:36}} onClick={e=>e.stopPropagation()}>{!bill.paid&&!bill._standalone&&!bill._isDeleted&&<input type="checkbox" checked={billSelected.has(unpaidIdx)} onChange={()=>toggleSelect(unpaidIdx)} style={{accentColor:"#2dd4bf",width:16,height:16,cursor:"pointer"}}/>}{bill.paid&&<I n="check" s={14} color="#34d399"/>}{!bill.paid&&bill._standalone&&!bill._isDeleted&&<span style={{fontSize:10,color:bill.isCredit?"#34d399":"#f97316",fontWeight:700,letterSpacing:0.5}}>{bill.isCredit?"CR":"ADJ"}</span>}{bill._isDeleted&&<I n="close" s={14} color="#f87171"/>}</td>
                 <td style={{padding:"10px 8px"}}><div style={{fontWeight:600,color:"#e5e5e5",display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>{bill.vendorName}{bill.isCredit&&<span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:"#34d39920",color:"#34d399",fontWeight:700,letterSpacing:0.5}}>CREDIT {(()=>{const ca=typeof bill.creditAmount==='number'?bill.creditAmount:bill.cost;return ca<bill.cost-0.005?fmt(ca):'FULL'})()}</span>}</div><div style={{fontSize:11,color:"#737373"}}>{bill.itemCount} item{bill.itemCount!==1?'s':''}</div></td>
                 <td style={{padding:"10px 8px"}}><span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:11,color:"#a78bfa",cursor:"pointer",textDecoration:"underline",textUnderlineOffset:2}} onClick={e=>{e.stopPropagation();const pos2=genPOs?genPOs(bill.job):[];const thisPO2=pos2.find(p=>p.docNum===bill.poDocNum);if(thisPO2){setPreviewDoc({type:"po",data:thisPO2,job:bill.job});setTab("preview")}}}>{bill.poDocNum}</span></td>
@@ -4376,8 +4610,8 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
                 <td style={{padding:"10px 8px"}}><div style={{color:"#c4c4c4",fontSize:12}}>{bill.job.name}</div></td>
                 <td style={{padding:"10px 8px",whiteSpace:"nowrap"}}>{bill.paid?<span style={{color:"#34d399",fontWeight:600}}>Paid{bill.payDate?' '+bill.payDate:''}</span>:isOverdue?<div><div style={{color:"#f87171",fontWeight:600}}>Overdue</div><div style={{fontSize:10,color:"#f87171"}}>{Math.abs(bill.daysUntil)} day{Math.abs(bill.daysUntil)!==1?'s':''} ago</div></div>:isDueSoon?<div><div style={{color:"#fbbf24",fontWeight:500}}>Due soon</div><div style={{fontSize:10,color:"#fbbf24"}}>Due in {bill.daysUntil} day{bill.daysUntil!==1?'s':''}</div></div>:<div><div style={{color:"#a3a3a3"}}>Due later</div><div style={{fontSize:10,color:"#737373"}}>Due in {bill.daysUntil} day{bill.daysUntil!==1?'s':''}</div></div>}</td>
                 <td style={{padding:"10px 8px"}} onClick={e=>e.stopPropagation()}>{bill._isDeleted?<div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}><Badge label="deleted" color="#f87171"/><button onClick={()=>{if(confirm('Restore this bill? It will reappear in the active Vendor Bills list with its prior data intact (status, payment info, invoice attachment, etc).')){const existing=typeof docStatuses[bill.billDocNum]==='object'?docStatuses[bill.billDocNum]:{};const{deleted:_d,...rest}=existing;setDocStatus(bill.billDocNum,rest);notify('Bill restored: '+bill.vendorName)}}} style={{padding:"3px 8px",borderRadius:5,border:"1px solid #34d39940",background:"transparent",color:"#34d399",fontSize:10,cursor:"pointer",fontFamily:"inherit",fontWeight:600}} title="Restore this bill keeping its prior payment data, invoice attachment, and notes">Restore</button><button onClick={()=>{if(confirm('Reset and restore this bill as a FRESH unpaid bill?\\n\\nThis wipes ALL prior bill data:\\n - paid status, payment date, check number\\n - invoice attachment and vendor invoice number\\n - any memo or notes\\n - any date overrides\\n\\nUse this when the prior bill data was wrong (e.g. wrong invoice attached, paid status was a mistake). The PO and line items are untouched. This cannot be undone.')){setDocStatus(bill.billDocNum,{});const dateKey=bill.billDocNum+'__date';const dueKey=bill.billDocNum+'__due';if(docStatuses[dateKey]!==undefined)setDocStatus(dateKey,'');if(docStatuses[dueKey]!==undefined)setDocStatus(dueKey,'');notify('Bill reset to fresh unpaid: '+bill.vendorName)}}} style={{padding:"3px 8px",borderRadius:5,border:"1px solid #fbbf2440",background:"transparent",color:"#fbbf24",fontSize:10,cursor:"pointer",fontFamily:"inherit",fontWeight:600}} title="Reset to a fresh unpaid bill -- wipes all prior bill data (paid status, attachments, memo, etc). Use when prior bill data was wrong.">Reset &amp; Restore</button></div>:(()=>{const bd=typeof docStatuses[bill.billDocNum]==='object'?docStatuses[bill.billDocNum]:{};const st=bd.status||(bill.paid?'paid':(bd.checkPrinted||bd.checkNum||bill.checkNum)?'check_sent':'unpaid');const nextStatus={unpaid:'check_sent',check_sent:'paid',paid:'unpaid',void:'unpaid'};return <button onClick={()=>{const ns=nextStatus[st]||'unpaid';setDocStatus(bill.billDocNum,{...bd,status:ns,paid:ns==='paid'});notify(bill.vendorName+' >> '+ns.replace('_',' '))}} style={{background:"none",border:"none",cursor:"pointer",padding:0}} title="Click to cycle status">{st==='void'?<Badge label="void" color="#525252"/>:st==='paid'?<Badge label="paid" color="#34d399"/>:st==='check_sent'?<Badge label="check sent" color="#f97316"/>:bill.daysUntil<0?<Badge label="overdue" color="#f87171"/>:<StatusBadge docNum={bill.poDocNum}/>}</button>})()}</td>
-                <td style={{padding:"10px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",fontWeight:700,color:bill.paid?"#34d399":isOverdue?"#f87171":"#f0f0f0"}}>{(()=>{if(bill.paid)return <span style={{textDecoration:"line-through",opacity:0.5}}>{fmt(bill.cost)}</span>;if(bill.isCredit){const ca=typeof bill.creditAmount==='number'?bill.creditAmount:bill.cost;const remaining=bill.cost-ca;const isPartial=ca<bill.cost-0.005;return <div><div style={{color:"#34d399",fontSize:12}}>{isPartial?fmt(remaining):"-"+fmt(ca)}</div><div style={{fontSize:9,color:"#34d399",fontWeight:600,marginTop:2,letterSpacing:0.5}}>{isPartial?'CREDIT '+fmt(ca):'FULL CREDIT'}</div></div>}return fmt(bill.cost)})()}</td>
-                <td style={{padding:"10px 8px",textAlign:"right"}} onClick={e=>e.stopPropagation()}>{!bill.paid&&!bill.isCredit&&!bill._isDeleted&&<button onClick={()=>{if(bill._standalone){const sop=(customSops||[]).find(s=>s.id===bill._sopId);if(!sop){notify('Record not found','error');return}let d={};try{d=JSON.parse(sop.content||'{}')}catch{}const today=new Date().toISOString().split('T')[0];const updated={...d,paid:true,payDate:today};addSop({id:sop.id,title:sop.title,cat:sop.cat,icon:sop.icon,content:JSON.stringify(updated),custom:true});notify('Bill marked paid: '+(d.vendorName||'vendor'));return}setBillInvNum(bill.vendorInvNum);setBillCheckNum(bill.checkNum);setBillPayDate(new Date().toISOString().split('T')[0]);setBillMemo(bill.memo);setBillDetail(bill)}} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #34d39930",background:"transparent",color:"#34d399",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s",whiteSpace:"nowrap"}} onMouseEnter={e=>{e.currentTarget.style.background="#34d39915"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>Pay</button>}</td>
+                <td style={{padding:"10px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",fontWeight:700,color:bill.paid?"#34d399":bill.isPartiallyPaid?"#fbbf24":isOverdue?"#f87171":"#f0f0f0"}}>{(()=>{if(bill.paid)return <span style={{textDecoration:"line-through",opacity:0.5}}>{fmt(bill.cost)}</span>;if(bill.isCredit){const ca=typeof bill.creditAmount==='number'?bill.creditAmount:bill.cost;const remaining=bill.cost-ca;const isPartial=ca<bill.cost-0.005;return <div><div style={{color:"#34d399",fontSize:12}}>{isPartial?fmt(remaining):"-"+fmt(ca)}</div><div style={{fontSize:9,color:"#34d399",fontWeight:600,marginTop:2,letterSpacing:0.5}}>{isPartial?'CREDIT '+fmt(ca):'FULL CREDIT'}</div></div>}if(bill.isPartiallyPaid){const pc=(bill.payments||[]).length;return <div><div>{fmt(bill.balance)}</div><div style={{fontSize:9,color:"#a3a3a3",fontWeight:500,marginTop:2,letterSpacing:0.3}}>of {fmt(bill.cost)} ({pc} pmt{pc!==1?'s':''})</div></div>}return fmt(bill.cost)})()}</td>
+                <td style={{padding:"10px 8px",textAlign:"right"}} onClick={e=>e.stopPropagation()}>{!bill.paid&&!bill.isCredit&&!bill._isDeleted&&<button onClick={()=>{if(bill._standalone){const sop=(customSops||[]).find(s=>s.id===bill._sopId);if(!sop){notify('Record not found','error');return}let d={};try{d=JSON.parse(sop.content||'{}')}catch{}const today=new Date().toISOString().split('T')[0];const updated={...d,paid:true,payDate:today};addSop({id:sop.id,title:sop.title,cat:sop.cat,icon:sop.icon,content:JSON.stringify(updated),custom:true});notify('Bill marked paid: '+(d.vendorName||'vendor'));return}setBillInvNum(bill.vendorInvNum);setBillCheckNum(bill.checkNum);setBillPayDate(new Date().toISOString().split('T')[0]);setBillMemo(bill.memo);setBillPayAmount(String(bill.balance||bill.cost));setBillPayInputDate(new Date().toISOString().split('T')[0]);setBillPayCheckInput('');setBillPayMemoInput('');setBillDetail(bill)}} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #34d39930",background:"transparent",color:"#34d399",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s",whiteSpace:"nowrap"}} onMouseEnter={e=>{e.currentTarget.style.background="#34d39915"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>{bill.isPartiallyPaid?'Pay Balance':'Pay'}</button>}</td>
               </tr>})}
               <tr style={{borderTop:"2px solid #222",background:"#0a0a0a"}}><td colSpan={7} style={{padding:"10px 8px",fontWeight:700,color:"#f0f0f0"}}>TOTAL OUTSTANDING</td><td style={{padding:"10px 8px",textAlign:"right",fontWeight:800,fontFamily:"'JetBrains Mono',monospace",color:"#f97316",fontSize:14}}>{fmt(totalOwed)}</td><td/></tr>
             </tbody>
@@ -5688,7 +5922,7 @@ function PlaybookPage({jobs,reps,vendors,customers,lineItems,getJobFinancials,se
 // ===============================================================
 // TASKS KANBAN (drag-and-drop, used in Sales Portal + standalone)
 // ===============================================================
-function TasksKanban({jobs,allJobs,reps,updateJob,notify,customSops,addSop,deleteSop,filterRep,filterJob}){
+function TasksKanban({jobs,allJobs,reps,updateJob,notify,customSops,addSop,deleteSop,filterRep,filterJob,currentUser}){
   const [editTask,setEditTask]=useState(null);
   const [dragId,setDragId]=useState(null);
 
@@ -5701,7 +5935,134 @@ function TasksKanban({jobs,allJobs,reps,updateJob,notify,customSops,addSop,delet
   const priColors={"high":"#f87171","normal":"#525252","low":"#333"};
 
 
-  const saveTask=(td,existingId)=>{const jn=td.jobId?(allJobs||jobs).find(j=>j.id===td.jobId)?.name||"":"";const {id:_id,sopId:_sid,isNew:_n,...cleanTd}=td;const sop={id:existingId||("TASK-"+Math.random().toString(36).slice(2,8)),title:td.text||"Untitled",cat:"Task",icon:"check",content:JSON.stringify({...cleanTd,jobName:jn}),custom:true};addSop(sop);notify(existingId?"Task updated":"Task created")};
+  // Email notifications. Sends via the existing /api/send-email Resend endpoint.
+  // Fire-and-forget -- failures are surfaced via notify() but never block the save.
+  // Recipient names are looked up against the reps directory for email addresses;
+  // reps with no email on record are skipped with a notify (so the user knows the
+  // task did save, but the email could not deliver to that person).
+  //
+  // kind:
+  //   'assigned'        -- you've just been put on a task (new task OR added later)
+  //   'status_changed'  -- task you're on moved to a different status
+  //   'manual'          -- user clicked "Send Email" in the edit overlay
+  const _sendTaskEmail = async ({task, recipients, kind, oldStatus}) => {
+    try {
+      if (!Array.isArray(recipients) || recipients.length === 0) return;
+      // Map assignee names -> rep emails. Missing emails are tracked separately.
+      const targets = []; const missing = [];
+      recipients.forEach(name => {
+        const rep = (reps||[]).find(r => r.name === name);
+        if (rep && rep.email) targets.push({name, email: rep.email});
+        else missing.push(name);
+      });
+      if (missing.length > 0) notify('Email skipped (no address on record): '+missing.join(', '), 'error');
+      if (targets.length === 0) return;
+      // From: prefer the logged-in user's rep email; fall back to a sensible default.
+      let fromEmail = '';
+      try {
+        if (currentUser && currentUser.rep_id) {
+          const me = (reps||[]).find(r => r.id === currentUser.rep_id);
+          if (me && me.email) fromEmail = me.email;
+        }
+      } catch {}
+      if (!fromEmail) fromEmail = 'tasks@mwfurnishings.com';
+      // Subject + heading per notification kind.
+      const taskText = task.text || 'Untitled task';
+      let subject = '';
+      let heading = '';
+      if (kind === 'assigned') {
+        subject = 'New Task Assigned: ' + taskText;
+        heading = 'You have been assigned a new task';
+      } else if (kind === 'status_changed') {
+        subject = 'Task Status Updated: ' + taskText;
+        heading = 'A task you are on changed status (' + (oldStatus||'') + ' &rarr; ' + (task.status||'') + ')';
+      } else {
+        subject = 'Task Update: ' + taskText;
+        heading = 'Task update from ' + (currentUser?.name || 'Midwest AIOS');
+      }
+      // Build the body. Plain HTML, no logo header -- this is internal team comms.
+      const esc = (s) => String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      const rows = [];
+      rows.push(['Status', esc(task.status||'To Do')]);
+      if (task.jobName) rows.push(['Project', esc(task.jobName)]);
+      if (task.due) rows.push(['Due', esc(task.due)]);
+      if (task.priority && task.priority !== 'normal') rows.push(['Priority', esc(task.priority).toUpperCase()]);
+      const meta = rows.map(([k,v]) => '<tr><td style="padding:4px 12px 4px 0;color:#888;font-size:13px;vertical-align:top;white-space:nowrap">'+k+'</td><td style="padding:4px 0;font-size:13px;color:#111">'+v+'</td></tr>').join('');
+      const notesBlock = task.notes ? '<div style="margin-top:14px;padding:10px 14px;background:#f7f7f5;border-left:3px solid #d4d4d4;font-size:13px;color:#333;line-height:1.55;white-space:pre-wrap">'+esc(task.notes)+'</div>' : '';
+      const linkBlock = task.link ? '<div style="margin-top:12px;font-size:13px"><a href="'+esc(task.link)+'" style="color:#2dd4bf;text-decoration:underline">'+esc(task.link)+'</a></div>' : '';
+      const html =
+        '<div style="font-family:Arial,Helvetica,sans-serif;background:#fff;color:#111;padding:24px;max-width:600px;margin:0 auto">'+
+          '<div style="font-size:12px;color:#888;text-transform:uppercase;letter-spacing:1.2px;margin-bottom:6px">Midwest AIOS &middot; Task Notification</div>'+
+          '<div style="font-size:18px;font-weight:700;color:#111;margin-bottom:14px">'+heading+'</div>'+
+          '<div style="font-size:16px;font-weight:600;color:#111;margin-bottom:10px;padding:12px 14px;background:#f7f7f5;border-radius:6px">'+esc(taskText)+'</div>'+
+          '<table style="border-collapse:collapse;margin-top:6px">'+meta+'</table>'+
+          notesBlock+
+          linkBlock+
+          '<div style="margin-top:22px;font-size:13px;color:#555;line-height:1.6">Open <a href="https://midwestaios.com/tasks" style="color:#2dd4bf;text-decoration:underline">Midwest AIOS &rsaquo; Tasks</a> to view all of your assigned tasks.</div>'+
+          '<div style="margin-top:22px;font-size:11px;color:#aaa;border-top:1px solid #eee;padding-top:12px">This notification was sent automatically by Midwest AIOS. Sender: '+esc(currentUser?.name||'Midwest AIOS')+'</div>'+
+        '</div>';
+      // Send one request per recipient so a single bad address does not block the others.
+      let okCount = 0; const failures = [];
+      for (const t of targets) {
+        try {
+          const resp = await fetch('/api/send-email', {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({to: t.email, from: fromEmail, subject, html})
+          });
+          if (resp.ok) okCount++;
+          else { const d = await resp.json().catch(()=>({})); failures.push(t.name+' ('+(d.error||resp.status)+')'); }
+        } catch(e) { failures.push(t.name+' (network)'); }
+      }
+      if (okCount > 0) notify('Email sent to '+okCount+' assignee'+(okCount===1?'':'s'));
+      if (failures.length > 0) notify('Email failed for: '+failures.join(', '), 'error');
+    } catch (e) {
+      // Defensive: notifications must never break task save.
+      try { notify('Task email error: '+e.message, 'error'); } catch {}
+    }
+  };
+
+
+  const saveTask=(td,existingId)=>{
+    const jn=td.jobId?(allJobs||jobs).find(j=>j.id===td.jobId)?.name||"":"";
+    // Capture the prior state BEFORE saving so we can diff assignees + status.
+    // (After addSop runs, allTasks won't reflect the change until the next render
+    // anyway, but capturing here is the cleanest pattern.)
+    const oldTask = existingId ? allTasks.find(t => t.sopId === existingId) : null;
+    const oldAssignees = (oldTask && Array.isArray(oldTask.assignees)) ? oldTask.assignees : [];
+    const newAssignees = Array.isArray(td.assignees) ? td.assignees : [];
+    const addedAssignees = newAssignees.filter(a => !oldAssignees.includes(a));
+    const statusChanged = !!(oldTask && oldTask.status !== td.status);
+    const {id:_id,sopId:_sid,isNew:_n,...cleanTd}=td;
+    const enrichedTd = {...cleanTd, jobName: jn};
+    const sop={id:existingId||("TASK-"+Math.random().toString(36).slice(2,8)),title:td.text||"Untitled",cat:"Task",icon:"check",content:JSON.stringify(enrichedTd),custom:true};
+    addSop(sop);
+    notify(existingId?"Task updated":"Task created");
+    // Fire notifications AFTER the save commits. Wrapped in try so any failure here
+    // is fully isolated from the save itself.
+    try {
+      if (!oldTask) {
+        // Brand-new task: notify every assignee (if any).
+        if (newAssignees.length > 0) {
+          _sendTaskEmail({task: enrichedTd, recipients: newAssignees, kind: 'assigned'});
+        }
+      } else {
+        // Existing task update. Split recipients:
+        //   - addedAssignees get an 'assigned' email (more informative -- includes status)
+        //   - assignees who were already on it AND remain on it get a 'status_changed' email
+        //     IF the status actually changed
+        if (addedAssignees.length > 0) {
+          _sendTaskEmail({task: enrichedTd, recipients: addedAssignees, kind: 'assigned'});
+        }
+        if (statusChanged) {
+          const continuing = oldAssignees.filter(a => newAssignees.includes(a) && !addedAssignees.includes(a));
+          if (continuing.length > 0) {
+            _sendTaskEmail({task: enrichedTd, recipients: continuing, kind: 'status_changed', oldStatus: oldTask.status});
+          }
+        }
+      }
+    } catch {}
+  };
   const moveTask=(id,newStatus)=>{const t=allTasks.find(x=>x.id===id);if(t)saveTask({...t,status:newStatus},t.sopId)};
   const handleDragStart=(e,id)=>{setDragId(id);e.dataTransfer.setData("taskId",id);e.dataTransfer.effectAllowed="move"};
   const handleDrop=(e,status)=>{e.preventDefault();const id=e.dataTransfer.getData("taskId")||dragId;if(id)moveTask(id,status);setDragId(null)};
@@ -5714,7 +6075,7 @@ function TasksKanban({jobs,allJobs,reps,updateJob,notify,customSops,addSop,delet
 
 
   return <div>
-    {editTask&&<EditTaskOverlay task={editTask} setEditTask={setEditTask} jobs={jobs} reps={reps} saveTask={saveTask} deleteSop={deleteSop} notify={notify} inputStyle={inputStyle}/>}
+    {editTask&&<EditTaskOverlay task={editTask} setEditTask={setEditTask} jobs={jobs} reps={reps} saveTask={saveTask} deleteSop={deleteSop} notify={notify} inputStyle={inputStyle} sendTaskEmail={_sendTaskEmail}/>}
     <div className="resp-grid-3" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:14}}>
       {["To Do","In Progress","Done"].map(status=><div key={status} onDrop={e=>handleDrop(e,status)} onDragOver={handleDragOver} style={{background:"#0a0a0a",borderRadius:14,border:"1px solid rgba(255,255,255,0.04)",padding:16,minHeight:200,transition:"border-color 0.2s"}} onDragEnter={e=>{e.currentTarget.style.borderColor=colColors[status]+"60"}} onDragLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.04)"}}>
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}><div style={{width:12,height:12,borderRadius:"50%",background:colColors[status]}}/><span style={{fontSize:16,fontWeight:800,color:"#f0f0f0"}}>{status}</span><span style={{fontSize:13,color:"#525252",background:"rgba(255,255,255,0.04)",padding:"2px 10px",borderRadius:12,marginLeft:"auto",fontFamily:"'JetBrains Mono',monospace"}}>{cols[status].length}</span><button onClick={()=>setEditTask({text:"",due:"",assignees:[],status:status,jobId:"",notes:"",link:"",priority:"normal",isNew:true})} style={{width:28,height:28,borderRadius:8,border:"1px dashed rgba(255,255,255,0.12)",background:"transparent",color:"#2dd4bf",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontFamily:"inherit"}}>+</button></div>
@@ -5732,10 +6093,25 @@ function TasksKanban({jobs,allJobs,reps,updateJob,notify,customSops,addSop,delet
 
 
 // Edit Task Overlay (click blank space to close)
-function EditTaskOverlay({task,setEditTask,jobs,reps,saveTask,deleteSop,notify,inputStyle}){
+function EditTaskOverlay({task,setEditTask,jobs,reps,saveTask,deleteSop,notify,inputStyle,sendTaskEmail}){
   const [t,setT]=useState({...task});
+  const [emailSending,setEmailSending]=useState(false);
   const handleSave=()=>{if(t.text?.trim()){saveTask(t,t.isNew?null:(t.sopId||t.id))}setEditTask(null)};
   const handleDelete=()=>{const id=t.sopId||t.id;if(id){deleteSop(id)}setEditTask(null);notify("Task deleted")};
+  // Manual send: ping all current assignees with the task's current (possibly edited)
+  // state. Does NOT save the task -- the user can hit Save afterward if they also want
+  // to persist their edits. Button is disabled when there are no assignees because
+  // there is nobody to send to. Also disabled while a send is in flight.
+  const assigneeCount = Array.isArray(t.assignees) ? t.assignees.length : 0;
+  const handleSendEmail = async () => {
+    if (assigneeCount === 0) { notify('No assignees on this task to email','error'); return; }
+    if (!t.text?.trim()) { notify('Add a task title first','error'); return; }
+    setEmailSending(true);
+    try {
+      const jn = t.jobId ? (jobs||[]).find(j => j.id === t.jobId)?.name || '' : '';
+      await sendTaskEmail({task: {...t, jobName: jn}, recipients: t.assignees, kind: 'manual'});
+    } finally { setEmailSending(false); }
+  };
   return <div onClick={(e)=>{if(e.target===e.currentTarget)setEditTask(null)}} style={{position:"fixed",inset:0,zIndex:9999,background:"rgba(10,10,10,0.75)",backdropFilter:"blur(40px) saturate(180%)",WebkitBackdropFilter:"blur(40px) saturate(180%)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
     <div onClick={e=>e.stopPropagation()} style={{background:"#0a0a0a",borderRadius:16,border:"1px solid rgba(45,212,191,0.15)",padding:24,width:"100%",maxWidth:480,maxHeight:"85vh",overflow:"auto"}}>
       <div style={{fontSize:16,fontWeight:700,color:t.isNew?"#2dd4bf":"#f0f0f0",marginBottom:12}}>{t.isNew?"New Task":"Edit Task"}</div>
@@ -5749,13 +6125,18 @@ function EditTaskOverlay({task,setEditTask,jobs,reps,saveTask,deleteSop,notify,i
       <div style={{marginBottom:12}}><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Assign</label><div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{reps.filter(r=>!r.id.includes("SEED_FLAG")&&isSalesRep(r)).map(r=>{const on=(t.assignees||[]).includes(r.name);return <button key={r.id} onClick={()=>setT({...t,assignees:on?(t.assignees||[]).filter(a=>a!==r.name):[...(t.assignees||[]),r.name]})} style={{padding:"4px 10px",borderRadius:6,border:"1px solid "+(on?"#2dd4bf":"rgba(255,255,255,0.08)"),background:on?"rgba(45,212,191,0.1)":"transparent",color:on?"#2dd4bf":"#737373",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>{r.name.split(" ")[0]}</button>})}</div></div>
       <div style={{marginBottom:12}}><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Notes</label><textarea value={t.notes||""} onChange={e=>setT({...t,notes:e.target.value})} rows={3} placeholder="Details, context, follow-ups..." style={{...inputStyle,resize:"vertical"}}/></div>
       <div style={{marginBottom:16}}><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Link</label><input value={t.link||""} onChange={e=>setT({...t,link:e.target.value})} placeholder="https://..." style={inputStyle}/></div>
-      <div style={{display:"flex",gap:8}}><Btn onClick={handleSave}>Save</Btn><Btn v="danger" onClick={handleDelete}>Delete</Btn><Btn v="secondary" onClick={()=>setEditTask(null)}>Cancel</Btn></div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <Btn onClick={handleSave}>Save</Btn>
+        <button onClick={handleSendEmail} disabled={assigneeCount===0||emailSending||!t.text?.trim()} title={assigneeCount===0?"Assign someone first to enable email":(emailSending?"Sending...":"Send this task to "+assigneeCount+" assignee"+(assigneeCount===1?"":"s")+" via email")} style={{padding:"8px 16px",borderRadius:8,border:"1px solid "+(assigneeCount===0||emailSending||!t.text?.trim()?"rgba(255,255,255,0.08)":"#a78bfa40"),background:assigneeCount===0||emailSending||!t.text?.trim()?"transparent":"rgba(167,139,250,0.08)",color:assigneeCount===0||emailSending||!t.text?.trim()?"#525252":"#a78bfa",fontSize:13,fontWeight:600,cursor:assigneeCount===0||emailSending||!t.text?.trim()?"not-allowed":"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:6}}>{emailSending?"Sending...":"Send Email"+(assigneeCount>0?" ("+assigneeCount+")":"")}</button>
+        <Btn v="danger" onClick={handleDelete}>Delete</Btn>
+        <Btn v="secondary" onClick={()=>setEditTask(null)}>Cancel</Btn>
+      </div>
     </div>
   </div>;
 }
 
 
-function TasksPage({jobs,reps,updateJob,notify,customSops,addSop,deleteSop}){
+function TasksPage({jobs,reps,updateJob,notify,customSops,addSop,deleteSop,currentUser}){
   const [filterRep,setFilterRep]=useState("all");
   const [filterJob,setFilterJob]=useState("all");
   const open=(customSops||[]).filter(s=>s.cat==="Task").filter(s=>{try{return JSON.parse(s.content).status!=="Done"}catch{return true}}).length;
@@ -5764,7 +6145,7 @@ function TasksPage({jobs,reps,updateJob,notify,customSops,addSop,deleteSop}){
       <select value={filterRep} onChange={e=>setFilterRep(e.target.value)} style={{...inputStyle,width:160,padding:"6px 10px",fontSize:12}}><option value="all">Everyone</option>{reps.filter(r=>!r.id.includes("SEED_FLAG")&&isSalesRep(r)).map(r=><option key={r.id} value={r.name}>{r.name}</option>)}</select>
       <select value={filterJob} onChange={e=>setFilterJob(e.target.value)} style={{...inputStyle,width:180,padding:"6px 10px",fontSize:12}}><option value="all">All Projects</option>{jobs.map(j=><option key={j.id} value={j.id}>{j.name}</option>)}</select>
     </div>
-    <TasksKanban jobs={jobs} allJobs={jobs} reps={reps} updateJob={updateJob} notify={notify} customSops={customSops} addSop={addSop} deleteSop={deleteSop} filterRep={filterRep} filterJob={filterJob}/>
+    <TasksKanban jobs={jobs} allJobs={jobs} reps={reps} updateJob={updateJob} notify={notify} customSops={customSops} addSop={addSop} deleteSop={deleteSop} filterRep={filterRep} filterJob={filterJob} currentUser={currentUser}/>
   </div>;
 }
 
@@ -7121,7 +7502,20 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
             let dueStr = '';
             try { dueStr = dueDate2.toISOString().split('T')[0]; } catch {}
             const billData = typeof docStatuses[billDocNum] === 'object' ? docStatuses[billDocNum] : {};
-            const paid = billData.status==='paid' || billData.paid || docStatuses[billDocNum]==='paid';
+            // Payment history (mirrors the UI helpers in DocumentsPage). When a bill has
+            // a payments[] array, paid is derived from sum(payments) >= cost. Legacy
+            // single-payment bills synthesize one entry so the Brain reports the same
+            // numbers the UI shows.
+            const _payments = Array.isArray(billData?.payments)
+              ? billData.payments
+              : ((billData?.paid || billData?.checkNum || billData?.payDate)
+                ? [{date: billData.payDate||'', amount: cost, checkNum: billData.checkNum||'', memo: billData.memo||'', method:'legacy', isLegacy:true}]
+                : []);
+            const _totalPaid = _payments.reduce((s,p) => s + (Number(p.amount)||0), 0);
+            const _balance = Math.max(0, cost - _totalPaid);
+            const _isFullyPaid = _totalPaid >= cost - 0.005;
+            const _isPartiallyPaid = _totalPaid > 0.005 && !_isFullyPaid;
+            const paid = billData.status==='void' ? false : (_isFullyPaid || billData.status==='paid');
             const daysUntil = isNaN(dueDate2.getTime()) ? 0 : Math.floor((dueDate2 - new Date())/86400000);
             allBills.push({
               job, vendor: v, vendorId: vid, vendorName: v?.name||'Unknown',
@@ -7129,7 +7523,8 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
               paid, voided: billData.status==='void',
               vendorInvNum: billData.vendorInvNum||'', checkNum: billData.checkNum||'',
               payDate: billData.payDate||'', memo: billData.memo||'',
-              status: billData.status||(paid?'paid':'unpaid'),
+              payments: _payments, totalPaid: _totalPaid, balance: _balance, isPartiallyPaid: _isPartiallyPaid,
+              status: billData.status||(paid?'paid':(_isPartiallyPaid?'partial':'unpaid')),
               _isDeleted: billData.deleted===true,
               _isStandalone: false,
               _fileUrl: billData.invoiceFileUrl||'', _fileName: billData.invoiceFileName||''
@@ -7147,16 +7542,23 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
           const amt = Number(d.amount);
           if (!isFinite(amt) || amt <= 0) return;
           const v2 = (vendors||[]).find(vv => vv.id === d.vendorId) || null;
+          const _stdPaid = d.paid===true;
           allBills.push({
             job: job2, vendor: v2, vendorId: d.vendorId||'unknown',
             vendorName: d.vendorName || (v2?v2.name:'Unknown'),
             items: [], cost: amt, orderValue: amt,
             poDocNum: d.refNumber||'', billDocNum: s.id,
             poDate: d.creditDate||'', dueDate: d.creditDate||'',
-            daysUntil: 0, paid: d.paid===true, voided: false,
+            daysUntil: 0, paid: _stdPaid, voided: false,
             vendorInvNum: d.refNumber||'', checkNum: d.checkNum||'',
             payDate: d.payDate||'', memo: d.memo||'',
-            status: d.paid?'paid':'unpaid',
+            // Standalone bills don't track multi-payment history -- balance is full
+            // amount or zero. Surface the same shape for Brain consumer uniformity.
+            payments: _stdPaid ? [{date: d.payDate||'', amount: amt, checkNum: d.checkNum||'', memo: d.memo||'', method:'standalone'}] : [],
+            totalPaid: _stdPaid ? amt : 0,
+            balance: _stdPaid ? 0 : amt,
+            isPartiallyPaid: false,
+            status: _stdPaid?'paid':'unpaid',
             _isDeleted: false,
             _isStandalone: true, _standaloneKind: s.cat, _sopId: s.id,
             _fileUrl: d.fileUrl||'', _fileName: d.fileName||'',
@@ -7293,9 +7695,29 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
           if (input.memo) d.memo = input.memo;
           addSop({...sop, content: JSON.stringify(d)});
         } else {
+          // PO-derived bills use the payment history model. Append a payment entry for
+          // the remaining balance so partial-paid bills get completed (not double-counted),
+          // and the new payment is itemized in the UI's payment history.
           const ds = _getDocStatusesBrain();
           const existing = typeof ds[b.billDocNum] === 'object' ? ds[b.billDocNum] : {};
-          _setDocStatusBrain(b.billDocNum, {...existing, status:'paid', paid:true, payDate: input.pay_date || today, checkNum: input.check_num || existing.checkNum || '', memo: input.memo || existing.memo || ''});
+          const prevPayments = (b.payments||[]);
+          const bal = typeof b.balance==='number' ? b.balance : b.cost;
+          const newPayment = {
+            date: input.pay_date || today,
+            amount: bal > 0.005 ? bal : 0,
+            checkNum: input.check_num || '',
+            memo: input.memo || '',
+            method: 'brain'
+          };
+          const newPayments = bal > 0.005 ? [...prevPayments, newPayment] : prevPayments;
+          _setDocStatusBrain(b.billDocNum, {
+            ...existing,
+            payments: newPayments,
+            status:'paid', paid:true,
+            payDate: input.pay_date || today,
+            checkNum: input.check_num || existing.checkNum || '',
+            memo: input.memo || existing.memo || ''
+          });
         }
         return {success: true, message: 'Marked paid: '+b.billDocNum+' ('+b.vendorName+', $'+b.cost.toFixed(2)+')'};
       }
@@ -7411,7 +7833,15 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
           } else {
             const ds = _getDocStatusesBrain();
             const existing = typeof ds[b.billDocNum] === 'object' ? ds[b.billDocNum] : {};
-            _setDocStatusBrain(b.billDocNum, {...existing, status:'paid', paid:true, payDate:today, checkNum:checkNum||existing.checkNum||'', memo});
+            // Append a payment entry for the remaining balance (matches mark_bill_paid).
+            // Partial-paid bills get a payment that finishes them off without
+            // double-counting prior partial payments.
+            const prevPayments = (b.payments||[]);
+            const bal = typeof b.balance==='number' ? b.balance : b.cost;
+            const newPayments = bal > 0.005
+              ? [...prevPayments, {date: today, amount: bal, checkNum: checkNum||'', memo, method: method||'check'}]
+              : prevPayments;
+            _setDocStatusBrain(b.billDocNum, {...existing, payments: newPayments, status:'paid', paid:true, payDate:today, checkNum:checkNum||existing.checkNum||'', memo});
           }
           n++;
         });
