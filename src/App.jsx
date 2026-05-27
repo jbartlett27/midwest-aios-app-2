@@ -4103,6 +4103,32 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
           checkNum: last?.checkNum || '',
           memo: last?.memo || existing.memo || ''
         });
+        // CRITICAL: also refresh the open bill detail panel with the new derived
+        // state. setDocStatus triggers a re-render, but billDetail still holds the
+        // STALE bill snapshot from when the panel was opened, so the Payment Trail
+        // would display old payments[] / balance / isPartiallyPaid until the user
+        // closes and reopens. Patching billDetail here makes Edit/Add/Remove
+        // changes appear immediately in the same panel.
+        if (billDetail && billDetail.billDocNum === bill.billDocNum) {
+          const newBalance = Math.max(0, bill.cost - total);
+          const newIsPartial = total > 0.005 && !fullyPaid;
+          setBillDetail({
+            ...bill,
+            payments: newPayments,
+            totalPaid: total,
+            balance: newBalance,
+            isPartiallyPaid: newIsPartial,
+            paid: fullyPaid,
+            payDate: last?.date || '',
+            checkNum: last?.checkNum || ''
+          });
+          // Also re-seed the Record-a-Payment form's Amount input to the new balance,
+          // so when an Edit reopens the balance (e.g., legacy correction drops paid
+          // from $4678 down to $2230, opening a $2448 balance) the form is ready to
+          // fill in for the next check rather than holding the old (zero) value.
+          setBillPayAmount(newBalance > 0.005 ? String(newBalance.toFixed(2)) : '');
+          setBillPayInputDate(new Date().toISOString().split('T')[0]);
+        }
       };
       const addPayment = (bill, {date, amount, checkNum, memo, method}) => {
         // Standalone bills don't use payment history -- they're flat single records.
