@@ -3410,6 +3410,14 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
   // True while a file is uploading to Supabase storage for the credit/bill modal.
   // Disables Save + the Upload button so the user can't submit a half-uploaded record.
   const [adjustUploading,setAdjustUploading]=useState(false);
+  // Expense Check modal state. Lets Maureen print a check directly for an expense
+  // or reimbursement without first creating a vendor bill. Use cases: utility bills,
+  // office supplies, one-off reimbursements, anything that doesn't need a bill
+  // record on file. The check is rendered with the same template as printBatchCheck
+  // and an ExpenseCheck SOP is written for audit trail so the check# is reserved
+  // and the expense is queryable.
+  const [showExpenseCheck,setShowExpenseCheck]=useState(false);
+  const [expenseForm,setExpenseForm]=useState({payee:'',amount:'',memo:'',date:'',address:''});
   // Toggle for showing bills that have been marked deleted (docStatuses[billDocNum].deleted === true).
   // Off by default so the table stays clean. A "(N hidden)" counter appears even when off so the
   // user can discover and restore accidentally-deleted bills. Reported May 16 2026 -- a Doane Keyes
@@ -3879,13 +3887,30 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           let d = null;
           try { d = JSON.parse(s.content || '{}'); } catch { return; }
           if (!d) return;
-          const job2 = jobs.find(j => j.id === d.jobId);
-          if (!job2) return;
-          // Respect the same filters the PO-derived loop respects: rep filter
-          // (sales-role users only see their own jobs via filteredJobs) and
-          // search query. Use indexOf into filteredJobs as the filter membership
-          // check so this works regardless of the filter logic upstream.
-          if (!filteredJobs.some(fj => fj.id === d.jobId)) return;
+          // No-project bills (jobId is '' or missing) are surfaced with a sentinel job
+          // object so they show in the Vendor Bills tab and can be paid like any other
+          // bill. They don't appear in any project's financials (getJobFinancials skips
+          // them since d.jobId !== jobId for every real jobId). These are pure expenses
+          // -- think utility bills, office rent, reimbursements, anything not tied to
+          // a customer job. Sales-role users don't see them (no project membership).
+          const hasProject = d.jobId && d.jobId !== '';
+          let job2;
+          if (hasProject) {
+            job2 = jobs.find(j => j.id === d.jobId);
+            if (!job2) return;
+            // Respect the same filters the PO-derived loop respects: rep filter
+            // (sales-role users only see their own jobs via filteredJobs) and
+            // search query. Use indexOf into filteredJobs as the filter membership
+            // check so this works regardless of the filter logic upstream.
+            if (!filteredJobs.some(fj => fj.id === d.jobId)) return;
+          } else {
+            // No-project bill: synthesize a sentinel job. Hide from sales-role users
+            // since they only see their own job's data (no-project bills belong to
+            // no rep). Office sees them. ctx.userRole because DocumentsPage doesn't
+            // destructure userRole (it lives in the spread ctx prop).
+            if (ctx.userRole === 'sales') return;
+            job2 = {id: '', name: '(No Project)', _noProject: true};
+          }
           const amtNum = Number(d.amount);
           if (!isFinite(amtNum) || amtNum <= 0) return;
           const v2 = (vendors || []).find(vv => vv.id === d.vendorId) || null;
@@ -4099,7 +4124,7 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
         setBillSelected(new Set());
       };
       const selectByVendor=(vendorName)=>{const next=new Set();unpaidBills.forEach((b,i)=>{if(b.vendorName===vendorName)next.add(i)});setBillSelected(next)};
-      const selectByJob=(jobName)=>{const next=new Set();unpaidBills.forEach((b,i)=>{if(b.job.name===jobName)next.add(i)});setBillSelected(next)};
+      const selectByJob=(jobName)=>{const next=new Set();unpaidBills.forEach((b,i)=>{if((b.job?.name||'(No Project)')===jobName)next.add(i)});setBillSelected(next)};
       // Standalone Vendor Credit / Vendor Bill handlers. Records live in customSops
       // (cat 'VendorCredit' or 'StandaloneBill') so they propagate via the same
       // realtime sync as everything else, and feed getJobFinancials so cost/margin
@@ -4110,7 +4135,11 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           const sop=(customSops||[]).find(s=>s.id===existingBill._sopId);
           let d={};try{d=JSON.parse(sop?.content||'{}')}catch{}
           setAdjustEdit(existingBill._sopId);
-          setAdjustForm({vendorId:d.vendorId||'',jobId:d.jobId||'',amount:String(d.amount||''),creditDate:d.creditDate||'',refNumber:d.refNumber||'',memo:d.memo||'',fileUrl:d.fileUrl||'',fileName:d.fileName||'',fileSize:Number(d.fileSize)||0,uploadDate:d.uploadDate||''});
+          // Preserve no-project state: if a bill was saved with empty jobId, the
+          // selector should show 'No project' (__NONE__) rather than '-- Select
+          // project --' so the user understands the bill's current attachment.
+          const restoredJobId = (mode==='bill' && (!d.jobId || d.jobId==='')) ? '__NONE__' : (d.jobId||'');
+          setAdjustForm({vendorId:d.vendorId||'',jobId:restoredJobId,amount:String(d.amount||''),creditDate:d.creditDate||'',refNumber:d.refNumber||'',memo:d.memo||'',fileUrl:d.fileUrl||'',fileName:d.fileName||'',fileSize:Number(d.fileSize)||0,uploadDate:d.uploadDate||''});
         } else {
           setAdjustEdit(null);
           setAdjustForm({vendorId:'',jobId:'',amount:'',creditDate:new Date().toISOString().split('T')[0],refNumber:'',memo:'',fileUrl:'',fileName:'',fileSize:0,uploadDate:''});
@@ -4122,22 +4151,30 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
         if(adjustUploading){notify('Wait for the file upload to finish','error');return}
         const amt=Number(adjustForm.amount);
         if(!adjustForm.vendorId){notify('Pick a vendor','error');return}
-        if(!adjustForm.jobId){notify('Attach to a project','error');return}
+        // Project selection: '__NONE__' is the explicit no-project option for vendor
+        // bills (utility, rent, reimbursements, etc.). Credits always require a real
+        // project since they need something to offset. Empty string is still
+        // 'unselected' (user hasn't picked yet) and blocks save.
+        const isNoProject = adjustForm.jobId === '__NONE__';
+        if(adjustMode==='credit' && isNoProject){notify('Credits must be attached to a project','error');return}
+        if(!adjustForm.jobId){notify('Attach to a project (or pick "No project" for standalone expenses)','error');return}
         if(!isFinite(amt)||amt<=0){notify('Enter an amount greater than 0','error');return}
         const v=vendors.find(vv=>vv.id===adjustForm.vendorId);
-        const j=jobs.find(jj=>jj.id===adjustForm.jobId);
-        if(!v||!j){notify('Vendor or project not found','error');return}
+        const j=isNoProject ? null : jobs.find(jj=>jj.id===adjustForm.jobId);
+        if(!v){notify('Vendor not found','error');return}
+        if(!isNoProject && !j){notify('Project not found','error');return}
         const id=adjustEdit||((adjustMode==='credit'?'VC-':'SB-')+Date.now().toString(36).toUpperCase()+'-'+Math.random().toString(36).slice(2,6).toUpperCase());
-        const data={vendorId:adjustForm.vendorId,vendorName:v.name,jobId:adjustForm.jobId,jobName:j.name,amount:amt,creditDate:adjustForm.creditDate||new Date().toISOString().split('T')[0],refNumber:(adjustForm.refNumber||'').trim(),memo:(adjustForm.memo||'').trim(),fileUrl:adjustForm.fileUrl||'',fileName:adjustForm.fileName||'',fileSize:Number(adjustForm.fileSize)||0,uploadDate:adjustForm.uploadDate||'',createdAt:adjustEdit?undefined:new Date().toISOString()};
+        const data={vendorId:adjustForm.vendorId,vendorName:v.name,jobId:isNoProject?'':adjustForm.jobId,jobName:isNoProject?'':(j?j.name:''),amount:amt,creditDate:adjustForm.creditDate||new Date().toISOString().split('T')[0],refNumber:(adjustForm.refNumber||'').trim(),memo:(adjustForm.memo||'').trim(),fileUrl:adjustForm.fileUrl||'',fileName:adjustForm.fileName||'',fileSize:Number(adjustForm.fileSize)||0,uploadDate:adjustForm.uploadDate||'',createdAt:adjustEdit?undefined:new Date().toISOString()};
         // Preserve createdAt + payment state if editing
         if(adjustEdit){
           const prior=(customSops||[]).find(s=>s.id===adjustEdit);
           if(prior){try{const pd=JSON.parse(prior.content||'{}');if(pd.createdAt)data.createdAt=pd.createdAt;if(pd.paid)data.paid=pd.paid;if(pd.payDate)data.payDate=pd.payDate;if(pd.checkNum)data.checkNum=pd.checkNum;}catch{}}
         }
         const cat=adjustMode==='credit'?'VendorCredit':'StandaloneBill';
-        const title=(adjustMode==='credit'?'Credit ':'Bill ')+v.name+' '+j.name+' '+fmt(amt);
+        const projLabel = isNoProject ? '(No Project)' : (j?j.name:'');
+        const title=(adjustMode==='credit'?'Credit ':'Bill ')+v.name+' '+projLabel+' '+fmt(amt);
         addSop({id,title,cat,icon:adjustMode==='credit'?'dollar':'receipt',content:JSON.stringify(data),custom:true});
-        notify((adjustMode==='credit'?'Vendor credit ':'Vendor bill ')+(adjustEdit?'updated':'created')+' for '+v.name+' -- '+fmt(amt)+' applied to '+j.name);
+        notify((adjustMode==='credit'?'Vendor credit ':'Vendor bill ')+(adjustEdit?'updated':'created')+' for '+v.name+' -- '+fmt(amt)+(isNoProject?' (no project)':' applied to '+(j?j.name:'')));
         closeAdjustModal();
       };
       const deleteAdjust=(sopId)=>{
@@ -4319,6 +4356,119 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
         const creditMsg = totalCredit > 0 ? ' (with '+fmt(totalCredit)+' in credits applied)' : '';
         notify('Batch Check #'+checkNo+' printed for '+vendorName+' -- '+fmt(totalCost)+' ('+selectedNonCredits.length+' POs)'+creditMsg);
         setBillSelected(new Set());
+      };
+      // Print a check for an expense / reimbursement without first creating a bill.
+      // Reuses the same check-number reservation logic as printBatchCheck so the
+      // checkbook stays in a single monotonic sequence. After print, writes an
+      // ExpenseCheck SOP (cat:'ExpenseCheck') as audit trail with the check#,
+      // payee, amount, memo, and date so the expense is queryable and the check
+      // number is reserved in docStatuses.
+      const printExpenseCheck=()=>{
+        const amt=Number(expenseForm.amount);
+        const payee=(expenseForm.payee||'').trim();
+        if(!payee){notify('Enter a payee','error');return}
+        if(!isFinite(amt)||amt<=0){notify('Enter an amount greater than 0','error');return}
+        const totalCost=amt;
+        const today=new Date();const mm=String(today.getMonth()+1).padStart(2,'0');const dd=String(today.getDate()).padStart(2,'0');const yyyy=today.getFullYear();
+        const useDate=expenseForm.date||(yyyy+'-'+mm+'-'+dd);
+        const [dy,dm,dd2]=(useDate.match(/^(\d{4})-(\d{2})-(\d{2})$/)||[null,yyyy,mm,dd]).slice(1);
+        const dateStr=dm+'/'+dd2+'/'+dy;
+        // Same check-number scheme as printBatchCheck (range, high-water, scan).
+        const CHECK_MIN=1127;
+        const CHECK_MAX=1999;
+        const inRange=(n)=>!isNaN(n)&&n>=CHECK_MIN&&n<=CHECK_MAX;
+        const allCheckNums=Object.values(docStatuses).filter(v=>v&&typeof v==='object'&&v.checkNum&&v.checkNum!=='____').map(v=>parseInt(v.checkNum)).filter(inRange);
+        const usedSet=new Set(allCheckNums);
+        let highWater=0;try{const hw=parseInt(localStorage.getItem('mw_check_high_water')||'0')||0;highWater=(hw>=CHECK_MIN&&hw<=CHECK_MAX)?hw:0;if(hw>CHECK_MAX){localStorage.removeItem('mw_check_high_water')}}catch{}
+        const scannedMax=allCheckNums.length>0?Math.max(...allCheckNums):0;
+        let nextCheck=Math.max(highWater+1,scannedMax+1,CHECK_MIN);
+        while(usedSet.has(nextCheck))nextCheck++;
+        const checkNo=String(nextCheck);
+        try{localStorage.setItem('mw_check_high_water',String(nextCheck))}catch{}
+        const payeeAddrHtml=(expenseForm.address||'').split('\n').filter(Boolean).join('<br>');
+        const amtDollars=Math.floor(totalCost);const amtCents=Math.round((totalCost-amtDollars)*100);
+        const amtWords=(()=>{const ones=['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];const tens=['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];const convert=(n)=>{if(n<20)return ones[n];if(n<100)return tens[Math.floor(n/10)]+(n%10?' '+ones[n%10]:'');if(n<1000)return ones[Math.floor(n/100)]+' Hundred'+(n%100?' '+convert(n%100):'');if(n<1000000)return convert(Math.floor(n/1000))+' Thousand'+(n%1000?' '+convert(n%1000):'');return String(n)};return convert(amtDollars)+' and '+String(amtCents).padStart(2,'0')+'/100'})();
+        const amtFmt=totalCost.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+        const micrCheckNum=String(checkNo).padStart(6,'0');
+        const micrFontStr='C'+micrCheckNum+'C   A071926155A   C01597962C';
+        const memo=(expenseForm.memo||'').trim()||'Expense';
+        const html=`<!DOCTYPE html><html><head><title>Expense Check ${checkNo}</title><style>
+@page{size:8.5in 11in;margin:0.1in 0 0 0}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}
+body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
+.check-section{width:100%;height:3.5in;padding:0.3in 0.5in 0.25in 0.5in;position:relative;border-bottom:1px dashed #999;page-break-inside:avoid;overflow:hidden;background:linear-gradient(135deg,rgba(200,220,200,0.15) 0%,rgba(220,235,220,0.08) 25%,rgba(200,215,195,0.12) 50%,rgba(215,230,215,0.06) 75%,rgba(200,220,200,0.1) 100%),repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(100,140,100,0.02) 2px,rgba(100,140,100,0.02) 4px),repeating-linear-gradient(90deg,transparent,transparent 2px,rgba(100,140,100,0.02) 2px,rgba(100,140,100,0.02) 4px),radial-gradient(ellipse at 30% 50%,rgba(180,210,180,0.1) 0%,transparent 70%),radial-gradient(ellipse at 70% 50%,rgba(180,210,180,0.08) 0%,transparent 70%);background-color:#fcfcfa}
+.check-section::before{content:'';position:absolute;inset:0;border:3px solid #4a7a4a;border-radius:2px;pointer-events:none}
+.check-watermark{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:72px;font-weight:900;color:rgba(100,140,100,0.04);letter-spacing:20px;white-space:nowrap;pointer-events:none;font-family:serif}
+.check-security-banner{position:absolute;top:0;left:0;right:0;background:linear-gradient(90deg,#3a6a3a,#5a8a5a,#3a6a3a);color:#d4e8d4;text-align:center;font-size:7px;letter-spacing:1.5px;padding:2px 0;font-weight:600;text-transform:uppercase}
+.check-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;margin-top:10px;position:relative;z-index:1}
+.company-block{line-height:1.4}.company-name{font-size:13px;font-weight:700;letter-spacing:0.3px}.company-addr{font-size:10px;color:#444}
+.bank-block{text-align:center;font-size:10px;color:#444;line-height:1.4}
+.check-no{font-size:28px;font-weight:700;font-family:'Courier New',monospace;text-align:right;min-width:80px;position:relative;z-index:1}
+.date-row{text-align:right;margin-bottom:8px;font-size:12px;position:relative;z-index:1}
+.date-val{border-bottom:1px solid #444;padding:0 12px;font-style:italic}
+.payto-row{display:flex;align-items:center;gap:6px;margin-bottom:4px;position:relative;z-index:1;background:rgba(240,245,240,0.3);padding:4px 6px;border:1px solid #bbb}
+.payto-label{font-size:10px;font-weight:700;white-space:nowrap}
+.payto-name{flex:1;border-bottom:1px solid #444;padding:2px 8px;font-size:14px;font-weight:600}
+.amount-dollars{border:2px solid #444;padding:3px 10px;font-size:15px;font-weight:700;font-family:'Courier New',monospace;white-space:nowrap;background:rgba(255,255,255,0.6)}
+.words-row{border-bottom:1px solid #444;padding:4px 6px;margin-bottom:6px;font-size:11px;position:relative;z-index:1;background:rgba(240,245,240,0.3)}
+.vendor-addr{font-size:10px;line-height:1.5;margin-top:6px;min-height:40px;position:relative;z-index:1}
+.memo-sig-row{display:flex;justify-content:space-between;align-items:flex-end;margin-top:8px;position:relative;z-index:1}
+.memo-row{display:flex;align-items:center;gap:6px;font-size:10px}.memo-label{font-weight:700}.memo-val{padding:2px 6px;font-size:10px}
+.sig-line{width:250px;border-bottom:1px solid #444;font-size:7px;color:#111;text-align:right;padding-bottom:1px;letter-spacing:0.5px}
+.stub-section{width:100%;height:3.5in;padding:0.25in 0.4in;position:relative;border-bottom:1px dashed #999;background:#fff}
+.stub-section:last-child{border-bottom:none}
+.stub-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.stub-company{font-size:13px;font-weight:700}.stub-date-vendor{font-size:11px;color:#333;margin-top:2px}
+.stub-checkno{font-size:18px;font-weight:700;font-family:'Courier New',monospace}
+.stub-table{width:100%;border-collapse:collapse;font-size:10px;margin-top:6px}
+.stub-table th{background:#444;color:#fff;padding:4px 6px;text-align:left;font-weight:600;font-size:9px;letter-spacing:0.5px;text-transform:uppercase}
+.stub-table td{border-bottom:1px solid #eee;padding:4px 6px}
+.stub-table .amt{text-align:right;font-family:'Courier New',monospace}
+.stub-total-row td{font-weight:700;border-top:2px solid #333;border-bottom:none;background:#f7f7f7}
+.stub-footer{display:flex;justify-content:space-between;margin-top:6px;padding-top:4px;border-top:1px solid #ddd;font-size:10px}
+.stub-bank{color:#666}.stub-amount{font-weight:700;font-family:'Courier New',monospace}
+.payment-record{position:absolute;top:8px;right:0.4in;font-size:9px;font-weight:700;letter-spacing:1.5px;color:#999;text-transform:uppercase}
+@font-face{font-family:'MICR';src:local('Arial Black')}
+</style></head><body>
+<div class="check-section">
+  <div class="check-security-banner">CASH ONLY IF ALL SECURITY FEATURES ARE PRESENT &bull; ORIGINAL DOCUMENT HAS COLORED BACKGROUND &bull; VOID IF COPIED</div>
+  <div class="check-watermark">MIDWEST</div>
+  <div class="check-header"><div class="company-block"><div class="company-name">MIDWEST EDUCATIONAL FURNISHINGS, INC</div><div class="company-addr">21191 N Valley Rd<br>Kildeer, IL 60047<br>847-847-1865</div></div><div class="bank-block">CORNERSTONE NATL BANK AND TR CO<br>Palatine, IL 60067<br>70-2615/719</div><div class="check-no">${checkNo}</div></div>
+  <div class="date-row"><span class="date-val">${dateStr}</span></div>
+  <div class="payto-row"><div class="payto-label">PAY TO THE<br>ORDER OF</div><div class="payto-name">${payee}</div><div class="amount-dollars">$ **${amtFmt}</div></div>
+  <div class="words-row">${amtWords}${'*'.repeat(Math.max(0,80-amtWords.length))} DOLLARS</div>
+  <div class="vendor-addr">${payeeAddrHtml}</div>
+  <div class="memo-sig-row"><div class="memo-row"><span class="memo-label">MEMO</span><span class="memo-val">${memo}</span></div><div class="sig-line">MP</div></div>
+  <div style="text-align:center;margin-top:38px;position:relative;z-index:1"><div style="font-family:'MICR',monospace;font-size:14pt;letter-spacing:3px;color:#111">${micrFontStr}</div></div>
+</div>
+<div class="stub-section">
+  <div class="stub-header"><div><div class="stub-company">MIDWEST EDUCATIONAL FURNISHINGS, INC</div><div class="stub-date-vendor">${dateStr}&nbsp;&nbsp;&nbsp;&nbsp;${payee}</div></div><div class="stub-checkno">${checkNo}</div></div>
+  <table class="stub-table"><thead><tr><th>Date</th><th>Type</th><th>Description</th><th class="amt">Amount</th></tr></thead><tbody><tr><td>${dateStr}</td><td>Expense</td><td>${memo}</td><td class="amt">${amtFmt}</td></tr><tr class="stub-total-row"><td colspan="3">Expense Check</td><td class="amt">${amtFmt}</td></tr></tbody></table>
+  <div class="stub-footer"><div class="stub-bank">Cornerstone Bank Ch</div><div class="stub-amount">${amtFmt}</div></div>
+</div>
+<div class="stub-section" style="border-bottom:none">
+  <div class="payment-record">PAYMENT RECORD</div>
+  <div class="stub-header"><div><div class="stub-company">MIDWEST EDUCATIONAL FURNISHINGS, INC</div><div class="stub-date-vendor">${dateStr}&nbsp;&nbsp;&nbsp;&nbsp;${payee}</div></div><div class="stub-checkno">${checkNo}</div></div>
+  <table class="stub-table"><thead><tr><th>Date</th><th>Type</th><th>Description</th><th class="amt">Amount</th></tr></thead><tbody><tr><td>${dateStr}</td><td>Expense</td><td>${memo}</td><td class="amt">${amtFmt}</td></tr><tr class="stub-total-row"><td colspan="3">Expense Check</td><td class="amt">${amtFmt}</td></tr></tbody></table>
+  <div class="stub-footer"><div class="stub-bank">Cornerstone Bank Ch</div><div class="stub-amount">${amtFmt}</div></div>
+</div>
+</body></html>`;
+        const w=window.open('','_blank');
+        if(!w){notify('Popup blocked. Please allow popups for this site and try again.','error')}
+        else{w.document.write(html);w.document.close();setTimeout(()=>{try{w.focus();w.print()}catch(e2){}},1000)}
+        // Audit-trail SOP: ExpenseCheck cat. Records check#, payee, amount, date,
+        // memo. Surfaced nowhere in the UI yet (separate from bills) but queryable
+        // by Brain and reserves the check# so future batch checks don't collide.
+        const id='EXP-'+Date.now().toString(36).toUpperCase()+'-'+Math.random().toString(36).slice(2,6).toUpperCase();
+        const expData={payee, amount: amt, date: useDate, memo, address: expenseForm.address||'', checkNum: checkNo, createdAt: new Date().toISOString()};
+        addSop({id, title:'Expense Check #'+checkNo+' '+payee+' '+fmt(amt), cat:'ExpenseCheck', icon:'dollar', content:JSON.stringify(expData), custom:true});
+        // Also stamp the check# into docStatuses under a synthetic key so the
+        // printBatchCheck scanner sees it (its scan only looks at v.checkNum on
+        // docStatuses values). Use the SOP id as the docStatuses key.
+        setDocStatus(id, {checkNum: checkNo, checkPrinted: new Date().toISOString(), payDate: useDate, memo, status:'paid'});
+        notify('Expense Check #'+checkNo+' printed for '+payee+' -- '+fmt(amt));
+        setShowExpenseCheck(false);
+        setExpenseForm({payee:'',amount:'',memo:'',date:'',address:''});
       };
       const saveBillDetail=(bill)=>{const existing=typeof docStatuses[bill.billDocNum]==='object'?docStatuses[bill.billDocNum]:{};setDocStatus(bill.billDocNum,{...existing,vendorInvNum:billInvNum,checkNum:billCheckNum,payDate:billPayDate,memo:billMemo,paid:existing.status==='paid'||!!billPayDate});notify('Bill updated: '+bill.vendorName);setBillDetail(null)};
       // PAYMENT HISTORY MUTATORS
@@ -4643,7 +4793,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
               <div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:8}}>BILL SUMMARY</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                 <div><div style={{fontSize:11,color:"#737373"}}>PO Number</div><div style={{fontSize:13,fontWeight:600,color:"#a78bfa",fontFamily:"'JetBrains Mono',monospace",cursor:"pointer"}} onClick={()=>{if(thisPO){setPreviewDoc({type:"po",data:thisPO,job:bill.job});setTab("preview")}}}>{bill.poDocNum}</div></div>
-                <div><div style={{fontSize:11,color:"#737373"}}>Job</div><div style={{fontSize:13,color:"#e5e5e5"}}>{bill.job.name}</div></div>
+                <div><div style={{fontSize:11,color:"#737373"}}>Job</div><div style={{fontSize:13,color:bill.job?.id?"#e5e5e5":"#737373",fontStyle:bill.job?.id?"normal":"italic"}}>{bill.job?.name||'(No Project)'}</div></div>
                 <div><div style={{fontSize:11,color:"#737373"}}>Amount</div>{(()=>{const ca=typeof bill.creditAmount==='number'?bill.creditAmount:bill.cost;const isPartial=bill.isCredit&&ca<bill.cost-0.005;if(bill.isCredit&&isPartial){return <div><div style={{fontSize:13,color:"#a3a3a3",fontFamily:"'JetBrains Mono',monospace",textDecoration:isVoid?"line-through":"none"}}>{fmt(bill.cost)}</div><div style={{fontSize:13,color:"#34d399",fontFamily:"'JetBrains Mono',monospace"}}>-{fmt(ca)} <span style={{fontSize:10,color:"#34d399"}}>CREDIT</span></div><div style={{fontSize:16,fontWeight:800,color:isVoid?"#525252":"#f97316",fontFamily:"'JetBrains Mono',monospace",borderTop:"1px solid #333",paddingTop:2,marginTop:2,textDecoration:isVoid?"line-through":"none"}}>{fmt(bill.cost-ca)}</div></div>}return <div style={{fontSize:16,fontWeight:800,color:isVoid?"#525252":bill.isCredit?"#34d399":"#f97316",fontFamily:"'JetBrains Mono',monospace",textDecoration:isVoid?"line-through":"none"}}>{bill.isCredit?"-":""}{fmt(bill.isCredit?ca:bill.cost)}{bill.isCredit&&<span style={{fontSize:10,marginLeft:4,color:"#34d399"}}>{ca>=bill.cost-0.005?"FULL CREDIT":"CREDIT"}</span>}</div>})()}</div>
                 <div><div style={{fontSize:11,color:"#737373"}}>Due Date</div><div style={{fontSize:13,color:bill.daysUntil<0?"#f87171":bill.daysUntil<=14?"#fbbf24":"#a3a3a3"}}>{docStatuses[bill.billDocNum+'__due']||bill.dueDate}</div></div>
                 <div><div style={{fontSize:11,color:"#737373"}}>Items</div><div style={{fontSize:13,color:"#e5e5e5"}}>{bill.itemCount} line item{bill.itemCount!==1?'s':''}</div></div>
@@ -4839,6 +4989,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
         <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap",alignItems:"center"}}>
           <Btn onClick={()=>openAdjustModal('credit',null)} style={{fontSize:12,padding:"6px 14px",background:"#34d39915",border:"1px solid #34d39940",color:"#34d399",fontWeight:600}}><I n="dollar" s={12}/> + New Vendor Credit</Btn>
           <Btn onClick={()=>openAdjustModal('bill',null)} style={{fontSize:12,padding:"6px 14px",background:"#f9731615",border:"1px solid #f9731640",color:"#f97316",fontWeight:600}}><I n="receipt" s={12}/> + New Vendor Bill</Btn>
+          <Btn onClick={()=>{setExpenseForm({payee:'',amount:'',memo:'',date:new Date().toISOString().split('T')[0],address:''});setShowExpenseCheck(true)}} style={{fontSize:12,padding:"6px 14px",background:"#14b8a615",border:"1px solid #14b8a640",color:"#14b8a6",fontWeight:600}} title="Print a check for an expense or reimbursement without first creating a vendor bill (utilities, office supplies, one-off reimbursements, etc.)"><I n="file" s={12}/> + Print Expense Check</Btn>
           {/* Show deleted bills toggle. Visible only when at least one deleted bill exists.
               Off by default. When on, deleted bills appear in the table with a red DELETED
               badge and a Restore button. They are still excluded from Total Owed / Overdue /
@@ -4871,7 +5022,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
                 <td style={{padding:"10px 8px"}}><div style={{fontWeight:600,color:"#e5e5e5",display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>{bill.vendorName}{bill.isCredit&&<span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:"#34d39920",color:"#34d399",fontWeight:700,letterSpacing:0.5}}>CREDIT {(()=>{const ca=typeof bill.creditAmount==='number'?bill.creditAmount:bill.cost;return ca<bill.cost-0.005?fmt(ca):'FULL'})()}</span>}</div><div style={{fontSize:11,color:"#737373"}}>{bill.itemCount} item{bill.itemCount!==1?'s':''}</div></td>
                 <td style={{padding:"10px 8px"}}><span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:11,color:"#a78bfa",cursor:"pointer",textDecoration:"underline",textUnderlineOffset:2}} onClick={e=>{e.stopPropagation();const pos2=genPOs?genPOs(bill.job):[];const thisPO2=pos2.find(p=>p.docNum===bill.poDocNum);if(thisPO2){setPreviewDoc({type:"po",data:thisPO2,job:bill.job});setTab("preview")}}}>{bill.poDocNum}</span></td>
                 <td style={{padding:"10px 8px",fontFamily:"'JetBrains Mono',monospace",fontSize:11,color:bill.vendorInvNum?"#f97316":"#333"}}>{bill.vendorInvNum||'--'}{bill._standalone&&bill._fileUrl&&<a href={bill._fileUrl} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} title={bill._fileName||'View attached file'} style={{marginLeft:8,display:"inline-flex",alignItems:"center",gap:3,padding:"1px 6px",background:"#a78bfa10",border:"1px solid #a78bfa25",borderRadius:4,color:"#a78bfa",textDecoration:"none",fontSize:10,fontWeight:600,fontFamily:"inherit"}}><I n="file" s={10} color="#a78bfa"/> File</a>}</td>
-                <td style={{padding:"10px 8px"}}><div style={{color:"#c4c4c4",fontSize:12}}>{bill.job.name}</div></td>
+                <td style={{padding:"10px 8px"}}><div style={{color:bill.job?.id?"#c4c4c4":"#737373",fontSize:12,fontStyle:bill.job?.id?"normal":"italic"}}>{bill.job?.name||'(No Project)'}</div></td>
                 <td style={{padding:"10px 8px",whiteSpace:"nowrap"}}>{bill.paid?<span style={{color:"#34d399",fontWeight:600}}>Paid{bill.payDate?' '+bill.payDate:''}</span>:isOverdue?<div><div style={{color:"#f87171",fontWeight:600}}>Overdue</div><div style={{fontSize:10,color:"#f87171"}}>{Math.abs(bill.daysUntil)} day{Math.abs(bill.daysUntil)!==1?'s':''} ago</div></div>:isDueSoon?<div><div style={{color:"#fbbf24",fontWeight:500}}>Due soon</div><div style={{fontSize:10,color:"#fbbf24"}}>Due in {bill.daysUntil} day{bill.daysUntil!==1?'s':''}</div></div>:<div><div style={{color:"#a3a3a3"}}>Due later</div><div style={{fontSize:10,color:"#737373"}}>Due in {bill.daysUntil} day{bill.daysUntil!==1?'s':''}</div></div>}</td>
                 <td style={{padding:"10px 8px"}} onClick={e=>e.stopPropagation()}>{bill._isDeleted?<div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}><Badge label="deleted" color="#f87171"/><button onClick={()=>{if(confirm('Restore this bill? It will reappear in the active Vendor Bills list with its prior data intact (status, payment info, invoice attachment, etc).')){const existing=typeof docStatuses[bill.billDocNum]==='object'?docStatuses[bill.billDocNum]:{};const{deleted:_d,...rest}=existing;setDocStatus(bill.billDocNum,rest);notify('Bill restored: '+bill.vendorName)}}} style={{padding:"3px 8px",borderRadius:5,border:"1px solid #34d39940",background:"transparent",color:"#34d399",fontSize:10,cursor:"pointer",fontFamily:"inherit",fontWeight:600}} title="Restore this bill keeping its prior payment data, invoice attachment, and notes">Restore</button><button onClick={()=>{if(confirm('Reset and restore this bill as a FRESH unpaid bill?\\n\\nThis wipes ALL prior bill data:\\n - paid status, payment date, check number\\n - invoice attachment and vendor invoice number\\n - any memo or notes\\n - any date overrides\\n\\nUse this when the prior bill data was wrong (e.g. wrong invoice attached, paid status was a mistake). The PO and line items are untouched. This cannot be undone.')){setDocStatus(bill.billDocNum,{});const dateKey=bill.billDocNum+'__date';const dueKey=bill.billDocNum+'__due';if(docStatuses[dateKey]!==undefined)setDocStatus(dateKey,'');if(docStatuses[dueKey]!==undefined)setDocStatus(dueKey,'');notify('Bill reset to fresh unpaid: '+bill.vendorName)}}} style={{padding:"3px 8px",borderRadius:5,border:"1px solid #fbbf2440",background:"transparent",color:"#fbbf24",fontSize:10,cursor:"pointer",fontFamily:"inherit",fontWeight:600}} title="Reset to a fresh unpaid bill -- wipes all prior bill data (paid status, attachments, memo, etc). Use when prior bill data was wrong.">Reset &amp; Restore</button></div>:(()=>{const bd=typeof docStatuses[bill.billDocNum]==='object'?docStatuses[bill.billDocNum]:{};const st=bd.status||(bill.paid?'paid':(bd.checkPrinted||bd.checkNum||bill.checkNum)?'check_sent':'unpaid');const nextStatus={unpaid:'check_sent',check_sent:'paid',paid:'unpaid',void:'unpaid'};return <button onClick={()=>{const ns=nextStatus[st]||'unpaid';
                   // If cycling TO unpaid AND the bill has payments, the new 'unpaid'
@@ -4916,9 +5067,10 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
                 </select>
               </div>
               <div>
-                <label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4,fontWeight:600}}>Attach to Project *</label>
+                <label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4,fontWeight:600}}>Attach to Project {adjustMode==='credit'?'*':''}</label>
                 <select value={adjustForm.jobId} onChange={e=>setAdjustForm(p=>({...p,jobId:e.target.value}))} style={{...inputStyle,width:"100%"}}>
                   <option value="">-- Select project --</option>
+                  {adjustMode==='bill' && <option value="__NONE__">No project -- standalone expense (utility, rent, reimbursement, etc.)</option>}
                   {[...(jobs||[])].sort((a,b)=>(a.name||"").localeCompare(b.name||"")).map(j=>{const c=customers.find(cc=>cc.id===j.customer);return <option key={j.id} value={j.id}>{j.name}{c?" -- "+c.name:""}</option>})}
                 </select>
               </div>
@@ -5003,6 +5155,53 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
               {adjustEdit&&<Btn v="danger" style={{fontSize:12}} onClick={()=>{const _doDelete=()=>{deleteAdjust(adjustEdit);closeAdjustModal()};if(ctx&&typeof ctx.confirm==='function'){ctx.confirm('Delete this '+(adjustMode==='credit'?'credit':'bill')+'?').then(ok=>{if(ok)_doDelete()})}else if(window.confirm('Delete this '+(adjustMode==='credit'?'credit':'bill')+'?')){_doDelete()}}}>Delete</Btn>}
               <Btn v="secondary" onClick={closeAdjustModal}>Cancel</Btn>
               <Btn onClick={saveAdjust} disabled={adjustUploading} style={{background:adjustUploading?"#525252":(adjustMode==='credit'?"#34d399":"#f97316"),color:"#000",fontWeight:700,opacity:adjustUploading?0.6:1,cursor:adjustUploading?"not-allowed":"pointer"}}>{adjustUploading?"Uploading...":(adjustEdit?"Save Changes":"Create "+(adjustMode==='credit'?"Credit":"Bill"))}</Btn>
+            </div>
+          </div>
+        </div>}
+        {showExpenseCheck&&<div onClick={()=>setShowExpenseCheck(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:99998,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"#0a0a0a",borderRadius:12,padding:24,maxWidth:520,width:"100%",border:"1px solid #14b8a640",maxHeight:"90vh",overflow:"auto"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+              <div>
+                <h3 style={{margin:0,fontSize:18,fontWeight:700,color:"#14b8a6"}}>Print Expense Check</h3>
+                <div style={{fontSize:12,color:"#a3a3a3",marginTop:4}}>Print a check for an expense or reimbursement without first creating a vendor bill</div>
+              </div>
+              <button onClick={()=>setShowExpenseCheck(false)} style={{background:"none",border:"none",color:"#737373",cursor:"pointer",fontSize:24,lineHeight:1,padding:4,fontFamily:"inherit"}}>&times;</button>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+              <div>
+                <label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4,fontWeight:600}}>Pay to the Order Of *</label>
+                <input type="text" value={expenseForm.payee} onChange={e=>setExpenseForm(p=>({...p,payee:e.target.value}))} placeholder="e.g. ComEd, John Smith, Office Depot" style={{...inputStyle,width:"100%"}}/>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                <div>
+                  <label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4,fontWeight:600}}>Amount *</label>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{fontSize:14,color:"#14b8a6",fontFamily:"'JetBrains Mono',monospace"}}>$</span>
+                    <input type="number" step="0.01" min="0" value={expenseForm.amount} onChange={e=>setExpenseForm(p=>({...p,amount:e.target.value}))} placeholder="0.00" style={{...inputStyle,width:"100%",fontFamily:"'JetBrains Mono',monospace",color:"#14b8a6"}}/>
+                  </div>
+                </div>
+                <div>
+                  <label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4,fontWeight:600}}>Date</label>
+                  <input type="date" value={expenseForm.date} onChange={e=>setExpenseForm(p=>({...p,date:e.target.value}))} style={{...inputStyle,width:"100%"}}/>
+                </div>
+              </div>
+              <div>
+                <label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4,fontWeight:600}}>Memo</label>
+                <input type="text" value={expenseForm.memo} onChange={e=>setExpenseForm(p=>({...p,memo:e.target.value}))} placeholder="e.g. Electricity April 2026, Office supplies, Mileage reimbursement" style={{...inputStyle,width:"100%"}}/>
+              </div>
+              <div>
+                <label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4,fontWeight:600}}>Payee Address (optional)</label>
+                <textarea value={expenseForm.address} onChange={e=>setExpenseForm(p=>({...p,address:e.target.value}))} placeholder={"PO Box 805379\nChicago, IL 60680-4115"} rows={3} style={{...inputStyle,width:"100%",resize:"vertical",minHeight:60,fontFamily:"inherit"}}/>
+                <div style={{fontSize:10,color:"#525252",marginTop:4}}>Shown on the check below the payee line (use for window envelopes)</div>
+              </div>
+              <div style={{padding:"10px 12px",background:"#14b8a608",border:"1px solid #14b8a625",borderRadius:8,fontSize:11,color:"#a3a3a3",lineHeight:1.5}}>
+                <div style={{fontWeight:700,color:"#14b8a6",marginBottom:4}}>How this is different from a vendor bill</div>
+                Vendor bills track invoices from vendors and live in the bills list until paid. Expense checks print a check immediately for one-off expenses (utilities, reimbursements, office supplies) without creating a bill record. The check number is reserved and the expense is logged for audit trail.
+              </div>
+            </div>
+            <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginTop:18,paddingTop:14,borderTop:"1px solid #222"}}>
+              <Btn v="secondary" onClick={()=>setShowExpenseCheck(false)}>Cancel</Btn>
+              <Btn onClick={printExpenseCheck} style={{background:"#14b8a6",color:"#000",fontWeight:700}}><I n="file" s={14}/> Print Check</Btn>
             </div>
           </div>
         </div>}
@@ -6141,7 +6340,7 @@ function PlaybookPage({jobs,reps,vendors,customers,lineItems,getJobFinancials,se
   //   LineItemShipTo -> per-line ship-to overrides applied silently in PO generation
   //   PlaidConn -> Plaid connection token storage
   //   VendorCredit / StandaloneBill -> Documents > Vendor Bills tab
-  const internalCats=new Set(["Notes","Task","DocStatuses","ManualTxn","HistoricalDoc","Settings","BrainMemory","Prospect","Config","File","LineItemShipTo","PlaidConn","VendorCredit","StandaloneBill"]);
+  const internalCats=new Set(["Notes","Task","DocStatuses","ManualTxn","HistoricalDoc","Settings","BrainMemory","Prospect","Config","File","LineItemShipTo","PlaidConn","VendorCredit","StandaloneBill","ExpenseCheck"]);
   const customIds=new Set((customSops||[]).filter(s=>!internalCats.has(s.cat)).map(s=>s.overrideId||s.id));const allSops=[...DEFAULT_SOPS.filter(d=>!customIds.has(d.id)),...(customSops||[])].filter(s=>!internalCats.has(s.cat));
   const cats=[...new Set(allSops.map(s=>s.cat))];
   const filtered=search?allSops.filter(s=>s.title.toLowerCase().includes(search.toLowerCase())||s.content.toLowerCase().includes(search.toLowerCase())):allSops;
@@ -7815,8 +8014,17 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
           let d = null;
           try { d = JSON.parse(s.content||'{}'); } catch { return; }
           if (!d) return;
-          const job2 = jobs.find(j => j.id === d.jobId);
-          if (!job2) return;
+          // No-project standalone bills get a sentinel job. Mirrors UI behavior so
+          // Brain tools (list_vendor_bills, mark_bill_paid, pay_bills_batch) operate
+          // on the same dataset Maureen sees in the app.
+          const hasProj = d.jobId && d.jobId !== '';
+          let job2;
+          if (hasProj) {
+            job2 = jobs.find(j => j.id === d.jobId);
+            if (!job2) return;
+          } else {
+            job2 = {id:'', name:'(No Project)', _noProject:true};
+          }
           const amt = Number(d.amount);
           if (!isFinite(amt) || amt <= 0) return;
           const v2 = (vendors||[]).find(vv => vv.id === d.vendorId) || null;
