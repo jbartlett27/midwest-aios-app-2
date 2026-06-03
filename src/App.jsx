@@ -2811,7 +2811,39 @@ function JobDetail({job,ctx}){
   const jobQuoteRef=React.useRef(null);
   const [uploadingToJob,setUploadingToJob]=useState(false);
   const parseQuoteIntoJob=async(file)=>{
-    if(!file||uploadingToJob)return;setUploadingToJob(true);
+    if(!file||uploadingToJob)return;
+    // Upload-into-existing-project guard. The "Upload Quote" button on a project
+    // appends the uploaded items to THIS job. When the project already has line
+    // items, silently appending is how stray vendor items ended up on North Lake
+    // (Paihr) and Mount Prospect (McCourt) -- a second upload piled onto an existing
+    // project. Surface a confirmation showing what's already there and let the user
+    // choose to append, replace, or cancel BEFORE anything is written.
+    const _existingItems=(lineItems||[]).filter(li=>li&&li.jobId===job.id&&!li._isDeleted);
+    if(_existingItems.length>0){
+      const _exCost=_existingItems.reduce((s,li)=>s+(Number(li.qtyOrdered)||0)*(Number(li.unitCost)||0),0);
+      const _exRev=_existingItems.reduce((s,li)=>s+((Number(li.priceExtended)>0)?Number(li.priceExtended):(Number(li.unitPrice)||0)*(Number(li.qtyOrdered)||0)),0);
+      const _choice=window.prompt(
+        'This project already has '+_existingItems.length+' line item'+(_existingItems.length!==1?'s':'')+' ('+fmt(_exCost)+' cost / '+fmt(_exRev)+' revenue).\n\n'+
+        'The uploaded quote will be ADDED to those existing items.\n\n'+
+        'Type APPEND to add the uploaded items on top of the existing ones,\n'+
+        'type REPLACE to clear the existing items first and import fresh,\n'+
+        'or press Cancel to abort without changing anything.',
+        'APPEND'
+      );
+      if(_choice===null){notify('Upload cancelled -- nothing changed','error');if(jobQuoteRef.current)jobQuoteRef.current.value='';return}
+      const _c=_choice.trim().toUpperCase();
+      if(_c==='REPLACE'){
+        _existingItems.forEach(li=>{try{deleteLineItem(li.id)}catch(_e){}});
+        notify('Cleared '+_existingItems.length+' existing item'+(_existingItems.length!==1?'s':'')+' -- importing replacement');
+      } else if(_c==='APPEND'){
+        // proceed -- uploaded items will be appended below
+      } else {
+        notify('Upload cancelled -- type APPEND or REPLACE to proceed','error');
+        if(jobQuoteRef.current)jobQuoteRef.current.value='';
+        return;
+      }
+    }
+    setUploadingToJob(true);
     const ext=(file.name||'').split('.').pop().toLowerCase();
     const isPdf=ext==='pdf'||file.type==='application/pdf';
     const isImage=['png','jpg','jpeg','gif','webp','tiff'].includes(ext)||file.type?.startsWith('image/');
