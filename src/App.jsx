@@ -201,10 +201,41 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
         if(d0[0]&&d0[0][4])name=String(d0[0][4]).split("\n")[0].trim()}catch{}
       if(fileRef.current)fileRef.current.value="";
       setJobName(name);
-      const sel={};sheets.forEach(s2=>{sel[s2.name]=true});setSelectedSheets(sel);
+      // Sheet selection heuristic: many Midwest quote workbooks have both a customer-
+      // facing sheet (e.g. "Approvals", "Quote", "Final") AND an internal worksheet
+      // (e.g. "Cost Worksheet", "Internal", "Draft", "WIP", "Backup") that may have
+      // stale/different line items. Reading both mixes the data. Default behavior:
+      // if at least one sheet matches the "customer-facing" pattern, check ONLY those
+      // by default and leave internal sheets unchecked. Otherwise (single sheet, or
+      // no obvious pattern match), check all sheets like before. The user can always
+      // toggle sheets manually in the picker; this just sets the safer default.
+      const isCustomerFacing = (n)=>/\b(approvals?|approved|quotes?|quotations?|finals?|customer|sales)\b/i.test(n);
+      const isInternal = (n)=>/\b(cost|worksheet|internal|draft|wip|backup|notes|old|scratch|temp)\b/i.test(n);
+      const sheetNames = sheets.map(s2=>s2.name);
+      const hasCustomerFacing = sheetNames.some(isCustomerFacing);
+      const sel={};
+      let autoSkipped=[];
+      sheets.forEach(s2=>{
+        if(hasCustomerFacing){
+          // When a customer-facing sheet is present, only check customer-facing sheets.
+          // Internal sheets (and ambiguous sheets) start unchecked.
+          const isCF = isCustomerFacing(s2.name);
+          sel[s2.name] = isCF;
+          if(!isCF) autoSkipped.push(s2.name);
+        } else if(isInternal(s2.name) && sheets.length > 1) {
+          // No customer-facing sheet, but this one looks internal AND there are others.
+          // Uncheck it; user must opt in.
+          sel[s2.name] = false;
+          autoSkipped.push(s2.name);
+        } else {
+          sel[s2.name] = true;
+        }
+      });
+      setSelectedSheets(sel);
       setParsed({items,vendors:vendorSet,groups,sheets});
       setStep("config");
-      notify(items.length+" items found by parser"+(items.length>0?" -- AI verifying in background...":". AI scanning..."));
+      const skippedMsg = autoSkipped.length>0 ? " ("+autoSkipped.length+" internal sheet"+(autoSkipped.length!==1?"s":"")+" auto-unchecked: "+autoSkipped.join(", ")+")" : "";
+      notify(items.length+" items found by parser"+skippedMsg+(items.length>0?" -- AI verifying in background...":". AI scanning..."));
       // AI runs in parallel on EVERY quote upload
       runAiVerify(f,wb,XLSX,items);
     }catch(err){notify("Error reading file: "+err.message,"error")}
