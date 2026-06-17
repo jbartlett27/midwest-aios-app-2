@@ -46,7 +46,7 @@ export default async function handler(req, res) {
     const simpleKeywords = ['hi','hello','hey','thanks','thank you','yes','no','ok','okay','got it','cool','nice','great','what time','what day','what date','status','count','how many','total','quick','simple','list','show me','display'];
     const isSimple = !isComplex && (wordCount <= 12 || simpleKeywords.some(k => txt === k || txt.startsWith(k+' ') || txt.endsWith(' '+k)));
 
-    const selectedModel = isSimple ? 'claude-haiku-4-5' : 'claude-sonnet-4-20250514';
+    const selectedModel = isSimple ? 'claude-haiku-4-5' : 'claude-sonnet-4-5';
     const selectedMaxTokens = isSimple ? 2048 : 8192;
 
     // Prompt caching: wrap system prompt and tools with cache_control markers.
@@ -140,7 +140,10 @@ export default async function handler(req, res) {
         if ((response.status === 429 || response.status === 529) && i < keys.length - 1) continue;
 
         if (data.error && data.error.type === 'not_found_error') {
-          const r2body = { ...body, model: 'claude-3-5-sonnet-20241022', max_tokens: 4096 };
+          // Fallback uses a current bare alias (not a dated snapshot) so that if the
+          // primary model is ever unavailable, the Brain degrades to a working model
+          // instead of erroring. Dated snapshots get retired over time; aliases do not.
+          const r2body = { ...body, model: 'claude-haiku-4-5', max_tokens: 4096 };
           // The fallback model also respects the streaming flag.
           if (stream) r2body.stream = true; else delete r2body.stream;
           const r2 = await fetch('https://api.anthropic.com/v1/messages', {
