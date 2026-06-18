@@ -231,6 +231,14 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
           sel[s2.name] = true;
         }
       });
+      // Safety net: never auto-skip to an empty preview. If the heuristic left no
+      // selected sheet that actually has line items (e.g. a workbook whose only data
+      // sheet is named "Cost Worksheet", which the internal-name pattern would otherwise
+      // uncheck), fall back to selecting every sheet that has items. Prevents the
+      // "lines appear then vanish" symptom on internally-named primary sheets.
+      if(!sheets.some(s2=>sel[s2.name]&&s2.count>0)){
+        sheets.forEach(s2=>{if(s2.count>0){sel[s2.name]=true;autoSkipped=autoSkipped.filter(n=>n!==s2.name)}});
+      }
       setSelectedSheets(sel);
       setParsed({items,vendors:vendorSet,groups,sheets});
       setStep("config");
@@ -3813,7 +3821,7 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
       // the user can edit that amount in the detail panel to correct the historical record).
       const _getBillPayments = (billData, billCost) => {
         if (Array.isArray(billData?.payments)) return billData.payments;
-        if (billData?.paid || billData?.checkNum || billData?.payDate) {
+        if ((billData?.paid || billData?.checkNum || billData?.payDate) && billData?.status !== 'unpaid' && billData?.status !== 'void') {
           // Legacy single-payment bill. Synthesize one entry with amount = current cost.
           // Marked isLegacy:true so the UI can offer an "Edit" affordance to correct it.
           return [{
@@ -8057,7 +8065,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
             // numbers the UI shows.
             const _payments = Array.isArray(billData?.payments)
               ? billData.payments
-              : ((billData?.paid || billData?.checkNum || billData?.payDate)
+              : ((billData?.paid || billData?.checkNum || billData?.payDate) && billData?.status !== 'unpaid' && billData?.status !== 'void'
                 ? [{date: billData.payDate||'', amount: cost, checkNum: billData.checkNum||'', memo: billData.memo||'', method:'legacy', isLegacy:true}]
                 : []);
             const _totalPaid = _payments.reduce((s,p) => s + (Number(p.amount)||0), 0);
