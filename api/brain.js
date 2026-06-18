@@ -46,7 +46,7 @@ export default async function handler(req, res) {
     const simpleKeywords = ['hi','hello','hey','thanks','thank you','yes','no','ok','okay','got it','cool','nice','great','what time','what day','what date','status','count','how many','total','quick','simple','list','show me','display'];
     const isSimple = !isComplex && (wordCount <= 12 || simpleKeywords.some(k => txt === k || txt.startsWith(k+' ') || txt.endsWith(' '+k)));
 
-    const selectedModel = isSimple ? 'claude-haiku-4-5' : 'claude-sonnet-4-5';
+    const selectedModel = isSimple ? 'claude-haiku-4-5' : 'claude-sonnet-4-6';
     const selectedMaxTokens = isSimple ? 2048 : 8192;
 
     // Prompt caching: wrap system prompt and tools with cache_control markers.
