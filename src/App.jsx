@@ -418,7 +418,7 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
       setDone({type:"quote",items:ct,vendors:newVendors,jobName,jobId:jid});
       notify("Imported "+ct+" items into \""+jobName+"\"");
       // Force re-fetch line items after batch import to ensure consistency across sessions
-      setTimeout(async()=>{try{const d=await db.loadAll();if(d.lineItems)setLineItems(d.lineItems);if(d.jobs)setJobs(d.jobs)}catch{}},3000);
+      setTimeout(async()=>{try{const d=await db.loadAll();if(d.lineItems)setLineItems(p=>{const ids=new Set(d.lineItems.map(li=>li.id));return [...d.lineItems,...p.filter(li=>!ids.has(li.id))]});if(d.jobs)setJobs(p=>{const ids=new Set(d.jobs.map(j=>j.id));return [...d.jobs,...p.filter(j=>!ids.has(j.id))]})}catch{}},3000);
     }catch(err){notify("Import error: "+err.message,"error")}
     setImporting(false);
   };
@@ -2586,7 +2586,7 @@ Never use emoji. Be concise.`;
           qtyOrdered:item.qtyOrdered,qtyReceived:0,qtyInvoiced:0,poDate:'',deliveryDate:'',invoiceDate:''});ct++}
       notify('Imported '+ct+' items into "'+uploadJobName+'" -- click the job to view');
       // Force re-fetch line items after batch import to ensure consistency across sessions
-      setTimeout(async()=>{try{const d=await db.loadAll();if(d.lineItems)ctx.setLineItems(d.lineItems);if(d.jobs)ctx.setJobs(d.jobs)}catch{}},3000);
+      setTimeout(async()=>{try{const d=await db.loadAll();if(d.lineItems)ctx.setLineItems(p=>{const ids=new Set(d.lineItems.map(li=>li.id));return [...d.lineItems,...p.filter(li=>!ids.has(li.id))]});if(d.jobs)ctx.setJobs(p=>{const ids=new Set(d.jobs.map(j=>j.id));return [...d.jobs,...p.filter(j=>!ids.has(j.id))]})}catch{}},3000);
       setUploadData(null);setUploadJobName('');setUploadAiChat([]);setUploadAiStatus(null);setUploadAiChangedRows(new Set());setSelectedJob(jid);
     }catch(err){notify('Import error: '+err.message,'error')}
     setUploading(false);
