@@ -7772,7 +7772,9 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
                 const created=new Date(j.createdDate||Date.now());
                 const due=new Date(created);due.setDate(due.getDate()+30);
                 const daysUntil=Math.floor((due-new Date())/(1000*60*60*24));
-                allBills2.push({vendor:v?.name||'Unknown',job:j.name,amount:cost,dueDate:due.toISOString().split('T')[0],daysUntil,overdue:daysUntil<0,poDoc});
+                const _bd=typeof docStatuses['BILL-'+poDoc.replace('PO-','')]==='object'&&docStatuses['BILL-'+poDoc.replace('PO-','')]?docStatuses['BILL-'+poDoc.replace('PO-','')]:{};
+                const _entered=!!(_bd.status||_bd.vendorInvNum||(Array.isArray(_bd.payments)&&_bd.payments.length>0)||_bd.paid||_bd.checkNum||_bd.payDate);
+                allBills2.push({vendor:v?.name||'Unknown',job:j.name,amount:cost,dueDate:due.toISOString().split('T')[0],daysUntil,overdue:daysUntil<0&&_entered,poDoc});
               }
             }
           });
@@ -8078,7 +8080,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
             allBills.push({
               job, vendor: v, vendorId: vid, vendorName: v?.name||'Unknown',
               items: vItems, cost, orderValue, poDocNum, billDocNum, poDate, dueDate: dueStr, daysUntil,
-              paid, voided: billData.status==='void',
+              paid, voided: billData.status==='void', entered: !!(billData.status||billData.vendorInvNum||(_payments&&_payments.length>0)),
               vendorInvNum: billData.vendorInvNum||'', checkNum: billData.checkNum||'',
               payDate: billData.payDate||'', memo: billData.memo||'',
               payments: _payments, totalPaid: _totalPaid, balance: _balance, isPartiallyPaid: _isPartiallyPaid,
@@ -8215,7 +8217,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         if (input.vendor_name) { const q = input.vendor_name.toLowerCase(); bills = bills.filter(b => (b.vendorName||'').toLowerCase().includes(q)); }
         const unpaid = bills.filter(b => !b.paid);
         const paid = bills.filter(b => b.paid);
-        const overdue = unpaid.filter(b => b.daysUntil < 0);
+        const overdue = unpaid.filter(b => b.daysUntil < 0 && b.entered);
         const credits = bills.filter(b => b._standaloneKind === 'VendorCredit');
         const totalOwed = unpaid.reduce((s,b) => s+(b._standaloneKind==='VendorCredit'?-b.cost:b.cost), 0);
         const totalPaid = paid.reduce((s,b) => s+b.cost, 0);
