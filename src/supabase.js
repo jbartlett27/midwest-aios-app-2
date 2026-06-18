@@ -12,11 +12,26 @@ const hdrs = {
   'Prefer': 'return=representation',
 };
 
-async function fetchAll(table) {
+async function fetchAll(table, opts) {
+  // Page through ALL rows. PostgREST caps a single response at 1000 rows, so a
+  // plain select silently truncated large tables (e.g. line_items), leaving any
+  // job whose items sat past row 1000 with no data and a $0 total. Loop with
+  // limit/offset until a short page returns. Tables under 1000 rows still take a
+  // single request (loop breaks on the first short page). Pass { single:true } to
+  // keep one capped page -- used for very large reference tables that are not paged.
+  const pageSize = 1000;
+  const single = !!(opts && opts.single);
   try {
-    const r = await fetch(URL + '/' + table + '?select=*&order=id', { headers: hdrs });
-    if (!r.ok) return null;
-    return await r.json();
+    let all = [];
+    for (let offset = 0; ; offset += pageSize) {
+      const r = await fetch(URL + '/' + table + '?select=*&order=id&limit=' + pageSize + '&offset=' + offset, { headers: hdrs });
+      if (!r.ok) return offset === 0 ? null : all;
+      const page = await r.json();
+      if (!Array.isArray(page)) return offset === 0 ? null : all;
+      all = all.concat(page);
+      if (single || page.length < pageSize) break;
+    }
+    return all;
   } catch (e) { console.error('Fetch ' + table + ':', e); return null; }
 }
 
@@ -299,7 +314,7 @@ const realtime = new RealtimeConnection();
 export const db = {
   async loadAll() {
     const [jobsRaw, liRaw, vRaw, cRaw, rRaw, sRaw] = await Promise.all([
-      fetchAll('jobs'), fetchAll('line_items'), fetchAll('vendors'), fetchAll('customers'), fetchAll('reps'), fetchAll('sops'),
+      fetchAll('jobs'), fetchAll('line_items'), fetchAll('vendors'), fetchAll('customers'), fetchAll('reps'), fetchAll('sops', { single: true }),
     ]);
     return {
       jobs: jobsRaw ? jobsRaw.map(jobFromDb) : null,
