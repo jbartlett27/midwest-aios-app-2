@@ -172,6 +172,7 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
           const priceExt=n("priceExt");
           if(/^(freight|frt|surcharge|tariff|shipping|handling|delivery|install|installation|address|disclaimer|terms|conditions)/i.test(desc)&&!tag&&!model&&!manuf&&!priceExt)continue;
           const qty=n("qty")||0;if(qty<=0&&!tag)continue;
+          if(qty<=0&&priceExt<=0)continue; // zero qty + zero extended sell = hidden/alternate row; skip even if the .xls hidden-row flag was not read
           const list=n("list");const net=n("net");
           const price=n("price")||(priceExt&&qty>0?priceExt/qty:0);
           // Shipping: if shipTotal column exists, use ship as per-unit; otherwise check if ship value > net (likely extended)
@@ -2380,6 +2381,7 @@ function JobsPage(ctx){
           const qty=Math.round(n('qty'));const list=n('list');const net=n('net');const price=n('price');const priceExt=n('priceExt');
           // Accept row if it has ANY numeric data
           if(qty<=0&&list<=0&&net<=0&&price<=0&&priceExt<=0)continue;
+          if(qty<=0&&priceExt<=0)continue; // zero qty + zero extended sell = hidden/alternate row; skip even if the .xls hidden-row flag was not read
           const mfr=manuf||lastManuf;if(manuf)lastManuf=manuf;if(mfr)vendorSet.add(mfr);
           // Smart shipping per-unit: detect if column has extended total instead of per-unit
           let shipPU=n('ship');const shipTot=n('shipTotal');
@@ -2948,6 +2950,7 @@ function JobDetail({job,ctx}){
           if(/^(subtotal|grand total|total)$/i.test(cleanDesc.trim()))continue;
           const qty=Math.round(n('qty'));const list=n('list');const net=n('net');const price=n('price');const priceExt=n('priceExt');
           if(qty<=0&&list<=0&&net<=0&&price<=0&&priceExt<=0)continue;
+          if(qty<=0&&priceExt<=0)continue; // zero qty + zero extended sell = hidden/alternate row; skip even if the .xls hidden-row flag was not read
           const mfr=manuf||lastManuf;if(manuf)lastManuf=manuf;
           // Ensure vendor exists
           const vk=(mfr||'').toLowerCase().trim();
