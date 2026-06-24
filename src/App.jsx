@@ -9259,11 +9259,18 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         }
       }
       const msgs = [...history.filter(h=>h.role==="user"||h.role==="assistant").slice(-8).map(h=>({role:h.role,content:typeof h.content==="string"?h.content:h.content})),{role:"user",content:userContent}];
+      let data;
+      let streamPlaceholderIdx = -1;
+      // Auto-retry transient API overloads (HTTP 529 "Overloaded", rate limits) with exponential
+      // backoff so a busy-API blip during an upload self-heals instead of surfacing "Try again".
+      let brainAttempt = 0;
+      while (true) {
+      if (brainAttempt > 0) { await new Promise(r => setTimeout(r, 700 * Math.pow(2, brainAttempt - 1))); }
+      brainAttempt++;
+      streamPlaceholderIdx = -1;
       const response = await fetch("/api/brain", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({system:ctx,messages:msgs,tools:brainTools,stream:true})});
       // If server fell back to non-streaming (e.g. error path), parse as JSON.
       const ctype = (response.headers.get("content-type")||"").toLowerCase();
-      let data;
-      let streamPlaceholderIdx = -1;
       if (!ctype.includes("text/event-stream")) {
         data = await response.json();
       } else {
@@ -9375,6 +9382,10 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         // Stream ended.
         setIsStreaming(false);
         if (streamErr) {
+          // Transient API overload / rate limit before any text streamed -> auto-retry with backoff.
+          if (/overload|rate limit|429|529|too many requests|temporarily/i.test(String(streamErr)) && (!placeholderInserted || !reconstructed.content.some(b => b.type === "text" && b.text)) && brainAttempt <= 3) {
+            continue;
+          }
           // If we already streamed some text, leave it visible and append a note.
           // Otherwise, surface the error directly.
           if (placeholderInserted && reconstructed.content.some(b => b.type === "text" && b.text)) {
@@ -9412,6 +9423,8 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
           data._brainStreamedTextOnly = true;
         }
       }
+      break;
+      } // end Brain auto-retry loop (transient overload backoff)
       if(data.error){
         const msg=data.error.message||JSON.stringify(data.error);
         setHistory(p=>[...p,{role:"assistant",content:msg.includes("rate limit")?"I need a moment -- rate limit hit. Try again in 30 seconds.":"API Error: "+msg}]);
