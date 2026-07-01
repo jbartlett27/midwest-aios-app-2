@@ -11108,6 +11108,49 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       };
 
 
+      // Plaid update-mode handler. Used when the bank forces a password reset and
+      // Plaid returns ITEM_LOGIN_REQUIRED ("the login details of this item have changed").
+      // Update mode re-authenticates the SAME Plaid item in place -- no disconnect, no new
+      // item, no duplicate accounts, and the full transaction history is preserved. The user
+      // simply re-enters their new password for the same institution. Passing the existing
+      // access_token to create_link_token is what puts Plaid Link into update mode; on success
+      // the same access_token stays valid so no token exchange is performed.
+      const handlePlaidUpdate=async()=>{
+        if(!plaidAccessToken){notify('No bank connected to update. Use Connect Bank (Plaid).','error');return}
+        setPlaidLoading(true);
+        try{
+          const r=await fetch('/api/plaid-link',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'create_link_token',access_token:plaidAccessToken})}).catch(()=>null);
+          if(!r){notify('Cannot reach /api/plaid-link. Make sure plaid-link.js is in the api/ folder on GitHub and Vercel has redeployed.','error');setPlaidLoading(false);return}
+          if(r.status===404){notify('API route not found. Push plaid-link.js to the api/ folder in GitHub and redeploy Vercel.','error');setPlaidLoading(false);return}
+          const text=await r.text();let data;try{data=JSON.parse(text)}catch{notify('API returned invalid response. Go to Vercel > Deployments and click Redeploy.','error');setPlaidLoading(false);return}
+          if(!r.ok||!data.link_token){
+            const msg=typeof data.error==='string'?data.error:data.error_message||data.error?.message||'Unknown error';
+            notify('Plaid: '+msg,'error');setPlaidLoading(false);return;
+          }
+          if(typeof window.Plaid==='undefined'){
+            await new Promise((resolve,reject)=>{const s=document.createElement('script');s.src='https://cdn.plaid.com/link/v2/stable/link-initialize.js';s.onload=resolve;s.onerror=()=>reject(new Error('Failed to load Plaid SDK'));document.head.appendChild(s)});
+          }
+          const handler=window.Plaid.create({
+            token:data.link_token,
+            onSuccess:async()=>{
+              // Update mode keeps the same access_token valid -- do NOT exchange a token here.
+              // Clear the login error, reset the auto-sync guard so the hourly hook reseats,
+              // and pull recent transactions immediately.
+              setPlaidSyncError('');
+              try{localStorage.removeItem('mw_plaid_sync_error')}catch{}
+              plaidAutoSyncRef.current=false;
+              notify('Bank login updated. Syncing recent transactions...');
+              setPlaidLoading(false);
+              setTimeout(()=>{handlePlaidSync(plaidSyncRange==='custom'?'quarter':plaidSyncRange)},800);
+            },
+            onExit:(err)=>{if(err)notify('Plaid: '+(err.display_message||err.error_message||'Closed'),'error');setPlaidLoading(false)},
+            onEvent:()=>{},
+          });
+          handler.open();
+        }catch(err){notify('Update error: '+err.message,'error');setPlaidLoading(false)}
+      };
+
+
       // Plaid sync handler. Dedup state is rebuilt FRESH inside handlePlaidSync below
       // (not here at render scope) so back-to-back syncs always see the latest
       // manualTxns, including any rows added by an earlier sync that hasn't yet
@@ -11236,6 +11279,13 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       }
 
 
+      // Detect the Plaid re-auth condition. When a bank forces a password reset, Plaid
+      // returns ITEM_LOGIN_REQUIRED with a message like "the login details of this item
+      // have changed". In that state Sync Now cannot succeed until the item is
+      // re-authenticated via update mode (handlePlaidUpdate). Drives the callout + button.
+      const plaidNeedsReauth=plaidStatus==='connected'&&/login details|ITEM_LOGIN_REQUIRED|login_required|credentials|re-?authenticate|password reset/i.test(plaidSyncError||'');
+
+
       return <div style={{display:"flex",flexDirection:"column",gap:16}}>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12}} className="resp-grid-4">
           {kpi("TOTAL IN",fmt(totalBankIn),filteredBankTxns.filter(t=>t.type==='revenue').length+" deposits","#34d399")}
@@ -11259,11 +11309,20 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
                 return <span style={{fontSize:10,color:"#525252"}} title={last.toLocaleString()}>Last sync: {rel}</span>;
               })()}
               {plaidSyncError&&<span style={{fontSize:10,color:"#f87171",background:"#f8717115",padding:"2px 8px",borderRadius:4}} title={plaidSyncError}>{plaidSyncError.length>40?plaidSyncError.slice(0,40)+'...':plaidSyncError}</span>}
+              <Btn v={plaidNeedsReauth?"primary":"secondary"} style={plaidNeedsReauth?{fontSize:11,padding:"4px 10px"}:{fontSize:11,padding:"4px 10px",color:"#a78bfa",border:"1px solid #a78bfa30"}} onClick={handlePlaidUpdate} title="Re-enter your bank password after a reset -- keeps the same connection and history">{plaidLoading?'...':'Update Login'}</Btn>
               <Btn v="secondary" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>handlePlaidSync()}>{plaidLoading?'Syncing...':'Sync Now'}</Btn>
               <Btn v="secondary" style={{fontSize:11,padding:"4px 10px",color:"#f87171",border:"1px solid #f8717130"}} onClick={()=>{localStorage.removeItem('mw_plaid_access_token');localStorage.removeItem('mw_plaid_status');localStorage.removeItem('mw_plaid_bank_name');localStorage.removeItem('mw_plaid_last_sync');setPlaidAccessToken('');setPlaidStatus('disconnected');setPlaidBankName('');setPlaidLastSync('');setPlaidSyncError('');plaidAutoSyncRef.current=false;/* Mark disconnected in sops so other devices also reflect the disconnect */addSop({id:'PLAID_CONN_STATE',title:'Plaid Connection State',cat:'PlaidConn',icon:'dollar',content:JSON.stringify({status:'disconnected',accessToken:'',bankName:'',lastSync:''}),custom:true});notify('Bank disconnected on all devices')}}>Disconnect</Btn>
             </div>}
             {plaidStatus!=='connected'&&<div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:8,height:8,borderRadius:"50%",background:"#525252"}}/><span style={{fontSize:11,color:"#525252"}}>Bank not connected</span><Btn v="secondary" style={{fontSize:11,padding:"4px 10px"}} onClick={handlePlaidConnect}>{plaidLoading?'Loading...':'Connect Bank (Plaid)'}</Btn></div>}
           </div>
+          {plaidNeedsReauth&&<div style={{display:"flex",alignItems:"flex-start",gap:10,padding:"12px 14px",marginBottom:12,background:"#2dd4bf0d",border:"1px solid #2dd4bf40",borderRadius:10}}>
+            <div style={{width:20,height:20,borderRadius:"50%",background:"#2dd4bf20",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:1,color:"#2dd4bf"}}><I n="alert" s={13}/></div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:12.5,fontWeight:700,color:"#2dd4bf",marginBottom:3}}>Bank login needs updating</div>
+              <div style={{fontSize:11.5,color:"#c4c4c4",lineHeight:1.5}}>Your bank changed your login, which usually means a password reset. Click Update Login, re-enter your new password for {plaidBankName||'your bank'}, and syncing resumes automatically. Your existing transactions stay in place -- nothing is deleted, and there is no need to disconnect.</div>
+            </div>
+            <Btn v="primary" style={{fontSize:11,padding:"6px 12px",flexShrink:0,whiteSpace:"nowrap"}} onClick={handlePlaidUpdate}>{plaidLoading?'...':'Update Login'}</Btn>
+          </div>}
           {plaidStatus==='connected'&&<div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginBottom:12,padding:"8px 12px",background:"#111",borderRadius:8,border:"1px solid #222"}}>
             <span style={{fontSize:11,color:"#737373",fontWeight:600}}>Sync range:</span>
             {[["month","1 Month"],["quarter","3 Months"],["6months","6 Months"],["year","1 Year"],["2years","2 Years"],["all","All Time"],["custom","Custom"]].map(([v,l])=><button key={v} onClick={()=>{setPlaidSyncRange(v);try{localStorage.setItem('mw_plaid_sync_range',v)}catch{}if(v!=='custom')handlePlaidSync(v)}} style={{padding:"4px 10px",borderRadius:6,border:"none",cursor:"pointer",background:plaidSyncRange===v?"#2dd4bf":"transparent",color:plaidSyncRange===v?"#000":"#525252",fontSize:11,fontWeight:plaidSyncRange===v?600:400,fontFamily:"inherit",transition:"all 0.15s"}}>{l}</button>)}
