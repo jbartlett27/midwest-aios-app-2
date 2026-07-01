@@ -264,7 +264,7 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
         // Send header + ALL data rows (no limit) for complete AI analysis
         rows.forEach((row,ri)=>{
           if(hiddenRows[ri]&&hiddenRows[ri].hidden)return;
-          const cells=row.map(c=>String(c||"").trim()).filter(Boolean);
+          const cells=row.map(c=>String(c||"").replace(/\s*[\r\n]+\s*/g," ").trim()).filter(Boolean);
           if(cells.length<2)return;
           textContent+="R"+ri+": "+cells.join(" | ")+"\n";
         });
@@ -2423,7 +2423,7 @@ function JobsPage(ctx){
         let aiText='FILE: '+file.name+'\n\n';
         for(const sn2 of wb.SheetNames){const ws2=wb.Sheets[sn2];const rows2=XLSX.utils.sheet_to_json(ws2,{header:1,defval:''});const hr2=ws2['!rows']||[];
           aiText+='=== Sheet: '+sn2+' ('+rows2.length+' rows) ===\n';
-          rows2.forEach((row2,ri2)=>{if(hr2[ri2]&&hr2[ri2].hidden)return;const cells2=row2.map(c2=>String(c2||'').trim()).filter(Boolean);if(cells2.length>=2)aiText+='R'+ri2+': '+cells2.join(' | ')+'\n'});
+          rows2.forEach((row2,ri2)=>{if(hr2[ri2]&&hr2[ri2].hidden)return;const cells2=row2.map(c2=>String(c2||'').replace(/\s*[\r\n]+\s*/g,' ').trim()).filter(Boolean);if(cells2.length>=2)aiText+='R'+ri2+': '+cells2.join(' | ')+'\n'});
           aiText+='\n'}
         fetch('/api/ai-scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
           image_data:btoa(unescape(encodeURIComponent(aiText))),media_type:'text/plain',scan_type:'quote_document',
@@ -9172,7 +9172,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
         textContent += '=== Sheet: ' + sn + ' (' + rows.length + ' rows) ===\n';
         rows.forEach((row, ri) => {
-          const cells = row.map(c => String(c||'').trim()).filter(Boolean);
+          const cells = row.map(c => String(c||'').replace(/\s*[\r\n]+\s*/g,' ').trim()).filter(Boolean);
           if (cells.length >= 1) textContent += 'R' + ri + ': ' + cells.join(' | ') + '\n';
         });
         textContent += '\n';
