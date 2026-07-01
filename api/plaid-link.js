@@ -25,18 +25,33 @@ export default async function handler(req, res) {
 
     // Step 1: Create a link token (opens the Plaid Link popup)
     if (action === 'create_link_token') {
+      // Update mode: when an access_token is supplied, Plaid opens Link in
+      // "update mode" against the EXISTING item so the user can re-enter their
+      // login (e.g., after a bank-forced password reset -- ITEM_LOGIN_REQUIRED).
+      // The same item and access_token stay valid, transaction history is
+      // preserved, and no duplicate accounts are created. In update mode Plaid
+      // requires that `products` be omitted and `access_token` be provided.
+      const { access_token } = req.body;
+
+      const body = {
+        client_id: CLIENT_ID,
+        secret: SECRET,
+        user: { client_user_id: 'midwest-user-1' },
+        client_name: 'Midwest Educational Furnishings',
+        country_codes: ['US'],
+        language: 'en',
+      };
+
+      if (access_token) {
+        body.access_token = access_token; // update mode -- do NOT include products
+      } else {
+        body.products = ['transactions']; // normal first-time link
+      }
+
       const response = await fetch(`${baseUrl}/link/token/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          client_id: CLIENT_ID,
-          secret: SECRET,
-          user: { client_user_id: 'midwest-user-1' },
-          client_name: 'Midwest Educational Furnishings',
-          products: ['transactions'],
-          country_codes: ['US'],
-          language: 'en',
-        }),
+        body: JSON.stringify(body),
       });
       const data = await response.json();
       return res.status(response.status).json(data);
