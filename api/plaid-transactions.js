@@ -65,7 +65,7 @@ export default async function handler(req, res) {
       if (all.length < data.total_transactions && offset + 500 < data.total_transactions && offset < 9500) {
         return fetchPage(offset + 500, all);
       }
-      return res.status(200).json({ transactions: all, total_transactions: data.total_transactions, start_date: useStart, end_date: useEnd });
+      return res.status(200).json({ transactions: all, accounts: data.accounts || [], total_transactions: data.total_transactions, start_date: useStart, end_date: useEnd });
     };
 
     return fetchPage();
