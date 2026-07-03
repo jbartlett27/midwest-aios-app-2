@@ -111,7 +111,11 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
   // Sales-role users only ever see their own tab. Default activeRep to their
   // rep id so they land directly on their own portal instead of the global Overview.
   const isSalesRole=userRole==="sales"&&!!userRepId;
-  const [activeRep,setActiveRep]=useState(isSalesRole?userRepId:"overview");
+  // Team visibility is OWNER-ONLY (admin role: Maureen, Dave, Master). Office and
+  // sales users are pinned to their own rep view and never see the Overview, other
+  // reps' tabs, or the Team directory.
+  const canSeeTeam=userRole==="admin";
+  const [activeRep,setActiveRep]=useState(userRole==="admin"?"overview":(userRepId||"overview"));
   const [crmTab,setCrmTab]=useState("pipeline");
   const [noteText,setNoteText]=useState("");
   const [taskText,setTaskText]=useState("");
@@ -121,7 +125,7 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
 
   // Sales-role users can never enter Overview mode -- coerce 'overview' to their own rep id
   // in case state somehow gets out of sync (e.g. stale state, manual intervention).
-  const effectiveActiveRep=isSalesRole?(activeRep==="overview"?userRepId:activeRep):activeRep;
+  const effectiveActiveRep=canSeeTeam?activeRep:(userRepId||activeRep);
   const isOverview=effectiveActiveRep==="overview";
   const rep=reps.find(r=>r.id===effectiveActiveRep)||reps.filter(isSalesRep)[0]||reps[0];
   const rj=isOverview?jobs:jobs.filter(j=>j.salesRep===effectiveActiveRep);
@@ -160,11 +164,12 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
   const kpi=(label,value,color)=><div style={{textAlign:"center",padding:"14px 10px",background:"#0a0a0a",borderRadius:10,flex:"1 1 100px"}}><div style={{fontSize:22,fontWeight:800,color:color||"#f0f0f0",fontFamily:"'JetBrains Mono',monospace",letterSpacing:-1}}><AnimNum value={String(value)}/></div><div style={{fontSize:11,color:"#9a9a9a",marginTop:2}}>{label}</div></div>;
 
 
-  return <div style={{animation:"fadeUp 0.4s"}}><Header title="Sales Portal" sub={isSalesRole?"Your pipeline, CRM, and activity":"Pipeline management, CRM, and team performance"}/>
+  if(!canSeeTeam&&!userRepId){return <div style={{animation:"fadeUp 0.4s"}}><Header title="Sales Portal" sub="Your pipeline, CRM, and activity"/><Card><div style={{fontSize:13,color:"#9a9a9a",padding:"8px 0"}}>No sales profile is linked to your account. Ask an administrator to assign one in Users & Permissions.</div></Card></div>;}
+  return <div style={{animation:"fadeUp 0.4s"}}><Header title="Sales Portal" sub={!canSeeTeam?"Your pipeline, CRM, and activity":"Pipeline management, CRM, and team performance"}/>
     {/* Rep selector. Sales-role users see only their own tab. */}
     <div style={{display:"flex",gap:6,marginBottom:20,flexWrap:"wrap",overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
-      {!isSalesRole&&<button onClick={()=>setActiveRep("overview")} style={{padding:"8px 16px",borderRadius:8,cursor:"pointer",background:isOverview?"#2dd4bf":"#111",color:isOverview?"#000":"#737373",fontSize:13,fontWeight:isOverview?600:400,fontFamily:"inherit",border:isOverview?"none":"1px solid rgba(255,255,255,0.06)",whiteSpace:"nowrap",flexShrink:0}}>Overview</button>}
-      {reps.filter(r=>!r.id.includes("SEED_FLAG")&&isSalesRep(r)&&(!isSalesRole||r.id===userRepId)).map(r=><button key={r.id} onClick={()=>setActiveRep(r.id)} style={{padding:"8px 16px",borderRadius:8,cursor:"pointer",background:activeRep===r.id?"#2dd4bf":"#111",color:activeRep===r.id?"#000":"#737373",fontSize:13,fontWeight:activeRep===r.id?600:400,fontFamily:"inherit",border:activeRep===r.id?"none":"1px solid rgba(255,255,255,0.06)",whiteSpace:"nowrap",flexShrink:0}}>{r.name}</button>)}
+      {canSeeTeam&&<button onClick={()=>setActiveRep("overview")} style={{padding:"8px 16px",borderRadius:8,cursor:"pointer",background:isOverview?"#2dd4bf":"#111",color:isOverview?"#000":"#737373",fontSize:13,fontWeight:isOverview?600:400,fontFamily:"inherit",border:isOverview?"none":"1px solid rgba(255,255,255,0.06)",whiteSpace:"nowrap",flexShrink:0}}>Overview</button>}
+      {reps.filter(r=>!r.id.includes("SEED_FLAG")&&isSalesRep(r)&&(canSeeTeam||r.id===userRepId)).map(r=><button key={r.id} onClick={()=>setActiveRep(r.id)} style={{padding:"8px 16px",borderRadius:8,cursor:"pointer",background:activeRep===r.id?"#2dd4bf":"#111",color:activeRep===r.id?"#000":"#737373",fontSize:13,fontWeight:activeRep===r.id?600:400,fontFamily:"inherit",border:activeRep===r.id?"none":"1px solid rgba(255,255,255,0.06)",whiteSpace:"nowrap",flexShrink:0}}>{r.name}</button>)}
     </div>
 
 
@@ -185,7 +190,7 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
 
     {/* CRM Tabs. Sales-role users do not see the Team tab -- they only see their own work. */}
     <div className="doc-tabs" style={{display:"flex",gap:0,marginBottom:20,background:"#111",borderRadius:10,padding:3,overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
-      {[["pipeline","Pipeline"],["activity","Activity Feed"],["tasks","Tasks"],["notes","Notes"],["team","Team"]].filter(([id])=>!isSalesRole||id!=="team").map(([id,label])=>
+      {[["pipeline","Pipeline"],["activity","Activity Feed"],["tasks","Tasks"],["notes","Notes"],["team","Team"]].filter(([id])=>canSeeTeam||id!=="team").map(([id,label])=>
         <button key={id} onClick={()=>setCrmTab(id)} style={{padding:"10px 18px",borderRadius:8,border:"none",cursor:"pointer",background:crmTab===id?"#2dd4bf":"transparent",color:crmTab===id?"#000":"#737373",fontSize:13,fontWeight:crmTab===id?600:400,fontFamily:"inherit",whiteSpace:"nowrap",flexShrink:0}}>{label}</button>
       )}
     </div>
@@ -235,7 +240,7 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
 
     {/* TEAM. Hidden entirely from sales-role users -- defense in depth even though
         the Team tab button is filtered out for them above. */}
-    {crmTab==="team"&&!repDetail&&!isSalesRole&&<Card>
+    {crmTab==="team"&&!repDetail&&canSeeTeam&&<Card>
       <div style={{fontSize:15,fontWeight:700,color:"#f0f0f0",marginBottom:14}}>Team Directory</div>
       {reps.filter(r=>!r.id.includes("SEED_FLAG")&&isSalesRep(r)).map(r=>{const rJobs=jobs.filter(j=>j.salesRep===r.id);const rv=rJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const pRev=rJobs.filter(j=>j.paymentStatus==="paid").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const comm=rJobs.reduce((s,j)=>s+_commissionFor(j.id,r.commissionRate||0),0);const costTotal=rJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalCost,0);const margin=rv>0?(1-costTotal/rv)*100:0;return <div key={r.id} onClick={()=>setRepDetail(r)} className="hover-lift" style={{display:"flex",alignItems:"center",gap:14,padding:"16px",background:"#0a0a0a",borderRadius:12,marginBottom:10,cursor:"pointer",border:"1px solid rgba(255,255,255,0.04)",transition:"all 0.2s"}}>
         <div style={{width:48,height:48,borderRadius:12,background:"linear-gradient(135deg,rgba(45,212,191,0.12),rgba(167,139,250,0.12))",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontWeight:800,color:"#2dd4bf",flexShrink:0}}>{r.name.split(" ").map(n=>n[0]).join("")}</div>
@@ -250,7 +255,7 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
 
 
     {/* REP PROFILE PAGE. Hidden from sales-role users. */}
-    {crmTab==="team"&&repDetail&&!isSalesRole&&(()=>{
+    {crmTab==="team"&&repDetail&&canSeeTeam&&(()=>{
       const r=repDetail;const rJobs=jobs.filter(j=>j.salesRep===r.id);
       const rv=rJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
       const costTotal=rJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalCost,0);
@@ -723,7 +728,7 @@ function PlaybookPage({jobs,reps,vendors,customers,lineItems,getJobFinancials,se
   //   LineItemShipTo -> per-line ship-to overrides applied silently in PO generation
   //   PlaidConn -> Plaid connection token storage
   //   VendorCredit / StandaloneBill -> Documents > Vendor Bills tab
-  const internalCats=new Set(["Notes","Task","DocStatuses","ManualTxn","HistoricalDoc","Settings","BrainMemory","Prospect","Config","File","LineItemShipTo","PlaidConn","VendorCredit","StandaloneBill","ExpenseCheck"]);
+  const internalCats=new Set(["Notes","Task","DocStatuses","ManualTxn","HistoricalDoc","Settings","BrainMemory","Prospect","Config","File","LineItemShipTo","PlaidConn","VendorCredit","StandaloneBill","ExpenseCheck","BankBalances"]);
   const customIds=new Set((customSops||[]).filter(s=>!internalCats.has(s.cat)).map(s=>s.overrideId||s.id));const allSops=[...DEFAULT_SOPS.filter(d=>!customIds.has(d.id)),...(customSops||[])].filter(s=>!internalCats.has(s.cat));
   const cats=[...new Set(allSops.map(s=>s.cat))];
   const filtered=search?allSops.filter(s=>s.title.toLowerCase().includes(search.toLowerCase())||s.content.toLowerCase().includes(search.toLowerCase())):allSops;
@@ -5007,28 +5012,82 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   const unpaidJobCount=filteredJobs.filter(j=>j.paymentStatus!=="paid"&&(getJobFinancials(j.id).totalInvoiced||0)>0).length;
 
 
-  // AP Aging -- what Midwest owes vendors (cost side of unpaid/undelivered jobs)
+  // AP Aging -- what Midwest actually owes vendors: OUTSTANDING BALANCES on vendor
+  // bills, using the same bills engine DocumentsPage renders (received-based amounts,
+  // payment history, explicit paid/unpaid/void status, deleted flags), aged by days
+  // PAST DUE. Replaces the old approximation that counted every ordered item's full
+  // cost as owed even when the bill was already paid.
+  const _stableNumFin=(prefix,a,b)=>prefix+(a||'').replace(/[^A-Z0-9]/gi,'').slice(-4).toUpperCase()+'-'+(b||'').replace(/[^A-Z0-9]/gi,'').slice(-4).toUpperCase();
+  const _finShipTos=(()=>{const r=(customSops||[]).find(s=>s.id==='LINE_ITEM_SHIP_TO_GLOBAL');if(!r)return {};try{return JSON.parse(r.content)||{}}catch{return {}}})();
+  const _finDocStatuses=(()=>{const allDS=jobs.reduce((acc,j)=>({...acc,...(j.docStatuses||{})}),{});const rec=(customSops||[]).find(s=>s.id==='DOC_STATUSES_GLOBAL');let sopDS={};if(rec){try{sopDS=JSON.parse(rec.content||'{}')}catch{}}let lsDS={};try{lsDS=JSON.parse(localStorage.getItem('mw_doc_statuses_fallback')||'{}')}catch{}return {...allDS,...sopDS,...lsDS};})();
+  const _finOpenBills=(()=>{
+    const out=[];
+    filteredJobs.forEach(job=>{
+      const items=getJobItems(job.id);
+      const groups={};
+      items.forEach(i=>{const sv=_finShipTos[i.id];const ship=(sv&&String(sv).trim())?sv:((i.shipTo&&String(i.shipTo).trim())?i.shipTo:'');const key=(i.vendor||'')+'||'+(ship||'');if(!groups[key])groups[key]={vid:i.vendor||'',shipTo:ship||'',items:[]};groups[key].items.push(i);});
+      Object.values(groups).forEach(g=>{
+        const sk=(typeof shipKey==='function')?shipKey(g.shipTo):'';
+        const poDocNum=sk?(_stableNumFin('PO-',job.id,g.vid)+'-S'+sk):_stableNumFin('PO-',job.id,g.vid);
+        const poStatus=_finDocStatuses[poDocNum];
+        const anyReceived=g.items.some(i=>(Number(i.qtyReceived)||0)>0);
+        if(!(poStatus&&poStatus!=='new')&&!anyReceived)return;
+        const cost=g.items.reduce((s,i)=>s+(i.unitCost||0)*(Number(i.qtyReceived)||0),0);
+        const orderValue=g.items.reduce((s,i)=>s+(i.unitCost||0)*(Number(i.qtyOrdered)||0),0);
+        if(orderValue<=0)return;
+        const billDocNum='BILL-'+poDocNum.replace('PO-','');
+        const billData=typeof _finDocStatuses[billDocNum]==='object'&&_finDocStatuses[billDocNum]?_finDocStatuses[billDocNum]:{};
+        if(billData.deleted===true)return;
+        if(billData.status==='void')return;
+        const _payments=Array.isArray(billData.payments)?billData.payments:(((billData.paid||billData.checkNum||billData.payDate)&&billData.status!=='unpaid'&&billData.status!=='void')?[{amount:cost}]:[]);
+        const _totalPaid=_payments.reduce((s,p)=>s+(Number(p.amount)||0),0);
+        const _isFullyPaid=cost>0.005&&_totalPaid>=cost-0.005;
+        const paid=(billData.status==='void'||billData.status==='unpaid')?false:(billData.status==='paid'?true:_isFullyPaid);
+        const owed=paid?0:Math.max(0,cost-_totalPaid);
+        if(owed<=0.005)return;
+        const poDate=g.items[0]?.poDate||job.createdDate||'';
+        const dateOv=_finDocStatuses[billDocNum+'__date']||'';const dueOv=_finDocStatuses[billDocNum+'__due']||'';
+        let base=dateOv?new Date(dateOv+'T12:00:00'):(poDate?new Date(poDate):new Date());
+        if(!base||isNaN(base.getTime())||base.getFullYear()<2000||base.getFullYear()>2100){const _p=poDate?new Date(poDate):null;base=(_p&&!isNaN(_p.getTime())&&_p.getFullYear()>=2000&&_p.getFullYear()<=2100)?_p:new Date();}
+        let due=dueOv?new Date(dueOv+'T12:00:00'):new Date(base.getTime()+30*86400000);
+        if(!due||isNaN(due.getTime())||due.getFullYear()<2000||due.getFullYear()>2100)due=new Date(base.getTime()+30*86400000);
+        const v=vendors.find(v2=>v2.id===g.vid);
+        out.push({vName:v?.name||g.items[0]?.manufacturer||'Unknown',owed,due});
+      });
+    });
+    // Standalone bills (vendor bills entered directly, no PO). VendorCredit records
+    // are contra entries and never add to AP.
+    (customSops||[]).forEach(s=>{
+      if(!s||s.cat!=='StandaloneBill')return;
+      let d=null;try{d=JSON.parse(s.content||'{}')}catch{return}
+      if(!d||d.paid===true)return;
+      const amt=Number(d.amount);if(!isFinite(amt)||amt<=0)return;
+      if(d.jobId&&!filteredJobs.some(j=>j.id===d.jobId))return;
+      const v=(vendors||[]).find(vv=>vv.id===d.vendorId);
+      let due=d.creditDate?new Date(d.creditDate+'T12:00:00'):new Date();
+      if(!due||isNaN(due.getTime()))due=new Date();
+      out.push({vName:d.vendorName||(v?v.name:'Unknown'),owed:amt,due});
+    });
+    return out;
+  })();
   const apAging={current:0,t30:0,t60:0,t90:0,over90:0};
   const apByVendor={};
-  filteredItems.forEach(i=>{
-    const j=jobs.find(jj=>jj.id===i.jobId);if(!j)return;
-    // AP = cost we owe vendors for items ordered but not yet fully paid/settled
-    // Use PO date or job created date as the obligation date
-    const cost=i.unitCost*i.qtyOrdered;if(cost<=0)return;
-    const poDate=i.poDate?new Date(i.poDate):new Date(j.createdDate||now);
-    const days=Math.floor((now-poDate)/86400000);
-    const v=vendors.find(v2=>v2.id===i.vendor);
-    const vName=v?.name||i.manufacturer||"Unknown";
-    if(!apByVendor[vName])apByVendor[vName]={current:0,t30:0,t60:0,t90:0,over90:0,total:0,items:0};
-    apByVendor[vName].total+=cost;apByVendor[vName].items++;
-    if(days<=0){apAging.current+=cost;apByVendor[vName].current+=cost}
-    else if(days<=30){apAging.t30+=cost;apByVendor[vName].t30+=cost}
-    else if(days<=60){apAging.t60+=cost;apByVendor[vName].t60+=cost}
-    else if(days<=90){apAging.t90+=cost;apByVendor[vName].t90+=cost}
-    else{apAging.over90+=cost;apByVendor[vName].over90+=cost}
+  _finOpenBills.forEach(b=>{
+    const days=Math.floor((now-b.due)/86400000); // days PAST DUE; <=0 means not yet due
+    if(!apByVendor[b.vName])apByVendor[b.vName]={current:0,t30:0,t60:0,t90:0,over90:0,total:0,items:0};
+    apByVendor[b.vName].total+=b.owed;apByVendor[b.vName].items++;
+    if(days<=0){apAging.current+=b.owed;apByVendor[b.vName].current+=b.owed}
+    else if(days<=30){apAging.t30+=b.owed;apByVendor[b.vName].t30+=b.owed}
+    else if(days<=60){apAging.t60+=b.owed;apByVendor[b.vName].t60+=b.owed}
+    else if(days<=90){apAging.t90+=b.owed;apByVendor[b.vName].t90+=b.owed}
+    else{apAging.over90+=b.owed;apByVendor[b.vName].over90+=b.owed}
   });
   const totalAP=apAging.current+apAging.t30+apAging.t60+apAging.t90+apAging.over90;
   const apVendorList=Object.entries(apByVendor).map(([name,d])=>({name,...d})).sort((a,b)=>b.total-a.total);
+  // Real bank cash, captured from Plaid at every sync into the BANK_BALANCES_GLOBAL
+  // record: sum of depository (checking/savings) current balances. Null until the
+  // first sync after this ships -- callers fall back to the old paidRev-AP proxy.
+  const liveBankCash=(()=>{const r=(customSops||[]).find(s=>s.id==='BANK_BALANCES_GLOBAL');if(!r)return null;try{const d=JSON.parse(r.content||'{}');if(!Array.isArray(d.accounts)||d.accounts.length===0)return null;return d.accounts.filter(a=>(a.type||'')==='depository').reduce((s,a)=>s+(Number(a.current)||0),0);}catch{return null}})();
 
 
   // Monthly revenue data
@@ -5079,7 +5138,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
     } else if(type==="balance"){
       const inventory=filteredItems.reduce((s,i)=>s+(i.unitCost||0)*Math.max(0,i.qtyOrdered-i.qtyReceived),0);
       const bsTotalAR2=totalAR;const bsTotalAP2=totalAP;const bsRetained=totalRev-totalCost-totalComm;
-      const bsCash=paidRev-totalAP;const bsTotalAssets=Math.max(0,bsCash)+bsTotalAR2+inventory;
+      const bsCash=liveBankCash!==null?liveBankCash:(paidRev-totalAP);const bsTotalAssets=Math.max(0,bsCash)+bsTotalAR2+inventory;
       const bsEquity=bsTotalAssets-bsTotalAP2;
       html+='<div style="font-size:22px;font-weight:300;color:#888;margin-bottom:20px">Balance Sheet</div><div style="font-size:12px;color:#888;margin-bottom:20px">As of: '+today+'</div>';
       html+='<table style="width:100%;border-collapse:collapse;font-size:13px"><tbody>';
@@ -5176,7 +5235,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
     {tab==="balance"&&(()=>{
       // Balance Sheet calculations
       const inventory=filteredItems.reduce((s,i)=>s+(i.unitCost||0)*Math.max(0,i.qtyOrdered-i.qtyReceived),0);
-      const bsCash=Math.max(0,paidRev-totalAP);
+      const bsCash=liveBankCash!==null?Math.max(0,liveBankCash):Math.max(0,paidRev-totalAP);
       const bsTotalCurrentAssets=bsCash+totalAR+inventory+manualAssets;
       const bsTotalAssets=bsTotalCurrentAssets;
       const bsTotalCurrentLiab=totalAP+totalComm+manualLiabilities;
@@ -5506,6 +5565,9 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
             if(!silent)notify('Plaid: '+errMsg,'error');
             setPlaidLoading(false);setPlaidSyncing(false);return;
           }
+          // Capture live account balances alongside the transactions -- feeds the
+          // Balance Sheet's Cash figure with real bank numbers instead of a proxy.
+          if(Array.isArray(data.accounts)&&data.accounts.length>0){try{addSop({id:'BANK_BALANCES_GLOBAL',title:'Bank Balances',cat:'BankBalances',icon:'dollar',content:JSON.stringify({asOf:new Date().toISOString(),accounts:data.accounts.map(a=>({name:a.name||a.official_name||'',mask:a.mask||'',type:a.type||'',subtype:a.subtype||'',current:a.balances?.current??null,available:a.balances?.available??null}))}),custom:true});}catch(_e){}}
           const txns=data.added||data.transactions||[];
           let imported=0;let skipped=0;
           txns.forEach(t=>{
