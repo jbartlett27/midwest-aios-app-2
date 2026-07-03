@@ -4874,7 +4874,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   const [plaidAccessToken,setPlaidAccessToken]=useState(()=>{if(_plaidConnData.accessToken)return _plaidConnData.accessToken;try{return localStorage.getItem('mw_plaid_access_token')||''}catch{return ''}});
   const [plaidBankName,setPlaidBankName]=useState(()=>{if(_plaidConnData.bankName)return _plaidConnData.bankName;try{return localStorage.getItem('mw_plaid_bank_name')||''}catch{return ''}});
   const [plaidLoading,setPlaidLoading]=useState(false);
-  const [plaidSyncRange,setPlaidSyncRange]=useState(()=>{try{return localStorage.getItem('mw_plaid_sync_range')||'quarter'}catch{return 'quarter'}});
+  const [plaidSyncRange,setPlaidSyncRange]=useState(()=>{try{return localStorage.getItem('mw_plaid_sync_range')||'year'}catch{return 'year'}});
   const [plaidSyncFrom,setPlaidSyncFrom]=useState('');
   const [plaidSyncTo,setPlaidSyncTo]=useState('');
   const [plaidLastSync,setPlaidLastSync]=useState(()=>{if(_plaidConnData.lastSync)return _plaidConnData.lastSync;try{return localStorage.getItem('mw_plaid_last_sync')||''}catch{return ''}});
@@ -5569,7 +5569,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
             const last=lastSyncStr?new Date(lastSyncStr):null;
             const minsSince=last?((Date.now()-last.getTime())/60000):999;
             if(minsSince<12)return;
-            const currentRange=localStorage.getItem('mw_plaid_sync_range')||'quarter';
+            const currentRange=localStorage.getItem('mw_plaid_sync_range')||'year';
             const r=currentRange==='custom'?'quarter':currentRange;
             const fn=plaidLatestSyncRef.current;
             if(fn)fn(r,true);
