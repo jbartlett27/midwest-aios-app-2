@@ -60,8 +60,9 @@ export default async function handler(req, res) {
         return res.status(response.status).json(data);
       }
       const all = [...accumulated, ...(data.transactions || [])];
-      // If there are more transactions, paginate (up to 5 pages / 2500 transactions)
-      if (all.length < data.total_transactions && offset + 500 < data.total_transactions && offset < 2000) {
+      // If there are more transactions, paginate (up to 20 pages / 10,000 transactions
+      // -- a 2-year range must come back complete, not truncated at 2,500)
+      if (all.length < data.total_transactions && offset + 500 < data.total_transactions && offset < 9500) {
         return fetchPage(offset + 500, all);
       }
       return res.status(200).json({ transactions: all, total_transactions: data.total_transactions, start_date: useStart, end_date: useEnd });
