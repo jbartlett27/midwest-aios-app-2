@@ -40,6 +40,13 @@ export default async function handler(req, res) {
         client_name: 'Midwest Educational Furnishings',
         country_codes: ['US'],
         language: 'en',
+        // Request the maximum transaction history Plaid allows (730 days). Without
+        // this, Plaid defaults to 90 days at link time and will NEVER return older
+        // transactions for the item, no matter what date range a sync asks for --
+        // which is why history stopped in Jan 2026. Sending this in UPDATE MODE
+        // (access_token present) tells Plaid to backfill the extended history for
+        // the existing item; the user just completes the Update Login popup.
+        transactions: { days_requested: 730 },
       };
 
       if (access_token) {
