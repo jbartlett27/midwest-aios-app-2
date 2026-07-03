@@ -314,7 +314,7 @@ const realtime = new RealtimeConnection();
 export const db = {
   async loadAll() {
     const [jobsRaw, liRaw, vRaw, cRaw, rRaw, sRaw] = await Promise.all([
-      fetchAll('jobs'), fetchAll('line_items'), fetchAll('vendors'), fetchAll('customers'), fetchAll('reps'), fetchAll('sops', { single: true }),
+      fetchAll('jobs'), fetchAll('line_items'), fetchAll('vendors'), fetchAll('customers'), fetchAll('reps'), fetchAll('sops'), // sops fully paginated -- holds bank txns (ManualTxn); a single capped page truncated the txn list/totals and let syncs re-import duplicates
     ]);
     return {
       jobs: jobsRaw ? jobsRaw.map(jobFromDb) : null,
