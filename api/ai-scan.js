@@ -23,6 +23,9 @@ Extract every item listed. If quantities aren't shown, estimate from the documen
       quote_document: `You are a document scanner for a furniture dealer. Extract ALL data from this quote/proposal. Return ONLY valid JSON, no markdown fences. Format:
 {"vendor":"","quote_number":"","date":"YYYY-MM-DD","valid_until":"","customer":"","items":[{"tag":"","manufacturer":"","model":"","description":"","color":"","quantity":1,"list_price":0,"net_cost":0,"sell_price":0}],"subtotal":0,"tax":0,"total":0,"notes":""}
 Extract every line item. For furniture, capture manufacturer, model number, color/finish when visible.`,
+      bank_statement: `You are a bank statement parser for Midwest Educational Furnishings. Extract EVERY transaction from this bank statement. Return ONLY valid JSON, no markdown fences, no explanation. Format:
+{"account_name":"","statement_start":"YYYY-MM-DD","statement_end":"YYYY-MM-DD","transactions":[{"date":"YYYY-MM-DD","description":"","amount":0,"type":"debit"}]}
+Rules: amount is ALWAYS a positive number. type is "debit" for money leaving the account (checks, withdrawals, payments, fees, transfers out) and "credit" for money entering (deposits, interest, refunds, transfers in). Extract every transaction line on every page -- do not skip, merge, or summarize any. Keep descriptions concise (under 80 characters). If a date omits the year, use the statement period's year.`,
       general: `You are a document scanner. Extract ALL meaningful data from this document. Return ONLY valid JSON, no markdown fences. Format:
 {"document_type":"","date":"","from":"","to":"","reference_number":"","amount":0,"items":[{"description":"","quantity":0,"amount":0}],"summary":"one sentence summary","raw_text":"key text content"}
 Identify the document type and extract all relevant fields.`,
