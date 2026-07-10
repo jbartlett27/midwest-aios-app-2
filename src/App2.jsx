@@ -1375,8 +1375,8 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     {name:"get_bills_summary",description:"Get aggregate totals across all vendor bills: total owed, total paid YTD, total overdue, count of unpaid bills, total credits. Can be broken down by vendor or by job. Use when user says 'how much do we owe vendors right now', 'what is the total outstanding to Marco', 'give me a bills summary', 'how much have we paid out this year'.",input_schema:{type:"object",properties:{group_by:{type:"string",description:"Optional: 'vendor' or 'job' to break down totals by that dimension"},job_id:{type:"string",description:"Optional: restrict summary to a single job"},vendor_name:{type:"string",description:"Optional: restrict summary to a single vendor (partial match)"}}}},
     // Vendor Bills: actions
     {name:"mark_bill_paid",description:"Mark a vendor bill as paid. Sets status to paid, records check number, pay date, and optional memo. Use when user says 'mark the Marco bill paid with check 1234', 'log payment on BILL-6100-SUKI'. If no pay_date provided, defaults to today.",input_schema:{type:"object",properties:{bill_doc_num:{type:"string",description:"The billDocNum or standalone SOP id"},check_num:{type:"string",description:"Check number (optional but recommended)"},pay_date:{type:"string",description:"Payment date YYYY-MM-DD (defaults to today)"},memo:{type:"string",description:"Optional payment memo"}},required:["bill_doc_num"]}},
-    {name:"void_bill",description:"Void a vendor bill (set status to void). Reversible via unvoid_bill. Use when a bill was a duplicate or sent in error.",input_schema:{type:"object",properties:{bill_doc_num:{type:"string"},memo:{type:"string",description:"Optional reason for voiding"}},required:["bill_doc_num"]}},
-    {name:"unvoid_bill",description:"Reverse a void on a bill, returning it to unpaid status.",input_schema:{type:"object",properties:{bill_doc_num:{type:"string"}},required:["bill_doc_num"]}},
+    {name:"void_bill",description:"Void a vendor bill (set status to void). Works on BOTH PO-derived bills (BILL-...) and standalone bills (SB-...). The bill stays on record for the audit trail but stops counting toward job cost and Total Owed. Reversible via unvoid_bill. Use when a bill was a duplicate or entered in error.",input_schema:{type:"object",properties:{bill_doc_num:{type:"string"},memo:{type:"string",description:"Optional reason for voiding"}},required:["bill_doc_num"]}},
+    {name:"unvoid_bill",description:"Reverse a void on a bill (PO-derived or standalone), returning it to unpaid status.",input_schema:{type:"object",properties:{bill_doc_num:{type:"string"}},required:["bill_doc_num"]}},
     {name:"restore_deleted_bill",description:"Restore a bill that was previously deleted, KEEPING all prior data (payment info, invoice attachment, memo, check number). Equivalent to clicking the green Restore button on the deleted bill row. Use when user says 'restore the bill that was accidentally deleted', 'bring back BILL-XXXX'.",input_schema:{type:"object",properties:{bill_doc_num:{type:"string"}},required:["bill_doc_num"]}},
     {name:"reset_and_restore_bill",description:"Restore a deleted bill as a FRESH unpaid bill, WIPING all prior data (paid status, payment date, check number, invoice attachment, memo, date overrides). Use when prior bill data was wrong (e.g. wrong invoice attached, paid status was a mistake). Equivalent to clicking the yellow Reset & Restore button.",input_schema:{type:"object",properties:{bill_doc_num:{type:"string"}},required:["bill_doc_num"]}},
     {name:"attach_file_to_bill",description:"Attach a PDF or image file to a vendor bill from a URL or base64 data. Uploads to the vendor-invoices storage bucket and links it to the bill. Use when user pastes a vendor invoice URL and says 'attach this to BILL-XXXX'. For base64, also pass file_name and content_type.",input_schema:{type:"object",properties:{bill_doc_num:{type:"string"},file_url:{type:"string",description:"Public URL of the file to fetch and re-upload"},file_base64:{type:"string",description:"Alternative to file_url: base64-encoded file content"},file_name:{type:"string",description:"Required when using file_base64; recommended for file_url"},content_type:{type:"string",description:"MIME type (e.g. application/pdf, image/jpeg)"}},required:["bill_doc_num"]}},
@@ -2425,7 +2425,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
             items: [], cost: amt, orderValue: amt,
             poDocNum: d.refNumber||'', billDocNum: s.id,
             poDate: d.creditDate||'', dueDate: d.creditDate||'',
-            daysUntil: 0, paid: _stdPaid, voided: false,
+            daysUntil: 0, paid: _stdPaid, voided: d.void===true,
             vendorInvNum: d.refNumber||'', checkNum: d.checkNum||'',
             payDate: d.payDate||'', memo: d.memo||'',
             // Standalone bills don't track multi-payment history -- balance is full
@@ -2434,7 +2434,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
             totalPaid: _stdPaid ? amt : 0,
             balance: _stdPaid ? 0 : amt,
             isPartiallyPaid: false,
-            status: _stdPaid?'paid':'unpaid',
+            status: d.void===true?'void':(_stdPaid?'paid':'unpaid'),
             _isDeleted: false,
             _isStandalone: true, _standaloneKind: s.cat, _sopId: s.id,
             _fileUrl: d.fileUrl||'', _fileName: d.fileName||'',
@@ -2600,7 +2600,25 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
       if (toolName === 'void_bill' || toolName === 'unvoid_bill') {
         const b = _findBill(input.bill_doc_num);
         if (!b) return {error: 'Bill not found: '+input.bill_doc_num};
-        if (b._isStandalone) return {error: 'Void is only supported for PO-derived bills. For standalone records, use delete_vendor_credit.'};
+        if (b._isStandalone) {
+          // Standalone bills/credits live in a SOP record -- void is a flag on the
+          // record itself (d.void). Every consumer respects it: Documents bills tab,
+          // AP aging, getJobFinancials cost adjustments, and Brain summaries. The
+          // record is kept for the audit trail and is reversible via unvoid_bill.
+          const sop = (customSops||[]).find(s => s.id === b._sopId);
+          if (!sop) return {error: 'Underlying SOP record missing'};
+          let d = {}; try { d = JSON.parse(sop.content||'{}'); } catch {}
+          if (toolName === 'void_bill') {
+            d.void = true; d.paid = false; d.voidDate = new Date().toISOString().split('T')[0];
+            if (input.memo) d.voidMemo = input.memo;
+            addSop({...sop, content: JSON.stringify(d)});
+            return {success: true, message: 'Voided: '+b.billDocNum+' ('+b.vendorName+', $'+(b.cost||0).toFixed(2)+'). No longer counts toward job cost or Total Owed; record kept for the audit trail. Reversible via unvoid_bill.'};
+          } else {
+            delete d.void; delete d.voidDate; delete d.voidMemo;
+            addSop({...sop, content: JSON.stringify(d)});
+            return {success: true, message: 'Unvoided: '+b.billDocNum+' ('+b.vendorName+') -- active again'};
+          }
+        }
         const ds = _getDocStatusesBrain();
         const existing = typeof ds[b.billDocNum] === 'object' ? ds[b.billDocNum] : {};
         if (toolName === 'void_bill') {
@@ -4939,6 +4957,11 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   },[acctFilterOpen]);
   const [showBankAcctEditor,setShowBankAcctEditor]=useState(false);
   const [acctNicknameDraft,setAcctNicknameDraft]=useState({});
+  // Bank statement upload: PDF statements go through Claude Vision (/api/ai-scan,
+  // scan_type bank_statement); CSV exports parse locally in the browser.
+  const [stmtUploading,setStmtUploading]=useState(false);
+  const [stmtAcct,setStmtAcct]=useState('Operating');
+  const stmtFileRef=useRef(null);
 
 
   // Period presets
@@ -4988,15 +5011,27 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   // Commission is paid on PROFIT (revenue - cost), not revenue. Single source of truth via _commissionFor.
   const totalComm=reps.filter(r=>!r.id.includes("SEED_FLAG")).reduce((s,r)=>{const rate=r.commissionRate||0;if(!rate)return s;return s+filteredJobs.filter(j=>j.salesRep===r.id).reduce((s2,j)=>s2+_commissionFor(j.id,rate),0)},0);
   const netIncome=grossProfit-totalComm;
+  // Invoice-issued detection for AR. qtyInvoiced on line items is not maintained by
+  // the real workflow (invoices are issued through Documents >> Invoices, which
+  // tracks status in docStatuses under the INV- doc number), so gating AR on
+  // totalInvoiced alone made every job look never-invoiced and Receivables reported
+  // $0.00 owed. A job now counts as invoiced when EITHER its line items carry
+  // qtyInvoiced OR its invoice document has any status beyond 'new' (drafted /
+  // sent / approved). Reported by Maureen Jul 8 2026 (AR showing $0.00 owed).
+  // _stableNumFin and _finDocStatuses were previously declared further down (AP
+  // section); they are declared here instead so the AR block can use them too.
+  const _stableNumFin=(prefix,a,b)=>prefix+(a||'').replace(/[^A-Z0-9]/gi,'').slice(-4).toUpperCase()+'-'+(b||'').replace(/[^A-Z0-9]/gi,'').slice(-4).toUpperCase();
+  const _finDocStatuses=(()=>{const allDS=jobs.reduce((acc,j)=>({...acc,...(j.docStatuses||{})}),{});const rec=(customSops||[]).find(s=>s.id==='DOC_STATUSES_GLOBAL');let sopDS={};if(rec){try{sopDS=JSON.parse(rec.content||'{}')}catch{}}let lsDS={};try{lsDS=JSON.parse(localStorage.getItem('mw_doc_statuses_fallback')||'{}')}catch{}return {...allDS,...sopDS,...lsDS};})();
+  const _jobInvoiced=(j,f)=>{if((f.totalInvoiced||0)>0)return true;const raw=_finDocStatuses[_stableNumFin('INV-',j.id,j.customer)];const st=(raw&&typeof raw==='object')?raw.status:raw;return !!st&&st!=='new';};
   const arAging={current:0,t30:0,t60:0,t90:0,over90:0};
-  filteredJobs.filter(j=>j.paymentStatus!=="paid").forEach(j=>{const f=getJobFinancials(j.id);if((f.totalInvoiced||0)<=0)return;const inv=j.dueDate?new Date(j.dueDate):new Date(j.createdDate||now);const days=Math.floor((now-inv)/86400000);if(days<=0)arAging.current+=f.totalRevenue;else if(days<=30)arAging.t30+=f.totalRevenue;else if(days<=60)arAging.t60+=f.totalRevenue;else if(days<=90)arAging.t90+=f.totalRevenue;else arAging.over90+=f.totalRevenue});
+  filteredJobs.filter(j=>j.paymentStatus!=="paid").forEach(j=>{const f=getJobFinancials(j.id);if(!_jobInvoiced(j,f))return;const inv=j.dueDate?new Date(j.dueDate):new Date(j.createdDate||now);const days=Math.floor((now-inv)/86400000);if(days<=0)arAging.current+=f.totalRevenue;else if(days<=30)arAging.t30+=f.totalRevenue;else if(days<=60)arAging.t60+=f.totalRevenue;else if(days<=90)arAging.t90+=f.totalRevenue;else arAging.over90+=f.totalRevenue});
   const totalAR=arAging.current+arAging.t30+arAging.t60+arAging.t90+arAging.over90;
 
 
   // AR by customer breakdown
   const arByCustomer={};
   filteredJobs.filter(j=>j.paymentStatus!=="paid").forEach(j=>{
-    const f=getJobFinancials(j.id);if((f.totalInvoiced||0)<=0)return; // AR = invoiced-but-unpaid only; never-invoiced jobs are not receivables
+    const f=getJobFinancials(j.id);if(!_jobInvoiced(j,f))return; // AR = invoiced-but-unpaid only; never-invoiced jobs are not receivables
     const c=customers.find(c2=>c2.id===j.customer);
     const cName=c?.name||"Unknown";const inv=j.dueDate?new Date(j.dueDate):new Date(j.createdDate||now);
     const days=Math.floor((now-inv)/86400000);
@@ -5009,7 +5044,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
     else arByCustomer[cName].over90+=f.totalRevenue;
   });
   const arCustomerList=Object.entries(arByCustomer).map(([name,d])=>({name,...d})).sort((a,b)=>b.total-a.total);
-  const unpaidJobCount=filteredJobs.filter(j=>j.paymentStatus!=="paid"&&(getJobFinancials(j.id).totalInvoiced||0)>0).length;
+  const unpaidJobCount=filteredJobs.filter(j=>j.paymentStatus!=="paid"&&_jobInvoiced(j,getJobFinancials(j.id))).length;
 
 
   // AP Aging -- what Midwest actually owes vendors: OUTSTANDING BALANCES on vendor
@@ -5017,9 +5052,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   // payment history, explicit paid/unpaid/void status, deleted flags), aged by days
   // PAST DUE. Replaces the old approximation that counted every ordered item's full
   // cost as owed even when the bill was already paid.
-  const _stableNumFin=(prefix,a,b)=>prefix+(a||'').replace(/[^A-Z0-9]/gi,'').slice(-4).toUpperCase()+'-'+(b||'').replace(/[^A-Z0-9]/gi,'').slice(-4).toUpperCase();
   const _finShipTos=(()=>{const r=(customSops||[]).find(s=>s.id==='LINE_ITEM_SHIP_TO_GLOBAL');if(!r)return {};try{return JSON.parse(r.content)||{}}catch{return {}}})();
-  const _finDocStatuses=(()=>{const allDS=jobs.reduce((acc,j)=>({...acc,...(j.docStatuses||{})}),{});const rec=(customSops||[]).find(s=>s.id==='DOC_STATUSES_GLOBAL');let sopDS={};if(rec){try{sopDS=JSON.parse(rec.content||'{}')}catch{}}let lsDS={};try{lsDS=JSON.parse(localStorage.getItem('mw_doc_statuses_fallback')||'{}')}catch{}return {...allDS,...sopDS,...lsDS};})();
   const _finOpenBills=(()=>{
     const out=[];
     filteredJobs.forEach(job=>{
@@ -5060,7 +5093,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
     (customSops||[]).forEach(s=>{
       if(!s||s.cat!=='StandaloneBill')return;
       let d=null;try{d=JSON.parse(s.content||'{}')}catch{return}
-      if(!d||d.paid===true)return;
+      if(!d||d.paid===true||d.void===true)return;
       const amt=Number(d.amount);if(!isFinite(amt)||amt<=0)return;
       if(d.jobId&&!filteredJobs.some(j=>j.id===d.jobId))return;
       const v=(vendors||[]).find(vv=>vv.id===d.vendorId);
@@ -5123,7 +5156,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
     } else if(type==="ar"){
       html+='<div style="font-size:22px;font-weight:300;color:#888;margin-bottom:20px">Accounts Receivable Aging</div><div style="font-size:12px;color:#888;margin-bottom:20px">As of: '+today+'</div>';
       html+='<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="border-bottom:2px solid #222"><th style="text-align:left;padding:8px 0">Customer / Job</th><th style="text-align:right;padding:8px">Current</th><th style="text-align:right;padding:8px">1-30</th><th style="text-align:right;padding:8px">31-60</th><th style="text-align:right;padding:8px">61-90</th><th style="text-align:right;padding:8px">90+</th><th style="text-align:right;padding:8px">Total</th></tr></thead><tbody>';
-      filteredJobs.filter(j=>j.paymentStatus!=="paid").forEach(j=>{const f=getJobFinancials(j.id);if((f.totalInvoiced||0)<=0)return;const c=customers.find(c2=>c2.id===j.customer);const inv=j.dueDate?new Date(j.dueDate):new Date(j.createdDate||now);const days=Math.floor((now-inv)/86400000);html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 0">'+j.name+'<br><span style="color:#888;font-size:11px">'+(c?.name||"")+'</span></td><td style="text-align:right;padding:6px">'+(days<=0?"$"+f.totalRevenue.toFixed(2):"")+'</td><td style="text-align:right;padding:6px">'+(days>0&&days<=30?"$"+f.totalRevenue.toFixed(2):"")+'</td><td style="text-align:right;padding:6px">'+(days>30&&days<=60?"$"+f.totalRevenue.toFixed(2):"")+'</td><td style="text-align:right;padding:6px">'+(days>60&&days<=90?"$"+f.totalRevenue.toFixed(2):"")+'</td><td style="text-align:right;padding:6px">'+(days>90?"$"+f.totalRevenue.toFixed(2):"")+'</td><td style="text-align:right;padding:6px;font-weight:600">$'+f.totalRevenue.toFixed(2)+'</td></tr>'});
+      filteredJobs.filter(j=>j.paymentStatus!=="paid").forEach(j=>{const f=getJobFinancials(j.id);if(!_jobInvoiced(j,f))return;const c=customers.find(c2=>c2.id===j.customer);const inv=j.dueDate?new Date(j.dueDate):new Date(j.createdDate||now);const days=Math.floor((now-inv)/86400000);html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 0">'+j.name+'<br><span style="color:#888;font-size:11px">'+(c?.name||"")+'</span></td><td style="text-align:right;padding:6px">'+(days<=0?"$"+f.totalRevenue.toFixed(2):"")+'</td><td style="text-align:right;padding:6px">'+(days>0&&days<=30?"$"+f.totalRevenue.toFixed(2):"")+'</td><td style="text-align:right;padding:6px">'+(days>30&&days<=60?"$"+f.totalRevenue.toFixed(2):"")+'</td><td style="text-align:right;padding:6px">'+(days>60&&days<=90?"$"+f.totalRevenue.toFixed(2):"")+'</td><td style="text-align:right;padding:6px">'+(days>90?"$"+f.totalRevenue.toFixed(2):"")+'</td><td style="text-align:right;padding:6px;font-weight:600">$'+f.totalRevenue.toFixed(2)+'</td></tr>'});
       html+='<tr style="border-top:2px solid #222;font-weight:700"><td style="padding:8px 0">TOTAL</td><td style="text-align:right;padding:8px">$'+arAging.current.toFixed(2)+'</td><td style="text-align:right;padding:8px">$'+arAging.t30.toFixed(2)+'</td><td style="text-align:right;padding:8px">$'+arAging.t60.toFixed(2)+'</td><td style="text-align:right;padding:8px">$'+arAging.t90.toFixed(2)+'</td><td style="text-align:right;padding:8px">$'+arAging.over90.toFixed(2)+'</td><td style="text-align:right;padding:8px">$'+totalAR.toFixed(2)+'</td></tr></tbody></table>';
     } else if(type==="ap"){
       html+='<div style="font-size:22px;font-weight:300;color:#888;margin-bottom:20px">Accounts Payable Aging</div><div style="font-size:12px;color:#888;margin-bottom:20px">As of: '+today+'</div>';
@@ -5417,6 +5450,120 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       const bulkCategorize=(cat)=>{txnSelected.forEach(id=>{const t=allTxns.find(x=>x.id===id);if(t)updateCategory(id,cat)});notify(txnSelected.size+' transaction'+(txnSelected.size!==1?'s':'')+' categorized as '+cat);setTxnSelected(new Set())};
 
 
+      // ---- Bank statement upload ----
+      // PDF/image statements are extracted by Claude Vision via /api/ai-scan
+      // (scan_type 'bank_statement'); CSV exports are parsed locally. Every
+      // extracted transaction dedups against the existing store using the shared
+      // _bankTxnHash (the same key Plaid sync and manual entry use), then saves
+      // as a ManualTxn SOP row in Supabase -- so uploaded statements flow through
+      // Banking, the P&L, and the Balance Sheet exactly like any other bank
+      // transaction, and re-uploading the same statement never duplicates rows.
+      const _stmtNormDate=(raw)=>{
+        const str=String(raw||'').trim();if(!str)return'';
+        let m=/^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(str);
+        if(m)return m[1]+'-'+m[2].padStart(2,'0')+'-'+m[3].padStart(2,'0');
+        m=/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/.exec(str);
+        if(m){let y=m[3];if(y.length===2)y=(Number(y)>50?'19':'20')+y;return y+'-'+m[1].padStart(2,'0')+'-'+m[2].padStart(2,'0')}
+        const d=new Date(str);if(!isNaN(d.getTime())&&d.getFullYear()>=2000&&d.getFullYear()<=2100)return d.toISOString().split('T')[0];
+        return'';
+      };
+      const _stmtParseCsv=(text)=>{
+        // Minimal CSV parser that handles quoted fields with embedded commas/newlines.
+        const rows=[];let row=[];let cur='';let inQ=false;
+        for(let i=0;i<text.length;i++){
+          const ch=text[i];
+          if(inQ){if(ch==='"'){if(text[i+1]==='"'){cur+='"';i++}else inQ=false}else cur+=ch}
+          else if(ch==='"')inQ=true;
+          else if(ch===','){row.push(cur);cur=''}
+          else if(ch==='\n'||ch==='\r'){if(ch==='\r'&&text[i+1]==='\n')i++;row.push(cur);cur='';if(row.some(c=>String(c).trim()!==''))rows.push(row);row=[]}
+          else cur+=ch;
+        }
+        if(cur!==''||row.length>0){row.push(cur);if(row.some(c=>String(c).trim()!==''))rows.push(row)}
+        if(rows.length===0)return[];
+        const lower=r=>r.map(c=>String(c||'').trim().toLowerCase());
+        // Locate a header row (a row naming a date column plus an amount/debit/credit column)
+        let hdrIdx=-1,hdr=null;
+        for(let i=0;i<Math.min(rows.length,10);i++){
+          const h=lower(rows[i]);
+          if(h.some(c=>c.includes('date'))&&h.some(c=>c.includes('amount')||c.includes('debit')||c.includes('credit')||c.includes('withdrawal')||c.includes('deposit'))){hdrIdx=i;hdr=h;break}
+        }
+        const num=v=>{const n=parseFloat(String(v||'').replace(/[$,()\s]/g,''));const neg=/\(.*\)/.test(String(v||''))||/^-/.test(String(v||'').trim());return isNaN(n)?NaN:(neg?-Math.abs(n):n)};
+        const out=[];
+        if(hdrIdx>=0){
+          const col=(...names)=>hdr.findIndex(c=>names.some(n=>c.includes(n)));
+          const dateC=col('date');
+          let descC=col('description','memo','payee','name','details','transaction');
+          if(descC<0)descC=(dateC+1<hdr.length)?dateC+1:0;
+          const amtC=col('amount');
+          const debC=col('debit','withdrawal');
+          const credC=col('credit','deposit');
+          for(let i=hdrIdx+1;i<rows.length;i++){
+            const r=rows[i];const date=_stmtNormDate(r[dateC]);if(!date)continue;
+            const desc=String(r[descC]||'').trim();
+            let amt=NaN,type='expense';
+            if(amtC>=0&&String(r[amtC]||'').trim()!==''){amt=num(r[amtC]);if(isFinite(amt)){type=amt<0?'expense':'revenue';amt=Math.abs(amt)}}
+            else if(debC>=0&&String(r[debC]||'').trim()!==''&&Math.abs(num(r[debC])||0)>0){amt=Math.abs(num(r[debC]));type='expense'}
+            else if(credC>=0&&String(r[credC]||'').trim()!==''&&Math.abs(num(r[credC])||0)>0){amt=Math.abs(num(r[credC]));type='revenue'}
+            if(!isFinite(amt)||amt<=0)continue;
+            out.push({date,description:desc,amount:amt,type});
+          }
+        }else{
+          // No header row: assume col0 = date, col1 = description, last col = signed amount
+          for(let i=0;i<rows.length;i++){
+            const r=rows[i];const date=_stmtNormDate(r[0]);if(!date)continue;
+            const amtRaw=num(r[r.length-1]);if(!isFinite(amtRaw)||amtRaw===0)continue;
+            out.push({date,description:String(r[1]||'').trim(),amount:Math.abs(amtRaw),type:amtRaw<0?'expense':'revenue'});
+          }
+        }
+        return out;
+      };
+      const _stmtImport=(txnList,sourceLabel)=>{
+        const existingHashes=new Set(manualTxns.map(mt=>_bankTxnHash(mt)));
+        let imported=0,skipped=0;
+        txnList.forEach((t,i)=>{
+          if(!t||!t.date||!isFinite(Number(t.amount))||Number(t.amount)<=0)return;
+          const rec={date:t.date,description:t.description||'Statement transaction',category:'Uncategorized',amount:String(Number(t.amount).toFixed(2)),type:t.type==='revenue'?'revenue':'expense',account:stmtAcct,source:'statement',sourceFile:sourceLabel||''};
+          const hash=_bankTxnHash(rec);
+          if(existingHashes.has(hash)){skipped++;return}
+          existingHashes.add(hash);
+          const id='TXN-'+Date.now()+'-'+Math.random().toString(36).slice(2,6)+'-S'+i;
+          addSop({id,title:rec.description,cat:'ManualTxn',icon:'dollar',content:JSON.stringify(rec),custom:true});
+          imported++;
+        });
+        return {imported,skipped};
+      };
+      const handleStatementUpload=async(e)=>{
+        const file=e.target.files&&e.target.files[0];
+        if(e.target)e.target.value='';
+        if(!file)return;
+        setStmtUploading(true);
+        try{
+          const fname=(file.name||'').toLowerCase();
+          let txnList=[];
+          if(fname.endsWith('.csv')||file.type==='text/csv'){
+            const text=await file.text();
+            txnList=_stmtParseCsv(text);
+            if(txnList.length===0){notify('No transactions found in the CSV. Check that it has Date and Amount (or Debit/Credit) columns.','error');setStmtUploading(false);return}
+          }else{
+            const b64=await new Promise((resolve,reject)=>{const rd=new FileReader();rd.onload=()=>resolve(String(rd.result).split(',')[1]);rd.onerror=reject;rd.readAsDataURL(file)});
+            const mediaType=(file.type==='application/pdf'||fname.endsWith('.pdf'))?'application/pdf':(file.type||'image/png');
+            const r=await fetch('/api/ai-scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image_data:b64,media_type:mediaType,scan_type:'bank_statement'})});
+            const resp=await r.json().catch(()=>null);
+            if(!r.ok||!resp||resp.error){notify('Statement scan failed'+(resp&&resp.error?': '+(resp.error.message||JSON.stringify(resp.error)):'')+'. Try a CSV export from the bank instead.','error');setStmtUploading(false);return}
+            const text=(resp.content||[])[0]?.text||'';
+            const clean=text.replace(/```json\s*/g,'').replace(/```\s*/g,'').trim();
+            let parsed=null;try{parsed=JSON.parse(clean)}catch{}
+            const list=parsed&&Array.isArray(parsed.transactions)?parsed.transactions:null;
+            if(!list||list.length===0){notify('No transactions could be extracted from that statement. Try a CSV export from the bank instead.','error');setStmtUploading(false);return}
+            txnList=list.map(t=>({date:_stmtNormDate(t.date),description:String(t.description||'').trim(),amount:Math.abs(Number(t.amount)||0),type:(String(t.type||'').toLowerCase()==='credit')?'revenue':'expense'}));
+          }
+          const {imported,skipped}=_stmtImport(txnList,file.name||'');
+          notify(imported+' transaction'+(imported!==1?'s':'')+' imported to '+stmtAcct+(skipped>0?' -- '+skipped+' skipped (already in system)':'')+' from '+(file.name||'statement'));
+        }catch(err){notify('Statement upload error: '+(err&&err.message?err.message:'unknown'),'error')}
+        setStmtUploading(false);
+      };
+
+
       // Plaid connect handler
       const handlePlaidConnect=async()=>{
         setPlaidLoading(true);
@@ -5708,6 +5855,16 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
               return <span style={{fontSize:10,color:"#525252",marginLeft:"auto",fontFamily:"'JetBrains Mono',monospace"}}>{startDate} to {e} -- auto-refresh every 1 hr</span>;
             })()}
           </div>}
+          {/* Bank statement upload bar. PDF statements are parsed by Claude Vision;
+              CSV exports parse locally. Extracted transactions save straight into the
+              database (ManualTxn rows) with dedup, so re-uploads never duplicate. */}
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:12,padding:"10px 12px",background:"#111",borderRadius:8,border:"1px solid #2dd4bf25"}}>
+            <span style={{fontSize:11,color:"#2dd4bf",fontWeight:700,letterSpacing:0.5}}>UPLOAD BANK STATEMENT</span>
+            <select value={stmtAcct} onChange={e=>setStmtAcct(e.target.value)} disabled={stmtUploading} style={{...inputStyle,width:"auto",padding:"5px 8px",fontSize:11}} title="Which account these transactions belong to">{allAccounts.map(a=><option key={a} value={a}>{a}</option>)}</select>
+            <Btn v="secondary" disabled={stmtUploading} style={{fontSize:11,padding:"5px 12px",opacity:stmtUploading?0.6:1,cursor:stmtUploading?"wait":"pointer"}} onClick={()=>{if(!stmtUploading&&stmtFileRef.current)stmtFileRef.current.click()}}><I n="upload" s={12}/> {stmtUploading?'Processing statement...':'Choose File (PDF / CSV)'}</Btn>
+            <input ref={stmtFileRef} type="file" accept=".pdf,.csv,.png,.jpg,.jpeg" style={{display:"none"}} onChange={handleStatementUpload}/>
+            <span style={{fontSize:10,color:"#525252"}}>Transactions are extracted, checked against existing entries, and saved to the database</span>
+          </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10,marginBottom:12}}>
             <div><label style={{fontSize:11,color:"#a3a3a3",display:"block",marginBottom:3}}>Date</label><input type="date" value={manualForm.date} onChange={e=>setManualForm({...manualForm,date:e.target.value})} style={inputStyle}/></div>
             <div><label style={{fontSize:11,color:"#a3a3a3",display:"block",marginBottom:3}}>Description</label><input value={manualForm.description} onChange={e=>setManualForm({...manualForm,description:e.target.value})} placeholder="e.g. Smith System payment" style={inputStyle}/></div>
@@ -5887,7 +6044,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       <Card style={{padding:20}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}><div style={{fontSize:18,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>Accounts Receivable Aging</div><Btn onClick={()=>generatePDF("ar")}><I n="download" s={14}/> Export PDF</Btn></div>
         <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:500}}><thead><tr style={{borderBottom:"2px solid #222"}}>{["Customer / Job","Current","1-30","31-60","61-90","90+","Total"].map(h=><th key={h} style={{padding:"8px 6px",textAlign:h==="Customer / Job"?"left":"right",color:"#737373",fontSize:11,fontWeight:600}}>{h}</th>)}</tr></thead><tbody>
-          {filteredJobs.filter(j=>j.paymentStatus!=="paid").map(j=>{const f=getJobFinancials(j.id);if((f.totalInvoiced||0)<=0)return null;const c=customers.find(c2=>c2.id===j.customer);const inv=j.dueDate?new Date(j.dueDate):new Date(j.createdDate||now);const days=Math.floor((now-inv)/86400000);return <tr key={j.id} onClick={()=>{fCtx.setSelectedJob(j.id);fCtx.setPage('jobs')}} style={{borderBottom:"1px solid #111",cursor:"pointer",transition:"background 0.15s"}} onMouseEnter={e=>e.currentTarget.style.background="rgba(45,212,191,0.04)"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><td style={{padding:"8px 6px"}}><div style={{color:"#e5e5e5",fontWeight:500}}>{j.name}</div><div style={{fontSize:11,color:"#737373"}}>{c?.name}</div></td>{[days<=0,days>0&&days<=30,days>30&&days<=60,days>60&&days<=90,days>90].map((show,i)=><td key={i} style={{padding:"8px 6px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",color:show?["#34d399","#2dd4bf","#fbbf24","#f97316","#f87171"][i]:"#333"}}>{show?fmt(f.totalRevenue):""}</td>)}<td style={{padding:"8px 6px",textAlign:"right",fontWeight:600,fontFamily:"'JetBrains Mono',monospace"}}>{fmt(f.totalRevenue)}</td></tr>})}
+          {filteredJobs.filter(j=>j.paymentStatus!=="paid").map(j=>{const f=getJobFinancials(j.id);if(!_jobInvoiced(j,f))return null;const c=customers.find(c2=>c2.id===j.customer);const inv=j.dueDate?new Date(j.dueDate):new Date(j.createdDate||now);const days=Math.floor((now-inv)/86400000);return <tr key={j.id} onClick={()=>{fCtx.setSelectedJob(j.id);fCtx.setPage('jobs')}} style={{borderBottom:"1px solid #111",cursor:"pointer",transition:"background 0.15s"}} onMouseEnter={e=>e.currentTarget.style.background="rgba(45,212,191,0.04)"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><td style={{padding:"8px 6px"}}><div style={{color:"#e5e5e5",fontWeight:500}}>{j.name}</div><div style={{fontSize:11,color:"#737373"}}>{c?.name}</div></td>{[days<=0,days>0&&days<=30,days>30&&days<=60,days>60&&days<=90,days>90].map((show,i)=><td key={i} style={{padding:"8px 6px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",color:show?["#34d399","#2dd4bf","#fbbf24","#f97316","#f87171"][i]:"#333"}}>{show?fmt(f.totalRevenue):""}</td>)}<td style={{padding:"8px 6px",textAlign:"right",fontWeight:600,fontFamily:"'JetBrains Mono',monospace"}}>{fmt(f.totalRevenue)}</td></tr>})}
           <tr style={{borderTop:"2px solid #222"}}><td style={{padding:"8px 6px",fontWeight:700}}>TOTAL</td>{[arAging.current,arAging.t30,arAging.t60,arAging.t90,arAging.over90].map((v,i)=><td key={i} style={{padding:"8px 6px",textAlign:"right",fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:["#34d399","#2dd4bf","#fbbf24","#f97316","#f87171"][i]}}>{fmt(v)}</td>)}<td style={{padding:"8px 6px",textAlign:"right",fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalAR)}</td></tr>
         </tbody></table></div>
       </Card>
