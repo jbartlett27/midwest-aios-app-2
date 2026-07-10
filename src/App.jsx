@@ -1522,6 +1522,7 @@ function MidwestAIOSInner() {
           let d = null;
           try { d = JSON.parse(s.content || '{}'); } catch { continue; }
           if (!d || d.jobId !== jobId) continue;
+          if (d.void === true) continue; // voided bills/credits stay on record for the audit trail but have no cost effect
           const amt = Number(d.amount);
           if (!isFinite(amt) || amt <= 0) continue;
           if (s.cat === 'VendorCredit') creditSum += amt;
@@ -3033,7 +3034,7 @@ function JobDetail({job,ctx}){
         the "+ New Vendor Credit" / "+ New Vendor Bill" buttons. Each entry
         contributes to the cost adjustment that already flows through f.totalCost
         and f.margin above. */}
-    {(()=>{const adj=((ctx.customSops||[]).filter(s=>(s.cat==='VendorCredit'||s.cat==='StandaloneBill'))).map(s=>{let d={};try{d=JSON.parse(s.content||'{}')}catch{}return {_sopId:s.id,_cat:s.cat,...d}}).filter(x=>x.jobId===job.id);if(adj.length===0)return null;const creditTotal=adj.filter(a=>a._cat==='VendorCredit').reduce((s,a)=>s+(Number(a.amount)||0),0);const billTotal=adj.filter(a=>a._cat==='StandaloneBill').reduce((s,a)=>s+(Number(a.amount)||0),0);return <Card style={{marginBottom:24,padding:14,border:"1px solid rgba(45,212,191,0.15)"}}>
+    {(()=>{const adj=((ctx.customSops||[]).filter(s=>(s.cat==='VendorCredit'||s.cat==='StandaloneBill'))).map(s=>{let d={};try{d=JSON.parse(s.content||'{}')}catch{}return {_sopId:s.id,_cat:s.cat,...d}}).filter(x=>x.jobId===job.id&&x.void!==true);if(adj.length===0)return null;const creditTotal=adj.filter(a=>a._cat==='VendorCredit').reduce((s,a)=>s+(Number(a.amount)||0),0);const billTotal=adj.filter(a=>a._cat==='StandaloneBill').reduce((s,a)=>s+(Number(a.amount)||0),0);return <Card style={{marginBottom:24,padding:14,border:"1px solid rgba(45,212,191,0.15)"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
         <div style={{fontSize:13,fontWeight:700,color:"#2dd4bf"}}>Vendor Credits & Adjustments</div>
         <div style={{display:"flex",gap:14,fontSize:11,color:"#a3a3a3"}}>
@@ -4024,6 +4025,7 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           let dueStr3 = '';
           try { dueStr3 = dueDate3.toISOString().split('T')[0]; } catch { dueStr3 = ''; }
           const paid3 = d.paid === true;
+          const void3 = d.void === true;
           allBills.push({
             job: job2,
             vendor: v2,
@@ -4038,7 +4040,7 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
             dueDate: dueStr3,
             daysUntil: daysUntil3,
             paid: paid3,
-            voided: false,
+            voided: void3,
             itemCount: 0,
             vendorInvNum: d.refNumber || '',
             checkNum: d.checkNum || '',
@@ -4279,6 +4281,32 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
         deleteSop(sopId);
         notify('Adjustment removed');
         if(billDetail&&billDetail._sopId===sopId)setBillDetail(null);
+      };
+      // Void / unvoid for standalone vendor bills. Voiding keeps the record for the
+      // audit trail (unlike Delete) but removes it from job cost, Total Owed, AP
+      // aging, and the P&L adjustments -- exactly what Maureen asked for when a
+      // duplicate bill gets entered. Reversible at any time via the same button.
+      const adjustIsVoided=()=>{
+        if(!adjustEdit)return false;
+        const sop=(customSops||[]).find(s=>s.id===adjustEdit);
+        if(!sop)return false;
+        try{return JSON.parse(sop.content||'{}').void===true}catch{return false}
+      };
+      const toggleAdjustVoid=()=>{
+        if(!adjustEdit)return;
+        const sop=(customSops||[]).find(s=>s.id===adjustEdit);
+        if(!sop){notify('Record not found','error');return}
+        let d={};try{d=JSON.parse(sop.content||'{}')}catch{}
+        if(d.void===true){
+          delete d.void;delete d.voidDate;delete d.voidMemo;
+          addSop({id:sop.id,title:sop.title,cat:sop.cat,icon:sop.icon,content:JSON.stringify(d),custom:true});
+          notify('Bill unvoided: '+(d.vendorName||'vendor')+' -- counts toward totals again');
+        }else{
+          d.void=true;d.paid=false;d.voidDate=new Date().toISOString().split('T')[0];
+          addSop({id:sop.id,title:sop.title,cat:sop.cat,icon:sop.icon,content:JSON.stringify(d),custom:true});
+          notify('Bill voided: '+(d.vendorName||'vendor')+' -- removed from totals, record kept for audit trail');
+        }
+        closeAdjustModal();
       };
       const printBatchCheck=()=>{
         const selectedBills=Array.from(billSelected).map(i=>unpaidBills[i]).filter(Boolean);
@@ -5124,7 +5152,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
                 <td style={{padding:"10px 8px",fontFamily:"'JetBrains Mono',monospace",fontSize:11,color:bill.vendorInvNum?"#f97316":"#333"}}>{bill.vendorInvNum||'--'}{bill._standalone&&bill._fileUrl&&<a href={bill._fileUrl} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} title={bill._fileName||'View attached file'} style={{marginLeft:8,display:"inline-flex",alignItems:"center",gap:3,padding:"1px 6px",background:"#a78bfa10",border:"1px solid #a78bfa25",borderRadius:4,color:"#a78bfa",textDecoration:"none",fontSize:10,fontWeight:600,fontFamily:"inherit"}}><I n="file" s={10} color="#a78bfa"/> File</a>}</td>
                 <td style={{padding:"10px 8px"}}><div style={{color:bill.job?.id?"#c4c4c4":"#737373",fontSize:12,fontStyle:bill.job?.id?"normal":"italic"}}>{bill.job?.name||'(No Project)'}</div></td>
                 <td style={{padding:"10px 8px",whiteSpace:"nowrap"}}>{bill.paid?<span style={{color:"#34d399",fontWeight:600}}>Paid{bill.payDate?' '+bill.payDate:''}</span>:isOverdue?<div><div style={{color:"#f87171",fontWeight:600}}>Overdue</div><div style={{fontSize:10,color:"#f87171"}}>{Math.abs(bill.daysUntil)} day{Math.abs(bill.daysUntil)!==1?'s':''} ago</div></div>:isDueSoon?<div><div style={{color:"#fbbf24",fontWeight:500}}>Due soon</div><div style={{fontSize:10,color:"#fbbf24"}}>Due in {bill.daysUntil} day{bill.daysUntil!==1?'s':''}</div></div>:bill.daysUntil<0?<div><div style={{color:"#a3a3a3"}}>Not entered</div><div style={{fontSize:10,color:"#737373"}}>{bill.dueDate||'--'}</div></div>:<div><div style={{color:"#a3a3a3"}}>Due later</div><div style={{fontSize:10,color:"#737373"}}>Due in {bill.daysUntil} day{bill.daysUntil!==1?'s':''}</div></div>}</td>
-                <td style={{padding:"10px 8px"}} onClick={e=>e.stopPropagation()}>{bill._isDeleted?<div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}><Badge label="deleted" color="#f87171"/><button onClick={()=>{if(confirm('Restore this bill? It will reappear in the active Vendor Bills list with its prior data intact (status, payment info, invoice attachment, etc).')){const existing=typeof docStatuses[bill.billDocNum]==='object'?docStatuses[bill.billDocNum]:{};const{deleted:_d,...rest}=existing;setDocStatus(bill.billDocNum,rest);notify('Bill restored: '+bill.vendorName)}}} style={{padding:"3px 8px",borderRadius:5,border:"1px solid #34d39940",background:"transparent",color:"#34d399",fontSize:10,cursor:"pointer",fontFamily:"inherit",fontWeight:600}} title="Restore this bill keeping its prior payment data, invoice attachment, and notes">Restore</button><button onClick={()=>{if(confirm('Reset and restore this bill as a FRESH unpaid bill?\\n\\nThis wipes ALL prior bill data:\\n - paid status, payment date, check number\\n - invoice attachment and vendor invoice number\\n - any memo or notes\\n - any date overrides\\n\\nUse this when the prior bill data was wrong (e.g. wrong invoice attached, paid status was a mistake). The PO and line items are untouched. This cannot be undone.')){setDocStatus(bill.billDocNum,{});const dateKey=bill.billDocNum+'__date';const dueKey=bill.billDocNum+'__due';if(docStatuses[dateKey]!==undefined)setDocStatus(dateKey,'');if(docStatuses[dueKey]!==undefined)setDocStatus(dueKey,'');notify('Bill reset to fresh unpaid: '+bill.vendorName)}}} style={{padding:"3px 8px",borderRadius:5,border:"1px solid #fbbf2440",background:"transparent",color:"#fbbf24",fontSize:10,cursor:"pointer",fontFamily:"inherit",fontWeight:600}} title="Reset to a fresh unpaid bill -- wipes all prior bill data (paid status, attachments, memo, etc). Use when prior bill data was wrong.">Reset &amp; Restore</button></div>:(()=>{const bd=typeof docStatuses[bill.billDocNum]==='object'?docStatuses[bill.billDocNum]:{};const st=bd.status||(bill.paid?'paid':(bd.checkPrinted||bd.checkNum||bill.checkNum)?'check_sent':'unpaid');const nextStatus={unpaid:'check_sent',check_sent:'paid',paid:'unpaid',void:'unpaid'};return <button onClick={()=>{const ns=nextStatus[st]||'unpaid';
+                <td style={{padding:"10px 8px"}} onClick={e=>e.stopPropagation()}>{bill._isDeleted?<div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}><Badge label="deleted" color="#f87171"/><button onClick={()=>{if(confirm('Restore this bill? It will reappear in the active Vendor Bills list with its prior data intact (status, payment info, invoice attachment, etc).')){const existing=typeof docStatuses[bill.billDocNum]==='object'?docStatuses[bill.billDocNum]:{};const{deleted:_d,...rest}=existing;setDocStatus(bill.billDocNum,rest);notify('Bill restored: '+bill.vendorName)}}} style={{padding:"3px 8px",borderRadius:5,border:"1px solid #34d39940",background:"transparent",color:"#34d399",fontSize:10,cursor:"pointer",fontFamily:"inherit",fontWeight:600}} title="Restore this bill keeping its prior payment data, invoice attachment, and notes">Restore</button><button onClick={()=>{if(confirm('Reset and restore this bill as a FRESH unpaid bill?\\n\\nThis wipes ALL prior bill data:\\n - paid status, payment date, check number\\n - invoice attachment and vendor invoice number\\n - any memo or notes\\n - any date overrides\\n\\nUse this when the prior bill data was wrong (e.g. wrong invoice attached, paid status was a mistake). The PO and line items are untouched. This cannot be undone.')){setDocStatus(bill.billDocNum,{});const dateKey=bill.billDocNum+'__date';const dueKey=bill.billDocNum+'__due';if(docStatuses[dateKey]!==undefined)setDocStatus(dateKey,'');if(docStatuses[dueKey]!==undefined)setDocStatus(dueKey,'');notify('Bill reset to fresh unpaid: '+bill.vendorName)}}} style={{padding:"3px 8px",borderRadius:5,border:"1px solid #fbbf2440",background:"transparent",color:"#fbbf24",fontSize:10,cursor:"pointer",fontFamily:"inherit",fontWeight:600}} title="Reset to a fresh unpaid bill -- wipes all prior bill data (paid status, attachments, memo, etc). Use when prior bill data was wrong.">Reset &amp; Restore</button></div>:(()=>{const bd=typeof docStatuses[bill.billDocNum]==='object'?docStatuses[bill.billDocNum]:{};const st=bd.status||(bill.voided?'void':bill.paid?'paid':(bd.checkPrinted||bd.checkNum||bill.checkNum)?'check_sent':'unpaid');const nextStatus={unpaid:'check_sent',check_sent:'paid',paid:'unpaid',void:'unpaid'};return <button onClick={()=>{const ns=nextStatus[st]||'unpaid';
                   // If cycling TO unpaid AND the bill has payments, the new 'unpaid'
                   // status will be overridden on next render because paid is computed
                   // from sum(payments) >= cost. Must clear payments to actually unpay.
@@ -5140,7 +5168,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
                   }
                   setDocStatus(bill.billDocNum,{...bd,status:ns,paid:ns==='paid'});notify(bill.vendorName+' >> '+ns.replace('_',' '))}} style={{background:"none",border:"none",cursor:"pointer",padding:0}} title="Click to cycle status">{st==='void'?<Badge label="void" color="#525252"/>:st==='paid'?<Badge label="paid" color="#34d399"/>:st==='check_sent'?<Badge label="check sent" color="#f97316"/>:(bill.daysUntil<0&&bill.entered)?<Badge label="overdue" color="#f87171"/>:<StatusBadge docNum={bill.poDocNum}/>}</button>})()}</td>
                 <td style={{padding:"10px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",fontWeight:700,color:bill.paid?"#34d399":bill.isPartiallyPaid?"#fbbf24":isOverdue?"#f87171":"#f0f0f0"}}>{(()=>{if(bill.paid)return <span style={{textDecoration:"line-through",opacity:0.5}}>{fmt(bill.cost)}</span>;if(bill.isCredit){const ca=typeof bill.creditAmount==='number'?bill.creditAmount:bill.cost;const remaining=bill.cost-ca;const isPartial=ca<bill.cost-0.005;return <div><div style={{color:"#34d399",fontSize:12}}>{isPartial?fmt(remaining):"-"+fmt(ca)}</div><div style={{fontSize:9,color:"#34d399",fontWeight:600,marginTop:2,letterSpacing:0.5}}>{isPartial?'CREDIT '+fmt(ca):'FULL CREDIT'}</div></div>}if(bill.isPartiallyPaid){const pc=(bill.payments||[]).length;return <div><div>{fmt(bill.balance)}</div><div style={{fontSize:9,color:"#a3a3a3",fontWeight:500,marginTop:2,letterSpacing:0.3}}>of {fmt(bill.cost)} ({pc} pmt{pc!==1?'s':''})</div></div>}return fmt(bill.cost)})()}</td>
-                <td style={{padding:"10px 8px",textAlign:"right"}} onClick={e=>e.stopPropagation()}>{!bill.paid&&!bill.isCredit&&!bill._isDeleted&&<button onClick={()=>{if(bill._standalone){const sop=(customSops||[]).find(s=>s.id===bill._sopId);if(!sop){notify('Record not found','error');return}let d={};try{d=JSON.parse(sop.content||'{}')}catch{}const today=new Date().toISOString().split('T')[0];const updated={...d,paid:true,payDate:today};addSop({id:sop.id,title:sop.title,cat:sop.cat,icon:sop.icon,content:JSON.stringify(updated),custom:true});notify('Bill marked paid: '+(d.vendorName||'vendor'));return}setBillInvNum(bill.vendorInvNum);setBillCheckNum(bill.checkNum);setBillPayDate(new Date().toISOString().split('T')[0]);setBillMemo(bill.memo);setBillPayAmount(String(bill.balance||bill.cost));setBillPayInputDate(new Date().toISOString().split('T')[0]);setBillPayCheckInput('');setBillPayInvInput('');setBillPayMemoInput('');setBillDetail(bill)}} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #34d39930",background:"transparent",color:"#34d399",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s",whiteSpace:"nowrap"}} onMouseEnter={e=>{e.currentTarget.style.background="#34d39915"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>{bill.isPartiallyPaid?'Pay Balance':'Pay'}</button>}</td>
+                <td style={{padding:"10px 8px",textAlign:"right"}} onClick={e=>e.stopPropagation()}>{!bill.paid&&!bill.voided&&!bill.isCredit&&!bill._isDeleted&&<button onClick={()=>{if(bill._standalone){const sop=(customSops||[]).find(s=>s.id===bill._sopId);if(!sop){notify('Record not found','error');return}let d={};try{d=JSON.parse(sop.content||'{}')}catch{}const today=new Date().toISOString().split('T')[0];const updated={...d,paid:true,payDate:today};addSop({id:sop.id,title:sop.title,cat:sop.cat,icon:sop.icon,content:JSON.stringify(updated),custom:true});notify('Bill marked paid: '+(d.vendorName||'vendor'));return}setBillInvNum(bill.vendorInvNum);setBillCheckNum(bill.checkNum);setBillPayDate(new Date().toISOString().split('T')[0]);setBillMemo(bill.memo);setBillPayAmount(String(bill.balance||bill.cost));setBillPayInputDate(new Date().toISOString().split('T')[0]);setBillPayCheckInput('');setBillPayInvInput('');setBillPayMemoInput('');setBillDetail(bill)}} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #34d39930",background:"transparent",color:"#34d399",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s",whiteSpace:"nowrap"}} onMouseEnter={e=>{e.currentTarget.style.background="#34d39915"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>{bill.isPartiallyPaid?'Pay Balance':'Pay'}</button>}</td>
               </tr>})}
               <tr style={{borderTop:"2px solid #222",background:"#0a0a0a"}}><td colSpan={7} style={{padding:"10px 8px",fontWeight:700,color:"#f0f0f0"}}>TOTAL OUTSTANDING</td><td style={{padding:"10px 8px",textAlign:"right",fontWeight:800,fontFamily:"'JetBrains Mono',monospace",color:"#f97316",fontSize:14}}>{fmt(totalOwed)}</td><td/></tr>
             </tbody>
@@ -5153,7 +5181,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
           <div onClick={e=>e.stopPropagation()} style={{background:"#111111",border:"1px solid "+(adjustMode==='credit'?"#34d39940":"#f9731640"),borderRadius:12,padding:24,maxWidth:520,width:"100%",maxHeight:"90vh",overflowY:"auto"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
               <div>
-                <div style={{fontSize:11,color:adjustMode==='credit'?"#34d399":"#f97316",fontWeight:700,letterSpacing:1.5,textTransform:"uppercase"}}>{adjustEdit?"Edit":"New"} {adjustMode==='credit'?"Vendor Credit":"Vendor Bill"}</div>
+                <div style={{fontSize:11,color:adjustMode==='credit'?"#34d399":"#f97316",fontWeight:700,letterSpacing:1.5,textTransform:"uppercase"}}>{adjustEdit?"Edit":"New"} {adjustMode==='credit'?"Vendor Credit":"Vendor Bill"}{adjustEdit&&adjustIsVoided()&&<span style={{marginLeft:8,padding:"2px 8px",borderRadius:5,background:"#52525230",border:"1px solid #52525260",color:"#a3a3a3",fontSize:10,letterSpacing:1}}>VOIDED</span>}</div>
                 <div style={{fontSize:14,color:"#a3a3a3",marginTop:4}}>{adjustMode==='credit'?"Credit from vendor applied against a project's cost":"Standalone bill not tied to an existing PO"}</div>
               </div>
               <button onClick={closeAdjustModal} style={{background:"none",border:"none",color:"#737373",fontSize:22,cursor:"pointer",fontFamily:"inherit",padding:0,lineHeight:1}}>&times;</button>
@@ -5252,6 +5280,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
               </div>}
             </div>
             <div style={{display:"flex",gap:8,marginTop:18,justifyContent:"flex-end"}}>
+              {adjustEdit&&adjustMode==='bill'&&<Btn v="secondary" style={{fontSize:12,color:adjustIsVoided()?"#34d399":"#a3a3a3",border:"1px solid "+(adjustIsVoided()?"#34d39940":"#52525260")}} onClick={()=>{const _msg=adjustIsVoided()?'Unvoid this bill? It will count toward job cost and Total Owed again.':'Void this bill? It stays on record for the audit trail but stops counting toward job cost and Total Owed. You can unvoid it later.';if(ctx&&typeof ctx.confirm==='function'){ctx.confirm(_msg).then(ok=>{if(ok)toggleAdjustVoid()})}else if(window.confirm(_msg)){toggleAdjustVoid()}}}>{adjustIsVoided()?'Unvoid':'Void'}</Btn>}
               {adjustEdit&&<Btn v="danger" style={{fontSize:12}} onClick={()=>{const _doDelete=()=>{deleteAdjust(adjustEdit);closeAdjustModal()};if(ctx&&typeof ctx.confirm==='function'){ctx.confirm('Delete this '+(adjustMode==='credit'?'credit':'bill')+'?').then(ok=>{if(ok)_doDelete()})}else if(window.confirm('Delete this '+(adjustMode==='credit'?'credit':'bill')+'?')){_doDelete()}}}>Delete</Btn>}
               <Btn v="secondary" onClick={closeAdjustModal}>Cancel</Btn>
               <Btn onClick={saveAdjust} disabled={adjustUploading} style={{background:adjustUploading?"#525252":(adjustMode==='credit'?"#34d399":"#f97316"),color:"#000",fontWeight:700,opacity:adjustUploading?0.6:1,cursor:adjustUploading?"not-allowed":"pointer"}}>{adjustUploading?"Uploading...":(adjustEdit?"Save Changes":"Create "+(adjustMode==='credit'?"Credit":"Bill"))}</Btn>
