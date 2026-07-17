@@ -5087,10 +5087,28 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   // rows live in the Banking tab as cash flow -- deposits duplicate job invoice revenue
   // and vendor checks duplicate line-item costs, so auto-counting them here
   // double-counted both sides of the P&L.
-  const manualRevenue=filteredManualTxns.filter(t=>t.type==='revenue'&&!t.plaidId).reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
-  const manualExpenses=filteredManualTxns.filter(t=>t.type==='expense'&&!t.plaidId).reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
-  const manualAssets=filteredManualTxns.filter(t=>t.category==='asset').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
-  const manualLiabilities=filteredManualTxns.filter(t=>t.category==='liability').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+  // P&L-eligible manual entries. Three exclusions keep the P&L honest:
+  //   1. plaidId rows -- Plaid bank feed. Deposits duplicate job invoice revenue and
+  //      vendor checks duplicate line-item costs, so they live in Banking as cash flow.
+  //   2. source==='statement' rows -- uploaded bank statements. Same bank-feed data,
+  //      just arriving by PDF/CSV instead of Plaid; counting them double-counts the
+  //      P&L exactly like Plaid rows would.
+  //   3. Movement categories (Transfer, Owner Draw, Owner Investment) -- money moving
+  //      between accounts or between the business and its owner is never revenue or
+  //      expense. This is the QuickBooks reconciliation rule: transfers map to
+  //      Transfer and stay off the P&L.
+  const _plMovementCats=new Set(['Transfer','Owner Draw','Owner Investment']);
+  // Also hard-exclude balance-sheet rows (asset/liability by type OR legacy category)
+  // so no row can ever count in both the P&L and the Balance Sheet.
+  const _isManualPL=t=>!t.plaidId&&t.source!=='statement'&&!_plMovementCats.has(t.category)&&t.type!=='asset'&&t.type!=='liability'&&t.category!=='asset'&&t.category!=='liability';
+  const manualRevenue=filteredManualTxns.filter(t=>t.type==='revenue'&&_isManualPL(t)).reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+  const manualExpenses=filteredManualTxns.filter(t=>t.type==='expense'&&_isManualPL(t)).reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+  // Asset/liability entries are keyed by TYPE (what the manual-entry Type selector
+  // sets). The old category==='asset' test only matched rows whose category text was
+  // literally 'asset', so real asset entries with a named category never reached the
+  // Balance Sheet. Accept either for backward compatibility.
+  const manualAssets=filteredManualTxns.filter(t=>t.type==='asset'||t.category==='asset').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+  const manualLiabilities=filteredManualTxns.filter(t=>t.type==='liability'||t.category==='liability').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
   const totalRev=filteredJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0)+manualRevenue;
   const totalCost=filteredJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalCost,0)+manualExpenses;
   const grossProfit=totalRev-totalCost;
@@ -5215,7 +5233,15 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
 
   // Monthly revenue data
   const months=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  const monthlyData=months.map((m,i)=>{const mJobs=filteredJobs.filter(j=>{const d=new Date(j.createdDate);return d.getMonth()===i&&d.getFullYear()===new Date().getFullYear()});const rev=mJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const cost=mJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalCost,0);return{name:m,revenue:rev,cost,profit:rev-cost,margin:rev>0?((rev-cost)/rev*100):0}});
+  // Year-aware monthly buckets. The old version filtered to the CURRENT calendar year
+  // only, so Past Year / All Time / custom ranges silently dropped prior-year months
+  // from the Overview chart. Keys are year+month; labels carry a 'YY suffix for
+  // non-current years; chronological sort.
+  const monthlyData=(()=>{const curY=new Date().getFullYear();const m={};filteredJobs.forEach(j=>{const mm=/^(\d{4})-(\d{2})/.exec(String(j.createdDate||''));let y,mo;if(mm){y=+mm[1];mo=+mm[2]-1}else{const d=new Date(j.createdDate);if(isNaN(d.getTime()))return;y=d.getFullYear();mo=d.getMonth()}if(mo<0||mo>11)return;const k=y+'-'+mo;if(!m[k])m[k]={name:months[mo]+(y!==curY?" '"+String(y).slice(2):""),revenue:0,cost:0,_s:y*12+mo};const f=getJobFinancials(j.id);m[k].revenue+=f.totalRevenue;m[k].cost+=f.totalCost;});return Object.values(m).sort((a,b)=>a._s-b._s).map(o=>({name:o.name,revenue:o.revenue,cost:o.cost,profit:o.revenue-o.cost,margin:o.revenue>0?((o.revenue-o.cost)/o.revenue*100):0}));})();
+  // Monthly bank cash flow (deposits vs payments) across the filtered transactions.
+  // The cash-basis companion to the accrual Revenue vs Cost chart, and the fast
+  // visual check that a statement upload landed in the right months.
+  const monthlyBank=(()=>{const curY=new Date().getFullYear();const m={};filteredManualTxns.forEach(t=>{const mm=/^(\d{4})-(\d{2})/.exec(String(t.date||''));if(!mm)return;const y=+mm[1],mo=+mm[2]-1;if(mo<0||mo>11)return;const k=y+'-'+mo;if(!m[k])m[k]={name:months[mo]+(y!==curY?" '"+String(y).slice(2):""),inflow:0,outflow:0,_s:y*12+mo};const amt=parseFloat(t.amount)||0;if(t.type==='revenue')m[k].inflow+=amt;else if(t.type==='expense')m[k].outflow+=amt;});return Object.values(m).sort((a,b)=>a._s-b._s);})();
 
 
   // Vendor spend breakdown
@@ -5333,6 +5359,10 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
         </Card>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginTop:12}} className="resp-grid-2">
+        <Card style={{padding:16}} hover><div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:14,flexWrap:"wrap",gap:6}}><div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>Cash Flow (Bank)</div><div style={{fontSize:10,color:"#525252"}}>deposits vs payments from bank transactions</div></div>
+          {monthlyBank.length===0?<div style={{padding:"40px 0",textAlign:"center",color:"#525252",fontSize:12}}>No bank transactions in this period</div>:
+          <ResponsiveContainer width="100%" height={200}><BarChart data={monthlyBank}><defs><linearGradient id="fBankInG" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#34d399" stopOpacity={0.9}/><stop offset="100%" stopColor="#34d399" stopOpacity={0.35}/></linearGradient><linearGradient id="fBankOutG" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#f87171" stopOpacity={0.75}/><stop offset="100%" stopColor="#f87171" stopOpacity={0.3}/></linearGradient></defs><XAxis dataKey="name" tick={{fill:"#a3a3a3",fontSize:11}} axisLine={false} tickLine={false}/><YAxis tick={{fill:"#737373",fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>"$"+Math.round(v/1000)+"k"}/><Tooltip contentStyle={{background:"#111",border:"1px solid #222",borderRadius:8,fontSize:11,color:"#a3a3a3",boxShadow:"0 4px 12px rgba(0,0,0,0.5)"}} labelStyle={{color:"#737373",fontSize:11,marginBottom:4}} itemStyle={{color:"#a3a3a3",fontSize:11,padding:0}} formatter={(v,name)=>[fmt(v),name]} cursor={{fill:"rgba(52,211,153,0.06)"}}/><RBar dataKey="inflow" fill="url(#fBankInG)" radius={[4,4,0,0]} name="Money In" animationDuration={900} animationEasing="ease-out"/><RBar dataKey="outflow" fill="url(#fBankOutG)" radius={[4,4,0,0]} name="Money Out" animationDuration={900} animationEasing="ease-out"/></BarChart></ResponsiveContainer>}
+        </Card>
         <Card style={{padding:16}} hover><div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:14,fontFamily:"'JetBrains Mono',monospace"}}>Top Customers</div>
           {custRev.slice(0,6).map((c,i)=><div key={c.name} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 0",borderBottom:"1px solid #111"}}><div style={{width:24,height:24,borderRadius:6,background:"#2dd4bf12",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"#2dd4bf",fontWeight:800,fontFamily:"'JetBrains Mono',monospace"}}>{i+1}</div><span style={{flex:1,fontSize:13,color:"#e5e5e5"}}>{c.name}</span><span style={{fontSize:13,fontWeight:700,color:"#e5e5e5",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(c.revenue)}</span><span style={{fontSize:11,color:"#737373"}}>{c.pct.toFixed(0)}%</span></div>)}
         </Card>
@@ -5344,10 +5374,10 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}><div style={{fontSize:18,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>Profit & Loss</div><div style={{display:"flex",gap:8}}><Btn v="secondary" onClick={()=>setTab("banking")} style={{fontSize:11}}><I n="plus" s={12}/> Add Entry</Btn><Btn onClick={()=>generatePDF("pnl")}><I n="download" s={14}/> Export PDF</Btn></div></div>
       <div style={{borderBottom:"2px solid #222",padding:"10px 0",display:"flex",justifyContent:"space-between"}}><span style={{fontSize:15,fontWeight:700,color:"#f0f0f0"}}>REVENUE</span><span style={{fontSize:15,fontWeight:700,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalRev)}</span></div>
       {filteredJobs.map(j=>{const f=getJobFinancials(j.id);return <div key={j.id} onClick={()=>{fCtx.setSelectedJob(j.id);fCtx.setPage('jobs')}} style={{padding:"6px 16px",display:"flex",justifyContent:"space-between",borderBottom:"1px solid #111",cursor:"pointer",transition:"background 0.15s"}} onMouseEnter={e=>e.currentTarget.style.background="rgba(45,212,191,0.04)"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><span style={{fontSize:13,color:"#a3a3a3"}}>{j.name}</span><span style={{fontSize:13,color:"#a3a3a3",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(f.totalRevenue)}</span></div>})}
-      {filteredManualTxns.filter(t=>t.type==='revenue'&&!t.plaidId).map(t=><div key={t.id} style={{padding:"6px 16px",display:"flex",justifyContent:"space-between",borderBottom:"1px solid #111",background:"#2dd4bf05"}}><span style={{fontSize:13,color:"#2dd4bf"}}>{t.description||'Manual entry'} <span style={{fontSize:10,color:"#525252"}}>(manual)</span></span><span style={{fontSize:13,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(parseFloat(t.amount)||0)}</span></div>)}
+      {filteredManualTxns.filter(t=>t.type==='revenue'&&_isManualPL(t)).map(t=><div key={t.id} style={{padding:"6px 16px",display:"flex",justifyContent:"space-between",borderBottom:"1px solid #111",background:"#2dd4bf05"}}><span style={{fontSize:13,color:"#2dd4bf"}}>{t.description||'Manual entry'} <span style={{fontSize:10,color:"#525252"}}>(manual)</span></span><span style={{fontSize:13,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(parseFloat(t.amount)||0)}</span></div>)}
       <div style={{borderBottom:"2px solid #222",padding:"10px 0",display:"flex",justifyContent:"space-between",marginTop:12}}><span style={{fontSize:15,fontWeight:700,color:"#f0f0f0"}}>COST OF GOODS SOLD</span><span style={{fontSize:15,fontWeight:700,color:"#f87171",fontFamily:"'JetBrains Mono',monospace"}}><AnimatedNumber value={totalCost} prefix="$"/></span></div>
       {vendorSpend.map(v=><div key={v.name} onClick={()=>{fCtx.setGlobalSearch(v.name);fCtx.setPage('jobs')}} style={{padding:"6px 16px",display:"flex",justifyContent:"space-between",borderBottom:"1px solid #111",cursor:"pointer",transition:"background 0.15s"}} onMouseEnter={e=>e.currentTarget.style.background="rgba(248,113,113,0.04)"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><span style={{fontSize:13,color:"#a3a3a3"}}>{v.name}</span><span style={{fontSize:13,color:"#a3a3a3",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(v.spend)}</span></div>)}
-      {filteredManualTxns.filter(t=>t.type==='expense'&&!t.plaidId).map(t=><div key={t.id} style={{padding:"6px 16px",display:"flex",justifyContent:"space-between",borderBottom:"1px solid #111",background:"#f8717105"}}><span style={{fontSize:13,color:"#f87171"}}>{t.description||'Manual expense'} <span style={{fontSize:10,color:"#525252"}}>({t.category||'manual'})</span></span><span style={{fontSize:13,color:"#f87171",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(parseFloat(t.amount)||0)}</span></div>)}
+      {filteredManualTxns.filter(t=>t.type==='expense'&&_isManualPL(t)).map(t=><div key={t.id} style={{padding:"6px 16px",display:"flex",justifyContent:"space-between",borderBottom:"1px solid #111",background:"#f8717105"}}><span style={{fontSize:13,color:"#f87171"}}>{t.description||'Manual expense'} <span style={{fontSize:10,color:"#525252"}}>({t.category||'manual'})</span></span><span style={{fontSize:13,color:"#f87171",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(parseFloat(t.amount)||0)}</span></div>)}
       <div style={{background:"#0a0a0a",borderRadius:8,padding:"12px 0",marginTop:12,display:"flex",justifyContent:"space-between"}}><span style={{fontSize:15,fontWeight:700,color:"#f0f0f0",paddingLeft:4}}>GROSS PROFIT</span><span style={{fontSize:15,fontWeight:700,color:grossProfit>=0?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace"}}><AnimatedNumber value={grossProfit} prefix="$"/> ({grossMargin.toFixed(1)}%)</span></div>
       <div style={{borderBottom:"2px solid #222",padding:"10px 0",display:"flex",justifyContent:"space-between",marginTop:12}}><span style={{fontSize:15,fontWeight:700,color:"#f0f0f0"}}>OPERATING EXPENSES</span><span style={{fontSize:15,fontWeight:700,color:"#fbbf24",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalComm)}</span></div>
       <div style={{padding:"6px 16px",display:"flex",justifyContent:"space-between",borderBottom:"1px solid #111"}}><span style={{fontSize:13,color:"#a3a3a3"}}>Sales Commissions</span><span style={{fontSize:13,color:"#a3a3a3",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalComm)}</span></div>
@@ -5497,7 +5527,8 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       const filteredBankTxns=allTxns.filter(t=>{
         if(t.account&&bankAcctMeta[t.account]&&bankAcctMeta[t.account].excluded)return false;
         if(acctFilterActive&&!selectedAcctIds.includes(t.account))return false;
-        if(bankCatFilter!=='all'&&t.category!==bankCatFilter)return false;
+        if(bankCatFilter==='__uncat__'){if(t.category&&t.category!=='Uncategorized'&&categories.includes(t.category))return false;}
+        else if(bankCatFilter!=='all'&&t.category!==bankCatFilter)return false;
         if(!bankSearch)return true;
         const q=bankSearch.toLowerCase();
         return (t.description||'').toLowerCase().includes(q)||(t.category||'').toLowerCase().includes(q)||(t.account||'').toLowerCase().includes(q)||(bankAcctMeta[t.account]?.nickname||'').toLowerCase().includes(q)||(t.amount||'').toString().includes(q);
@@ -5538,6 +5569,27 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       const selectAllTxns=()=>{if(txnSelected.size===filteredBankTxns.length)setTxnSelected(new Set());else setTxnSelected(new Set(filteredBankTxns.map(t=>t.id)))};
       const bulkDelete=()=>{txnSelected.forEach(id=>deleteSop(id));notify(txnSelected.size+' transaction'+(txnSelected.size!==1?'s':'')+' deleted');setTxnSelected(new Set())};
       const bulkCategorize=(cat)=>{txnSelected.forEach(id=>{const t=allTxns.find(x=>x.id===id);if(t)updateCategory(id,cat)});notify(txnSelected.size+' transaction'+(txnSelected.size!==1?'s':'')+' categorized as '+cat);setTxnSelected(new Set())};
+      // CSV export of exactly what is on screen (all active filters applied).
+      // Column-for-column comparable against the QuickBooks bank register export,
+      // which is the fast manual cross-check during reconciliation.
+      const exportBankCsv=()=>{
+        if(filteredBankTxns.length===0){notify('No transactions to export with the current filters','error');return}
+        const esc=v=>{const str=String(v==null?'':v);return /[",\n\r]/.test(str)?'"'+str.replace(/"/g,'""')+'"':str};
+        const rows=[['Date','Description','Category','Amount','Type','Account','Source']];
+        filteredBankTxns.forEach(t=>{rows.push([t.date||'',t.description||'',(t.category&&categories.includes(t.category))?t.category:'Uncategorized',(parseFloat(t.amount)||0).toFixed(2),t.type||'',acctDisplayName(t.account),t.plaidId?'bank feed':(t.source==='statement'?'statement upload':'manual')])});
+        const csv=rows.map(r=>r.map(esc).join(',')).join('\n');
+        const blob=new Blob([csv],{type:'text/csv'});
+        const url=URL.createObjectURL(blob);
+        const a=document.createElement('a');a.href=url;a.download='midwest-bank-transactions-'+new Date().toISOString().split('T')[0]+'.csv';a.click();URL.revokeObjectURL(url);
+        notify(filteredBankTxns.length+' transaction'+(filteredBankTxns.length!==1?'s':'')+' exported to CSV');
+      };
+      // Category totals across the filtered transactions -- the tie-out view. During
+      // QuickBooks reconciliation these totals should match the QB category totals
+      // for the same period one to one, so variances jump out per category instead
+      // of hiding inside a single P&L number.
+      const catTotals=(()=>{const m={};filteredBankTxns.forEach(t=>{const c=(t.category&&categories.includes(t.category))?t.category:'Uncategorized';if(!m[c])m[c]={name:c,inflow:0,outflow:0,count:0};const amt=parseFloat(t.amount)||0;if(t.type==='revenue')m[c].inflow+=amt;else if(t.type==='expense')m[c].outflow+=amt;m[c].count++;});return Object.values(m).sort((a,b)=>(b.inflow+b.outflow)-(a.inflow+a.outflow));})();
+      const spendByCat=catTotals.filter(c=>c.outflow>0.005).map(c=>({name:c.name,value:c.outflow}));
+      const CAT_COLORS=['#2dd4bf','#a78bfa','#34d399','#fbbf24','#f97316','#f87171','#38bdf8','#e879f9','#a3e635','#fb7185','#818cf8','#f472b6'];
 
 
       // ---- Bank statement upload ----
@@ -5894,7 +5946,45 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
           {kpi("TOTAL IN",fmt(totalBankIn),filteredBankTxns.filter(t=>t.type==='revenue').length+" deposits","#34d399")}
           {kpi("TOTAL OUT",fmt(totalBankOut),filteredBankTxns.filter(t=>t.type==='expense').length+" payments","#f87171")}
           {kpi("NET",fmt(totalBankIn-totalBankOut),"","#2dd4bf")}
-          {kpi("UNCATEGORIZED",String(uncategorized),uncategorized>0?"needs review":"all done",uncategorized>0?"#fbbf24":"#34d399")}
+          <div onClick={()=>setBankCatFilter(bankCatFilter==='__uncat__'?'all':'__uncat__')} style={{cursor:"pointer"}} title={bankCatFilter==='__uncat__'?"Click to show all transactions":"Click to show only uncategorized transactions"}>{kpi("UNCATEGORIZED",String(uncategorized),bankCatFilter==='__uncat__'?"showing only these -- click to clear":(uncategorized>0?"needs review -- click to filter":"all done"),uncategorized>0?"#fbbf24":"#34d399")}</div>
+        </div>
+
+
+        {/* Reconciliation tie-out row: where the money went by category, and the
+            per-category totals to line up against QuickBooks for the same period. */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}} className="resp-grid-2">
+          <Card style={{padding:16}} hover>
+            <div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:6,fontFamily:"'JetBrains Mono',monospace"}}>Spending by Category</div>
+            <div style={{fontSize:10,color:"#525252",marginBottom:10}}>money out across the filtered transactions</div>
+            {spendByCat.length===0?<div style={{padding:"50px 0",textAlign:"center",color:"#525252",fontSize:12}}>No outgoing transactions in this view</div>:
+            <div style={{position:"relative"}}>
+              <ResponsiveContainer width="100%" height={240}><PieChart><Tooltip contentStyle={{background:"#111",border:"1px solid #222",borderRadius:8,fontSize:11,color:"#a3a3a3",boxShadow:"0 4px 12px rgba(0,0,0,0.5)"}} itemStyle={{color:"#a3a3a3",fontSize:11,padding:0}} formatter={(v,name)=>[fmt(v)+(totalBankOut>0?" ("+(v/totalBankOut*100).toFixed(1)+"%)":""),name]}/><Pie data={spendByCat} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={62} outerRadius={92} paddingAngle={2} stroke="#0a0a0a" strokeWidth={2} animationDuration={900} animationEasing="ease-out">{spendByCat.map((entry,i)=><Cell key={'c'+i} fill={CAT_COLORS[i%CAT_COLORS.length]}/>)}</Pie></PieChart></ResponsiveContainer>
+              <div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",textAlign:"center",pointerEvents:"none"}}><div style={{fontSize:10,color:"#737373",letterSpacing:1.5,fontWeight:600}}>TOTAL OUT</div><div style={{fontSize:18,fontWeight:800,color:"#f87171",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalBankOut)}</div></div>
+            </div>}
+            {spendByCat.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:"4px 12px",marginTop:8,justifyContent:"center"}}>{spendByCat.slice(0,8).map((c2,i)=><div key={c2.name} style={{display:"flex",alignItems:"center",gap:5,fontSize:10,color:"#a3a3a3"}}><div style={{width:8,height:8,borderRadius:2,background:CAT_COLORS[i%CAT_COLORS.length]}}/>{c2.name}</div>)}{spendByCat.length>8&&<div style={{fontSize:10,color:"#525252"}}>+{spendByCat.length-8} more</div>}</div>}
+          </Card>
+          <Card style={{padding:16}} hover>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:8,flexWrap:"wrap",marginBottom:6}}>
+              <div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>Category Totals</div>
+              <div style={{fontSize:10,color:"#525252"}}>line these up with QuickBooks for the same period</div>
+            </div>
+            {catTotals.length===0?<div style={{padding:"50px 0",textAlign:"center",color:"#525252",fontSize:12}}>No transactions in this view</div>:
+            <div style={{maxHeight:280,overflowY:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                <thead><tr style={{borderBottom:"2px solid #222"}}>{["Category","Txns","In","Out","Net"].map(h=><th key={h} style={{padding:"6px 6px",textAlign:h==="Category"?"left":"right",color:"#737373",fontSize:10,fontWeight:600,letterSpacing:0.5,position:"sticky",top:0,background:"#111111"}}>{h}</th>)}</tr></thead>
+                <tbody>
+                  {catTotals.map(c2=>{const net=c2.inflow-c2.outflow;const isUncat=c2.name==='Uncategorized';return <tr key={c2.name} onClick={()=>setBankCatFilter(bankCatFilter===(isUncat?'__uncat__':c2.name)?'all':(isUncat?'__uncat__':c2.name))} style={{borderBottom:"1px solid #111",cursor:"pointer",background:isUncat&&c2.count>0?"#fbbf2408":"transparent",transition:"background 0.15s"}} onMouseEnter={e=>e.currentTarget.style.background="rgba(45,212,191,0.05)"} onMouseLeave={e=>e.currentTarget.style.background=isUncat&&c2.count>0?"#fbbf2408":"transparent"} title="Click to filter the transaction list to this category">
+                    <td style={{padding:"7px 6px",color:isUncat?"#fbbf24":"#e5e5e5",fontWeight:isUncat?700:500}}>{c2.name}</td>
+                    <td style={{padding:"7px 6px",textAlign:"right",color:"#737373",fontFamily:"'JetBrains Mono',monospace"}}>{c2.count}</td>
+                    <td style={{padding:"7px 6px",textAlign:"right",color:c2.inflow>0?"#34d399":"#333",fontFamily:"'JetBrains Mono',monospace"}}>{c2.inflow>0?fmt(c2.inflow):"--"}</td>
+                    <td style={{padding:"7px 6px",textAlign:"right",color:c2.outflow>0?"#f87171":"#333",fontFamily:"'JetBrains Mono',monospace"}}>{c2.outflow>0?fmt(c2.outflow):"--"}</td>
+                    <td style={{padding:"7px 6px",textAlign:"right",fontWeight:700,color:net>=0?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(net)}</td>
+                  </tr>})}
+                  <tr style={{borderTop:"2px solid #222"}}><td style={{padding:"8px 6px",fontWeight:800,color:"#f0f0f0"}}>TOTAL</td><td style={{padding:"8px 6px",textAlign:"right",fontWeight:700,color:"#a3a3a3",fontFamily:"'JetBrains Mono',monospace"}}>{filteredBankTxns.length}</td><td style={{padding:"8px 6px",textAlign:"right",fontWeight:800,color:"#34d399",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalBankIn)}</td><td style={{padding:"8px 6px",textAlign:"right",fontWeight:800,color:"#f87171",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalBankOut)}</td><td style={{padding:"8px 6px",textAlign:"right",fontWeight:800,color:(totalBankIn-totalBankOut)>=0?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalBankIn-totalBankOut)}</td></tr>
+                </tbody>
+              </table>
+            </div>}
+          </Card>
         </div>
 
 
@@ -5969,7 +6059,8 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
 
         <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
           <input value={bankSearch} onChange={e=>setBankSearch(e.target.value)} placeholder="Search transactions..." style={{...inputStyle,flex:1,minWidth:200,maxWidth:300}}/>
-          <select value={bankCatFilter} onChange={e=>setBankCatFilter(e.target.value)} style={{...inputStyle,width:"auto"}}><option value="all">All Categories</option>{categories.map(c=><option key={c} value={c}>{c}</option>)}</select>
+          <select value={bankCatFilter} onChange={e=>setBankCatFilter(e.target.value)} style={{...inputStyle,width:"auto"}}><option value="all">All Categories</option><option value="__uncat__">Uncategorized only</option>{categories.map(c=><option key={c} value={c}>{c}</option>)}</select>
+          <Btn v="secondary" style={{fontSize:11,padding:"6px 12px"}} onClick={exportBankCsv} title="Export the transactions currently shown (all active filters applied) as a CSV -- date, description, category, amount, type, account, source. Line-for-line comparable against the QuickBooks register."><I n="download" s={12}/> Export CSV</Btn>
           {allBankAcctIds.length>0&&(()=>{const visibleAccts=allBankAcctIds.filter(a=>!bankAcctMeta[a]?.excluded);return <div ref={acctFilterRef} style={{position:"relative"}}>
             <button type="button" onClick={()=>setAcctFilterOpen(!acctFilterOpen)} style={{...inputStyle,width:"auto",minWidth:180,maxWidth:260,display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,cursor:"pointer",border:"1px solid "+(acctFilterActive?"rgba(45,212,191,0.4)":"#222"),background:acctFilterActive?"rgba(45,212,191,0.06)":"#111",color:acctFilterActive?"#2dd4bf":"#c4c4c4",fontFamily:"inherit",textAlign:"left"}}>
               <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{!acctFilterActive?"All Accounts ("+visibleAccts.length+")":selectedAcctIds.length===1?acctDisplayName(selectedAcctIds[0]):selectedAcctIds.length+" of "+visibleAccts.length+" accounts"}</span>
