@@ -1384,7 +1384,8 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     {name:"batch_mark_paid",description:"Mark multiple bills paid in one operation. Provide an array of bill_doc_nums, or a filter (vendor + status) to select bills. Set check_num if paying via one check, or method='ach' for ACH. Requires confirm:true to actually apply; without confirm returns a dry-run preview with the count and total.",input_schema:{type:"object",properties:{bill_doc_nums:{type:"array",items:{type:"string"},description:"Explicit list of bill docNums to mark paid"},filter:{type:"object",properties:{vendor_name:{type:"string"},job_id:{type:"string"},status:{type:"string",description:"Filter to unpaid | check_sent | overdue (default unpaid)"}}},check_num:{type:"string",description:"Check number to apply to all selected bills"},method:{type:"string",description:"'check' | 'ach' | 'wire' (defaults to check if check_num provided, else ach)"},pay_date:{type:"string",description:"YYYY-MM-DD, defaults to today"},memo:{type:"string"},confirm:{type:"boolean",description:"Must be true to actually mark paid. Without confirm, returns dry-run preview."}}}},
     // Vendor Credits & Standalone Bills
     {name:"create_vendor_credit",description:"Create a new vendor credit attached to a project. Credits reduce the project's cost and lift margin. Use when a vendor issues a credit memo (e.g. Marco Group credited $1,245.94 for damaged goods on Sandburg MS).",input_schema:{type:"object",properties:{vendor_name:{type:"string",description:"Vendor name (partial match)"},job_id:{type:"string",description:"Job ID or name keywords"},amount:{type:"number",description:"Credit amount in dollars"},credit_date:{type:"string",description:"YYYY-MM-DD (defaults to today)"},ref_number:{type:"string",description:"Vendor credit memo number / reference"},memo:{type:"string",description:"Notes about the credit"},file_url:{type:"string",description:"Optional URL of the credit memo PDF to attach"}},required:["vendor_name","job_id","amount"]}},
-    {name:"create_standalone_bill",description:"Create a standalone vendor bill not tied to a PO. Used for one-off vendor charges, freight bills that arrived without a PO, or rebill scenarios. Flows through the same totals as PO-derived bills.",input_schema:{type:"object",properties:{vendor_name:{type:"string"},job_id:{type:"string"},amount:{type:"number"},bill_date:{type:"string",description:"YYYY-MM-DD (defaults to today)"},ref_number:{type:"string",description:"Vendor invoice number"},memo:{type:"string"},file_url:{type:"string",description:"Optional URL of the bill PDF to attach"}},required:["vendor_name","job_id","amount"]}},
+    {name:"record_bill_against_po",description:"Enter/record a vendor bill AGAINST an existing purchase order -- the PO-tied bill flow, identical to opening the PO's bill in Documents >> Vendor Bills and entering it. This ATTACHES the bill to the project: the amount reconciles against the cost already on the job's line items instead of adding new cost. ALWAYS PREFER this over create_standalone_bill when the job has a PO for that vendor. Use when user says 'enter the Doane Keyes invoice against the PO', 'record bill 771566 on PO-6289-SUKI', 'attach this vendor invoice to the job', 'enter this bill on the project'.",input_schema:{type:"object",properties:{po_doc_num:{type:"string",description:"The PO doc number (e.g. PO-6289-SUKI). If unknown, provide job_id and vendor_name instead."},job_id:{type:"string",description:"Job ID or name keywords -- used with vendor_name to find the PO when po_doc_num is not given"},vendor_name:{type:"string",description:"Vendor name (partial match) -- used with job_id to find the PO"},vendor_invoice_num:{type:"string",description:"The vendor's invoice number to record on the bill"},bill_date:{type:"string",description:"Bill date YYYY-MM-DD (sets the bill date override)"},due_date:{type:"string",description:"Due date YYYY-MM-DD (defaults to bill date + 30 days)"},memo:{type:"string",description:"Optional memo"}}}},
+    {name:"create_standalone_bill",description:"Create a standalone vendor bill not tied to a PO. ONLY for charges with no purchase order behind them (one-off vendor charges, freight that arrived without a PO, rebill scenarios). IMPORTANT: standalone bills ADD cost on top of the job's line items. If the job has a PO for this vendor, use record_bill_against_po instead so the bill reconciles against existing cost rather than inflating it.",input_schema:{type:"object",properties:{vendor_name:{type:"string"},job_id:{type:"string"},amount:{type:"number"},bill_date:{type:"string",description:"YYYY-MM-DD (defaults to today)"},ref_number:{type:"string",description:"Vendor invoice number"},memo:{type:"string"},file_url:{type:"string",description:"Optional URL of the bill PDF to attach"}},required:["vendor_name","job_id","amount"]}},
     {name:"update_vendor_credit",description:"Update an existing vendor credit or standalone bill record. Match by sop_id (VC-xxx or SB-xxx) or by vendor + job + approximate amount. Fields: amount, ref_number, memo, credit_date, paid status.",input_schema:{type:"object",properties:{sop_id:{type:"string",description:"The credit/bill SOP id (VC-xxxxxx or SB-xxxxxx)"},vendor_name:{type:"string",description:"Vendor name for disambiguation when sop_id is unknown"},job_id:{type:"string",description:"Job for disambiguation"},updates:{type:"object",properties:{amount:{type:"number"},ref_number:{type:"string"},memo:{type:"string"},credit_date:{type:"string"},paid:{type:"boolean"},pay_date:{type:"string"},check_num:{type:"string"}}}},required:["updates"]}},
     {name:"delete_vendor_credit",description:"Delete a vendor credit or standalone bill record. Permanent. Match by sop_id, or by vendor + job + amount. The underlying job/PO/line items are untouched.",input_schema:{type:"object",properties:{sop_id:{type:"string",description:"The credit/bill SOP id"},vendor_name:{type:"string"},job_id:{type:"string"},amount:{type:"number",description:"Used with vendor+job to disambiguate"}}}},
     {name:"list_vendor_credits",description:"List vendor credits and standalone bills with filters. Returns a markdown table. Use when user says 'show me all open credits', 'list Marco credits', 'what credits do we have on the Sandburg job'.",input_schema:{type:"object",properties:{vendor_name:{type:"string"},job_id:{type:"string"},kind:{type:"string",description:"'credit' | 'standalone_bill' | 'all' (default all)"},applied_status:{type:"string",description:"'applied' to show only credits applied to a specific bill, 'unapplied' for unapplied, 'all' for both (default all)"},limit:{type:"number"}}}},
@@ -2742,6 +2743,54 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         return {success: true, message: 'Marked '+n+' bill'+(n===1?'':'s')+' paid via '+method+' (total $'+total.toFixed(2)+', date '+today+(checkNum?', check #'+checkNum:'')+')'};
       }
 
+      if (toolName === 'record_bill_against_po') {
+        // PO-tied bill entry -- the same action as opening the PO's bill row in
+        // Documents >> Vendor Bills and entering it. Writes the bill's docStatuses
+        // record (which is what makes a PO bill 'entered'), so the amount reconciles
+        // against the job's existing line-item cost and NOTHING is added to job cost.
+        // Closes the gap Maureen reported Jul 16 2026: the Brain could previously only
+        // create standalone bills, which inflated project cost and tanked margins.
+        let poDocNum = String(input.po_doc_num||'').trim().toUpperCase();
+        let poObj = null;
+        if (poDocNum) {
+          for (let ji = 0; ji < jobs.length && !poObj; ji++) {
+            const hit = _genPOsForJob(jobs[ji]).find(p => String(p.docNum||'').toUpperCase() === poDocNum);
+            if (hit) poObj = hit;
+          }
+          if (!poObj) return {error: 'PO not found: '+poDocNum+'. Check the doc number, or pass job_id + vendor_name instead.'};
+          poDocNum = poObj.docNum;
+        } else {
+          const job = findJob(input.job_id);
+          if (!job) return {error: 'Provide po_doc_num, or job_id + vendor_name. Job not found: '+(input.job_id||'(none)')};
+          const vq = (input.vendor_name||'').toLowerCase();
+          const pos = _genPOsForJob(job).filter(p => !vq || (p.vendor?.name||'').toLowerCase().includes(vq));
+          if (pos.length === 0) return {error: 'No PO found on '+job.name+(vq?' for vendor "'+input.vendor_name+'"':'')+'. Generate the POs first (create_po_from_quote), then record the bill against one.'};
+          if (pos.length > 1) return {error: pos.length+' POs match on '+job.name+' -- specify po_doc_num. Candidates: '+pos.map(p=>p.docNum+' ('+(p.vendor?.name||'Unknown')+', $'+(p.total||0).toFixed(2)+')').join(', ')};
+          poObj = pos[0];
+          poDocNum = poObj.docNum;
+        }
+        const dsPO = _getDocStatusesBrain();
+        const billDocNum = 'BILL-' + poDocNum.replace('PO-','');
+        const existing = (typeof dsPO[billDocNum] === 'object' && dsPO[billDocNum]) ? dsPO[billDocNum] : {};
+        if (existing.deleted === true) return {error: 'That bill exists but is deleted ('+billDocNum+'). Use restore_deleted_bill first, then record against it.'};
+        // Activate the PO if still new/unset -- bills only render in the Vendor Bills
+        // tab for active or received POs, so this guarantees the entered bill is visible.
+        const poStatus = dsPO[poDocNum];
+        if (!poStatus || poStatus === 'new') _setDocStatusBrain(poDocNum, 'drafted');
+        const newStatus = (existing.status && existing.status !== 'void') ? existing.status : 'unpaid';
+        _setDocStatusBrain(billDocNum, {
+          ...existing,
+          status: newStatus,
+          paid: newStatus === 'paid',
+          vendorInvNum: input.vendor_invoice_num || existing.vendorInvNum || '',
+          memo: input.memo || existing.memo || ''
+        });
+        if (input.bill_date) _setDocStatusBrain(billDocNum+'__date', input.bill_date);
+        if (input.due_date) _setDocStatusBrain(billDocNum+'__due', input.due_date);
+        const costRecv = (poObj.items||[]).reduce((s,i)=>s+(i.unitCost||0)*(Number(i.qtyReceived)||0),0);
+        const orderVal = (poObj.items||[]).reduce((s,i)=>s+(i.unitCost||0)*(Number(i.qtyOrdered)||0),0);
+        return {success: true, message: 'Recorded bill '+billDocNum+' against '+poDocNum+' ('+(poObj.vendor?.name||'Unknown')+' on '+poObj.job.name+')'+(input.vendor_invoice_num?', vendor invoice #'+input.vendor_invoice_num:'')+'. Currently owed $'+costRecv.toFixed(2)+' of the $'+orderVal.toFixed(2)+' PO total (bill amounts track received quantities). The bill reconciles against the job\'s existing line-item cost -- nothing was added to job cost. Record payments with mark_bill_paid.'};
+      }
       // ----------- VENDOR CREDITS & STANDALONE BILLS -----------
       if (toolName === 'create_vendor_credit' || toolName === 'create_standalone_bill') {
         const isCredit = toolName === 'create_vendor_credit';
