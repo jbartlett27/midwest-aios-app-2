@@ -1153,12 +1153,19 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
   const [brainFile, setBrainFile] = useState(null);
   const [brainFilePreview, setBrainFilePreview] = useState(null);
   const [brainFileContext, setBrainFileContext] = useState(null);
+  // Most recent binary attachment in this Brain session (paperclip upload or file
+  // loaded from the Files page). Lets tools like attach_file_to_bill use the file
+  // the user just attached without needing a URL or re-supplied base64 -- the model
+  // cannot re-emit megabytes of base64 into tool arguments, which is why 'attach
+  // this PDF to the bill' previously failed. Reported by Maureen Jul 17 2026.
+  const brainLastFileRef = useRef(null);
   const brainFileRef = React.useRef(null);
   const [brainEmailSending, setBrainEmailSending] = useState(false);
   // Consume pending file from Files page (Read with Brain)
   useEffect(()=>{
     if(pendingBrainFile){
       setBrainFileContext(pendingBrainFile);
+      try{const _db=(pendingBrainFile.blocks||[]).find(b=>b&&(b.type==='document'||b.type==='image')&&b.source&&b.source.type==='base64'&&b.source.data);if(_db)brainLastFileRef.current={name:pendingBrainFile.name||'attachment',base64:_db.source.data,mediaType:_db.source.media_type||'application/pdf'};}catch{}
       setPendingBrainFile(null);
       notify('Loaded "'+pendingBrainFile.name+'" into Brain. Ask away.');
     }
@@ -1379,12 +1386,13 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     {name:"unvoid_bill",description:"Reverse a void on a bill (PO-derived or standalone), returning it to unpaid status.",input_schema:{type:"object",properties:{bill_doc_num:{type:"string"}},required:["bill_doc_num"]}},
     {name:"restore_deleted_bill",description:"Restore a bill that was previously deleted, KEEPING all prior data (payment info, invoice attachment, memo, check number). Equivalent to clicking the green Restore button on the deleted bill row. Use when user says 'restore the bill that was accidentally deleted', 'bring back BILL-XXXX'.",input_schema:{type:"object",properties:{bill_doc_num:{type:"string"}},required:["bill_doc_num"]}},
     {name:"reset_and_restore_bill",description:"Restore a deleted bill as a FRESH unpaid bill, WIPING all prior data (paid status, payment date, check number, invoice attachment, memo, date overrides). Use when prior bill data was wrong (e.g. wrong invoice attached, paid status was a mistake). Equivalent to clicking the yellow Reset & Restore button.",input_schema:{type:"object",properties:{bill_doc_num:{type:"string"}},required:["bill_doc_num"]}},
-    {name:"attach_file_to_bill",description:"Attach a PDF or image file to a vendor bill from a URL or base64 data. Uploads to the vendor-invoices storage bucket and links it to the bill. Use when user pastes a vendor invoice URL and says 'attach this to BILL-XXXX'. For base64, also pass file_name and content_type.",input_schema:{type:"object",properties:{bill_doc_num:{type:"string"},file_url:{type:"string",description:"Public URL of the file to fetch and re-upload"},file_base64:{type:"string",description:"Alternative to file_url: base64-encoded file content"},file_name:{type:"string",description:"Required when using file_base64; recommended for file_url"},content_type:{type:"string",description:"MIME type (e.g. application/pdf, image/jpeg)"}},required:["bill_doc_num"]}},
+    {name:"attach_file_to_bill",description:"Attach a PDF or image file to a vendor bill. Uploads to the vendor-invoices storage bucket and links it to the bill. THREE sources, in order of preference: (1) if the user attached the file in THIS chat (paperclip) or loaded it from the Files page, call with JUST bill_doc_num -- the most recently attached file is used automatically; (2) a public file_url; (3) file_base64 with file_name and content_type. Use when user says 'attach this PDF to BILL-XXXX', 'add this invoice to the bill'.",input_schema:{type:"object",properties:{bill_doc_num:{type:"string"},file_url:{type:"string",description:"Public URL of the file to fetch and re-upload"},file_base64:{type:"string",description:"Alternative to file_url: base64-encoded file content"},file_name:{type:"string",description:"Required when using file_base64; recommended for file_url"},content_type:{type:"string",description:"MIME type (e.g. application/pdf, image/jpeg)"}},required:["bill_doc_num"]}},
+    {name:"update_bill_details",description:"Update details on an existing PO-tied vendor bill: vendor invoice number, memo, bill date, and due date. Use when user says 'add invoice number 771566 to BILL-6289-SUKI', 'set the vendor invoice number on that bill', 'change the memo'. For standalone bills (SB-/VC- records) use update_vendor_credit. For attaching a PDF use attach_file_to_bill.",input_schema:{type:"object",properties:{bill_doc_num:{type:"string",description:"The bill doc number (e.g. BILL-6289-SUKI)"},vendor_invoice_num:{type:"string",description:"The vendor's invoice number to record on the bill"},memo:{type:"string"},bill_date:{type:"string",description:"Bill date YYYY-MM-DD"},due_date:{type:"string",description:"Due date YYYY-MM-DD"}},required:["bill_doc_num"]}},
     {name:"update_bill_due_date",description:"Override a bill's due date. Stored as a date-override key separate from the bill record so it can be cleared without touching payment data. Use when user says 'push the Marco bill due date out to June 15', 'change the due date on BILL-XXXX'.",input_schema:{type:"object",properties:{bill_doc_num:{type:"string"},due_date:{type:"string",description:"New due date YYYY-MM-DD. Pass an empty string to clear the override and revert to the default (bill date + 30 days)."}},required:["bill_doc_num","due_date"]}},
     {name:"batch_mark_paid",description:"Mark multiple bills paid in one operation. Provide an array of bill_doc_nums, or a filter (vendor + status) to select bills. Set check_num if paying via one check, or method='ach' for ACH. Requires confirm:true to actually apply; without confirm returns a dry-run preview with the count and total.",input_schema:{type:"object",properties:{bill_doc_nums:{type:"array",items:{type:"string"},description:"Explicit list of bill docNums to mark paid"},filter:{type:"object",properties:{vendor_name:{type:"string"},job_id:{type:"string"},status:{type:"string",description:"Filter to unpaid | check_sent | overdue (default unpaid)"}}},check_num:{type:"string",description:"Check number to apply to all selected bills"},method:{type:"string",description:"'check' | 'ach' | 'wire' (defaults to check if check_num provided, else ach)"},pay_date:{type:"string",description:"YYYY-MM-DD, defaults to today"},memo:{type:"string"},confirm:{type:"boolean",description:"Must be true to actually mark paid. Without confirm, returns dry-run preview."}}}},
     // Vendor Credits & Standalone Bills
     {name:"create_vendor_credit",description:"Create a new vendor credit attached to a project. Credits reduce the project's cost and lift margin. Use when a vendor issues a credit memo (e.g. Marco Group credited $1,245.94 for damaged goods on Sandburg MS).",input_schema:{type:"object",properties:{vendor_name:{type:"string",description:"Vendor name (partial match)"},job_id:{type:"string",description:"Job ID or name keywords"},amount:{type:"number",description:"Credit amount in dollars"},credit_date:{type:"string",description:"YYYY-MM-DD (defaults to today)"},ref_number:{type:"string",description:"Vendor credit memo number / reference"},memo:{type:"string",description:"Notes about the credit"},file_url:{type:"string",description:"Optional URL of the credit memo PDF to attach"}},required:["vendor_name","job_id","amount"]}},
-    {name:"record_bill_against_po",description:"Enter/record a vendor bill AGAINST an existing purchase order -- the PO-tied bill flow, identical to opening the PO's bill in Documents >> Vendor Bills and entering it. This ATTACHES the bill to the project: the amount reconciles against the cost already on the job's line items instead of adding new cost. ALWAYS PREFER this over create_standalone_bill when the job has a PO for that vendor. Use when user says 'enter the Doane Keyes invoice against the PO', 'record bill 771566 on PO-6289-SUKI', 'attach this vendor invoice to the job', 'enter this bill on the project'.",input_schema:{type:"object",properties:{po_doc_num:{type:"string",description:"The PO doc number (e.g. PO-6289-SUKI). If unknown, provide job_id and vendor_name instead."},job_id:{type:"string",description:"Job ID or name keywords -- used with vendor_name to find the PO when po_doc_num is not given"},vendor_name:{type:"string",description:"Vendor name (partial match) -- used with job_id to find the PO"},vendor_invoice_num:{type:"string",description:"The vendor's invoice number to record on the bill"},bill_date:{type:"string",description:"Bill date YYYY-MM-DD (sets the bill date override)"},due_date:{type:"string",description:"Due date YYYY-MM-DD (defaults to bill date + 30 days)"},memo:{type:"string",description:"Optional memo"}}}},
+    {name:"record_bill_against_po",description:"Enter/record a vendor bill AGAINST an existing purchase order -- the PO-tied bill flow, identical to opening the PO's bill in Documents >> Vendor Bills and entering it. This ATTACHES the bill to the project: the amount reconciles against the cost already on the job's line items instead of adding new cost. ALWAYS PREFER this over create_standalone_bill when the job has a PO for that vendor. Calling it again on an existing bill UPDATES it in place -- e.g. to add the vendor invoice number or correct dates after creation. Use when user says 'enter the Doane Keyes invoice against the PO', 'record bill 771566 on PO-6289-SUKI', 'attach this vendor invoice to the job', 'enter this bill on the project'.",input_schema:{type:"object",properties:{po_doc_num:{type:"string",description:"The PO doc number (e.g. PO-6289-SUKI). If unknown, provide job_id and vendor_name instead."},job_id:{type:"string",description:"Job ID or name keywords -- used with vendor_name to find the PO when po_doc_num is not given"},vendor_name:{type:"string",description:"Vendor name (partial match) -- used with job_id to find the PO"},vendor_invoice_num:{type:"string",description:"The vendor's invoice number to record on the bill"},bill_date:{type:"string",description:"Bill date YYYY-MM-DD (sets the bill date override)"},due_date:{type:"string",description:"Due date YYYY-MM-DD (defaults to bill date + 30 days)"},memo:{type:"string",description:"Optional memo"}}}},
     {name:"create_standalone_bill",description:"Create a standalone vendor bill not tied to a PO. ONLY for charges with no purchase order behind them (one-off vendor charges, freight that arrived without a PO, rebill scenarios). IMPORTANT: standalone bills ADD cost on top of the job's line items. If the job has a PO for this vendor, use record_bill_against_po instead so the bill reconciles against existing cost rather than inflating it.",input_schema:{type:"object",properties:{vendor_name:{type:"string"},job_id:{type:"string"},amount:{type:"number"},bill_date:{type:"string",description:"YYYY-MM-DD (defaults to today)"},ref_number:{type:"string",description:"Vendor invoice number"},memo:{type:"string"},file_url:{type:"string",description:"Optional URL of the bill PDF to attach"}},required:["vendor_name","job_id","amount"]}},
     {name:"update_vendor_credit",description:"Update an existing vendor credit or standalone bill record. Match by sop_id (VC-xxx or SB-xxx) or by vendor + job + approximate amount. Fields: amount, ref_number, memo, credit_date, paid status.",input_schema:{type:"object",properties:{sop_id:{type:"string",description:"The credit/bill SOP id (VC-xxxxxx or SB-xxxxxx)"},vendor_name:{type:"string",description:"Vendor name for disambiguation when sop_id is unknown"},job_id:{type:"string",description:"Job for disambiguation"},updates:{type:"object",properties:{amount:{type:"number"},ref_number:{type:"string"},memo:{type:"string"},credit_date:{type:"string"},paid:{type:"boolean"},pay_date:{type:"string"},check_num:{type:"string"}}}},required:["updates"]}},
     {name:"delete_vendor_credit",description:"Delete a vendor credit or standalone bill record. Permanent. Match by sop_id, or by vendor + job + amount. The underlying job/PO/line items are untouched.",input_schema:{type:"object",properties:{sop_id:{type:"string",description:"The credit/bill SOP id"},vendor_name:{type:"string"},job_id:{type:"string"},amount:{type:"number",description:"Used with vendor+job to disambiguate"}}}},
@@ -2654,7 +2662,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         if (typeof window === 'undefined' || !window._supabase || typeof window._supabase.uploadFile !== 'function') return {error: 'Storage not ready -- file uploads require browser context.'};
         try {
           let file;
-          const fileName = input.file_name || 'attachment-'+Date.now()+'.pdf';
+          let fileName = input.file_name || 'attachment-'+Date.now()+'.pdf';
           const contentType = input.content_type || 'application/pdf';
           if (input.file_url) {
             const resp = await fetch(input.file_url);
@@ -2666,8 +2674,18 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
             const arr = new Uint8Array(bin.length);
             for (let i=0;i<bin.length;i++) arr[i] = bin.charCodeAt(i);
             file = new File([arr], fileName, {type: contentType});
+          } else if (brainLastFileRef.current && brainLastFileRef.current.base64) {
+            // No explicit source -- use the most recent file attached in this chat
+            // (paperclip upload or file loaded from the Files page). This is the
+            // normal path when the user says 'attach this PDF to BILL-XXXX'.
+            const att = brainLastFileRef.current;
+            if (!input.file_name && att.name) fileName = att.name;
+            const bin = atob(att.base64);
+            const arr = new Uint8Array(bin.length);
+            for (let i=0;i<bin.length;i++) arr[i] = bin.charCodeAt(i);
+            file = new File([arr], fileName, {type: att.mediaType || contentType});
           } else {
-            return {error: 'Provide either file_url or file_base64'};
+            return {error: 'No file available. Attach the file in this chat (paperclip) and call again with just bill_doc_num, or provide file_url / file_base64.'};
           }
           const path = b.billDocNum + '/' + Date.now() + '_' + fileName;
           const url = await window._supabase.uploadFile('vendor-invoices', path, file);
@@ -2684,6 +2702,26 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
           }
           return {success: true, message: 'Attached '+fileName+' to '+b.billDocNum};
         } catch (e) { return {error: 'Attach failed: '+(e.message||String(e))}; }
+      }
+      if (toolName === 'update_bill_details') {
+        const b = _findBill(input.bill_doc_num);
+        if (!b) return {error: 'Bill not found: '+input.bill_doc_num};
+        if (b._isStandalone) return {error: 'Use update_vendor_credit for standalone bills (SB-/VC- records).'};
+        for (const dk of ['bill_date','due_date']) {
+          if (input[dk] && !/^\d{4}-\d{2}-\d{2}$/.test(String(input[dk]).trim())) return {error: dk+' must be YYYY-MM-DD format'};
+        }
+        const dsBD = _getDocStatusesBrain();
+        const existing = (typeof dsBD[b.billDocNum] === 'object' && dsBD[b.billDocNum]) ? dsBD[b.billDocNum] : {};
+        const patch = {...existing};
+        if (input.vendor_invoice_num !== undefined) patch.vendorInvNum = String(input.vendor_invoice_num);
+        if (input.memo !== undefined) patch.memo = String(input.memo);
+        // An update on a never-entered bill also marks it entered (status unpaid),
+        // matching what the UI's bill-entry screen does.
+        if (!patch.status) { patch.status = 'unpaid'; patch.paid = false; }
+        _setDocStatusBrain(b.billDocNum, patch);
+        if (input.bill_date) _setDocStatusBrain(b.billDocNum+'__date', String(input.bill_date).trim());
+        if (input.due_date) _setDocStatusBrain(b.billDocNum+'__due', String(input.due_date).trim());
+        return {success: true, message: 'Updated '+b.billDocNum+(input.vendor_invoice_num!==undefined?' -- vendor invoice #'+input.vendor_invoice_num:'')+(input.bill_date?', bill date '+input.bill_date:'')+(input.due_date?', due '+input.due_date:'')+(input.memo!==undefined?', memo saved':'')+'.'};
       }
       if (toolName === 'update_bill_due_date') {
         const b = _findBill(input.bill_doc_num);
@@ -3559,12 +3597,14 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
 
     if (isDocx) {
       const base64 = await readBase64(file);
+      brainLastFileRef.current = {name:file.name, base64, mediaType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'};
       return [{type:'document', source:{type:'base64', media_type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document', data:base64}}, {type:'text', text:'[Attached Word document: ' + file.name + '] Analyze this document thoroughly. Extract all content.'}];
     }
 
 
     if (isPdf) {
       const base64 = await readBase64(file);
+      brainLastFileRef.current = {name:file.name, base64, mediaType:'application/pdf'};
       return [{type:'document', source:{type:'base64', media_type:'application/pdf', data:base64}}, {type:'text', text:'[Attached PDF: ' + file.name + '] Analyze this document thoroughly.'}];
     }
 
@@ -3572,6 +3612,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     if (isImage) {
       const base64 = await readBase64(file);
       const mimeMap = {jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',gif:'image/gif',webp:'image/webp'};
+      brainLastFileRef.current = {name:file.name, base64, mediaType:mimeMap[ext]||'image/jpeg'};
       return [{type:'image', source:{type:'base64', media_type:mimeMap[ext]||'image/jpeg', data:base64}}, {type:'text', text:'[Attached image: ' + file.name + '] Describe and analyze what you see.'}];
     }
 
