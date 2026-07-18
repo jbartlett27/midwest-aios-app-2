@@ -1765,15 +1765,21 @@ function MidwestAIOSInner() {
   const forceDeleteVendor = (id) => { setVendors(p => p.filter(v => v.id !== id)); db.deleteVendor(id); };
 
 
-  // Badge counts for sidebar
-  const pendingDeliveries = lineItems.filter(i=>i.qtyReceived<i.qtyOrdered).length;
-  const pendingInvoices = lineItems.filter(i=>i.qtyReceived>i.qtyInvoiced).length;
-  const overdueCount = jobs.filter(j=>j.dueDate&&new Date(j.dueDate)<new Date()&&j.phase!=="Complete"&&j.paymentStatus!=="paid").length;
+  // Role-scoped job visibility: sales-role users only ever see the jobs assigned
+  // to them. Declared here, BEFORE the sidebar badge math, so the badges, the nav,
+  // and every page all read from the same filtered set.
+  const visibleJobs = userRole === "sales" && userRepId ? jobs.filter(j => j.salesRep === userRepId) : jobs;
+  const _visibleJobIds = userRole === "sales" && userRepId ? new Set(visibleJobs.map(j => j.id)) : null;
+  // Badge counts for sidebar -- computed from the user's VISIBLE jobs and items so
+  // a sales login sees their own counts, not the whole company's.
+  const pendingDeliveries = lineItems.filter(i=>(!_visibleJobIds||_visibleJobIds.has(i.jobId))&&i.qtyReceived<i.qtyOrdered).length;
+  const pendingInvoices = lineItems.filter(i=>(!_visibleJobIds||_visibleJobIds.has(i.jobId))&&i.qtyReceived>i.qtyInvoiced).length;
+  const overdueCount = visibleJobs.filter(j=>j.dueDate&&new Date(j.dueDate)<new Date()&&j.phase!=="Complete"&&j.paymentStatus!=="paid").length;
 
 
   const navItems = [
     {id:"dashboard",label:"Command Center",icon:"dashboard",badge:null,badgeColor:"#f87171"},
-    {id:"jobs",label:"Job Records",icon:"briefcase",badge:jobs.length||null,badgeColor:"#2dd4bf"},
+    {id:"jobs",label:"Job Records",icon:"briefcase",badge:visibleJobs.length||null,badgeColor:"#2dd4bf"},
     {id:"directory",label:"Directory",icon:"users"},
     {id:"deliveries",label:"Delivery Tracker",icon:"truck",badge:pendingDeliveries||null,badgeColor:"#fbbf24"},
     {id:"documents",label:"Documents",icon:"file",badge:pendingInvoices||null,badgeColor:"#2dd4bf"},
@@ -1810,8 +1816,13 @@ function MidwestAIOSInner() {
 
 
   
-  const visibleJobs = userRole === "sales" && userRepId ? jobs.filter(j => j.salesRep === userRepId) : jobs;
-  const ctx = {jobs:visibleJobs,allJobs:jobs,setJobs,jobNum,currentUser,userRole,userRepId,logout,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,_commissionFor,_bankTxnHash,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,forceDeleteVendor,forceDeleteLineItem,forceDeleteCustomer,forceDeleteRep,db,lineItemShipTos,setLineItemShipTo,setPage:p=>{setPage(p);setMobileMenuOpen(false);window.scrollTo(0,0);const mc=document.querySelector('.main-content');if(mc)mc.scrollTop=0},viewCustomer:id=>{setPage("customer360");window._viewCustId=id;window.scrollTo(0,0)},brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter,pendingCommPreview,setPendingCommPreview,pendingBrainFile,setPendingBrainFile,pendingBrainEmail,setPendingBrainEmail};
+  // Hard page guard: the sidebar already hides pages a role cannot open, but page
+  // state can also be set programmatically (Brain navigation, in-app links). Any
+  // attempt to navigate outside the user's allowed set is coerced to their first
+  // allowed page. Customer/Vendor 360 are drill-in subpages reached from allowed
+  // pages and render exclusively from role-filtered ctx data, so they pass through.
+  const _allowedPageIds = new Set([...navItems.map(i=>i.id),"customer360","vendor360"]);
+  const ctx = {jobs:visibleJobs,allJobs:jobs,setJobs,jobNum,currentUser,userRole,userRepId,logout,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,_commissionFor,_bankTxnHash,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,forceDeleteVendor,forceDeleteLineItem,forceDeleteCustomer,forceDeleteRep,db,lineItemShipTos,setLineItemShipTo,setPage:p=>{const _tp=_allowedPageIds.has(p)?p:(navItems[0]?.id||"dashboard");setPage(_tp);setMobileMenuOpen(false);window.scrollTo(0,0);const mc=document.querySelector('.main-content');if(mc)mc.scrollTop=0},viewCustomer:id=>{setPage("customer360");window._viewCustId=id;window.scrollTo(0,0)},brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter,pendingCommPreview,setPendingCommPreview,pendingBrainFile,setPendingBrainFile,pendingBrainEmail,setPendingBrainEmail};
 
 
   const loadingScreen = (
