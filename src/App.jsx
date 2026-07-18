@@ -1772,7 +1772,7 @@ function MidwestAIOSInner() {
 
 
   const navItems = [
-    {id:"dashboard",label:"Command Center",icon:"dashboard",badge:overdueCount>0?overdueCount:null,badgeColor:"#f87171"},
+    {id:"dashboard",label:"Command Center",icon:"dashboard",badge:null,badgeColor:"#f87171"},
     {id:"jobs",label:"Job Records",icon:"briefcase",badge:jobs.length||null,badgeColor:"#2dd4bf"},
     {id:"directory",label:"Directory",icon:"users"},
     {id:"deliveries",label:"Delivery Tracker",icon:"truck",badge:pendingDeliveries||null,badgeColor:"#fbbf24"},
