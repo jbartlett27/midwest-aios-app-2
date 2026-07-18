@@ -1150,6 +1150,15 @@ function NotesPage({customSops,addSop,deleteSop,jobs,reps,notify,triggerPrint}){
 
 
 function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJobItems,_commissionFor,_bankTxnHash,brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory,updateJob,addJob,updateLineItem,addLineItem,deleteLineItem,updateRep,addRep,addCustomer,updateCustomer,addVendor,updateVendor,notify,setPage,deleteJob,pendingBrainFile,setPendingBrainFile,pendingBrainEmail,setPendingBrainEmail,currentUser}){
+  // Sales-role scoping: the Brain must only know what the logged-in user is allowed
+  // to see. jobs arrives pre-filtered (visibleJobs), but line items arrive
+  // unfiltered -- without this filter a sales login could ask the Brain about other
+  // reps' jobs, costs, and margins and get real answers. Office and admin are
+  // untouched (they see all jobs in the UI already).
+  if(currentUser&&currentUser.role==='sales'){
+    const _visIds=new Set((jobs||[]).map(j=>j.id));
+    lineItems=(lineItems||[]).filter(li=>_visIds.has(li.jobId));
+  }
   const [brainFile, setBrainFile] = useState(null);
   const [brainFilePreview, setBrainFilePreview] = useState(null);
   const [brainFileContext, setBrainFileContext] = useState(null);
