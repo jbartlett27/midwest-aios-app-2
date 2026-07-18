@@ -5590,6 +5590,15 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       const catTotals=(()=>{const m={};filteredBankTxns.forEach(t=>{const c=(t.category&&categories.includes(t.category))?t.category:'Uncategorized';if(!m[c])m[c]={name:c,inflow:0,outflow:0,count:0};const amt=parseFloat(t.amount)||0;if(t.type==='revenue')m[c].inflow+=amt;else if(t.type==='expense')m[c].outflow+=amt;m[c].count++;});return Object.values(m).sort((a,b)=>(b.inflow+b.outflow)-(a.inflow+a.outflow));})();
       const spendByCat=catTotals.filter(c=>c.outflow>0.005).map(c=>({name:c.name,value:c.outflow}));
       const CAT_COLORS=['#2dd4bf','#a78bfa','#34d399','#fbbf24','#f97316','#f87171','#38bdf8','#e879f9','#a3e635','#fb7185','#818cf8','#f472b6'];
+      // One color per category, assigned in donut order, so the donut slices, legend
+      // chips, and Category Totals share bars all agree on the same hue.
+      const catColorOf={};spendByCat.forEach((c,i)=>{catColorOf[c.name]=CAT_COLORS[i%CAT_COLORS.length]});
+      catTotals.forEach((c,i)=>{if(!catColorOf[c.name])catColorOf[c.name]=CAT_COLORS[(spendByCat.length+i)%CAT_COLORS.length]});
+      const _catFlowMax=catTotals.reduce((mx,c)=>Math.max(mx,c.inflow+c.outflow),0);
+      // Center label auto-fit: scale the font down as the dollar string grows so it
+      // can never spill over the donut ring.
+      const _centerAmt=fmt(totalBankOut);
+      const _centerFs=_centerAmt.length>=14?14:_centerAmt.length>=12?16:_centerAmt.length>=10?18:21;
 
 
       // ---- Bank statement upload ----
@@ -5639,15 +5648,19 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
           const amtC=col('amount');
           const debC=col('debit','withdrawal');
           const credC=col('credit','deposit');
+          // QuickBooks register exports carry a Category column -- pass it through so
+          // imported rows arrive pre-categorized instead of Uncategorized.
+          const catC=col('category');
           for(let i=hdrIdx+1;i<rows.length;i++){
             const r=rows[i];const date=_stmtNormDate(r[dateC]);if(!date)continue;
             const desc=String(r[descC]||'').trim();
+            const cat=catC>=0?String(r[catC]||'').trim():'';
             let amt=NaN,type='expense';
             if(amtC>=0&&String(r[amtC]||'').trim()!==''){amt=num(r[amtC]);if(isFinite(amt)){type=amt<0?'expense':'revenue';amt=Math.abs(amt)}}
             else if(debC>=0&&String(r[debC]||'').trim()!==''&&Math.abs(num(r[debC])||0)>0){amt=Math.abs(num(r[debC]));type='expense'}
             else if(credC>=0&&String(r[credC]||'').trim()!==''&&Math.abs(num(r[credC])||0)>0){amt=Math.abs(num(r[credC]));type='revenue'}
             if(!isFinite(amt)||amt<=0)continue;
-            out.push({date,description:desc,amount:amt,type});
+            out.push({date,description:desc,amount:amt,type,category:cat});
           }
         }else{
           // No header row: assume col0 = date, col1 = description, last col = signed amount
@@ -5661,10 +5674,15 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       };
       const _stmtImport=(txnList,sourceLabel)=>{
         const existingHashes=new Set(manualTxns.map(mt=>_bankTxnHash(mt)));
-        let imported=0,skipped=0;
+        let imported=0,skipped=0,invalid=0;
         txnList.forEach((t,i)=>{
-          if(!t||!t.date||!isFinite(Number(t.amount))||Number(t.amount)<=0)return;
-          const rec={date:t.date,description:t.description||'Statement transaction',category:'Uncategorized',amount:String(Number(t.amount).toFixed(2)),type:t.type==='revenue'?'revenue':'expense',account:stmtAcct,source:'statement',sourceFile:sourceLabel||''};
+          if(!t||!t.date||!isFinite(Number(t.amount))||Number(t.amount)<=0){invalid++;return}
+          // Imported rows carry the exact same fields the manual Add Transaction form
+          // writes (date / description / category / amount-as-string / type / account),
+          // plus source markers so the P&L knows they are bank-feed data. When the file
+          // provided a category (QuickBooks CSV export), it comes through; otherwise
+          // the row lands as Uncategorized ready for the categorize sweep.
+          const rec={date:t.date,description:t.description||'Statement transaction',category:(t.category&&String(t.category).trim())?String(t.category).trim():'Uncategorized',amount:String(Number(t.amount).toFixed(2)),type:t.type==='revenue'?'revenue':'expense',account:stmtAcct,source:'statement',sourceFile:sourceLabel||''};
           const hash=_bankTxnHash(rec);
           if(existingHashes.has(hash)){skipped++;return}
           existingHashes.add(hash);
@@ -5672,7 +5690,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
           addSop({id,title:rec.description,cat:'ManualTxn',icon:'dollar',content:JSON.stringify(rec),custom:true});
           imported++;
         });
-        return {imported,skipped};
+        return {imported,skipped,invalid};
       };
       const handleStatementUpload=async(e)=>{
         const file=e.target.files&&e.target.files[0];
@@ -5694,13 +5712,30 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
             if(!r.ok||!resp||resp.error){notify('Statement scan failed'+(resp&&resp.error?': '+(resp.error.message||JSON.stringify(resp.error)):'')+'. Try a CSV export from the bank instead.','error');setStmtUploading(false);return}
             const text=(resp.content||[])[0]?.text||'';
             const clean=text.replace(/```json\s*/g,'').replace(/```\s*/g,'').trim();
-            let parsed=null;try{parsed=JSON.parse(clean)}catch{}
+            let parsed=null;let salvaged=false;
+            try{parsed=JSON.parse(clean)}catch{
+              // Very long statements can run past the model's output window, cutting
+              // the JSON off mid-transaction. Salvage everything up to the last
+              // complete transaction object -- those rows are fully valid, and dedup
+              // makes re-running the same statement safe.
+              try{
+                const arrIdx=clean.indexOf('"transactions"');
+                const lastComplete=clean.lastIndexOf('}');
+                if(arrIdx>=0&&lastComplete>arrIdx){
+                  for(let cut=lastComplete;cut>arrIdx;cut=clean.lastIndexOf('}',cut-1)){
+                    try{parsed=JSON.parse(clean.slice(0,cut+1)+']}');salvaged=true;break}catch{}
+                    if(cut<=0)break;
+                  }
+                }
+              }catch{}
+            }
             const list=parsed&&Array.isArray(parsed.transactions)?parsed.transactions:null;
             if(!list||list.length===0){notify('No transactions could be extracted from that statement. Try a CSV export from the bank instead.','error');setStmtUploading(false);return}
             txnList=list.map(t=>({date:_stmtNormDate(t.date),description:String(t.description||'').trim(),amount:Math.abs(Number(t.amount)||0),type:(String(t.type||'').toLowerCase()==='credit')?'revenue':'expense'}));
+            if(salvaged)notify('Long statement -- recovered '+txnList.length+' complete transactions before the read cut off. After import, spot-check the last few days of the statement; a CSV export from the bank is guaranteed complete.','error');
           }
-          const {imported,skipped}=_stmtImport(txnList,file.name||'');
-          notify(imported+' transaction'+(imported!==1?'s':'')+' imported to '+stmtAcct+(skipped>0?' -- '+skipped+' skipped (already in system)':'')+' from '+(file.name||'statement'));
+          const {imported,skipped,invalid}=_stmtImport(txnList,file.name||'');
+          notify(imported+' transaction'+(imported!==1?'s':'')+' imported to '+stmtAcct+(skipped>0?' -- '+skipped+' skipped (already in system)':'')+(invalid>0?' -- '+invalid+' unreadable row'+(invalid!==1?'s':'')+' ignored':'')+' from '+(file.name||'statement'));
         }catch(err){notify('Statement upload error: '+(err&&err.message?err.message:'unknown'),'error')}
         setStmtUploading(false);
       };
@@ -5958,10 +5993,24 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
             <div style={{fontSize:10,color:"#525252",marginBottom:10}}>money out across the filtered transactions</div>
             {spendByCat.length===0?<div style={{padding:"50px 0",textAlign:"center",color:"#525252",fontSize:12}}>No outgoing transactions in this view</div>:
             <div style={{position:"relative"}}>
-              <ResponsiveContainer width="100%" height={240}><PieChart><Tooltip contentStyle={{background:"#111",border:"1px solid #222",borderRadius:8,fontSize:11,color:"#a3a3a3",boxShadow:"0 4px 12px rgba(0,0,0,0.5)"}} itemStyle={{color:"#a3a3a3",fontSize:11,padding:0}} formatter={(v,name)=>[fmt(v)+(totalBankOut>0?" ("+(v/totalBankOut*100).toFixed(1)+"%)":""),name]}/><Pie data={spendByCat} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={62} outerRadius={92} paddingAngle={2} stroke="#0a0a0a" strokeWidth={2} animationDuration={900} animationEasing="ease-out">{spendByCat.map((entry,i)=><Cell key={'c'+i} fill={CAT_COLORS[i%CAT_COLORS.length]}/>)}</Pie></PieChart></ResponsiveContainer>
-              <div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",textAlign:"center",pointerEvents:"none"}}><div style={{fontSize:10,color:"#737373",letterSpacing:1.5,fontWeight:600}}>TOTAL OUT</div><div style={{fontSize:18,fontWeight:800,color:"#f87171",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalBankOut)}</div></div>
+              <ResponsiveContainer width="100%" height={280}><PieChart>
+                <defs>
+                  {CAT_COLORS.map((col,i)=><linearGradient key={'catGrad'+i} id={'catGrad'+i} x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stopColor={col} stopOpacity={1}/><stop offset="100%" stopColor={col} stopOpacity={0.55}/></linearGradient>)}
+                </defs>
+                <Tooltip contentStyle={{background:"rgba(10,10,10,0.92)",backdropFilter:"blur(8px)",border:"1px solid rgba(45,212,191,0.2)",borderRadius:10,fontSize:11,color:"#e5e5e5",boxShadow:"0 8px 24px rgba(0,0,0,0.6)",padding:"8px 12px"}} itemStyle={{color:"#e5e5e5",fontSize:11,padding:0}} formatter={(v,name)=>[fmt(v)+(totalBankOut>0?" ("+(v/totalBankOut*100).toFixed(1)+"%)":""),name]}/>
+                <Pie data={spendByCat} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={76} outerRadius={104} paddingAngle={spendByCat.length>1?2.5:0} cornerRadius={6} stroke="#0a0a0a" strokeWidth={3} animationDuration={1100} animationEasing="ease-out">
+                  {spendByCat.map((entry,i)=><Cell key={'c'+i} fill={'url(#catGrad'+(i%CAT_COLORS.length)+')'} style={{filter:'drop-shadow(0 0 6px '+CAT_COLORS[i%CAT_COLORS.length]+'30)',outline:'none'}}/>)}
+                </Pie>
+              </PieChart></ResponsiveContainer>
+              {/* Center label sits inside a 152px inner circle; font auto-scales with
+                  the dollar-string length so it can never overlap the ring. */}
+              <div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",textAlign:"center",pointerEvents:"none",width:140}}>
+                <div style={{fontSize:9,color:"#737373",letterSpacing:2,fontWeight:700,marginBottom:3}}>TOTAL OUT</div>
+                <div style={{fontSize:_centerFs,fontWeight:800,color:"#f87171",fontFamily:"'JetBrains Mono',monospace",lineHeight:1.1,whiteSpace:"nowrap"}}>{_centerAmt}</div>
+                <div style={{fontSize:9,color:"#525252",marginTop:4}}>{spendByCat.length} categor{spendByCat.length===1?'y':'ies'}</div>
+              </div>
             </div>}
-            {spendByCat.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:"4px 12px",marginTop:8,justifyContent:"center"}}>{spendByCat.slice(0,8).map((c2,i)=><div key={c2.name} style={{display:"flex",alignItems:"center",gap:5,fontSize:10,color:"#a3a3a3"}}><div style={{width:8,height:8,borderRadius:2,background:CAT_COLORS[i%CAT_COLORS.length]}}/>{c2.name}</div>)}{spendByCat.length>8&&<div style={{fontSize:10,color:"#525252"}}>+{spendByCat.length-8} more</div>}</div>}
+            {spendByCat.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:10,justifyContent:"center"}}>{spendByCat.slice(0,8).map((c2,i)=><div key={c2.name} onClick={()=>setBankCatFilter(bankCatFilter===(c2.name==='Uncategorized'?'__uncat__':c2.name)?'all':(c2.name==='Uncategorized'?'__uncat__':c2.name))} style={{display:"flex",alignItems:"center",gap:6,fontSize:10,color:"#c4c4c4",padding:"3px 9px",background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.05)",borderRadius:20,cursor:"pointer",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.borderColor=CAT_COLORS[i%CAT_COLORS.length]+'60';e.currentTarget.style.background=CAT_COLORS[i%CAT_COLORS.length]+'0d'}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.05)";e.currentTarget.style.background="rgba(255,255,255,0.03)"}} title={"Click to filter to "+c2.name}><div style={{width:7,height:7,borderRadius:"50%",background:CAT_COLORS[i%CAT_COLORS.length],boxShadow:'0 0 5px '+CAT_COLORS[i%CAT_COLORS.length]+'80'}}/>{c2.name}<span style={{color:"#737373",fontFamily:"'JetBrains Mono',monospace"}}>{totalBankOut>0?(c2.value/totalBankOut*100).toFixed(0)+'%':''}</span></div>)}{spendByCat.length>8&&<div style={{fontSize:10,color:"#525252",padding:"3px 6px"}}>+{spendByCat.length-8} more</div>}</div>}
           </Card>
           <Card style={{padding:16}} hover>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:8,flexWrap:"wrap",marginBottom:6}}>
@@ -5974,7 +6023,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
                 <thead><tr style={{borderBottom:"2px solid #222"}}>{["Category","Txns","In","Out","Net"].map(h=><th key={h} style={{padding:"6px 6px",textAlign:h==="Category"?"left":"right",color:"#737373",fontSize:10,fontWeight:600,letterSpacing:0.5,position:"sticky",top:0,background:"#111111"}}>{h}</th>)}</tr></thead>
                 <tbody>
                   {catTotals.map(c2=>{const net=c2.inflow-c2.outflow;const isUncat=c2.name==='Uncategorized';return <tr key={c2.name} onClick={()=>setBankCatFilter(bankCatFilter===(isUncat?'__uncat__':c2.name)?'all':(isUncat?'__uncat__':c2.name))} style={{borderBottom:"1px solid #111",cursor:"pointer",background:isUncat&&c2.count>0?"#fbbf2408":"transparent",transition:"background 0.15s"}} onMouseEnter={e=>e.currentTarget.style.background="rgba(45,212,191,0.05)"} onMouseLeave={e=>e.currentTarget.style.background=isUncat&&c2.count>0?"#fbbf2408":"transparent"} title="Click to filter the transaction list to this category">
-                    <td style={{padding:"7px 6px",color:isUncat?"#fbbf24":"#e5e5e5",fontWeight:isUncat?700:500}}>{c2.name}</td>
+                    <td style={{padding:"7px 6px",color:isUncat?"#fbbf24":"#e5e5e5",fontWeight:isUncat?700:500}}>{c2.name}<div style={{height:3,borderRadius:2,background:"rgba(255,255,255,0.05)",marginTop:4,maxWidth:160,overflow:"hidden"}}><div style={{width:(_catFlowMax>0?Math.max(2,(c2.inflow+c2.outflow)/_catFlowMax*100):0)+"%",height:"100%",borderRadius:2,background:isUncat?"#fbbf24":(catColorOf[c2.name]||"#2dd4bf"),boxShadow:"0 0 4px "+(isUncat?"#fbbf24":(catColorOf[c2.name]||"#2dd4bf"))+"60",transition:"width 0.6s ease-out"}}/></div></td>
                     <td style={{padding:"7px 6px",textAlign:"right",color:"#737373",fontFamily:"'JetBrains Mono',monospace"}}>{c2.count}</td>
                     <td style={{padding:"7px 6px",textAlign:"right",color:c2.inflow>0?"#34d399":"#333",fontFamily:"'JetBrains Mono',monospace"}}>{c2.inflow>0?fmt(c2.inflow):"--"}</td>
                     <td style={{padding:"7px 6px",textAlign:"right",color:c2.outflow>0?"#f87171":"#333",fontFamily:"'JetBrains Mono',monospace"}}>{c2.outflow>0?fmt(c2.outflow):"--"}</td>
