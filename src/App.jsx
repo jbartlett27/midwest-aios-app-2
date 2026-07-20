@@ -2,6 +2,15 @@ import { BrainPage, CommissionsPage, Customer360Page, DirectoryPage, ExitReadine
 import React, { useState, useEffect, useRef } from "react";
 import { db } from "./supabase.js";
 window._supabase=db;
+// Canonical-domain guard. This repo auto-deploys to more than one Vercel project,
+// but ONLY the project behind midwestaios.com carries the server API keys
+// (Anthropic, Plaid, Resend). A stale bookmark to any *.vercel.app twin serves a
+// perfectly working UI whose Brain, bank sync, document scan, and email all fail
+// with key errors -- exactly what Lisa hit Jul 14-20 2026 ("No ANTHROPIC_API_KEY
+// set in Vercel environment variables" from the keyless twin project). Redirect
+// every *.vercel.app host to the canonical domain so old bookmarks self-heal.
+// Local dev (localhost) and the real domain are untouched.
+try{const _host=window.location.hostname;if(/\.vercel\.app$/i.test(_host)){window.location.replace('https://midwestaios.com'+window.location.pathname+window.location.search+window.location.hash);}}catch(_e){}
 import { useUser, useClerk, SignIn, UserButton, useAuth } from "@clerk/clerk-react";
 
 
