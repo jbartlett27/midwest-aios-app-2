@@ -411,7 +411,7 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
           vMap[k]=vid;existNames.add(k);newVendors++}}
       let ct=0;
       for(const item of items){const vk=(item.manufacturer||"").toLowerCase().trim();
-        addLineItem({id:"LI-"+Date.now()+"-"+Math.random().toString(36).slice(2,6),jobId:jid,description:item.description,
+        addLineItem({id:"LI-"+Date.now()+"-"+String(ct).padStart(3,'0')+"-"+Math.random().toString(36).slice(2,6),jobId:jid,description:item.description,
           vendor:vMap[vk]||"",tag:item.tag,group:item.group,manufacturer:item.manufacturer,
           modelNumber:item.modelNumber,color:item.color,listPrice:item.listPrice,unitCost:item.unitCost,
           unitPrice:item.unitPrice,shippingPerUnit:item.shippingPerUnit,installPerUnit:item.installPerUnit,
@@ -515,7 +515,7 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
     data.items.forEach((item,idx)=>{
       const v2=item.manufacturer?vendors.find(v=>v.name.toLowerCase()===item.manufacturer.toLowerCase()):vendorObj;
       if(item.manufacturer&&!vendors.find(v=>v.name.toLowerCase()===item.manufacturer.toLowerCase()))addVendor({id:"V-AI-"+Date.now()+"-"+idx,name:item.manufacturer,category:"Furniture",email:"",phone:"",discountRate:0,contact:""});
-      addLineItem({id:"LI-AI-"+Date.now()+"-"+idx,jobId,description:item.description||"",modelNumber:item.model||"",color:item.color||"",tag:item.tag||"",vendor:v2?.id||vendorObj?.id||"",qtyOrdered:item.quantity||1,qtyReceived:0,unitCost:item.net_cost||item.unit_cost||0,unitPrice:item.sell_price||item.list_price||0,shippingCost:0,installCost:0});
+      addLineItem({id:"LI-AI-"+Date.now()+"-"+String(idx).padStart(3,'0'),jobId,description:item.description||"",modelNumber:item.model||"",color:item.color||"",tag:item.tag||"",vendor:v2?.id||vendorObj?.id||"",qtyOrdered:item.quantity||1,qtyReceived:0,unitCost:item.net_cost||item.unit_cost||0,unitPrice:item.sell_price||item.list_price||0,shippingCost:0,installCost:0});
       ct++;
     });
     notify(ct+" items imported into "+jn);
@@ -1500,7 +1500,13 @@ function MidwestAIOSInner() {
 
 
   // --- DERIVED COMPUTATIONS ----------------------------------
-  const getJobItems = jobId => { const filtered = []; for (let i = 0; i < lineItems.length; i++) { if (lineItems[i].jobId === jobId) filtered.push(lineItems[i]); } return filtered; };
+  // getJobItems returns items in a DETERMINISTIC order (plain id sort). Item ids
+  // embed a millisecond timestamp plus a zero-padded batch index, so id order IS
+  // upload order. Before this sort, display order depended on whatever order rows
+  // arrived from the database or realtime feed -- which is why an uploaded quote
+  // could show freight and installation in the middle of the line items after a
+  // refresh. Reported by Lisa via Maureen Jul 22 2026.
+  const getJobItems = jobId => { const filtered = []; for (let i = 0; i < lineItems.length; i++) { if (lineItems[i].jobId === jobId) filtered.push(lineItems[i]); } filtered.sort((a,b)=>{const x=String(a.id||''),y=String(b.id||'');return x<y?-1:x>y?1:0}); return filtered; };
   const getJobFinancials = jobId => {
     const items = getJobItems(jobId);
     const rawCost = items.reduce((s,i)=>s+(i.unitCost||0)*(i.qtyOrdered||0),0);
@@ -2593,7 +2599,7 @@ Never use emoji. Be concise.`;
           vMap[k]=vid;existNames.add(k)}}
       let ct=0;
       for(const item of items){const vk=(item.manufacturer||'').toLowerCase().trim();
-        addLineItem({id:'LI-'+Date.now()+'-'+Math.random().toString(36).slice(2,6),jobId:jid,description:item.description,
+        addLineItem({id:'LI-'+Date.now()+'-'+String(ct).padStart(3,'0')+'-'+Math.random().toString(36).slice(2,6),jobId:jid,description:item.description,
           vendor:vMap[vk]||'',tag:item.tag,group:item.group,manufacturer:item.manufacturer,
           modelNumber:item.modelNumber,color:item.color,listPrice:item.listPrice,unitCost:item.unitCost,
           unitPrice:item.unitPrice,shippingPerUnit:item.shippingPerUnit,installPerUnit:item.installPerUnit,
@@ -2830,7 +2836,7 @@ function JobDetail({job,ctx}){
   const auditEntries = (job.auditTrail || []).map(a=>({id:a.time+a.type,text:a.type==="edit"?"Edited: "+a.fields.map(f=>f.field+" changed"+(f.from?" from "+String(f.from).slice(0,20):"")+" to "+String(f.to).slice(0,30)).join(", "):a.type==="create"?"Job created":a.type,time:a.time,user:a.user||"",source:"auto"}));
   const activities = [...manualActivities,...auditEntries].sort((a,b)=>new Date(b.time)-new Date(a.time));
   const addActivity=(text)=>{const entry={text,time:new Date().toISOString(),id:Math.random().toString(36).slice(2),user:ctx.currentUser?.name||"System"};const next=[entry,...activities];updateJob(job.id,{activities:next})};
-  const duplicateJob=()=>{const newId='JOB-'+new Date().getFullYear()+'-'+String(Math.floor(Math.random()*900)+100);const newJob={...job,id:newId,name:job.name+' (Copy)',phase:'Quoting',paymentStatus:'unpaid',createdDate:new Date().toISOString().split('T')[0],startDate:'',endDate:''};addJob(newJob);items.forEach(item=>{addLineItem({...item,id:'LI-'+Date.now()+'-'+Math.random().toString(36).slice(2,6),jobId:newId,qtyReceived:0,qtyInvoiced:0,deliveryDate:'',invoiceDate:''})});setSelectedJob(newId);notify('Job duplicated -- '+newId+' created with all line items')};
+  const duplicateJob=()=>{const newId='JOB-'+new Date().getFullYear()+'-'+String(Math.floor(Math.random()*900)+100);const newJob={...job,id:newId,name:job.name+' (Copy)',phase:'Quoting',paymentStatus:'unpaid',createdDate:new Date().toISOString().split('T')[0],startDate:'',endDate:''};addJob(newJob);items.forEach((item,_ix)=>{addLineItem({...item,id:'LI-'+Date.now()+'-'+String(_ix).padStart(3,'0')+'-'+Math.random().toString(36).slice(2,6),jobId:newId,qtyReceived:0,qtyInvoiced:0,deliveryDate:'',invoiceDate:''})});setSelectedJob(newId);notify('Job duplicated -- '+newId+' created with all line items')};
   const jobQuoteRef=React.useRef(null);
   const [uploadingToJob,setUploadingToJob]=useState(false);
   const parseQuoteIntoJob=async(file)=>{
@@ -2889,11 +2895,12 @@ function JobDetail({job,ctx}){
         const vendorName=parsed.vendor||'';
         if(vendorName){const vk=vendorName.toLowerCase().trim();if(!existNames.has(vk)){const vid='V-'+Date.now()+'-'+Math.random().toString(36).slice(2,6);ctx.addVendor({id:vid,name:vendorName,contact:'',email:'',phone:'',category:'Furniture',address:'',discountRate:0});vMap[vk]=vid;existNames.add(vk);newVendors.push(vendorName)}}
         let totalAdded=0;
+        let _liOrd=0;
         for(const item of parsed.items){
           const mfr=item.manufacturer||vendorName||'';
           const vk=mfr.toLowerCase().trim();
           if(vk&&!existNames.has(vk)){const vid='V-'+Date.now()+'-'+Math.random().toString(36).slice(2,6);ctx.addVendor({id:vid,name:mfr,contact:'',email:'',phone:'',category:'Furniture',address:'',discountRate:0});vMap[vk]=vid;existNames.add(vk);newVendors.push(mfr)}
-          addLineItem({id:'LI-'+Date.now()+'-'+Math.random().toString(36).slice(2,6),jobId:job.id,
+          addLineItem({id:'LI-'+Date.now()+'-'+String(_liOrd++).padStart(3,'0')+'-'+Math.random().toString(36).slice(2,6),jobId:job.id,
             description:item.description||'',vendor:vMap[vk]||'',tag:item.tag||'',group:'',
             manufacturer:mfr,modelNumber:item.model_number||item.model||'',color:item.color||'',
             listPrice:parseFloat(item.list_price)||0,unitCost:parseFloat(item.net_cost)||0,
@@ -2974,7 +2981,7 @@ function JobDetail({job,ctx}){
           if(!shipPU&&shipTot&&qty>0)shipPU=shipTot/qty;
           let instPU=n('install');const instTot=cm.installTotal!==undefined?n('installTotal'):0;
           if(!instPU&&instTot&&qty>0)instPU=instTot/qty;
-          addLineItem({id:'LI-'+Date.now()+'-'+Math.random().toString(36).slice(2,6),jobId:job.id,
+          addLineItem({id:'LI-'+Date.now()+'-'+String(si*10000+r).padStart(6,'0')+'-'+Math.random().toString(36).slice(2,6),jobId:job.id,
             description:cleanDesc,vendor:vMap[vk]||'',tag:tag.replace(/\.0$/,''),group:grp||tag||'',
             manufacturer:mfr||sn,modelNumber:model.replace(/\.0$/,''),color:s('color'),
             listPrice:list,unitCost:net||0,unitPrice:price||(priceExt&&qty>0?priceExt/qty:0)||0,
