@@ -4265,14 +4265,14 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           // selector should show 'No project' (__NONE__) rather than '-- Select
           // project --' so the user understands the bill's current attachment.
           const restoredJobId = (mode==='bill' && (!d.jobId || d.jobId==='')) ? '__NONE__' : (d.jobId||'');
-          setAdjustForm({vendorId:d.vendorId||'',jobId:restoredJobId,amount:String(d.amount||''),creditDate:d.creditDate||'',refNumber:d.refNumber||'',memo:d.memo||'',fileUrl:d.fileUrl||'',fileName:d.fileName||'',fileSize:Number(d.fileSize)||0,uploadDate:d.uploadDate||''});
+          setAdjustForm({vendorId:d.vendorId||'',jobId:restoredJobId,amount:String(d.amount||''),creditDate:d.creditDate||'',refNumber:d.refNumber||'',memo:d.memo||'',fileUrl:d.fileUrl||'',fileName:d.fileName||'',fileSize:Number(d.fileSize)||0,uploadDate:d.uploadDate||'',paid:d.paid===true,payDate:d.payDate||'',checkNum:d.checkNum||''});
         } else {
           setAdjustEdit(null);
-          setAdjustForm({vendorId:'',jobId:'',amount:'',creditDate:new Date().toISOString().split('T')[0],refNumber:'',memo:'',fileUrl:'',fileName:'',fileSize:0,uploadDate:''});
+          setAdjustForm({vendorId:'',jobId:'',amount:'',creditDate:new Date().toISOString().split('T')[0],refNumber:'',memo:'',fileUrl:'',fileName:'',fileSize:0,uploadDate:'',paid:false,payDate:'',checkNum:''});
         }
         setShowAdjustModal(true);
       };
-      const closeAdjustModal=()=>{setShowAdjustModal(false);setAdjustEdit(null);setAdjustForm({vendorId:'',jobId:'',amount:'',creditDate:'',refNumber:'',memo:'',fileUrl:'',fileName:'',fileSize:0,uploadDate:''});setAdjustUploading(false)};
+      const closeAdjustModal=()=>{setShowAdjustModal(false);setAdjustEdit(null);setAdjustForm({vendorId:'',jobId:'',amount:'',creditDate:'',refNumber:'',memo:'',fileUrl:'',fileName:'',fileSize:0,uploadDate:'',paid:false,payDate:'',checkNum:''});setAdjustUploading(false)};
       const saveAdjust=()=>{
         if(adjustUploading){notify('Wait for the file upload to finish','error');return}
         const amt=Number(adjustForm.amount);
@@ -4290,11 +4290,16 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
         if(!v){notify('Vendor not found','error');return}
         if(!isNoProject && !j){notify('Project not found','error');return}
         const id=adjustEdit||((adjustMode==='credit'?'VC-':'SB-')+Date.now().toString(36).toUpperCase()+'-'+Math.random().toString(36).slice(2,6).toUpperCase());
-        const data={vendorId:adjustForm.vendorId,vendorName:v.name,jobId:isNoProject?'':adjustForm.jobId,jobName:isNoProject?'':(j?j.name:''),amount:amt,creditDate:adjustForm.creditDate||new Date().toISOString().split('T')[0],refNumber:(adjustForm.refNumber||'').trim(),memo:(adjustForm.memo||'').trim(),fileUrl:adjustForm.fileUrl||'',fileName:adjustForm.fileName||'',fileSize:Number(adjustForm.fileSize)||0,uploadDate:adjustForm.uploadDate||'',createdAt:adjustEdit?undefined:new Date().toISOString()};
-        // Preserve createdAt + payment state if editing
+        const data={vendorId:adjustForm.vendorId,vendorName:v.name,jobId:isNoProject?'':adjustForm.jobId,jobName:isNoProject?'':(j?j.name:''),amount:amt,creditDate:adjustForm.creditDate||new Date().toISOString().split('T')[0],refNumber:(adjustForm.refNumber||'').trim(),memo:(adjustForm.memo||'').trim(),fileUrl:adjustForm.fileUrl||'',fileName:adjustForm.fileName||'',fileSize:Number(adjustForm.fileSize)||0,uploadDate:adjustForm.uploadDate||'',createdAt:adjustEdit?undefined:new Date().toISOString(),
+        // Payment state comes from the form's Payment section (loaded from the record
+        // when editing). Marking Paid without a date defaults the pay date to today.
+        paid:adjustForm.paid===true,
+        payDate:adjustForm.paid===true?(adjustForm.payDate||new Date().toISOString().split('T')[0]):(adjustForm.payDate||''),
+        checkNum:(adjustForm.checkNum||'').trim()};
+        // Preserve createdAt and any void state if editing
         if(adjustEdit){
           const prior=(customSops||[]).find(s=>s.id===adjustEdit);
-          if(prior){try{const pd=JSON.parse(prior.content||'{}');if(pd.createdAt)data.createdAt=pd.createdAt;if(pd.paid)data.paid=pd.paid;if(pd.payDate)data.payDate=pd.payDate;if(pd.checkNum)data.checkNum=pd.checkNum;}catch{}}
+          if(prior){try{const pd=JSON.parse(prior.content||'{}');if(pd.createdAt)data.createdAt=pd.createdAt;if(pd.void===true){data.void=true;if(pd.voidDate)data.voidDate=pd.voidDate;if(pd.voidMemo)data.voidMemo=pd.voidMemo;}}catch{}}
         }
         const cat=adjustMode==='credit'?'VendorCredit':'StandaloneBill';
         const projLabel = isNoProject ? '(No Project)' : (j?j.name:'');
@@ -5250,6 +5255,19 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
                 <label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4,fontWeight:600}}>Memo / Notes</label>
                 <textarea value={adjustForm.memo} onChange={e=>setAdjustForm(p=>({...p,memo:e.target.value}))} placeholder={adjustMode==='credit'?"e.g. Damaged stool credit -- 7 units":"Reason for the bill"} rows={3} style={{...inputStyle,width:"100%",resize:"vertical",minHeight:60,fontFamily:"inherit"}}/>
               </div>
+              {adjustMode==='bill'&&<div style={{background:"#0a0a0a",borderRadius:10,padding:"12px 14px",border:"1px solid "+(adjustForm.paid?"#34d39930":"rgba(255,255,255,0.06)")}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:adjustForm.paid||adjustForm.payDate||adjustForm.checkNum?10:0}}>
+                  <span style={{fontSize:12,color:"#a3a3a3",fontWeight:600}}>Payment</span>
+                  <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",userSelect:"none"}}>
+                    <input type="checkbox" checked={adjustForm.paid===true} onChange={e=>setAdjustForm(p=>({...p,paid:e.target.checked,payDate:e.target.checked?(p.payDate||new Date().toISOString().split('T')[0]):p.payDate}))} style={{accentColor:"#34d399",width:16,height:16,cursor:"pointer"}}/>
+                    <span style={{fontSize:13,fontWeight:700,color:adjustForm.paid?"#34d399":"#737373"}}>{adjustForm.paid?"Paid":"Mark as paid"}</span>
+                  </label>
+                </div>
+                {(adjustForm.paid||adjustForm.payDate||adjustForm.checkNum)&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                  <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Payment Date</label><input type="date" value={adjustForm.payDate||''} onChange={e=>setAdjustForm(p=>({...p,payDate:e.target.value}))} style={{...inputStyle,width:"100%"}}/></div>
+                  <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Check #</label><input type="text" value={adjustForm.checkNum||''} onChange={e=>setAdjustForm(p=>({...p,checkNum:e.target.value}))} placeholder="e.g. 9366" style={{...inputStyle,width:"100%"}}/></div>
+                </div>}
+              </div>}
               <div>
                 <label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4,fontWeight:600}}>Attachment {adjustMode==='credit'?'(credit memo PDF, image)':'(bill PDF, image)'}</label>
                 {!adjustForm.fileUrl&&!adjustUploading&&<div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
