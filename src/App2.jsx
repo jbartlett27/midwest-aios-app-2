@@ -121,6 +121,9 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
   const [taskText,setTaskText]=useState("");
   const [taskDue,setTaskDue]=useState("");
   const [repDetail,setRepDetail]=useState(null);
+  // Period filter -- same windows as the Command Center (Month / Quarter / YTD /
+  // All Time), so salespeople can see their monthly, quarterly, and yearly numbers.
+  const [spPeriod,setSpPeriod]=useState('all');
 
 
   // Sales-role users can never enter Overview mode -- coerce 'overview' to their own rep id
@@ -128,7 +131,10 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
   const effectiveActiveRep=canSeeTeam?activeRep:(userRepId||activeRep);
   const isOverview=effectiveActiveRep==="overview";
   const rep=reps.find(r=>r.id===effectiveActiveRep)||reps.filter(isSalesRep)[0]||reps[0];
-  const rj=isOverview?jobs:jobs.filter(j=>j.salesRep===effectiveActiveRep);
+  const _spNow=new Date();
+  const _spInPeriod=(j)=>{if(spPeriod==='all')return true;const d=new Date(j.createdDate);if(isNaN(d.getTime()))return true;if(spPeriod==='month')return d.getMonth()===_spNow.getMonth()&&d.getFullYear()===_spNow.getFullYear();if(spPeriod==='quarter')return Math.floor(d.getMonth()/3)===Math.floor(_spNow.getMonth()/3)&&d.getFullYear()===_spNow.getFullYear();if(spPeriod==='ytd')return d.getFullYear()===_spNow.getFullYear();return true;};
+  const spJobs=jobs.filter(_spInPeriod);
+  const rj=isOverview?spJobs:spJobs.filter(j=>j.salesRep===effectiveActiveRep);
   const totalRev=rj.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
   const paidRev=rj.filter(j=>j.paymentStatus==="paid").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
   const totalCost=rj.reduce((s,j)=>s+getJobFinancials(j.id).totalCost,0);
@@ -172,6 +178,9 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
       {reps.filter(r=>!r.id.includes("SEED_FLAG")&&isSalesRep(r)&&(canSeeTeam||r.id===userRepId)).map(r=><button key={r.id} onClick={()=>setActiveRep(r.id)} style={{padding:"8px 16px",borderRadius:8,cursor:"pointer",background:activeRep===r.id?"#2dd4bf":"#111",color:activeRep===r.id?"#000":"#737373",fontSize:13,fontWeight:activeRep===r.id?600:400,fontFamily:"inherit",border:activeRep===r.id?"none":"1px solid rgba(255,255,255,0.06)",whiteSpace:"nowrap",flexShrink:0}}>{r.name}</button>)}
     </div>
 
+
+    {/* Period filter -- scopes the hero KPIs, pipeline, and Team directory */}
+    <div style={{display:"flex",gap:3,background:"#111",padding:3,borderRadius:8,marginBottom:16,width:"fit-content"}}>{[["all","All Time"],["ytd","YTD"],["quarter","Quarter"],["month","Month"]].map(([v,l])=><button key={v} onClick={()=>setSpPeriod(v)} style={{padding:"5px 12px",borderRadius:6,border:"none",cursor:"pointer",background:spPeriod===v?"#2dd4bf":"transparent",color:spPeriod===v?"#000":"#525252",fontSize:11,fontWeight:spPeriod===v?600:400,fontFamily:"inherit",transition:"all 0.15s"}}>{l}</button>)}</div>
 
     {/* Hero stats */}
     <Card style={{marginBottom:20,background:"linear-gradient(135deg,rgba(45,212,191,0.03),rgba(167,139,250,0.03))",border:"1px solid rgba(45,212,191,0.08)"}}>
@@ -242,7 +251,7 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
         the Team tab button is filtered out for them above. */}
     {crmTab==="team"&&!repDetail&&canSeeTeam&&<Card>
       <div style={{fontSize:15,fontWeight:700,color:"#f0f0f0",marginBottom:14}}>Team Directory</div>
-      {reps.filter(r=>!r.id.includes("SEED_FLAG")&&isSalesRep(r)).map(r=>{const rJobs=jobs.filter(j=>j.salesRep===r.id);const rv=rJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const pRev=rJobs.filter(j=>j.paymentStatus==="paid").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const comm=rJobs.reduce((s,j)=>s+_commissionFor(j.id,r.commissionRate||0),0);const costTotal=rJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalCost,0);const margin=rv>0?(1-costTotal/rv)*100:0;return <div key={r.id} onClick={()=>setRepDetail(r)} className="hover-lift" style={{display:"flex",alignItems:"center",gap:14,padding:"16px",background:"#0a0a0a",borderRadius:12,marginBottom:10,cursor:"pointer",border:"1px solid rgba(255,255,255,0.04)",transition:"all 0.2s"}}>
+      {reps.filter(r=>!r.id.includes("SEED_FLAG")&&isSalesRep(r)).map(r=>{const rJobs=spJobs.filter(j=>j.salesRep===r.id);const rv=rJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const pRev=rJobs.filter(j=>j.paymentStatus==="paid").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);const comm=rJobs.reduce((s,j)=>s+_commissionFor(j.id,r.commissionRate||0),0);const costTotal=rJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalCost,0);const margin=rv>0?(1-costTotal/rv)*100:0;return <div key={r.id} onClick={()=>setRepDetail(r)} className="hover-lift" style={{display:"flex",alignItems:"center",gap:14,padding:"16px",background:"#0a0a0a",borderRadius:12,marginBottom:10,cursor:"pointer",border:"1px solid rgba(255,255,255,0.04)",transition:"all 0.2s"}}>
         <div style={{width:48,height:48,borderRadius:12,background:"linear-gradient(135deg,rgba(45,212,191,0.12),rgba(167,139,250,0.12))",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontWeight:800,color:"#2dd4bf",flexShrink:0}}>{r.name.split(" ").map(n=>n[0]).join("")}</div>
         <div style={{flex:1,minWidth:0}}><div style={{fontSize:15,fontWeight:600,color:"#f0f0f0"}}>{r.name}</div><div style={{fontSize:12,color:"#9a9a9a"}}>{r.territory} -- {r.tier} -- {rJobs.length} jobs</div></div>
         <div style={{display:"flex",gap:14,flexWrap:"wrap",flexShrink:0}}>
@@ -4244,6 +4253,9 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify}){
   };
 
 
+  // Rep chosen in the "CSV assign" dropdown -- every lead in the next bulk CSV
+  // upload is assigned to this salesperson (empty = unassigned, prior behavior).
+  const [csvRep,setCsvRep]=useState('');
   const handleCsv=async(e)=>{
     const file=e.target.files?.[0];if(!file)return;e.target.value='';
     try{
@@ -4271,11 +4283,12 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify}){
           rank:parseInt(g(row,ci.rank))||i,name,title:g(row,ci.title),company,email:g(row,ci.email),phone,
           linkedin:g(row,ci.linkedin),companyLinkedin:g(row,ci.compLinkedin),website:g(row,ci.website),twitter:g(row,ci.twitter),
           employees:g(row,ci.emp).replace(/,/g,''),city:g(row,ci.city),state:g(row,ci.state),address:g(row,ci.address),
-          status:g(row,ci.status)||'New',notes:g(row,ci.notes),assignedRep:'',addedAt:new Date().toISOString()
+          status:g(row,ci.status)||'New',notes:g(row,ci.notes),assignedRep:csvRep||'',addedAt:new Date().toISOString()
         });added++;
       }
       // Primary notification: always shown, same shape as before so existing UX is preserved.
-      notify(added+' prospects imported'+(skipped>0?', '+skipped+' duplicates skipped':''));
+      const _csvRepName=csvRep?((reps||[]).find(r=>r.id===csvRep)?.name||''):'';
+      notify(added+' prospects imported'+(_csvRepName?' -- all assigned to '+_csvRepName:'')+(skipped>0?', '+skipped+' duplicates skipped':''));
       // Secondary breakdown only when matches happened on email, LinkedIn, phone, or name-only.
       if(skipped>0&&(skipReasons.e>0||skipReasons.l>0||skipReasons.p>0||skipReasons.n>0)){
         const bits=[];
@@ -4352,6 +4365,10 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify}){
           <button onClick={()=>setViewMode('table')} style={{padding:'6px 12px',border:'none',background:viewMode==='table'?'#2dd4bf15':'transparent',color:viewMode==='table'?'#2dd4bf':'#525252',fontSize:11,cursor:'pointer',fontFamily:"'JetBrains Mono',monospace",fontWeight:600}}>TABLE</button>
           <button onClick={()=>setViewMode('kanban')} style={{padding:'6px 12px',border:'none',borderLeft:'1px solid #1a1a1a',background:viewMode==='kanban'?'#2dd4bf15':'transparent',color:viewMode==='kanban'?'#2dd4bf':'#525252',fontSize:11,cursor:'pointer',fontFamily:"'JetBrains Mono',monospace",fontWeight:600}}>BOARD</button>
         </div>
+        <select value={csvRep} onChange={e=>setCsvRep(e.target.value)} title="Every lead in the next CSV upload is assigned to this salesperson" style={{padding:'7px 10px',background:'#0a0a0a',border:'1px solid '+(csvRep?'rgba(45,212,191,0.4)':'#1a1a1a'),borderRadius:8,color:csvRep?'#2dd4bf':'#737373',fontSize:11,fontFamily:'inherit',outline:'none',cursor:'pointer'}}>
+          <option value="">CSV assign: none</option>
+          {(reps||[]).filter(r=>!r.id.includes('SEED_FLAG')&&isSalesRep(r)).map(r=><option key={r.id} value={r.id}>CSV assign: {r.name}</option>)}
+        </select>
         <input ref={fileRef} type="file" accept=".csv,.tsv" onChange={handleCsv} style={{display:'none'}}/>
         <Btn v="secondary" onClick={()=>fileRef.current?.click()} style={{fontSize:11,padding:'7px 14px'}}><I n="upload" s={13}/> CSV</Btn>
         <Btn onClick={()=>setShowAdd(!showAdd)} style={{fontSize:11,padding:'7px 14px'}}><I n="plus" s={13}/> Add</Btn>
@@ -5067,6 +5084,13 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   const [acctNicknameDraft,setAcctNicknameDraft]=useState({});
   // Bank statement upload: PDF statements go through Claude Vision (/api/ai-scan,
   // scan_type bank_statement); CSV exports parse locally in the browser.
+  // Collapsible statement sections (P&L + Balance Sheet). Keys are section ids;
+  // true = expanded to show the underlying jobs/transactions. The PDF exports read
+  // the same state, so what prints is exactly what is expanded on screen.
+  const [pnlOpen,setPnlOpen]=useState({});
+  const [bsOpen,setBsOpen]=useState({});
+  const _togglePnl=(k)=>setPnlOpen(prev=>({...prev,[k]:!prev[k]}));
+  const _toggleBs=(k)=>setBsOpen(prev=>({...prev,[k]:!prev[k]}));
   const [stmtUploading,setStmtUploading]=useState(false);
   const [stmtAcct,setStmtAcct]=useState('Operating');
   const stmtFileRef=useRef(null);
@@ -5264,6 +5288,20 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
 
   // Vendor spend breakdown
   const vendorSpend=vendors.map(v=>{const spend=filteredItems.filter(i=>i.vendor===v.id).reduce((s,i)=>s+i.unitCost*i.qtyOrdered,0);return{name:v.name,spend,pct:totalCost>0?(spend/totalCost*100):0}}).filter(v=>v.spend>0).sort((a,b)=>b.spend-a.spend);
+  // ---- Statement groupings, shared by the on-screen P&L / Balance Sheet and their
+  // PDF exports so both always show identical numbers. ----
+  const jobRevTotal=totalRev-manualRevenue;
+  const jobCostTotal=totalCost-manualExpenses;
+  const _vendorSpendSum=vendorSpend.reduce((s,v)=>s+v.spend,0);
+  const _jobCostAdj=jobCostTotal-_vendorSpendSum; // credits + standalone bills + rounding
+  const pnlRevCats=(()=>{const m={};filteredManualTxns.filter(t=>t.type==='revenue'&&_isManualPL(t)).forEach(t=>{const c=(t.category&&t.category!=='Uncategorized')?t.category:'Uncategorized Revenue';if(!m[c])m[c]={name:c,total:0,txns:[]};m[c].total+=parseFloat(t.amount)||0;m[c].txns.push(t);});return Object.values(m).sort((a,b)=>b.total-a.total);})();
+  const pnlExpCats=(()=>{const m={};filteredManualTxns.filter(t=>t.type==='expense'&&_isManualPL(t)).forEach(t=>{const c=(t.category&&t.category!=='Uncategorized')?t.category:'Uncategorized Expenses';if(!m[c])m[c]={name:c,total:0,txns:[]};m[c].total+=parseFloat(t.amount)||0;m[c].txns.push(t);});return Object.values(m).sort((a,b)=>b.total-a.total);})();
+  const liveBankAccounts=(()=>{const r=(customSops||[]).find(s2=>s2.id==='BANK_BALANCES_GLOBAL');if(!r)return [];try{const d=JSON.parse(r.content||'{}');return Array.isArray(d.accounts)?d.accounts.filter(a=>(a.type||'')==='depository'):[]}catch{return []}})();
+  const arJobsList=filteredJobs.filter(j=>j.paymentStatus!=="paid"&&_jobInvoiced(j,getJobFinancials(j.id))).map(j=>({job:j,amount:getJobFinancials(j.id).totalRevenue,customer:customers.find(c=>c.id===j.customer)?.name||''})).sort((a,b)=>b.amount-a.amount);
+  const invItemsList=filteredItems.filter(i=>(i.qtyOrdered||0)>(i.qtyReceived||0)).map(i=>({item:i,value:(i.unitCost||0)*((i.qtyOrdered||0)-(i.qtyReceived||0)),jobName:(jobs.find(j=>j.id===i.jobId)||{}).name||'',jobId:i.jobId})).filter(x=>x.value>0.005).sort((a,b)=>b.value-a.value);
+  const commByRep=reps.filter(r=>!r.id.includes("SEED_FLAG")&&(r.commissionRate||0)>0).map(r=>({name:r.name,amount:filteredJobs.filter(j=>j.salesRep===r.id).reduce((s2,j)=>s2+_commissionFor(j.id,r.commissionRate),0)})).filter(x=>x.amount>0.005).sort((a,b)=>b.amount-a.amount);
+  const assetTxnsList=filteredManualTxns.filter(t=>t.type==='asset'||t.category==='asset');
+  const liabTxnsList=filteredManualTxns.filter(t=>t.type==='liability'||t.category==='liability');
 
 
   // Customer revenue
@@ -5276,15 +5314,24 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
     const logo='<div style="display:flex;align-items:center;gap:12px;margin-bottom:24px"><div style="font-size:18px;font-weight:700">Midwest Educational Furnishings, Inc.</div></div><div style="font-size:11px;color:#888;margin-bottom:24px">21191 N Valley Rd, Kildeer, IL 60047 US | (847) 847-1865</div>';
     let html=hd+logo;
     if(type==="pnl"){
+      // The exported statement mirrors the on-screen collapse state: category rows
+      // always print; detail rows print only for categories currently expanded.
+      const _pdfCat=(label,sub,amt)=>'<tr style="border-bottom:1px solid #ddd"><td style="padding:7px 12px;font-weight:600;color:#222">'+label+(sub?' <span style="font-weight:400;color:#999;font-size:11px">'+sub+'</span>':'')+'</td><td style="text-align:right;padding:7px 0;font-weight:600;color:#222">$'+amt.toFixed(2)+'</td></tr>';
+      const _pdfDet=(label,sub,amt)=>'<tr style="border-bottom:1px solid #f2f2f2"><td style="padding:4px 12px 4px 30px;color:#777;font-size:12px">'+label+(sub?' <span style="color:#bbb;font-size:11px">'+sub+'</span>':'')+'</td><td style="text-align:right;padding:4px 0;color:#777;font-size:12px">$'+amt.toFixed(2)+'</td></tr>';
       html+='<div style="font-size:22px;font-weight:300;color:#888;margin-bottom:20px">Profit & Loss Statement</div><div style="font-size:12px;color:#888;margin-bottom:20px">Generated: '+today+'</div>';
       html+='<table style="width:100%;border-collapse:collapse;font-size:13px"><tbody>';
       html+='<tr style="border-bottom:2px solid #222"><td style="padding:10px 0;font-weight:700;font-size:14px">REVENUE</td><td style="text-align:right;padding:10px 0;font-weight:700;font-size:14px">$'+totalRev.toFixed(2)+'</td></tr>';
-      filteredJobs.forEach(j=>{const f=getJobFinancials(j.id);html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 12px;color:#555">'+j.name+'</td><td style="text-align:right;padding:6px 0;color:#555">$'+f.totalRevenue.toFixed(2)+'</td></tr>'});
-      html+='<tr style="border-bottom:2px solid #222;margin-top:8px"><td style="padding:10px 0;font-weight:700;font-size:14px">COST OF GOODS SOLD</td><td style="text-align:right;padding:10px 0;font-weight:700;font-size:14px">$'+totalCost.toFixed(2)+'</td></tr>';
-      vendorSpend.forEach(v=>{html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 12px;color:#555">'+v.name+'</td><td style="text-align:right;padding:6px 0;color:#555">$'+v.spend.toFixed(2)+'</td></tr>'});
+      html+=_pdfCat('Job Revenue',filteredJobs.length+' jobs',jobRevTotal);
+      if(pnlOpen['rev_jobs'])filteredJobs.forEach(j=>{const f=getJobFinancials(j.id);html+=_pdfDet(j.name,'',f.totalRevenue)});
+      pnlRevCats.forEach(c=>{html+=_pdfCat(c.name,c.txns.length+' txns',c.total);if(pnlOpen['revc_'+c.name])c.txns.forEach(t=>{html+=_pdfDet(t.description||'Manual entry',t.date||'',parseFloat(t.amount)||0)})});
+      html+='<tr style="border-bottom:2px solid #222"><td style="padding:10px 0;font-weight:700;font-size:14px">COST OF GOODS SOLD</td><td style="text-align:right;padding:10px 0;font-weight:700;font-size:14px">$'+totalCost.toFixed(2)+'</td></tr>';
+      html+=_pdfCat('Job Costs by Vendor',vendorSpend.length+' vendors',jobCostTotal);
+      if(pnlOpen['cogs_jobs']){vendorSpend.forEach(v=>{html+=_pdfDet(v.name,'',v.spend)});if(Math.abs(_jobCostAdj)>0.005)html+=_pdfDet('Adjustments','vendor credits & standalone bills',_jobCostAdj);}
+      pnlExpCats.forEach(c=>{html+=_pdfCat(c.name,c.txns.length+' txns',c.total);if(pnlOpen['expc_'+c.name])c.txns.forEach(t=>{html+=_pdfDet(t.description||'Manual expense',t.date||'',parseFloat(t.amount)||0)})});
       html+='<tr style="border-top:2px solid #222;background:#f9f9f9"><td style="padding:10px 0;font-weight:700;font-size:14px">GROSS PROFIT</td><td style="text-align:right;padding:10px 0;font-weight:700;font-size:14px;color:'+(grossProfit>=0?"#059669":"#dc2626")+'">$'+grossProfit.toFixed(2)+' ('+grossMargin.toFixed(1)+'%)</td></tr>';
-      html+='<tr style="border-bottom:2px solid #222"><td style="padding:10px 0;font-weight:700;font-size:14px">OPERATING EXPENSES</td><td></td></tr>';
-      html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 12px;color:#555">Sales Commissions</td><td style="text-align:right;padding:6px 0;color:#555">$'+totalComm.toFixed(2)+'</td></tr>';
+      html+='<tr style="border-bottom:2px solid #222"><td style="padding:10px 0;font-weight:700;font-size:14px">OPERATING EXPENSES</td><td style="text-align:right;padding:10px 0;font-weight:700;font-size:14px">$'+totalComm.toFixed(2)+'</td></tr>';
+      html+=_pdfCat('Sales Commissions',commByRep.length+' reps',totalComm);
+      if(pnlOpen['opex_comm'])commByRep.forEach(r2=>{html+=_pdfDet(r2.name,'',r2.amount)});
       html+='<tr style="border-top:3px double #222;background:#f0fdf4"><td style="padding:12px 0;font-weight:700;font-size:16px">NET INCOME</td><td style="text-align:right;padding:12px 0;font-weight:700;font-size:16px;color:'+(netIncome>=0?"#059669":"#dc2626")+'">$'+netIncome.toFixed(2)+'</td></tr>';
       html+='</tbody></table>';
     } else if(type==="ar"){
@@ -5303,28 +5350,42 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       filteredJobs.forEach(j=>{const f=getJobFinancials(j.id);const profit=f.totalRevenue-f.totalCost;html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 0">'+j.name+'</td><td style="text-align:right;padding:6px">$'+f.totalRevenue.toFixed(2)+'</td><td style="text-align:right;padding:6px">$'+f.totalCost.toFixed(2)+'</td><td style="text-align:right;padding:6px;color:'+(profit>=0?"#059669":"#dc2626")+'">$'+profit.toFixed(2)+'</td><td style="text-align:right;padding:6px;font-weight:600;color:'+(f.margin>=30?"#059669":f.margin>=20?"#d97706":"#dc2626")+'">'+f.margin.toFixed(1)+'%</td></tr>'});
       html+='<tr style="border-top:2px solid #222;font-weight:700"><td style="padding:8px 0">TOTAL</td><td style="text-align:right;padding:8px">$'+totalRev.toFixed(2)+'</td><td style="text-align:right;padding:8px">$'+totalCost.toFixed(2)+'</td><td style="text-align:right;padding:8px;color:'+(grossProfit>=0?"#059669":"#dc2626")+'">$'+grossProfit.toFixed(2)+'</td><td style="text-align:right;padding:8px">'+grossMargin.toFixed(1)+'%</td></tr></tbody></table>';
     } else if(type==="balance"){
+      // Same figures as the on-screen Balance Sheet tab (manual assets/liabilities
+      // included, same cash formula) and the same collapse state: expanded lines
+      // print their underlying detail, collapsed lines print as single rows.
       const inventory=filteredItems.reduce((s,i)=>s+(i.unitCost||0)*Math.max(0,i.qtyOrdered-i.qtyReceived),0);
-      const bsTotalAR2=totalAR;const bsTotalAP2=totalAP;const bsRetained=totalRev-totalCost-totalComm;
-      const bsCash=liveBankCash!==null?liveBankCash:(paidRev-totalAP);const bsTotalAssets=Math.max(0,bsCash)+bsTotalAR2+inventory;
-      const bsEquity=bsTotalAssets-bsTotalAP2;
+      const bsCash=liveBankCash!==null?Math.max(0,liveBankCash):Math.max(0,paidRev-totalAP);
+      const bsTotalAssets=bsCash+totalAR+inventory+manualAssets;
+      const bsTotalLiab=totalAP+totalComm+manualLiabilities;
+      const bsRetained=totalRev-totalCost-totalComm;
+      const _pdfBsDet=(label,sub,amt)=>'<tr style="border-bottom:1px solid #f2f2f2"><td style="padding:4px 12px 4px 30px;color:#777;font-size:12px">'+label+(sub?' <span style="color:#bbb;font-size:11px">'+sub+'</span>':'')+'</td><td style="text-align:right;padding:4px 0;color:#777;font-size:12px">$'+amt.toFixed(2)+'</td></tr>';
       html+='<div style="font-size:22px;font-weight:300;color:#888;margin-bottom:20px">Balance Sheet</div><div style="font-size:12px;color:#888;margin-bottom:20px">As of: '+today+'</div>';
       html+='<table style="width:100%;border-collapse:collapse;font-size:13px"><tbody>';
       html+='<tr style="border-bottom:2px solid #222;background:#f9f9f9"><td colspan="2" style="padding:10px 0;font-weight:700;font-size:15px">ASSETS</td></tr>';
       html+='<tr style="border-bottom:2px solid #ddd"><td colspan="2" style="padding:8px 0;font-weight:600;font-size:13px;color:#555">Current Assets</td></tr>';
-      html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 12px;color:#555">Cash & Cash Equivalents</td><td style="text-align:right;padding:6px 0">$'+Math.max(0,bsCash).toFixed(2)+'</td></tr>';
-      html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 12px;color:#555">Accounts Receivable</td><td style="text-align:right;padding:6px 0">$'+bsTotalAR2.toFixed(2)+'</td></tr>';
+      html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 12px;color:#555">Cash & Cash Equivalents</td><td style="text-align:right;padding:6px 0">$'+bsCash.toFixed(2)+'</td></tr>';
+      if(bsOpen['bs_cash']&&liveBankAccounts.length>0)liveBankAccounts.forEach((a,ai)=>{html+=_pdfBsDet((a.name||'Account')+(a.mask?' ***'+a.mask:''),a.subtype||'',Number(a.current)||0)});
+      html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 12px;color:#555">Accounts Receivable</td><td style="text-align:right;padding:6px 0">$'+totalAR.toFixed(2)+'</td></tr>';
+      if(bsOpen['bs_ar'])arJobsList.forEach(x=>{html+=_pdfBsDet(x.job.name,x.customer,x.amount)});
       html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 12px;color:#555">Inventory (In Transit)</td><td style="text-align:right;padding:6px 0">$'+inventory.toFixed(2)+'</td></tr>';
+      if(bsOpen['bs_inv'])invItemsList.slice(0,40).forEach(x=>{html+=_pdfBsDet(x.item.description||'Item',x.jobName,x.value)});
+      if(manualAssets>0){html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 12px;color:#555">Other Assets (Manual)</td><td style="text-align:right;padding:6px 0">$'+manualAssets.toFixed(2)+'</td></tr>';
+        if(bsOpen['bs_assets'])assetTxnsList.forEach(t=>{html+=_pdfBsDet(t.description||'Asset entry',t.date||'',parseFloat(t.amount)||0)});}
       html+='<tr style="border-top:2px solid #222;font-weight:700"><td style="padding:8px 0">TOTAL ASSETS</td><td style="text-align:right;padding:8px 0">$'+bsTotalAssets.toFixed(2)+'</td></tr>';
       html+='<tr><td colspan="2" style="padding:8px 0"></td></tr>';
       html+='<tr style="border-bottom:2px solid #222;background:#f9f9f9"><td colspan="2" style="padding:10px 0;font-weight:700;font-size:15px">LIABILITIES</td></tr>';
       html+='<tr style="border-bottom:2px solid #ddd"><td colspan="2" style="padding:8px 0;font-weight:600;font-size:13px;color:#555">Current Liabilities</td></tr>';
-      html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 12px;color:#555">Accounts Payable</td><td style="text-align:right;padding:6px 0">$'+bsTotalAP2.toFixed(2)+'</td></tr>';
+      html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 12px;color:#555">Accounts Payable</td><td style="text-align:right;padding:6px 0">$'+totalAP.toFixed(2)+'</td></tr>';
+      if(bsOpen['bs_ap'])apVendorList.forEach(v2=>{html+=_pdfBsDet(v2.name,v2.items+' bills',v2.total)});
       html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 12px;color:#555">Commissions Payable</td><td style="text-align:right;padding:6px 0">$'+totalComm.toFixed(2)+'</td></tr>';
-      html+='<tr style="border-top:2px solid #222;font-weight:700"><td style="padding:8px 0">TOTAL LIABILITIES</td><td style="text-align:right;padding:8px 0">$'+(bsTotalAP2+totalComm).toFixed(2)+'</td></tr>';
+      if(bsOpen['bs_comm'])commByRep.forEach(r2=>{html+=_pdfBsDet(r2.name,'',r2.amount)});
+      if(manualLiabilities>0){html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 12px;color:#555">Other Liabilities (Manual)</td><td style="text-align:right;padding:6px 0">$'+manualLiabilities.toFixed(2)+'</td></tr>';
+        if(bsOpen['bs_liab'])liabTxnsList.forEach(t=>{html+=_pdfBsDet(t.description||'Liability entry',t.date||'',parseFloat(t.amount)||0)});}
+      html+='<tr style="border-top:2px solid #222;font-weight:700"><td style="padding:8px 0">TOTAL LIABILITIES</td><td style="text-align:right;padding:8px 0">$'+bsTotalLiab.toFixed(2)+'</td></tr>';
       html+='<tr><td colspan="2" style="padding:8px 0"></td></tr>';
       html+='<tr style="border-bottom:2px solid #222;background:#f0fdf4"><td colspan="2" style="padding:10px 0;font-weight:700;font-size:15px">EQUITY</td></tr>';
       html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 12px;color:#555">Retained Earnings</td><td style="text-align:right;padding:6px 0;color:'+(bsRetained>=0?"#059669":"#dc2626")+'">$'+bsRetained.toFixed(2)+'</td></tr>';
-      html+='<tr style="border-top:3px double #222;font-weight:700;font-size:15px"><td style="padding:12px 0">TOTAL LIABILITIES & EQUITY</td><td style="text-align:right;padding:12px 0">$'+(bsTotalAP2+totalComm+bsRetained).toFixed(2)+'</td></tr>';
+      html+='<tr style="border-top:3px double #222;font-weight:700;font-size:15px"><td style="padding:12px 0">TOTAL LIABILITIES & EQUITY</td><td style="text-align:right;padding:12px 0">$'+(bsTotalLiab+bsRetained).toFixed(2)+'</td></tr>';
       html+='</tbody></table>';
     }
     html+='</div>';
@@ -5332,6 +5393,18 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   };
 
 
+  // Collapsible statement row: header line with a rotating chevron and total;
+  // children (the underlying jobs / transactions) render when expanded.
+  const _drillRow=(key,label,sub,value,color,openMap,toggle,children)=>{const open=!!openMap[key];return <div key={key}>
+    <div onClick={()=>toggle(key)} style={{padding:"8px 12px",display:"flex",alignItems:"center",gap:8,borderBottom:"1px solid #111",cursor:"pointer",background:open?"rgba(255,255,255,0.02)":"transparent",transition:"background 0.15s"}} onMouseEnter={e=>e.currentTarget.style.background="rgba(45,212,191,0.05)"} onMouseLeave={e=>e.currentTarget.style.background=open?"rgba(255,255,255,0.02)":"transparent"}>
+      <span style={{fontSize:9,color:color||"#2dd4bf",width:12,display:"inline-block",transition:"transform 0.2s",transform:open?"rotate(90deg)":"none"}}>{'\u25B6'}</span>
+      <span style={{fontSize:13,color:"#e5e5e5",fontWeight:600,flex:1}}>{label}{sub?<span style={{fontSize:10,color:"#525252",marginLeft:8,fontWeight:400}}>{sub}</span>:null}</span>
+      <span style={{fontSize:13,fontWeight:700,color:color||"#e5e5e5",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(value)}</span>
+    </div>
+    {open&&<div style={{animation:"fadeUp 0.25s"}}>{children}</div>}
+  </div>};
+  const _drillChild=(key2,label,sub,value,color,onClick)=><div key={key2} onClick={onClick} style={{padding:"5px 12px 5px 32px",display:"flex",justifyContent:"space-between",gap:8,borderBottom:"1px solid #0d0d0d",cursor:onClick?"pointer":"default",transition:"background 0.15s"}} onMouseEnter={e=>{if(onClick)e.currentTarget.style.background="rgba(45,212,191,0.04)"}} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><span style={{fontSize:12,color:"#a3a3a3",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label}{sub?<span style={{fontSize:10,color:"#525252",marginLeft:6}}>{sub}</span>:null}</span><span style={{fontSize:12,color:"#a3a3a3",fontFamily:"'JetBrains Mono',monospace",flexShrink:0}}>{fmt(value)}</span></div>;
+  const _txnJump=(t)=>{setBankSearch(t.description||'');setBankCatFilter('all');setTab('banking')};
   const kpi=(label,value,sub,color)=><Card style={{padding:16,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:6}}>{label}</div><div style={{fontSize:"clamp(18px,4vw,28px)",fontWeight:800,color:color||"#f0f0f0",fontFamily:"'JetBrains Mono',monospace",lineHeight:1}}><AnimNum value={value}/></div>{sub&&<div style={{fontSize:12,color:"#a3a3a3",marginTop:6}}>{sub}</div>}</Card>;
 
 
@@ -5390,15 +5463,29 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
 
     {tab==="pnl"&&<Card style={{padding:20}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}><div style={{fontSize:18,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>Profit & Loss</div><div style={{display:"flex",gap:8}}><Btn v="secondary" onClick={()=>setTab("banking")} style={{fontSize:11}}><I n="plus" s={12}/> Add Entry</Btn><Btn onClick={()=>generatePDF("pnl")}><I n="download" s={14}/> Export PDF</Btn></div></div>
+      <div style={{fontSize:11,color:"#525252",margin:"-8px 0 12px 0"}}>Click a category to expand its underlying jobs or transactions. The PDF export prints exactly what is expanded on screen.</div>
       <div style={{borderBottom:"2px solid #222",padding:"10px 0",display:"flex",justifyContent:"space-between"}}><span style={{fontSize:15,fontWeight:700,color:"#f0f0f0"}}>REVENUE</span><span style={{fontSize:15,fontWeight:700,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalRev)}</span></div>
-      {filteredJobs.map(j=>{const f=getJobFinancials(j.id);return <div key={j.id} onClick={()=>{fCtx.setSelectedJob(j.id);fCtx.setPage('jobs')}} style={{padding:"6px 16px",display:"flex",justifyContent:"space-between",borderBottom:"1px solid #111",cursor:"pointer",transition:"background 0.15s"}} onMouseEnter={e=>e.currentTarget.style.background="rgba(45,212,191,0.04)"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><span style={{fontSize:13,color:"#a3a3a3"}}>{j.name}</span><span style={{fontSize:13,color:"#a3a3a3",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(f.totalRevenue)}</span></div>})}
-      {filteredManualTxns.filter(t=>t.type==='revenue'&&_isManualPL(t)).map(t=><div key={t.id} style={{padding:"6px 16px",display:"flex",justifyContent:"space-between",borderBottom:"1px solid #111",background:"#2dd4bf05"}}><span style={{fontSize:13,color:"#2dd4bf"}}>{t.description||'Manual entry'} <span style={{fontSize:10,color:"#525252"}}>(manual)</span></span><span style={{fontSize:13,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(parseFloat(t.amount)||0)}</span></div>)}
+      {_drillRow('rev_jobs','Job Revenue',filteredJobs.length+' job'+(filteredJobs.length!==1?'s':''),jobRevTotal,'#2dd4bf',pnlOpen,_togglePnl,
+        filteredJobs.map(j=>{const f=getJobFinancials(j.id);return _drillChild('rj_'+j.id,j.name,'',f.totalRevenue,'#2dd4bf',()=>{fCtx.setSelectedJob(j.id);fCtx.setPage('jobs')})})
+      )}
+      {pnlRevCats.map(c=>_drillRow('revc_'+c.name,c.name,c.txns.length+' transaction'+(c.txns.length!==1?'s':''),c.total,'#2dd4bf',pnlOpen,_togglePnl,
+        c.txns.map(t=>_drillChild('rt_'+t.id,(t.description||'Manual entry'),t.date||'',parseFloat(t.amount)||0,'#2dd4bf',()=>_txnJump(t)))
+      ))}
       <div style={{borderBottom:"2px solid #222",padding:"10px 0",display:"flex",justifyContent:"space-between",marginTop:12}}><span style={{fontSize:15,fontWeight:700,color:"#f0f0f0"}}>COST OF GOODS SOLD</span><span style={{fontSize:15,fontWeight:700,color:"#f87171",fontFamily:"'JetBrains Mono',monospace"}}><AnimatedNumber value={totalCost} prefix="$"/></span></div>
-      {vendorSpend.map(v=><div key={v.name} onClick={()=>{fCtx.setGlobalSearch(v.name);fCtx.setPage('jobs')}} style={{padding:"6px 16px",display:"flex",justifyContent:"space-between",borderBottom:"1px solid #111",cursor:"pointer",transition:"background 0.15s"}} onMouseEnter={e=>e.currentTarget.style.background="rgba(248,113,113,0.04)"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><span style={{fontSize:13,color:"#a3a3a3"}}>{v.name}</span><span style={{fontSize:13,color:"#a3a3a3",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(v.spend)}</span></div>)}
-      {filteredManualTxns.filter(t=>t.type==='expense'&&_isManualPL(t)).map(t=><div key={t.id} style={{padding:"6px 16px",display:"flex",justifyContent:"space-between",borderBottom:"1px solid #111",background:"#f8717105"}}><span style={{fontSize:13,color:"#f87171"}}>{t.description||'Manual expense'} <span style={{fontSize:10,color:"#525252"}}>({t.category||'manual'})</span></span><span style={{fontSize:13,color:"#f87171",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(parseFloat(t.amount)||0)}</span></div>)}
+      {_drillRow('cogs_jobs','Job Costs by Vendor',vendorSpend.length+' vendor'+(vendorSpend.length!==1?'s':''),jobCostTotal,'#f87171',pnlOpen,_togglePnl,
+        <>
+          {vendorSpend.map(v=>_drillChild('cv_'+v.name,v.name,'',v.spend,'#f87171',()=>{fCtx.setGlobalSearch(v.name);fCtx.setPage('jobs')}))}
+          {Math.abs(_jobCostAdj)>0.005&&_drillChild('cv_adj','Adjustments','vendor credits & standalone bills',_jobCostAdj,'#f87171',()=>setTab('ap'))}
+        </>
+      )}
+      {pnlExpCats.map(c=>_drillRow('expc_'+c.name,c.name,c.txns.length+' transaction'+(c.txns.length!==1?'s':''),c.total,'#f87171',pnlOpen,_togglePnl,
+        c.txns.map(t=>_drillChild('et_'+t.id,(t.description||'Manual expense'),t.date||'',parseFloat(t.amount)||0,'#f87171',()=>_txnJump(t)))
+      ))}
       <div style={{background:"#0a0a0a",borderRadius:8,padding:"12px 0",marginTop:12,display:"flex",justifyContent:"space-between"}}><span style={{fontSize:15,fontWeight:700,color:"#f0f0f0",paddingLeft:4}}>GROSS PROFIT</span><span style={{fontSize:15,fontWeight:700,color:grossProfit>=0?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace"}}><AnimatedNumber value={grossProfit} prefix="$"/> ({grossMargin.toFixed(1)}%)</span></div>
       <div style={{borderBottom:"2px solid #222",padding:"10px 0",display:"flex",justifyContent:"space-between",marginTop:12}}><span style={{fontSize:15,fontWeight:700,color:"#f0f0f0"}}>OPERATING EXPENSES</span><span style={{fontSize:15,fontWeight:700,color:"#fbbf24",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalComm)}</span></div>
-      <div style={{padding:"6px 16px",display:"flex",justifyContent:"space-between",borderBottom:"1px solid #111"}}><span style={{fontSize:13,color:"#a3a3a3"}}>Sales Commissions</span><span style={{fontSize:13,color:"#a3a3a3",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalComm)}</span></div>
+      {_drillRow('opex_comm','Sales Commissions',commByRep.length+' rep'+(commByRep.length!==1?'s':''),totalComm,'#fbbf24',pnlOpen,_togglePnl,
+        commByRep.map(r2=>_drillChild('cm_'+r2.name,r2.name,'',r2.amount,'#fbbf24',null))
+      )}
       <div style={{background:"#34d39908",borderRadius:8,padding:"14px 4px",marginTop:16,display:"flex",justifyContent:"space-between",border:"1px solid #34d39920"}}><span style={{fontSize:17,fontWeight:800,color:"#f0f0f0"}}>NET INCOME</span><span style={{fontSize:17,fontWeight:800,color:netIncome>=0?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace"}}><AnimatedNumber value={netIncome} prefix="$"/></span></div>
     </Card>}
 
@@ -5439,10 +5526,21 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
           <div style={{background:"#2dd4bf08",borderRadius:10,padding:2,marginBottom:20,border:"1px solid #2dd4bf15"}}>
             <div style={{padding:"12px 14px",borderBottom:"2px solid #2dd4bf20"}}><span style={{fontSize:15,fontWeight:800,color:"#2dd4bf",letterSpacing:1}}>ASSETS</span></div>
             <div style={{padding:"8px 14px",borderBottom:"1px solid #222"}}><span style={{fontSize:12,fontWeight:700,color:"#e5e5e5",letterSpacing:0.5}}>Current Assets</span></div>
-            {bsLine("Cash & Cash Equivalents",bsCash,true,false,"#34d399")}
-            {bsLine("Accounts Receivable",totalAR,true,false,"#2dd4bf")}
-            {bsLine("Inventory (In Transit)",inventory,true,false,"#a78bfa")}
-            {manualAssets>0&&bsLine("Other Assets (Manual)",manualAssets,true,false,"#8b5cf6")}
+            {_drillRow('bs_cash','Cash & Cash Equivalents',liveBankAccounts.length>0?liveBankAccounts.length+' bank account'+(liveBankAccounts.length!==1?'s':'')+' (live)':'estimated (no bank sync)',bsCash,'#34d399',bsOpen,_toggleBs,
+              liveBankAccounts.length>0?liveBankAccounts.map((a,ai)=>_drillChild('cash_'+ai,(a.name||'Account')+(a.mask?' ***'+a.mask:''),a.subtype||'',Number(a.current)||0,'#34d399',()=>setTab('banking'))):[_drillChild('cash_est','Estimated from collected revenue minus payables','connect the bank feed for live balances',bsCash,'#34d399',()=>setTab('banking'))]
+            )}
+            {_drillRow('bs_ar','Accounts Receivable',arJobsList.length+' invoiced unpaid job'+(arJobsList.length!==1?'s':''),totalAR,'#2dd4bf',bsOpen,_toggleBs,
+              arJobsList.map(x=>_drillChild('ar_'+x.job.id,x.job.name,x.customer,x.amount,'#2dd4bf',()=>{fCtx.setSelectedJob(x.job.id);fCtx.setPage('jobs')}))
+            )}
+            {_drillRow('bs_inv','Inventory (In Transit)',invItemsList.length+' undelivered item'+(invItemsList.length!==1?'s':''),inventory,'#a78bfa',bsOpen,_toggleBs,
+              <>
+                {invItemsList.slice(0,40).map(x=>_drillChild('inv_'+x.item.id,x.item.description||'Item',x.jobName,x.value,'#a78bfa',()=>{fCtx.setSelectedJob(x.jobId);fCtx.setPage('jobs')}))}
+                {invItemsList.length>40&&_drillChild('inv_more','... and '+(invItemsList.length-40)+' more items','',invItemsList.slice(40).reduce((s2,x)=>s2+x.value,0),'#a78bfa',null)}
+              </>
+            )}
+            {manualAssets>0&&_drillRow('bs_assets','Other Assets (Manual)',assetTxnsList.length+' entr'+(assetTxnsList.length!==1?'ies':'y'),manualAssets,'#8b5cf6',bsOpen,_toggleBs,
+              assetTxnsList.map(t=>_drillChild('as_'+t.id,t.description||'Asset entry',t.date||'',parseFloat(t.amount)||0,'#8b5cf6',()=>_txnJump(t)))
+            )}
             <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0",borderTop:"2px solid #2dd4bf30",margin:"0 14px"}}><span style={{fontSize:14,fontWeight:800,color:"#f0f0f0"}}>Total Current Assets</span><span style={{fontSize:15,fontWeight:800,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsTotalCurrentAssets)}</span></div>
             <div style={{display:"flex",justifyContent:"space-between",padding:"12px 14px",background:"#2dd4bf10",borderRadius:"0 0 8px 8px"}}><span style={{fontSize:15,fontWeight:800,color:"#f0f0f0"}}>TOTAL ASSETS</span><span style={{fontSize:16,fontWeight:800,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsTotalAssets)}</span></div>
           </div>
@@ -5451,9 +5549,15 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
           <div style={{background:"#f9731608",borderRadius:10,padding:2,marginBottom:20,border:"1px solid #f9731615"}}>
             <div style={{padding:"12px 14px",borderBottom:"2px solid #f9731620"}}><span style={{fontSize:15,fontWeight:800,color:"#f97316",letterSpacing:1}}>LIABILITIES</span></div>
             <div style={{padding:"8px 14px",borderBottom:"1px solid #222"}}><span style={{fontSize:12,fontWeight:700,color:"#e5e5e5",letterSpacing:0.5}}>Current Liabilities</span></div>
-            {bsLine("Accounts Payable",totalAP,true,false,"#f97316")}
-            {bsLine("Commissions Payable",totalComm,true,false,"#fbbf24")}
-            {manualLiabilities>0&&bsLine("Other Liabilities (Manual)",manualLiabilities,true,false,"#f97316")}
+            {_drillRow('bs_ap','Accounts Payable',apVendorList.length+' vendor'+(apVendorList.length!==1?'s':'')+' owed',totalAP,'#f97316',bsOpen,_toggleBs,
+              apVendorList.map(v2=>_drillChild('ap_'+v2.name,v2.name,v2.items+' bill'+(v2.items!==1?'s':''),v2.total,'#f97316',()=>setTab('ap')))
+            )}
+            {_drillRow('bs_comm','Commissions Payable',commByRep.length+' rep'+(commByRep.length!==1?'s':''),totalComm,'#fbbf24',bsOpen,_toggleBs,
+              commByRep.map(r2=>_drillChild('bc_'+r2.name,r2.name,'',r2.amount,'#fbbf24',null))
+            )}
+            {manualLiabilities>0&&_drillRow('bs_liab','Other Liabilities (Manual)',liabTxnsList.length+' entr'+(liabTxnsList.length!==1?'ies':'y'),manualLiabilities,'#f97316',bsOpen,_toggleBs,
+              liabTxnsList.map(t=>_drillChild('li_'+t.id,t.description||'Liability entry',t.date||'',parseFloat(t.amount)||0,'#f97316',()=>_txnJump(t)))
+            )}
             <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0",borderTop:"2px solid #f9731630",margin:"0 14px"}}><span style={{fontSize:14,fontWeight:800,color:"#f0f0f0"}}>Total Current Liabilities</span><span style={{fontSize:15,fontWeight:800,color:"#f97316",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsTotalCurrentLiab)}</span></div>
             <div style={{display:"flex",justifyContent:"space-between",padding:"12px 14px",background:"#f9731610",borderRadius:"0 0 8px 8px"}}><span style={{fontSize:15,fontWeight:800,color:"#f0f0f0"}}>TOTAL LIABILITIES</span><span style={{fontSize:16,fontWeight:800,color:"#f97316",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsTotalLiab)}</span></div>
           </div>
