@@ -107,7 +107,7 @@ function CommissionsPage({jobs,reps,customers,updateRep,addRep,deleteRep,getJobF
 // ===============================================================
 // SALES PORTAL
 // ===============================================================
-function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobItems,_commissionFor,vendors,setPage,setSelectedJob,updateJob,notify,addSop,deleteSop,customSops,triggerPrint,jobNum,userRole,userRepId}){
+function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobItems,_commissionFor,vendors,setPage,setSelectedJob,updateJob,notify,addSop,deleteSop,customSops,triggerPrint,jobNum,userRole,userRepId,jobReportDate}){
   // Sales-role users only ever see their own tab. Default activeRep to their
   // rep id so they land directly on their own portal instead of the global Overview.
   const isSalesRole=userRole==="sales"&&!!userRepId;
@@ -132,7 +132,7 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
   const isOverview=effectiveActiveRep==="overview";
   const rep=reps.find(r=>r.id===effectiveActiveRep)||reps.filter(isSalesRep)[0]||reps[0];
   const _spNow=new Date();
-  const _spInPeriod=(j)=>{if(spPeriod==='all')return true;const d=new Date(j.createdDate);if(isNaN(d.getTime()))return true;if(spPeriod==='month')return d.getMonth()===_spNow.getMonth()&&d.getFullYear()===_spNow.getFullYear();if(spPeriod==='quarter')return Math.floor(d.getMonth()/3)===Math.floor(_spNow.getMonth()/3)&&d.getFullYear()===_spNow.getFullYear();if(spPeriod==='ytd')return d.getFullYear()===_spNow.getFullYear();return true;};
+  const _spInPeriod=(j)=>{if(spPeriod==='all')return true;const d=new Date(jobReportDate?jobReportDate(j):j.createdDate);if(isNaN(d.getTime()))return true;if(spPeriod==='month')return d.getMonth()===_spNow.getMonth()&&d.getFullYear()===_spNow.getFullYear();if(spPeriod==='quarter')return Math.floor(d.getMonth()/3)===Math.floor(_spNow.getMonth()/3)&&d.getFullYear()===_spNow.getFullYear();if(spPeriod==='ytd')return d.getFullYear()===_spNow.getFullYear();return true;};
   const spJobs=jobs.filter(_spInPeriod);
   const rj=isOverview?spJobs:spJobs.filter(j=>j.salesRep===effectiveActiveRep);
   const totalRev=rj.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
@@ -4365,10 +4365,17 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify}){
           <button onClick={()=>setViewMode('table')} style={{padding:'6px 12px',border:'none',background:viewMode==='table'?'#2dd4bf15':'transparent',color:viewMode==='table'?'#2dd4bf':'#525252',fontSize:11,cursor:'pointer',fontFamily:"'JetBrains Mono',monospace",fontWeight:600}}>TABLE</button>
           <button onClick={()=>setViewMode('kanban')} style={{padding:'6px 12px',border:'none',borderLeft:'1px solid #1a1a1a',background:viewMode==='kanban'?'#2dd4bf15':'transparent',color:viewMode==='kanban'?'#2dd4bf':'#525252',fontSize:11,cursor:'pointer',fontFamily:"'JetBrains Mono',monospace",fontWeight:600}}>BOARD</button>
         </div>
-        <select value={csvRep} onChange={e=>setCsvRep(e.target.value)} title="Every lead in the next CSV upload is assigned to this salesperson" style={{padding:'7px 10px',background:'#0a0a0a',border:'1px solid '+(csvRep?'rgba(45,212,191,0.4)':'#1a1a1a'),borderRadius:8,color:csvRep?'#2dd4bf':'#737373',fontSize:11,fontFamily:'inherit',outline:'none',cursor:'pointer'}}>
-          <option value="">CSV assign: none</option>
-          {(reps||[]).filter(r=>!r.id.includes('SEED_FLAG')&&isSalesRep(r)).map(r=><option key={r.id} value={r.id}>CSV assign: {r.name}</option>)}
-        </select>
+        <div title="Every lead in the next CSV upload is assigned to this salesperson" style={{display:'flex',alignItems:'center',gap:8,padding:'5px 6px 5px 12px',background:csvRep?'linear-gradient(135deg,rgba(45,212,191,0.10),rgba(45,212,191,0.03))':'#0a0a0a',border:'1px solid '+(csvRep?'rgba(45,212,191,0.45)':'#1a1a1a'),borderRadius:10,boxShadow:csvRep?'0 0 12px rgba(45,212,191,0.12)':'none',transition:'all 0.25s'}}>
+          <span style={{display:'flex',alignItems:'center',color:csvRep?'#2dd4bf':'#525252'}}><I n="users" s={13}/></span>
+          <div style={{display:'flex',flexDirection:'column',lineHeight:1.1}}>
+            <span style={{fontSize:8.5,color:csvRep?'#2dd4bf':'#525252',fontWeight:700,letterSpacing:1.2,textTransform:'uppercase'}}>Assign uploads to</span>
+            <select value={csvRep} onChange={e=>setCsvRep(e.target.value)} style={{padding:'1px 0',background:'transparent',border:'none',color:csvRep?'#f0f0f0':'#737373',fontSize:12,fontWeight:600,fontFamily:'inherit',outline:'none',cursor:'pointer'}}>
+              <option value="">No one (manual)</option>
+              {(reps||[]).filter(r=>!r.id.includes('SEED_FLAG')&&isSalesRep(r)).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}
+            </select>
+          </div>
+          {csvRep&&<span style={{width:22,height:22,borderRadius:'50%',background:'rgba(45,212,191,0.15)',border:'1px solid rgba(45,212,191,0.4)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:9,fontWeight:800,color:'#2dd4bf',fontFamily:"'JetBrains Mono',monospace",flexShrink:0}}>{((reps||[]).find(r=>r.id===csvRep)?.name||'?').split(' ').map(n2=>n2[0]).join('').slice(0,2)}</span>}
+        </div>
         <input ref={fileRef} type="file" accept=".csv,.tsv" onChange={handleCsv} style={{display:'none'}}/>
         <Btn v="secondary" onClick={()=>fileRef.current?.click()} style={{fontSize:11,padding:'7px 14px'}}><I n="upload" s={13}/> CSV</Btn>
         <Btn onClick={()=>setShowAdd(!showAdd)} style={{fontSize:11,padding:'7px 14px'}}><I n="plus" s={13}/> Add</Btn>
@@ -5102,7 +5109,11 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
 
   // Filter jobs by date range
   const fromD=new Date(dateFrom+"T00:00:00");const toD=new Date(dateTo+"T23:59:59");
-  const filteredJobs=jobs.filter(j=>{const d=new Date(j.createdDate);return d>=fromD&&d<=toD});
+  // Jobs fall into the selected range by their business REPORTING date (invoice
+  // date >> latest delivery >> due date >> created) -- not the date the record was
+  // typed into the AIOS. See jobReportDate in App.jsx for why this matters.
+  const _finReportDate=fCtx.jobReportDate;
+  const filteredJobs=jobs.filter(j=>{const d=new Date(_finReportDate?_finReportDate(j):j.createdDate);return d>=fromD&&d<=toD});
   const filteredItems=lineItems.filter(i=>{const j=jobs.find(jj=>jj.id===i.jobId);if(!j)return false;const d=new Date(j.createdDate);return d>=fromD&&d<=toD});
 
 
@@ -5279,7 +5290,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   // only, so Past Year / All Time / custom ranges silently dropped prior-year months
   // from the Overview chart. Keys are year+month; labels carry a 'YY suffix for
   // non-current years; chronological sort.
-  const monthlyData=(()=>{const curY=new Date().getFullYear();const m={};filteredJobs.forEach(j=>{const mm=/^(\d{4})-(\d{2})/.exec(String(j.createdDate||''));let y,mo;if(mm){y=+mm[1];mo=+mm[2]-1}else{const d=new Date(j.createdDate);if(isNaN(d.getTime()))return;y=d.getFullYear();mo=d.getMonth()}if(mo<0||mo>11)return;const k=y+'-'+mo;if(!m[k])m[k]={name:months[mo]+(y!==curY?" '"+String(y).slice(2):""),revenue:0,cost:0,_s:y*12+mo};const f=getJobFinancials(j.id);m[k].revenue+=f.totalRevenue;m[k].cost+=f.totalCost;});return Object.values(m).sort((a,b)=>a._s-b._s).map(o=>({name:o.name,revenue:o.revenue,cost:o.cost,profit:o.revenue-o.cost,margin:o.revenue>0?((o.revenue-o.cost)/o.revenue*100):0}));})();
+  const monthlyData=(()=>{const curY=new Date().getFullYear();const m={};filteredJobs.forEach(j=>{const _rd=String((_finReportDate?_finReportDate(j):j.createdDate)||'');const mm=/^(\d{4})-(\d{2})/.exec(_rd);let y,mo;if(mm){y=+mm[1];mo=+mm[2]-1}else{const d=new Date(_rd);if(isNaN(d.getTime()))return;y=d.getFullYear();mo=d.getMonth()}if(mo<0||mo>11)return;const k=y+'-'+mo;if(!m[k])m[k]={name:months[mo]+(y!==curY?" '"+String(y).slice(2):""),revenue:0,cost:0,_s:y*12+mo};const f=getJobFinancials(j.id);m[k].revenue+=f.totalRevenue;m[k].cost+=f.totalCost;});return Object.values(m).sort((a,b)=>a._s-b._s).map(o=>({name:o.name,revenue:o.revenue,cost:o.cost,profit:o.revenue-o.cost,margin:o.revenue>0?((o.revenue-o.cost)/o.revenue*100):0}));})();
   // Monthly bank cash flow (deposits vs payments) across the filtered transactions.
   // The cash-basis companion to the accrual Revenue vs Cost chart, and the fast
   // visual check that a statement upload landed in the right months.
@@ -5302,6 +5313,9 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   const commByRep=reps.filter(r=>!r.id.includes("SEED_FLAG")&&(r.commissionRate||0)>0).map(r=>({name:r.name,amount:filteredJobs.filter(j=>j.salesRep===r.id).reduce((s2,j)=>s2+_commissionFor(j.id,r.commissionRate),0)})).filter(x=>x.amount>0.005).sort((a,b)=>b.amount-a.amount);
   const assetTxnsList=filteredManualTxns.filter(t=>t.type==='asset'||t.category==='asset');
   const liabTxnsList=filteredManualTxns.filter(t=>t.type==='liability'||t.category==='liability');
+  const _allPnlKeys=()=>{const o={rev_jobs:true,cogs_jobs:true,opex_comm:true};pnlRevCats.forEach(c=>o['revc_'+c.name]=true);pnlExpCats.forEach(c=>o['expc_'+c.name]=true);return o;};
+  const _allBsKeys=()=>({bs_cash:true,bs_ar:true,bs_inv:true,bs_assets:true,bs_ap:true,bs_comm:true,bs_liab:true});
+  const _periodLabel=new Date(dateFrom+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' \u2013 '+new Date(dateTo+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
 
 
   // Customer revenue
@@ -5393,17 +5407,18 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   };
 
 
-  // Collapsible statement row: header line with a rotating chevron and total;
-  // children (the underlying jobs / transactions) render when expanded.
-  const _drillRow=(key,label,sub,value,color,openMap,toggle,children)=>{const open=!!openMap[key];return <div key={key}>
-    <div onClick={()=>toggle(key)} style={{padding:"8px 12px",display:"flex",alignItems:"center",gap:8,borderBottom:"1px solid #111",cursor:"pointer",background:open?"rgba(255,255,255,0.02)":"transparent",transition:"background 0.15s"}} onMouseEnter={e=>e.currentTarget.style.background="rgba(45,212,191,0.05)"} onMouseLeave={e=>e.currentTarget.style.background=open?"rgba(255,255,255,0.02)":"transparent"}>
-      <span style={{fontSize:9,color:color||"#2dd4bf",width:12,display:"inline-block",transition:"transform 0.2s",transform:open?"rotate(90deg)":"none"}}>{'\u25B6'}</span>
-      <span style={{fontSize:13,color:"#e5e5e5",fontWeight:600,flex:1}}>{label}{sub?<span style={{fontSize:10,color:"#525252",marginLeft:8,fontWeight:400}}>{sub}</span>:null}</span>
-      <span style={{fontSize:13,fontWeight:700,color:color||"#e5e5e5",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(value)}</span>
+  // Collapsible statement row: chevron disc, category name, share-of-section chip,
+  // and total. Children (the underlying jobs / transactions) render when expanded.
+  const _drillRow=(key,label,sub,value,color,openMap,toggle,children,pctBase)=>{const open=!!openMap[key];const pct=(pctBase&&pctBase>0.005&&isFinite(value))?Math.abs(value)/pctBase*100:null;return <div key={key}>
+    <div onClick={()=>toggle(key)} style={{padding:"9px 12px",display:"flex",alignItems:"center",gap:10,borderBottom:"1px solid #111",cursor:"pointer",background:open?"rgba(255,255,255,0.025)":"transparent",transition:"background 0.15s"}} onMouseEnter={e=>e.currentTarget.style.background="rgba(45,212,191,0.05)"} onMouseLeave={e=>e.currentTarget.style.background=open?"rgba(255,255,255,0.025)":"transparent"}>
+      <span style={{width:18,height:18,borderRadius:6,background:(color||"#2dd4bf")+"14",border:"1px solid "+(color||"#2dd4bf")+"25",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"transform 0.25s cubic-bezier(0.34,1.4,0.64,1)",transform:open?"rotate(90deg)":"none"}}><span style={{fontSize:8,color:color||"#2dd4bf",lineHeight:1}}>{'\u25B6'}</span></span>
+      <span style={{fontSize:13,color:"#f0f0f0",fontWeight:600,flex:1,letterSpacing:0.1}}>{label}{sub?<span style={{fontSize:10,color:"#525252",marginLeft:8,fontWeight:400}}>{sub}</span>:null}</span>
+      {pct!==null&&<span style={{fontSize:9,fontWeight:700,color:"#737373",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.06)",padding:"2px 7px",borderRadius:10,fontFamily:"'JetBrains Mono',monospace",flexShrink:0}}>{pct>=99.95?'100':pct.toFixed(1)}%</span>}
+      <span style={{fontSize:13.5,fontWeight:800,color:color||"#e5e5e5",fontFamily:"'JetBrains Mono',monospace",flexShrink:0,minWidth:90,textAlign:"right"}}>{fmt(value)}</span>
     </div>
-    {open&&<div style={{animation:"fadeUp 0.25s"}}>{children}</div>}
+    {open&&<div style={{animation:"fadeUp 0.25s",background:"rgba(0,0,0,0.25)",borderLeft:"2px solid "+(color||"#2dd4bf")+"30",marginLeft:20}}>{children}</div>}
   </div>};
-  const _drillChild=(key2,label,sub,value,color,onClick)=><div key={key2} onClick={onClick} style={{padding:"5px 12px 5px 32px",display:"flex",justifyContent:"space-between",gap:8,borderBottom:"1px solid #0d0d0d",cursor:onClick?"pointer":"default",transition:"background 0.15s"}} onMouseEnter={e=>{if(onClick)e.currentTarget.style.background="rgba(45,212,191,0.04)"}} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><span style={{fontSize:12,color:"#a3a3a3",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label}{sub?<span style={{fontSize:10,color:"#525252",marginLeft:6}}>{sub}</span>:null}</span><span style={{fontSize:12,color:"#a3a3a3",fontFamily:"'JetBrains Mono',monospace",flexShrink:0}}>{fmt(value)}</span></div>;
+  const _drillChild=(key2,label,sub,value,color,onClick)=><div key={key2} onClick={onClick} style={{padding:"5px 12px 5px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,borderBottom:"1px solid rgba(255,255,255,0.03)",cursor:onClick?"pointer":"default",transition:"background 0.15s"}} onMouseEnter={e=>{if(onClick)e.currentTarget.style.background="rgba(45,212,191,0.05)"}} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><span style={{fontSize:12,color:"#a3a3a3",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{onClick&&<span style={{color:(color||"#2dd4bf")+"70",marginRight:6,fontSize:9}}>{'\u2197'}</span>}{label}{sub?<span style={{fontSize:10,color:"#525252",marginLeft:6}}>{sub}</span>:null}</span><span style={{fontSize:12,color:"#c4c4c4",fontFamily:"'JetBrains Mono',monospace",flexShrink:0}}>{fmt(value)}</span></div>;
   const _txnJump=(t)=>{setBankSearch(t.description||'');setBankCatFilter('all');setTab('banking')};
   const kpi=(label,value,sub,color)=><Card style={{padding:16,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:6}}>{label}</div><div style={{fontSize:"clamp(18px,4vw,28px)",fontWeight:800,color:color||"#f0f0f0",fontFamily:"'JetBrains Mono',monospace",lineHeight:1}}><AnimNum value={value}/></div>{sub&&<div style={{fontSize:12,color:"#a3a3a3",marginTop:6}}>{sub}</div>}</Card>;
 
@@ -5462,29 +5477,38 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
 
 
     {tab==="pnl"&&<Card style={{padding:20}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}><div style={{fontSize:18,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>Profit & Loss</div><div style={{display:"flex",gap:8}}><Btn v="secondary" onClick={()=>setTab("banking")} style={{fontSize:11}}><I n="plus" s={12}/> Add Entry</Btn><Btn onClick={()=>generatePDF("pnl")}><I n="download" s={14}/> Export PDF</Btn></div></div>
-      <div style={{fontSize:11,color:"#525252",margin:"-8px 0 12px 0"}}>Click a category to expand its underlying jobs or transactions. The PDF export prints exactly what is expanded on screen.</div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8,flexWrap:"wrap",gap:8}}>
+        <div><div style={{fontSize:18,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>Profit & Loss</div><div style={{fontSize:11,color:"#737373",marginTop:2,fontFamily:"'JetBrains Mono',monospace"}}>{_periodLabel}</div></div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          <div style={{display:"flex",borderRadius:8,overflow:"hidden",border:"1px solid #1a1a1a"}}>
+            <button onClick={()=>setPnlOpen(_allPnlKeys())} style={{padding:"6px 12px",border:"none",background:"transparent",color:"#737373",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.color="#2dd4bf"}} onMouseLeave={e=>{e.currentTarget.style.color="#737373"}}>Expand All</button>
+            <button onClick={()=>setPnlOpen({})} style={{padding:"6px 12px",border:"none",borderLeft:"1px solid #1a1a1a",background:"transparent",color:"#737373",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.color="#2dd4bf"}} onMouseLeave={e=>{e.currentTarget.style.color="#737373"}}>Collapse All</button>
+          </div>
+          <Btn v="secondary" onClick={()=>setTab("banking")} style={{fontSize:11}}><I n="plus" s={12}/> Add Entry</Btn><Btn onClick={()=>generatePDF("pnl")}><I n="download" s={14}/> Export PDF</Btn>
+        </div>
+      </div>
+      <div style={{fontSize:11,color:"#525252",marginBottom:14}}>Click a category to open the jobs or transactions inside it -- click a line to jump to the record. The PDF export prints exactly what is expanded on screen.</div>
       <div style={{borderBottom:"2px solid #222",padding:"10px 0",display:"flex",justifyContent:"space-between"}}><span style={{fontSize:15,fontWeight:700,color:"#f0f0f0"}}>REVENUE</span><span style={{fontSize:15,fontWeight:700,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalRev)}</span></div>
       {_drillRow('rev_jobs','Job Revenue',filteredJobs.length+' job'+(filteredJobs.length!==1?'s':''),jobRevTotal,'#2dd4bf',pnlOpen,_togglePnl,
-        filteredJobs.map(j=>{const f=getJobFinancials(j.id);return _drillChild('rj_'+j.id,j.name,'',f.totalRevenue,'#2dd4bf',()=>{fCtx.setSelectedJob(j.id);fCtx.setPage('jobs')})})
+        filteredJobs.map(j=>{const f=getJobFinancials(j.id);return _drillChild('rj_'+j.id,j.name,'',f.totalRevenue,'#2dd4bf',()=>{fCtx.setSelectedJob(j.id);fCtx.setPage('jobs')})}),totalRev
       )}
       {pnlRevCats.map(c=>_drillRow('revc_'+c.name,c.name,c.txns.length+' transaction'+(c.txns.length!==1?'s':''),c.total,'#2dd4bf',pnlOpen,_togglePnl,
-        c.txns.map(t=>_drillChild('rt_'+t.id,(t.description||'Manual entry'),t.date||'',parseFloat(t.amount)||0,'#2dd4bf',()=>_txnJump(t)))
+        c.txns.map(t=>_drillChild('rt_'+t.id,(t.description||'Manual entry'),t.date||'',parseFloat(t.amount)||0,'#2dd4bf',()=>_txnJump(t))),totalRev
       ))}
       <div style={{borderBottom:"2px solid #222",padding:"10px 0",display:"flex",justifyContent:"space-between",marginTop:12}}><span style={{fontSize:15,fontWeight:700,color:"#f0f0f0"}}>COST OF GOODS SOLD</span><span style={{fontSize:15,fontWeight:700,color:"#f87171",fontFamily:"'JetBrains Mono',monospace"}}><AnimatedNumber value={totalCost} prefix="$"/></span></div>
       {_drillRow('cogs_jobs','Job Costs by Vendor',vendorSpend.length+' vendor'+(vendorSpend.length!==1?'s':''),jobCostTotal,'#f87171',pnlOpen,_togglePnl,
         <>
           {vendorSpend.map(v=>_drillChild('cv_'+v.name,v.name,'',v.spend,'#f87171',()=>{fCtx.setGlobalSearch(v.name);fCtx.setPage('jobs')}))}
           {Math.abs(_jobCostAdj)>0.005&&_drillChild('cv_adj','Adjustments','vendor credits & standalone bills',_jobCostAdj,'#f87171',()=>setTab('ap'))}
-        </>
+        </>,totalCost
       )}
       {pnlExpCats.map(c=>_drillRow('expc_'+c.name,c.name,c.txns.length+' transaction'+(c.txns.length!==1?'s':''),c.total,'#f87171',pnlOpen,_togglePnl,
-        c.txns.map(t=>_drillChild('et_'+t.id,(t.description||'Manual expense'),t.date||'',parseFloat(t.amount)||0,'#f87171',()=>_txnJump(t)))
+        c.txns.map(t=>_drillChild('et_'+t.id,(t.description||'Manual expense'),t.date||'',parseFloat(t.amount)||0,'#f87171',()=>_txnJump(t))),totalCost
       ))}
       <div style={{background:"#0a0a0a",borderRadius:8,padding:"12px 0",marginTop:12,display:"flex",justifyContent:"space-between"}}><span style={{fontSize:15,fontWeight:700,color:"#f0f0f0",paddingLeft:4}}>GROSS PROFIT</span><span style={{fontSize:15,fontWeight:700,color:grossProfit>=0?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace"}}><AnimatedNumber value={grossProfit} prefix="$"/> ({grossMargin.toFixed(1)}%)</span></div>
       <div style={{borderBottom:"2px solid #222",padding:"10px 0",display:"flex",justifyContent:"space-between",marginTop:12}}><span style={{fontSize:15,fontWeight:700,color:"#f0f0f0"}}>OPERATING EXPENSES</span><span style={{fontSize:15,fontWeight:700,color:"#fbbf24",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalComm)}</span></div>
       {_drillRow('opex_comm','Sales Commissions',commByRep.length+' rep'+(commByRep.length!==1?'s':''),totalComm,'#fbbf24',pnlOpen,_togglePnl,
-        commByRep.map(r2=>_drillChild('cm_'+r2.name,r2.name,'',r2.amount,'#fbbf24',null))
+        commByRep.map(r2=>_drillChild('cm_'+r2.name,r2.name,'',r2.amount,'#fbbf24',null)),totalComm
       )}
       <div style={{background:"#34d39908",borderRadius:8,padding:"14px 4px",marginTop:16,display:"flex",justifyContent:"space-between",border:"1px solid #34d39920"}}><span style={{fontSize:17,fontWeight:800,color:"#f0f0f0"}}>NET INCOME</span><span style={{fontSize:17,fontWeight:800,color:netIncome>=0?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace"}}><AnimatedNumber value={netIncome} prefix="$"/></span></div>
     </Card>}
@@ -5519,7 +5543,13 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
         <Card style={{padding:20}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:8}}>
             <div><div style={{fontSize:18,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>Balance Sheet</div><div style={{fontSize:12,color:"#737373",marginTop:2}}>As of {new Date(dateTo).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</div></div>
-            <div style={{display:"flex",gap:8}}><Btn v="secondary" onClick={()=>setTab("banking")} style={{fontSize:11}}><I n="plus" s={12}/> Add Entry</Btn><Btn onClick={()=>generatePDF("balance")}><I n="download" s={14}/> Export PDF</Btn></div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              <div style={{display:"flex",borderRadius:8,overflow:"hidden",border:"1px solid #1a1a1a"}}>
+                <button onClick={()=>setBsOpen(_allBsKeys())} style={{padding:"6px 12px",border:"none",background:"transparent",color:"#737373",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.color="#2dd4bf"}} onMouseLeave={e=>{e.currentTarget.style.color="#737373"}}>Expand All</button>
+                <button onClick={()=>setBsOpen({})} style={{padding:"6px 12px",border:"none",borderLeft:"1px solid #1a1a1a",background:"transparent",color:"#737373",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.color="#2dd4bf"}} onMouseLeave={e=>{e.currentTarget.style.color="#737373"}}>Collapse All</button>
+              </div>
+              <Btn v="secondary" onClick={()=>setTab("banking")} style={{fontSize:11}}><I n="plus" s={12}/> Add Entry</Btn><Btn onClick={()=>generatePDF("balance")}><I n="download" s={14}/> Export PDF</Btn>
+            </div>
           </div>
 
 
@@ -5527,19 +5557,19 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
             <div style={{padding:"12px 14px",borderBottom:"2px solid #2dd4bf20"}}><span style={{fontSize:15,fontWeight:800,color:"#2dd4bf",letterSpacing:1}}>ASSETS</span></div>
             <div style={{padding:"8px 14px",borderBottom:"1px solid #222"}}><span style={{fontSize:12,fontWeight:700,color:"#e5e5e5",letterSpacing:0.5}}>Current Assets</span></div>
             {_drillRow('bs_cash','Cash & Cash Equivalents',liveBankAccounts.length>0?liveBankAccounts.length+' bank account'+(liveBankAccounts.length!==1?'s':'')+' (live)':'estimated (no bank sync)',bsCash,'#34d399',bsOpen,_toggleBs,
-              liveBankAccounts.length>0?liveBankAccounts.map((a,ai)=>_drillChild('cash_'+ai,(a.name||'Account')+(a.mask?' ***'+a.mask:''),a.subtype||'',Number(a.current)||0,'#34d399',()=>setTab('banking'))):[_drillChild('cash_est','Estimated from collected revenue minus payables','connect the bank feed for live balances',bsCash,'#34d399',()=>setTab('banking'))]
+              liveBankAccounts.length>0?liveBankAccounts.map((a,ai)=>_drillChild('cash_'+ai,(a.name||'Account')+(a.mask?' ***'+a.mask:''),a.subtype||'',Number(a.current)||0,'#34d399',()=>setTab('banking'))):[_drillChild('cash_est','Estimated from collected revenue minus payables','connect the bank feed for live balances',bsCash,'#34d399',()=>setTab('banking'))],bsTotalAssets
             )}
             {_drillRow('bs_ar','Accounts Receivable',arJobsList.length+' invoiced unpaid job'+(arJobsList.length!==1?'s':''),totalAR,'#2dd4bf',bsOpen,_toggleBs,
-              arJobsList.map(x=>_drillChild('ar_'+x.job.id,x.job.name,x.customer,x.amount,'#2dd4bf',()=>{fCtx.setSelectedJob(x.job.id);fCtx.setPage('jobs')}))
+              arJobsList.map(x=>_drillChild('ar_'+x.job.id,x.job.name,x.customer,x.amount,'#2dd4bf',()=>{fCtx.setSelectedJob(x.job.id);fCtx.setPage('jobs')})),bsTotalAssets
             )}
             {_drillRow('bs_inv','Inventory (In Transit)',invItemsList.length+' undelivered item'+(invItemsList.length!==1?'s':''),inventory,'#a78bfa',bsOpen,_toggleBs,
               <>
                 {invItemsList.slice(0,40).map(x=>_drillChild('inv_'+x.item.id,x.item.description||'Item',x.jobName,x.value,'#a78bfa',()=>{fCtx.setSelectedJob(x.jobId);fCtx.setPage('jobs')}))}
                 {invItemsList.length>40&&_drillChild('inv_more','... and '+(invItemsList.length-40)+' more items','',invItemsList.slice(40).reduce((s2,x)=>s2+x.value,0),'#a78bfa',null)}
-              </>
+              </>,bsTotalAssets
             )}
             {manualAssets>0&&_drillRow('bs_assets','Other Assets (Manual)',assetTxnsList.length+' entr'+(assetTxnsList.length!==1?'ies':'y'),manualAssets,'#8b5cf6',bsOpen,_toggleBs,
-              assetTxnsList.map(t=>_drillChild('as_'+t.id,t.description||'Asset entry',t.date||'',parseFloat(t.amount)||0,'#8b5cf6',()=>_txnJump(t)))
+              assetTxnsList.map(t=>_drillChild('as_'+t.id,t.description||'Asset entry',t.date||'',parseFloat(t.amount)||0,'#8b5cf6',()=>_txnJump(t))),bsTotalAssets
             )}
             <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0",borderTop:"2px solid #2dd4bf30",margin:"0 14px"}}><span style={{fontSize:14,fontWeight:800,color:"#f0f0f0"}}>Total Current Assets</span><span style={{fontSize:15,fontWeight:800,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsTotalCurrentAssets)}</span></div>
             <div style={{display:"flex",justifyContent:"space-between",padding:"12px 14px",background:"#2dd4bf10",borderRadius:"0 0 8px 8px"}}><span style={{fontSize:15,fontWeight:800,color:"#f0f0f0"}}>TOTAL ASSETS</span><span style={{fontSize:16,fontWeight:800,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsTotalAssets)}</span></div>
@@ -5550,13 +5580,13 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
             <div style={{padding:"12px 14px",borderBottom:"2px solid #f9731620"}}><span style={{fontSize:15,fontWeight:800,color:"#f97316",letterSpacing:1}}>LIABILITIES</span></div>
             <div style={{padding:"8px 14px",borderBottom:"1px solid #222"}}><span style={{fontSize:12,fontWeight:700,color:"#e5e5e5",letterSpacing:0.5}}>Current Liabilities</span></div>
             {_drillRow('bs_ap','Accounts Payable',apVendorList.length+' vendor'+(apVendorList.length!==1?'s':'')+' owed',totalAP,'#f97316',bsOpen,_toggleBs,
-              apVendorList.map(v2=>_drillChild('ap_'+v2.name,v2.name,v2.items+' bill'+(v2.items!==1?'s':''),v2.total,'#f97316',()=>setTab('ap')))
+              apVendorList.map(v2=>_drillChild('ap_'+v2.name,v2.name,v2.items+' bill'+(v2.items!==1?'s':''),v2.total,'#f97316',()=>setTab('ap'))),bsTotalCurrentLiab
             )}
             {_drillRow('bs_comm','Commissions Payable',commByRep.length+' rep'+(commByRep.length!==1?'s':''),totalComm,'#fbbf24',bsOpen,_toggleBs,
-              commByRep.map(r2=>_drillChild('bc_'+r2.name,r2.name,'',r2.amount,'#fbbf24',null))
+              commByRep.map(r2=>_drillChild('bc_'+r2.name,r2.name,'',r2.amount,'#fbbf24',null)),bsTotalCurrentLiab
             )}
             {manualLiabilities>0&&_drillRow('bs_liab','Other Liabilities (Manual)',liabTxnsList.length+' entr'+(liabTxnsList.length!==1?'ies':'y'),manualLiabilities,'#f97316',bsOpen,_toggleBs,
-              liabTxnsList.map(t=>_drillChild('li_'+t.id,t.description||'Liability entry',t.date||'',parseFloat(t.amount)||0,'#f97316',()=>_txnJump(t)))
+              liabTxnsList.map(t=>_drillChild('li_'+t.id,t.description||'Liability entry',t.date||'',parseFloat(t.amount)||0,'#f97316',()=>_txnJump(t))),bsTotalCurrentLiab
             )}
             <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0",borderTop:"2px solid #f9731630",margin:"0 14px"}}><span style={{fontSize:14,fontWeight:800,color:"#f0f0f0"}}>Total Current Liabilities</span><span style={{fontSize:15,fontWeight:800,color:"#f97316",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsTotalCurrentLiab)}</span></div>
             <div style={{display:"flex",justifyContent:"space-between",padding:"12px 14px",background:"#f9731610",borderRadius:"0 0 8px 8px"}}><span style={{fontSize:15,fontWeight:800,color:"#f0f0f0"}}>TOTAL LIABILITIES</span><span style={{fontSize:16,fontWeight:800,color:"#f97316",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsTotalLiab)}</span></div>
