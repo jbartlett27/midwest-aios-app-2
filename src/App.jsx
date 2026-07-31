@@ -1831,13 +1831,33 @@ function MidwestAIOSInner() {
 
 
   
+  // Business reporting date for a job -- the date its numbers count under for
+  // period filters and monthly charts, everywhere in the app. Chain: the real
+  // invoice date set on the job's invoice document >> latest item delivery date >>
+  // job due date >> record creation date. Filtering on createdDate alone was the
+  // "clicking Monthly / Quarterly changes nothing" bug: the historical migration
+  // compressed 220+ jobs' createdDates into Jun-Jul 2026 (and Q3-to-date IS July),
+  // so every period selected nearly the same set. Invoice/delivery dates spread
+  // Feb-Jul and reflect when the business actually happened.
+  const _rdStable=(prefix,a,b)=>prefix+(a||'').replace(/[^A-Z0-9]/gi,'').slice(-4).toUpperCase()+'-'+(b||'').replace(/[^A-Z0-9]/gi,'').slice(-4).toUpperCase();
+  const _rdDocDates=(()=>{const rec=(customSops||[]).find(s2=>s2.id==='DOC_STATUSES_GLOBAL');if(!rec)return {};try{return JSON.parse(rec.content||'{}')}catch{return {}}})();
+  const _rdDeliveryMax=(()=>{const m={};for(let i=0;i<lineItems.length;i++){const it=lineItems[i];if(it&&it.jobId&&it.deliveryDate&&(!m[it.jobId]||it.deliveryDate>m[it.jobId]))m[it.jobId]=it.deliveryDate;}return m;})();
+  const jobReportDate=(j)=>{
+    if(!j)return '';
+    const ov=_rdDocDates[_rdStable('INV-',j.id,j.customer)+'__date'];
+    if(ov&&/^\d{4}-\d{2}-\d{2}/.test(String(ov)))return String(ov);
+    if(_rdDeliveryMax[j.id])return _rdDeliveryMax[j.id];
+    if(j.dueDate)return j.dueDate;
+    return j.createdDate||'';
+  };
   // Hard page guard: the sidebar already hides pages a role cannot open, but page
   // state can also be set programmatically (Brain navigation, in-app links). Any
   // attempt to navigate outside the user's allowed set is coerced to their first
-  // allowed page. Customer/Vendor 360 are drill-in subpages reached from allowed
-  // pages and render exclusively from role-filtered ctx data, so they pass through.
-  const _allowedPageIds = new Set([...navItems.map(i=>i.id),"customer360","vendor360"]);
-  const ctx = {jobs:visibleJobs,allJobs:jobs,setJobs,jobNum,currentUser,userRole,userRepId,logout,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,_commissionFor,_bankTxnHash,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,forceDeleteVendor,forceDeleteLineItem,forceDeleteCustomer,forceDeleteRep,db,lineItemShipTos,setLineItemShipTo,setPage:p=>{const _tp=_allowedPageIds.has(p)?p:(navItems[0]?.id||"dashboard");setPage(_tp);setMobileMenuOpen(false);window.scrollTo(0,0);const mc=document.querySelector('.main-content');if(mc)mc.scrollTop=0},viewCustomer:id=>{setPage("customer360");window._viewCustId=id;window.scrollTo(0,0)},brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter,pendingCommPreview,setPendingCommPreview,pendingBrainFile,setPendingBrainFile,pendingBrainEmail,setPendingBrainEmail};
+  // allowed page. Customer 360 renders exclusively from role-filtered ctx data so
+  // it passes through for everyone; Vendor 360 reads the unfiltered line-item
+  // ledger (vendor spend across ALL jobs), so sales-role users are excluded.
+  const _allowedPageIds = new Set([...navItems.map(i=>i.id),"customer360",...(userRole==="sales"?[]:["vendor360"])]);
+  const ctx = {jobs:visibleJobs,allJobs:jobs,setJobs,jobNum,currentUser,userRole,userRepId,logout,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,_commissionFor,_bankTxnHash,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,forceDeleteVendor,forceDeleteLineItem,forceDeleteCustomer,forceDeleteRep,db,lineItemShipTos,setLineItemShipTo,setPage:p=>{const _tp=_allowedPageIds.has(p)?p:(navItems[0]?.id||"dashboard");setPage(_tp);setMobileMenuOpen(false);window.scrollTo(0,0);const mc=document.querySelector('.main-content');if(mc)mc.scrollTop=0},viewCustomer:id=>{setPage("customer360");window._viewCustId=id;window.scrollTo(0,0)},jobReportDate,brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter,pendingCommPreview,setPendingCommPreview,pendingBrainFile,setPendingBrainFile,pendingBrainEmail,setPendingBrainEmail};
 
 
   const loadingScreen = (
@@ -2137,12 +2157,12 @@ function AnimatedPct({value,duration=600}){
 }
 
 
-function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJobItems,_commissionFor,setPage,setSelectedJob,dateFilter,setDateFilter,jobNum,notify}){
+function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJobItems,_commissionFor,setPage,setSelectedJob,dateFilter,setDateFilter,jobNum,notify,jobReportDate}){
   // Date filtering
   const now = new Date();
   const filterJob = (j) => {
     if (dateFilter === "all") return true;
-    const d = new Date(j.createdDate);
+    const d = new Date(jobReportDate?jobReportDate(j):j.createdDate);
     if (isNaN(d.getTime())) return true;
     if (dateFilter === "week") { const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7); return d >= weekAgo; }
     if (dateFilter === "month") return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
@@ -2167,8 +2187,8 @@ function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJo
   const phases=["Quoting","In Progress","Invoiced","Complete"];
   const phaseData=phases.map(p=>{const pj=filtered.filter(j=>j.phase===p);return{phase:p,count:pj.length,rev:pj.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0)}});
   const vendorSpend=(()=>{const m={};fLineItems.forEach(i=>{const v=vendors.find(v=>v.id===i.vendor);m[v?.name||"Other"]=(m[v?.name||"Other"]||0)+i.unitCost*i.qtyOrdered});return Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,6)})();
-  const monthlyRev=(()=>{const MN=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];const m={};filtered.forEach(j=>{let invD="";const _it=getJobItems(j.id);for(let k=0;k<_it.length;k++){const it=_it[k];if(it&&it.invoiceDate&&(it.qtyInvoiced||0)>0&&it.invoiceDate>invD)invD=it.invoiceDate;}const rd=invD||j.dueDate||j.createdDate;if(!rd)return;let y,mo;const mm=/^(\d{4})-(\d{2})/.exec(String(rd));if(mm){y=+mm[1];mo=+mm[2]-1;}else{const d=new Date(rd);if(isNaN(d.getTime()))return;y=d.getFullYear();mo=d.getMonth();}if(mo<0||mo>11)return;const key=y+"-"+mo;if(!m[key])m[key]={name:MN[mo],rev:0,_s:y*12+mo};m[key].rev+=getJobFinancials(j.id).totalRevenue;});return Object.values(m).sort((a,b)=>a._s-b._s).map(o=>({name:o.name,rev:o.rev}));})();
-  const marginData=(()=>{const MN=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];const m={};filtered.forEach(j=>{let invD="";const _it=getJobItems(j.id);for(let k=0;k<_it.length;k++){const it=_it[k];if(it&&it.invoiceDate&&(it.qtyInvoiced||0)>0&&it.invoiceDate>invD)invD=it.invoiceDate;}const rd=invD||j.dueDate||j.createdDate;if(!rd)return;let y,mo;const mm=/^(\d{4})-(\d{2})/.exec(String(rd));if(mm){y=+mm[1];mo=+mm[2]-1;}else{const d=new Date(rd);if(isNaN(d.getTime()))return;y=d.getFullYear();mo=d.getMonth();}if(mo<0||mo>11)return;const key=y+"-"+mo;if(!m[key])m[key]={name:MN[mo],rev:0,cost:0,_s:y*12+mo};const f=getJobFinancials(j.id);m[key].rev+=f.totalRevenue;m[key].cost+=f.totalCost;});return Object.values(m).sort((a,b)=>a._s-b._s).map(o=>({name:o.name,margin:o.rev>0?(o.rev-o.cost)/o.rev*100:0}));})();
+  const monthlyRev=(()=>{const MN=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];const m={};filtered.forEach(j=>{const rd=(jobReportDate?jobReportDate(j):(j.dueDate||j.createdDate));if(!rd)return;let y,mo;const mm=/^(\d{4})-(\d{2})/.exec(String(rd));if(mm){y=+mm[1];mo=+mm[2]-1;}else{const d=new Date(rd);if(isNaN(d.getTime()))return;y=d.getFullYear();mo=d.getMonth();}if(mo<0||mo>11)return;const key=y+"-"+mo;if(!m[key])m[key]={name:MN[mo],rev:0,_s:y*12+mo};m[key].rev+=getJobFinancials(j.id).totalRevenue;});return Object.values(m).sort((a,b)=>a._s-b._s).map(o=>({name:o.name,rev:o.rev}));})();
+  const marginData=(()=>{const MN=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];const m={};filtered.forEach(j=>{const rd=(jobReportDate?jobReportDate(j):(j.dueDate||j.createdDate));if(!rd)return;let y,mo;const mm=/^(\d{4})-(\d{2})/.exec(String(rd));if(mm){y=+mm[1];mo=+mm[2]-1;}else{const d=new Date(rd);if(isNaN(d.getTime()))return;y=d.getFullYear();mo=d.getMonth();}if(mo<0||mo>11)return;const key=y+"-"+mo;if(!m[key])m[key]={name:MN[mo],rev:0,cost:0,_s:y*12+mo};const f=getJobFinancials(j.id);m[key].rev+=f.totalRevenue;m[key].cost+=f.totalCost;});return Object.values(m).sort((a,b)=>a._s-b._s).map(o=>({name:o.name,margin:o.rev>0?(o.rev-o.cost)/o.rev*100:0}));})();
   const paidRev=filtered.filter(j=>j.paymentStatus==="paid").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
   const partialRev=filtered.filter(j=>j.paymentStatus==="partial").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
   const unpaidRev=filtered.filter(j=>j.paymentStatus==="unpaid").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
@@ -2199,7 +2219,7 @@ function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJo
   return <div style={{animation:"fadeUp 0.4s"}}>
     {/* Header */}
     <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:6,flexWrap:"wrap"}}><h1 style={{fontSize:28,fontWeight:800,color:"#f0f0f0",letterSpacing:-1.5}}>Command Center</h1><div style={{padding:"3px 8px",background:"#34d399",borderRadius:20,fontSize:11,fontWeight:700,color:"#fff"}}>LIVE</div>
-      <div style={{marginLeft:"auto",display:"flex",gap:3,background:"#111",padding:3,borderRadius:8,flexShrink:0}}>{[["all","All Time"],["ytd","YTD"],["quarter","Quarter"],["month","Month"],["week","Week"]].map(([v,l])=><button key={v} onClick={()=>setDateFilter(v)} style={{padding:"4px 10px",borderRadius:6,border:"none",cursor:"pointer",background:dateFilter===v?"#2dd4bf":"transparent",color:dateFilter===v?"#000":"#525252",fontSize:11,fontWeight:dateFilter===v?600:400,fontFamily:"inherit",transition:"all 0.15s"}}>{l}</button>)}</div>
+      <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8,flexShrink:0}}><span key={dateFilter} style={{fontSize:11,color:"#737373",fontFamily:"'JetBrains Mono',monospace",animation:"fadeUp 0.3s"}}>{filtered.length} of {jobs.length} jobs</span><div style={{display:"flex",gap:3,background:"#111",padding:3,borderRadius:8}}>{[["all","All Time"],["ytd","YTD"],["quarter","Quarter"],["month","Month"],["week","Week"]].map(([v,l])=><button key={v} onClick={()=>setDateFilter(v)} style={{padding:"4px 10px",borderRadius:6,border:"none",cursor:"pointer",background:dateFilter===v?"#2dd4bf":"transparent",color:dateFilter===v?"#000":"#525252",fontSize:11,fontWeight:dateFilter===v?600:400,fontFamily:"inherit",transition:"all 0.15s"}}>{l}</button>)}</div></div>
     </div>
     <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>{[
       {label:"Jobs CSV",fn:()=>exportCSV(["Job","Customer","Phase","Revenue","Cost","Margin","Payment"],jobs.map(j=>{const f=getJobFinancials(j.id);return[j.name,customers?.find(c=>c.id===j.customer)?.name||"",j.phase,f.totalRevenue.toFixed(2),f.totalCost.toFixed(2),f.margin.toFixed(1)+"%",j.paymentStatus]}),"midwest-jobs.csv")},
@@ -2225,7 +2245,7 @@ function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJo
         </div>
       </Card>
       <Card style={{padding:16}} hover><div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:14,fontFamily:"'JetBrains Mono',monospace"}}>Revenue by Month</div>
-        <ResponsiveContainer width="100%" height={170}><BarChart data={monthlyRev}><defs><linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#2dd4bf" stopOpacity={0.9}/><stop offset="100%" stopColor="#2dd4bf" stopOpacity={0.4}/></linearGradient></defs><XAxis dataKey="name" tick={{fill:"#a3a3a3",fontSize:12}} axisLine={false} tickLine={false}/><YAxis tick={{fill:"#737373",fontSize:11}} axisLine={false} tickLine={false} tickFormatter={v=>"$"+Math.round(v/1000)+"k"}/><Tooltip contentStyle={darkTip} labelStyle={darkLabel} itemStyle={darkItem} cursor={{fill:"rgba(45,212,191,0.06)"}}/><RBar dataKey="rev" fill="url(#revGrad)" radius={[6,6,0,0]}/></BarChart></ResponsiveContainer>
+        <ResponsiveContainer width="100%" height={170}><BarChart key={dateFilter} data={monthlyRev}><defs><linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#2dd4bf" stopOpacity={0.9}/><stop offset="100%" stopColor="#2dd4bf" stopOpacity={0.4}/></linearGradient></defs><XAxis dataKey="name" tick={{fill:"#a3a3a3",fontSize:12}} axisLine={false} tickLine={false}/><YAxis tick={{fill:"#737373",fontSize:11}} axisLine={false} tickLine={false} tickFormatter={v=>"$"+Math.round(v/1000)+"k"}/><Tooltip contentStyle={darkTip} labelStyle={darkLabel} itemStyle={darkItem} cursor={{fill:"rgba(45,212,191,0.06)"}}/><RBar dataKey="rev" fill="url(#revGrad)" radius={[6,6,0,0]}/></BarChart></ResponsiveContainer>
       </Card>
     </div>
 
@@ -2244,7 +2264,7 @@ function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJo
     {/* Row 4: Margin Trend + Payment Collection */}
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}} className="resp-grid-2">
       <Card style={{padding:16}} hover><div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:14,fontFamily:"'JetBrains Mono',monospace"}}>Margin Trend</div>
-        <ResponsiveContainer width="100%" height={170}><LineChart data={marginData}><defs><linearGradient id="marginArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#34d399" stopOpacity={0.15}/><stop offset="100%" stopColor="#34d399" stopOpacity={0}/></linearGradient></defs><XAxis dataKey="name" tick={{fill:"#a3a3a3",fontSize:12}} axisLine={false} tickLine={false}/><YAxis tick={{fill:"#737373",fontSize:11}} axisLine={false} tickLine={false} tickFormatter={v=>v.toFixed(0)+"%"}/><Tooltip contentStyle={darkTip} labelStyle={darkLabel} itemStyle={darkItem} cursor={{stroke:"rgba(52,211,153,0.15)"}}/><Line type="monotone" dataKey="margin" stroke="#34d399" strokeWidth={3} dot={{fill:"#34d399",r:5,strokeWidth:3,stroke:"#111"}}/></LineChart></ResponsiveContainer>
+        <ResponsiveContainer width="100%" height={170}><LineChart key={dateFilter} data={marginData}><defs><linearGradient id="marginArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#34d399" stopOpacity={0.15}/><stop offset="100%" stopColor="#34d399" stopOpacity={0}/></linearGradient></defs><XAxis dataKey="name" tick={{fill:"#a3a3a3",fontSize:12}} axisLine={false} tickLine={false}/><YAxis tick={{fill:"#737373",fontSize:11}} axisLine={false} tickLine={false} tickFormatter={v=>v.toFixed(0)+"%"}/><Tooltip contentStyle={darkTip} labelStyle={darkLabel} itemStyle={darkItem} cursor={{stroke:"rgba(52,211,153,0.15)"}}/><Line type="monotone" dataKey="margin" stroke="#34d399" strokeWidth={3} dot={{fill:"#34d399",r:5,strokeWidth:3,stroke:"#111"}}/></LineChart></ResponsiveContainer>
       </Card>
       <Card style={{padding:16}} hover><div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:14,fontFamily:"'JetBrains Mono',monospace"}}>Payment Collection</div>
         <ResponsiveContainer width="100%" height={170}><BarChart data={[{name:"Paid",value:paidRev},{name:"Partial",value:partialRev},{name:"Unpaid",value:unpaidRev}]}><defs><linearGradient id="paidG" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#34d399" stopOpacity={0.9}/><stop offset="100%" stopColor="#34d399" stopOpacity={0.4}/></linearGradient><linearGradient id="partG" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#fbbf24" stopOpacity={0.9}/><stop offset="100%" stopColor="#fbbf24" stopOpacity={0.4}/></linearGradient><linearGradient id="unpG" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#f87171" stopOpacity={0.9}/><stop offset="100%" stopColor="#f87171" stopOpacity={0.4}/></linearGradient></defs><XAxis dataKey="name" tick={{fill:"#a3a3a3",fontSize:12}} axisLine={false} tickLine={false}/><YAxis tick={{fill:"#737373",fontSize:11}} axisLine={false} tickLine={false} tickFormatter={v=>"$"+Math.round(v/1000)+"k"}/><Tooltip contentStyle={darkTip} labelStyle={darkLabel} itemStyle={darkItem} cursor={{fill:"rgba(255,255,255,0.02)"}}/><RBar dataKey="value" radius={[6,6,0,0]}>{["url(#paidG)","url(#partG)","url(#unpG)"].map((c,i)=><Cell key={i} fill={c}/>)}</RBar></BarChart></ResponsiveContainer>
