@@ -21,13 +21,26 @@ async function fetchAll(table, opts) {
   // keep one capped page -- used for very large reference tables that are not paged.
   const pageSize = 1000;
   const single = !!(opts && opts.single);
+  // A failed page must NEVER produce a silently truncated result. A partial sops
+  // list renders every bank transaction as Uncategorized, drops account settings,
+  // and lets a Plaid sync re-import rows it cannot see -- all of which happened on
+  // 7/31. Each page gets one retry; if it still fails, the whole load returns null
+  // so callers treat it as a failed load instead of trusting half a table.
+  const getPage = async (offset) => {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const r = await fetch(URL + '/' + table + '?select=*&order=id&limit=' + pageSize + '&offset=' + offset, { headers: hdrs });
+        if (r.ok) { const page = await r.json(); if (Array.isArray(page)) return page; }
+      } catch (e) { /* retry once, then fall through to null */ }
+      await new Promise(res => setTimeout(res, 400));
+    }
+    return null;
+  };
   try {
     let all = [];
     for (let offset = 0; ; offset += pageSize) {
-      const r = await fetch(URL + '/' + table + '?select=*&order=id&limit=' + pageSize + '&offset=' + offset, { headers: hdrs });
-      if (!r.ok) return offset === 0 ? null : all;
-      const page = await r.json();
-      if (!Array.isArray(page)) return offset === 0 ? null : all;
+      const page = await getPage(offset);
+      if (page === null) { console.error('Fetch ' + table + ': page at offset ' + offset + ' failed -- returning null (no partial data)'); return null; }
       all = all.concat(page);
       if (single || page.length < pageSize) break;
     }
@@ -349,6 +362,9 @@ export const db = {
     await upsertMany('jobs', initJobs.map(jobToDb));
     await upsertMany('line_items', initLI.map(liToDb));
   },
+  // Authoritative sops read used by the Plaid sync dedup guard. Returns null on
+  // any failure (fetchAll never returns partials), so the sync can abort safely.
+  async fetchSops() { const s = await fetchAll('sops'); return s ? s.map(sopFromDb) : null; },
   async fetchUsers() { return fetchUsers(); },
   async loginUser(u, p) { return loginUser(u, p); },
   async saveUser(user) { return upsertRow('users', user); },
