@@ -6032,9 +6032,21 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       const handlePlaidSync=async(rangeOverride,silent)=>{
         if(!plaidAccessToken){if(!silent)notify('No access token. Reconnect bank.','error');return}
         setPlaidLoading(true);setPlaidSyncing(true);
-        // Rebuild dedup sets inline -- guarantees freshness against current manualTxns.
-        const existingPlaidIds=new Set(manualTxns.filter(mt=>mt.plaidId).map(mt=>mt.plaidId));
-        const existingHashes=new Set(manualTxns.map(mt=>_bankTxnHash(mt)));
+        // Dedup sets are built from an AUTHORITATIVE fresh DB read, not React state.
+        // On 7/31 a session with a partially-loaded sops list ran the hourly sync,
+        // saw none of the existing rows, and re-imported 66 transactions Maureen had
+        // already categorized. If the DB cannot be read in full, the sync ABORTS --
+        // it never inserts against a picture of the books it cannot verify.
+        const _freshSopsForDedup=await db.fetchSops().catch(()=>null);
+        if(!_freshSopsForDedup){
+          const _msg='Sync aborted: could not verify existing transactions against the database. Nothing was imported.';
+          setPlaidSyncError(_msg);if(!silent)notify(_msg,'error');
+          setPlaidLoading(false);setPlaidSyncing(false);return;
+        }
+        const _freshTxnsForDedup=_freshSopsForDedup.filter(x=>x.cat==='ManualTxn').map(x=>{try{return JSON.parse(x.content)}catch{return null}}).filter(Boolean);
+        // Merge with current state so rows added this session but not yet round-tripped count too.
+        const existingPlaidIds=new Set([..._freshTxnsForDedup.filter(mt=>mt.plaidId).map(mt=>mt.plaidId),...manualTxns.filter(mt=>mt.plaidId).map(mt=>mt.plaidId)]);
+        const existingHashes=new Set([..._freshTxnsForDedup.map(mt=>_bankTxnHash(mt)),...manualTxns.map(mt=>_bankTxnHash(mt))]);
         const range=rangeOverride||plaidSyncRange;
         const n=new Date();
         // Pad endDate to today + 2 days. Plaid sometimes reports pending or
@@ -6093,9 +6105,9 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
             const id='TXN-'+Date.now()+'-'+Math.random().toString(36).slice(2,6)+'-'+imported;
             const isDebit=t.amount>0;
             addSop({id,title:t.name||t.merchant_name||'Bank transaction',cat:'ManualTxn',icon:'dollar',content:JSON.stringify({
-              date:t.date||'',description:t.name||t.merchant_name||'',category:t.personal_finance_category?.primary||'Uncategorized',
+              date:t.date||'',description:t.name||t.merchant_name||'',category:'Uncategorized',
               amount:String(Math.abs(t.amount).toFixed(2)),type:isDebit?'expense':'revenue',account:t.account_id||'Operating',
-              plaidId:t.transaction_id,plaidCategory:t.category?.join(' > ')||''
+              plaidId:t.transaction_id,plaidCategory:t.personal_finance_category?.primary||t.category?.join(' > ')||''
             }),custom:true});imported++;
           });
           const syncTime=new Date().toISOString();
