@@ -2187,8 +2187,24 @@ function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJo
   const phases=["Quoting","In Progress","Invoiced","Complete"];
   const phaseData=phases.map(p=>{const pj=filtered.filter(j=>j.phase===p);return{phase:p,count:pj.length,rev:pj.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0)}});
   const vendorSpend=(()=>{const m={};fLineItems.forEach(i=>{const v=vendors.find(v=>v.id===i.vendor);m[v?.name||"Other"]=(m[v?.name||"Other"]||0)+i.unitCost*i.qtyOrdered});return Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,6)})();
-  const monthlyRev=(()=>{const MN=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];const m={};filtered.forEach(j=>{const rd=(jobReportDate?jobReportDate(j):(j.dueDate||j.createdDate));if(!rd)return;let y,mo;const mm=/^(\d{4})-(\d{2})/.exec(String(rd));if(mm){y=+mm[1];mo=+mm[2]-1;}else{const d=new Date(rd);if(isNaN(d.getTime()))return;y=d.getFullYear();mo=d.getMonth();}if(mo<0||mo>11)return;const key=y+"-"+mo;if(!m[key])m[key]={name:MN[mo],rev:0,_s:y*12+mo};m[key].rev+=getJobFinancials(j.id).totalRevenue;});return Object.values(m).sort((a,b)=>a._s-b._s).map(o=>({name:o.name,rev:o.rev}));})();
-  const marginData=(()=>{const MN=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];const m={};filtered.forEach(j=>{const rd=(jobReportDate?jobReportDate(j):(j.dueDate||j.createdDate));if(!rd)return;let y,mo;const mm=/^(\d{4})-(\d{2})/.exec(String(rd));if(mm){y=+mm[1];mo=+mm[2]-1;}else{const d=new Date(rd);if(isNaN(d.getTime()))return;y=d.getFullYear();mo=d.getMonth();}if(mo<0||mo>11)return;const key=y+"-"+mo;if(!m[key])m[key]={name:MN[mo],rev:0,cost:0,_s:y*12+mo};const f=getJobFinancials(j.id);m[key].rev+=f.totalRevenue;m[key].cost+=f.totalCost;});return Object.values(m).sort((a,b)=>a._s-b._s).map(o=>({name:o.name,margin:o.rev>0?(o.rev-o.cost)/o.rev*100:0}));})();
+  // Adaptive chart granularity: buckets follow the selected period so the charts
+  // visibly reshape on every click. Week/Month views bucket by DAY, Quarter by
+  // WEEK, YTD/All Time by MONTH (year-aware). With fixed monthly buckets, picking
+  // Month or Quarter collapsed the chart to a single "Jul" bar identical across
+  // both views -- which read as "nothing changes". Reported by J Jul 30 2026.
+  const _chartUnit=(dateFilter==='month'||dateFilter==='week')?'Day':dateFilter==='quarter'?'Week':'Month';
+  const _bucketOf=(rd)=>{
+    const MN=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const mm=/^(\d{4})-(\d{2})-(\d{2})/.exec(String(rd||''));
+    const d=mm?new Date(+mm[1],+mm[2]-1,+mm[3]):new Date(rd);
+    if(isNaN(d.getTime()))return null;
+    if(dateFilter==='month'||dateFilter==='week')return {key:'d'+d.getFullYear()+'-'+d.getMonth()+'-'+d.getDate(),name:MN[d.getMonth()]+' '+d.getDate(),_s:d.getTime()};
+    if(dateFilter==='quarter'){const wk=new Date(d);wk.setDate(d.getDate()-d.getDay());return {key:'w'+wk.getFullYear()+'-'+wk.getMonth()+'-'+wk.getDate(),name:MN[wk.getMonth()]+' '+wk.getDate(),_s:wk.getTime()};}
+    const curY=new Date().getFullYear();
+    return {key:'m'+d.getFullYear()+'-'+d.getMonth(),name:MN[d.getMonth()]+(d.getFullYear()!==curY?" '"+String(d.getFullYear()).slice(2):""),_s:d.getFullYear()*12+d.getMonth()};
+  };
+  const monthlyRev=(()=>{const m={};filtered.forEach(j=>{const rd=(jobReportDate?jobReportDate(j):(j.dueDate||j.createdDate));if(!rd)return;const b=_bucketOf(rd);if(!b)return;if(!m[b.key])m[b.key]={name:b.name,rev:0,_s:b._s};m[b.key].rev+=getJobFinancials(j.id).totalRevenue;});return Object.values(m).sort((a,b)=>a._s-b._s).map(o=>({name:o.name,rev:o.rev}));})();
+  const marginData=(()=>{const m={};filtered.forEach(j=>{const rd=(jobReportDate?jobReportDate(j):(j.dueDate||j.createdDate));if(!rd)return;const b=_bucketOf(rd);if(!b)return;if(!m[b.key])m[b.key]={name:b.name,rev:0,cost:0,_s:b._s};const f=getJobFinancials(j.id);m[b.key].rev+=f.totalRevenue;m[b.key].cost+=f.totalCost;});return Object.values(m).sort((a,b)=>a._s-b._s).map(o=>({name:o.name,margin:o.rev>0?(o.rev-o.cost)/o.rev*100:0}));})();
   const paidRev=filtered.filter(j=>j.paymentStatus==="paid").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
   const partialRev=filtered.filter(j=>j.paymentStatus==="partial").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
   const unpaidRev=filtered.filter(j=>j.paymentStatus==="unpaid").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
@@ -2219,7 +2235,7 @@ function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJo
   return <div style={{animation:"fadeUp 0.4s"}}>
     {/* Header */}
     <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:6,flexWrap:"wrap"}}><h1 style={{fontSize:28,fontWeight:800,color:"#f0f0f0",letterSpacing:-1.5}}>Command Center</h1><div style={{padding:"3px 8px",background:"#34d399",borderRadius:20,fontSize:11,fontWeight:700,color:"#fff"}}>LIVE</div>
-      <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8,flexShrink:0}}><span key={dateFilter} style={{fontSize:11,color:"#737373",fontFamily:"'JetBrains Mono',monospace",animation:"fadeUp 0.3s"}}>{filtered.length} of {jobs.length} jobs</span><div style={{display:"flex",gap:3,background:"#111",padding:3,borderRadius:8}}>{[["all","All Time"],["ytd","YTD"],["quarter","Quarter"],["month","Month"],["week","Week"]].map(([v,l])=><button key={v} onClick={()=>setDateFilter(v)} style={{padding:"4px 10px",borderRadius:6,border:"none",cursor:"pointer",background:dateFilter===v?"#2dd4bf":"transparent",color:dateFilter===v?"#000":"#525252",fontSize:11,fontWeight:dateFilter===v?600:400,fontFamily:"inherit",transition:"all 0.15s"}}>{l}</button>)}</div></div>
+      <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8,flexShrink:0}}><div style={{display:"flex",gap:3,background:"#111",padding:3,borderRadius:8}}>{[["all","All Time"],["ytd","YTD"],["quarter","Quarter"],["month","Month"],["week","Week"]].map(([v,l])=><button key={v} onClick={()=>setDateFilter(v)} style={{padding:"4px 10px",borderRadius:6,border:"none",cursor:"pointer",background:dateFilter===v?"#2dd4bf":"transparent",color:dateFilter===v?"#000":"#525252",fontSize:11,fontWeight:dateFilter===v?600:400,fontFamily:"inherit",transition:"all 0.15s"}}>{l}</button>)}</div></div>
     </div>
     <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>{[
       {label:"Jobs CSV",fn:()=>exportCSV(["Job","Customer","Phase","Revenue","Cost","Margin","Payment"],jobs.map(j=>{const f=getJobFinancials(j.id);return[j.name,customers?.find(c=>c.id===j.customer)?.name||"",j.phase,f.totalRevenue.toFixed(2),f.totalCost.toFixed(2),f.margin.toFixed(1)+"%",j.paymentStatus]}),"midwest-jobs.csv")},
@@ -2244,7 +2260,7 @@ function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJo
           <div onClick={()=>setPage("commissions")} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"10px 12px",background:"#34d39906",border:"1px solid #34d39915",borderRadius:10,cursor:"pointer",transition:"all 0.2s"}} onMouseEnter={e=>{e.currentTarget.style.background="#34d39910";e.currentTarget.style.transform="translateX(4px)"}} onMouseLeave={e=>{e.currentTarget.style.background="#34d39906";e.currentTarget.style.transform="translateX(0)"}}><div style={{display:"flex",alignItems:"center",gap:8}}><div style={{width:8,height:8,borderRadius:"50%",background:"#34d399"}}/><span style={{fontSize:13,color:"#6ee7b7"}}>Commission statements ready</span></div><span style={{fontSize:11,color:"#34d399",opacity:0.6}}>Review &rarr;</span></div>
         </div>
       </Card>
-      <Card style={{padding:16}} hover><div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:14,fontFamily:"'JetBrains Mono',monospace"}}>Revenue by Month</div>
+      <Card style={{padding:16}} hover><div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:14,fontFamily:"'JetBrains Mono',monospace"}}>Revenue by {_chartUnit}</div>
         <ResponsiveContainer width="100%" height={170}><BarChart key={dateFilter} data={monthlyRev}><defs><linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#2dd4bf" stopOpacity={0.9}/><stop offset="100%" stopColor="#2dd4bf" stopOpacity={0.4}/></linearGradient></defs><XAxis dataKey="name" tick={{fill:"#a3a3a3",fontSize:12}} axisLine={false} tickLine={false}/><YAxis tick={{fill:"#737373",fontSize:11}} axisLine={false} tickLine={false} tickFormatter={v=>"$"+Math.round(v/1000)+"k"}/><Tooltip contentStyle={darkTip} labelStyle={darkLabel} itemStyle={darkItem} cursor={{fill:"rgba(45,212,191,0.06)"}}/><RBar dataKey="rev" fill="url(#revGrad)" radius={[6,6,0,0]}/></BarChart></ResponsiveContainer>
       </Card>
     </div>
@@ -2263,7 +2279,7 @@ function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJo
 
     {/* Row 4: Margin Trend + Payment Collection */}
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}} className="resp-grid-2">
-      <Card style={{padding:16}} hover><div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:14,fontFamily:"'JetBrains Mono',monospace"}}>Margin Trend</div>
+      <Card style={{padding:16}} hover><div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:14,fontFamily:"'JetBrains Mono',monospace"}}>Margin Trend by {_chartUnit}</div>
         <ResponsiveContainer width="100%" height={170}><LineChart key={dateFilter} data={marginData}><defs><linearGradient id="marginArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#34d399" stopOpacity={0.15}/><stop offset="100%" stopColor="#34d399" stopOpacity={0}/></linearGradient></defs><XAxis dataKey="name" tick={{fill:"#a3a3a3",fontSize:12}} axisLine={false} tickLine={false}/><YAxis tick={{fill:"#737373",fontSize:11}} axisLine={false} tickLine={false} tickFormatter={v=>v.toFixed(0)+"%"}/><Tooltip contentStyle={darkTip} labelStyle={darkLabel} itemStyle={darkItem} cursor={{stroke:"rgba(52,211,153,0.15)"}}/><Line type="monotone" dataKey="margin" stroke="#34d399" strokeWidth={3} dot={{fill:"#34d399",r:5,strokeWidth:3,stroke:"#111"}}/></LineChart></ResponsiveContainer>
       </Card>
       <Card style={{padding:16}} hover><div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:14,fontFamily:"'JetBrains Mono',monospace"}}>Payment Collection</div>
