@@ -1275,7 +1275,10 @@ function MidwestAIOSInner() {
             const deduped = [];const seen = new Set();
             for (let i = data.sops.length - 1; i >= 0; i--) {
               if (!seen.has(data.sops[i].id)) { seen.add(data.sops[i].id); deduped.unshift(data.sops[i]); }
-              else { db.deleteSop(data.sops[i].id).catch(()=>{}); } // Clean up duplicate from DB
+              // In-memory dedupe ONLY. The old branch here deleted the "duplicate" id from
+              // the DB -- but a row can appear twice in a paged fetch when another session
+              // inserts during the load (offsets shift), and deleting it destroyed a real,
+              // unique row. ids are the primary key; true DB duplicates cannot exist.
             }
             setCustomSops(deduped);
           }
