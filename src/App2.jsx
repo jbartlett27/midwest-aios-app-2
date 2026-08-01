@@ -132,7 +132,7 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
   const isOverview=effectiveActiveRep==="overview";
   const rep=reps.find(r=>r.id===effectiveActiveRep)||reps.filter(isSalesRep)[0]||reps[0];
   const _spNow=new Date();
-  const _spInPeriod=(j)=>{if(spPeriod==='all')return true;const d=new Date(jobReportDate?jobReportDate(j):j.createdDate);if(isNaN(d.getTime()))return true;if(spPeriod==='month')return d.getMonth()===_spNow.getMonth()&&d.getFullYear()===_spNow.getFullYear();if(spPeriod==='quarter')return Math.floor(d.getMonth()/3)===Math.floor(_spNow.getMonth()/3)&&d.getFullYear()===_spNow.getFullYear();if(spPeriod==='ytd')return d.getFullYear()===_spNow.getFullYear();return true;};
+  const _spInPeriod=(j)=>{if(spPeriod==='all')return true;const d=new Date(jobReportDate?jobReportDate(j):j.createdDate);if(isNaN(d.getTime()))return true;if(spPeriod==='month'){const back=new Date(_spNow);back.setDate(back.getDate()-30);return d>=back;}if(spPeriod==='quarter')return Math.floor(d.getMonth()/3)===Math.floor(_spNow.getMonth()/3)&&d.getFullYear()===_spNow.getFullYear();if(spPeriod==='ytd')return d.getFullYear()===_spNow.getFullYear();return true;};
   const spJobs=jobs.filter(_spInPeriod);
   const rj=isOverview?spJobs:spJobs.filter(j=>j.salesRep===effectiveActiveRep);
   const totalRev=rj.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
@@ -180,7 +180,7 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
 
 
     {/* Period filter -- scopes the hero KPIs, pipeline, and Team directory */}
-    <div style={{display:"flex",gap:3,background:"#111",padding:3,borderRadius:8,marginBottom:16,width:"fit-content"}}>{[["all","All Time"],["ytd","YTD"],["quarter","Quarter"],["month","Month"]].map(([v,l])=><button key={v} onClick={()=>setSpPeriod(v)} style={{padding:"5px 12px",borderRadius:6,border:"none",cursor:"pointer",background:spPeriod===v?"#2dd4bf":"transparent",color:spPeriod===v?"#000":"#525252",fontSize:11,fontWeight:spPeriod===v?600:400,fontFamily:"inherit",transition:"all 0.15s"}}>{l}</button>)}</div>
+    <div style={{display:"flex",gap:3,background:"#111",padding:3,borderRadius:8,marginBottom:16,width:"fit-content"}}>{[["all","All Time"],["ytd","YTD"],["quarter","Quarter"],["month","30 Days"]].map(([v,l])=><button key={v} onClick={()=>setSpPeriod(v)} style={{padding:"5px 12px",borderRadius:6,border:"none",cursor:"pointer",background:spPeriod===v?"#2dd4bf":"transparent",color:spPeriod===v?"#000":"#525252",fontSize:11,fontWeight:spPeriod===v?600:400,fontFamily:"inherit",transition:"all 0.15s"}}>{l}</button>)}</div>
 
     {/* Hero stats */}
     <Card style={{marginBottom:20,background:"linear-gradient(135deg,rgba(45,212,191,0.03),rgba(167,139,250,0.03))",border:"1px solid rgba(45,212,191,0.08)"}}>
@@ -5429,18 +5429,21 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   };
 
 
-  // Collapsible statement row: chevron disc, category name, share-of-section chip,
-  // and total. Children (the underlying jobs / transactions) render when expanded.
+  // Statement rows -- pure-black ledger aesthetic. Hairline separators, a quiet
+  // glass chevron, counts as refined mono pills (no faint grey micro-text), and a
+  // liquid-glass hover. Expanded details hang from a single hairline rail.
   const _drillRow=(key,label,sub,value,color,openMap,toggle,children,pctBase)=>{const open=!!openMap[key];const pct=(pctBase&&pctBase>0.005&&isFinite(value))?Math.abs(value)/pctBase*100:null;return <div key={key}>
-    <div onClick={()=>toggle(key)} style={{padding:"9px 12px",display:"flex",alignItems:"center",gap:10,borderBottom:"1px solid #111",cursor:"pointer",background:open?"rgba(255,255,255,0.025)":"transparent",transition:"background 0.15s"}} onMouseEnter={e=>e.currentTarget.style.background="rgba(45,212,191,0.05)"} onMouseLeave={e=>e.currentTarget.style.background=open?"rgba(255,255,255,0.025)":"transparent"}>
-      <span style={{width:18,height:18,borderRadius:6,background:(color||"#2dd4bf")+"14",border:"1px solid "+(color||"#2dd4bf")+"25",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"transform 0.25s cubic-bezier(0.34,1.4,0.64,1)",transform:open?"rotate(90deg)":"none"}}><span style={{fontSize:8,color:color||"#2dd4bf",lineHeight:1}}>{'\u25B6'}</span></span>
-      <span style={{fontSize:13,color:"#f0f0f0",fontWeight:600,flex:1,letterSpacing:0.1}}>{label}{sub?<span style={{fontSize:10,color:"#525252",marginLeft:8,fontWeight:400}}>{sub}</span>:null}</span>
-      {pct!==null&&<span style={{fontSize:9,fontWeight:700,color:"#737373",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.06)",padding:"2px 7px",borderRadius:10,fontFamily:"'JetBrains Mono',monospace",flexShrink:0}}>{pct>=99.95?'100':pct.toFixed(1)}%</span>}
-      <span style={{fontSize:13.5,fontWeight:800,color:color||"#e5e5e5",fontFamily:"'JetBrains Mono',monospace",flexShrink:0,minWidth:90,textAlign:"right"}}>{fmt(value)}</span>
+    <div onClick={()=>toggle(key)} style={{padding:"11px 14px",display:"flex",alignItems:"center",gap:12,borderBottom:"1px solid rgba(255,255,255,0.05)",cursor:"pointer",background:open?"rgba(255,255,255,0.018)":"transparent",backdropFilter:open?"blur(8px)":"none",transition:"background 0.2s"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.035)"}} onMouseLeave={e=>{e.currentTarget.style.background=open?"rgba(255,255,255,0.018)":"transparent"}}>
+      <span style={{width:16,height:16,borderRadius:5,background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.08)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"transform 0.25s cubic-bezier(0.34,1.4,0.64,1)",transform:open?"rotate(90deg)":"none"}}><span style={{fontSize:7,color:color||"#2dd4bf",lineHeight:1}}>{'\u25B6'}</span></span>
+      <span style={{fontSize:13.5,color:"#f5f5f5",fontWeight:600,letterSpacing:0.15,fontFamily:"'Satoshi',sans-serif"}}>{label}</span>
+      {sub?<span style={{fontSize:9,fontFamily:"'JetBrains Mono',monospace",color:"#9a9a9a",background:"rgba(255,255,255,0.045)",border:"1px solid rgba(255,255,255,0.06)",padding:"2.5px 9px",borderRadius:20,letterSpacing:0.4,whiteSpace:"nowrap",backdropFilter:"blur(6px)"}}>{sub}</span>:null}
+      <span style={{flex:1}}/>
+      {pct!==null&&<span style={{fontSize:9,fontWeight:600,color:(color||"#2dd4bf")+"cc",background:(color||"#2dd4bf")+"0d",border:"1px solid "+(color||"#2dd4bf")+"20",padding:"2.5px 8px",borderRadius:20,fontFamily:"'JetBrains Mono',monospace",flexShrink:0,letterSpacing:0.3}}>{pct>=99.95?'100':pct.toFixed(1)}%</span>}
+      <span style={{fontSize:13.5,fontWeight:700,color:color||"#e5e5e5",fontFamily:"'JetBrains Mono',monospace",flexShrink:0,minWidth:96,textAlign:"right",letterSpacing:-0.2}}>{fmt(value)}</span>
     </div>
-    {open&&<div style={{animation:"fadeUp 0.25s",background:"rgba(0,0,0,0.25)",borderLeft:"2px solid "+(color||"#2dd4bf")+"30",marginLeft:20}}>{children}</div>}
+    {open&&<div style={{animation:"fadeUp 0.25s",marginLeft:21,borderLeft:"1px solid rgba(255,255,255,0.07)"}}>{children}</div>}
   </div>};
-  const _drillChild=(key2,label,sub,value,color,onClick)=><div key={key2} onClick={onClick} style={{padding:"5px 12px 5px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,borderBottom:"1px solid rgba(255,255,255,0.03)",cursor:onClick?"pointer":"default",transition:"background 0.15s"}} onMouseEnter={e=>{if(onClick)e.currentTarget.style.background="rgba(45,212,191,0.05)"}} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><span style={{fontSize:12,color:"#a3a3a3",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{onClick&&<span style={{color:(color||"#2dd4bf")+"70",marginRight:6,fontSize:9}}>{'\u2197'}</span>}{label}{sub?<span style={{fontSize:10,color:"#525252",marginLeft:6}}>{sub}</span>:null}</span><span style={{fontSize:12,color:"#c4c4c4",fontFamily:"'JetBrains Mono',monospace",flexShrink:0}}>{fmt(value)}</span></div>;
+  const _drillChild=(key2,label,sub,value,color,onClick)=><div key={key2} onClick={onClick} style={{padding:"6px 14px 6px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,borderBottom:"1px solid rgba(255,255,255,0.03)",cursor:onClick?"pointer":"default",transition:"background 0.18s"}} onMouseEnter={e=>{if(onClick)e.currentTarget.style.background="rgba(255,255,255,0.03)"}} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><span style={{fontSize:12,color:"#b8b8b8",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontFamily:"'Satoshi',sans-serif"}}>{onClick&&<span style={{color:(color||"#2dd4bf")+"66",marginRight:7,fontSize:9}}>{'\u2197'}</span>}{label}{sub?<span style={{fontSize:9.5,color:"#7a7a7a",marginLeft:8,fontFamily:"'JetBrains Mono',monospace"}}>{sub}</span>:null}</span><span style={{fontSize:12,color:"#d4d4d4",fontFamily:"'JetBrains Mono',monospace",flexShrink:0}}>{fmt(value)}</span></div>;
   const _txnJump=(t)=>{setBankSearch(t.description||'');setBankCatFilter('all');setTab('banking')};
   const kpi=(label,value,sub,color)=><Card style={{padding:16,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:6}}>{label}</div><div style={{fontSize:"clamp(18px,4vw,28px)",fontWeight:800,color:color||"#f0f0f0",fontFamily:"'JetBrains Mono',monospace",lineHeight:1}}><AnimNum value={value}/></div>{sub&&<div style={{fontSize:12,color:"#a3a3a3",marginTop:6}}>{sub}</div>}</Card>;
 
@@ -5498,26 +5501,26 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
     </div>}
 
 
-    {tab==="pnl"&&<Card style={{padding:20}}>
+    {tab==="pnl"&&<Card style={{padding:24,background:"#000000",border:"1px solid rgba(255,255,255,0.05)"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8,flexWrap:"wrap",gap:8}}>
         <div><div style={{fontSize:18,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>Profit & Loss</div><div style={{fontSize:11,color:"#737373",marginTop:2,fontFamily:"'JetBrains Mono',monospace"}}>{_periodLabel}</div></div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-          <div style={{display:"flex",borderRadius:8,overflow:"hidden",border:"1px solid #1a1a1a"}}>
+          <div style={{display:"flex",borderRadius:10,overflow:"hidden",border:"1px solid rgba(255,255,255,0.07)",background:"rgba(17,17,17,0.55)",backdropFilter:"blur(12px) saturate(180%)",WebkitBackdropFilter:"blur(12px) saturate(180%)"}}>
             <button onClick={()=>setPnlOpen(_allPnlKeys())} style={{padding:"6px 12px",border:"none",background:"transparent",color:"#737373",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.color="#2dd4bf"}} onMouseLeave={e=>{e.currentTarget.style.color="#737373"}}>Expand All</button>
-            <button onClick={()=>setPnlOpen({})} style={{padding:"6px 12px",border:"none",borderLeft:"1px solid #1a1a1a",background:"transparent",color:"#737373",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.color="#2dd4bf"}} onMouseLeave={e=>{e.currentTarget.style.color="#737373"}}>Collapse All</button>
+            <button onClick={()=>setPnlOpen({})} style={{padding:"6px 12px",border:"none",borderLeft:"1px solid rgba(255,255,255,0.07)",background:"transparent",color:"#737373",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.color="#2dd4bf"}} onMouseLeave={e=>{e.currentTarget.style.color="#737373"}}>Collapse All</button>
           </div>
           <Btn v="secondary" onClick={()=>setTab("banking")} style={{fontSize:11}}><I n="plus" s={12}/> Add Entry</Btn><Btn onClick={()=>generatePDF("pnl")}><I n="download" s={14}/> Export PDF</Btn>
         </div>
       </div>
-      <div style={{fontSize:11,color:"#525252",marginBottom:14}}>Click a category to open the jobs or transactions inside it -- click a line to jump to the record. The PDF export prints exactly what is expanded on screen.</div>
-      <div style={{borderBottom:"2px solid #222",padding:"10px 0",display:"flex",justifyContent:"space-between"}}><span style={{fontSize:15,fontWeight:700,color:"#f0f0f0"}}>REVENUE</span><span style={{fontSize:15,fontWeight:700,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalRev)}</span></div>
+      <div style={{fontSize:10.5,color:"#7a7a7a",marginBottom:16,letterSpacing:0.2,fontFamily:"'Satoshi',sans-serif"}}>Open a category to see the jobs or transactions inside it. The PDF export prints exactly what is expanded on screen.</div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",padding:"6px 0 10px 0",borderBottom:"1px solid rgba(45,212,191,0.25)"}}><span style={{fontSize:11,fontWeight:700,color:"#2dd4bf",letterSpacing:3,fontFamily:"'Satoshi',sans-serif"}}>REVENUE</span><span style={{fontSize:16,fontWeight:700,color:"#f5f5f5",fontFamily:"'JetBrains Mono',monospace",letterSpacing:-0.3}}>{fmt(totalRev)}</span></div>
       {_drillRow('rev_jobs','Job Revenue',filteredJobs.length+' job'+(filteredJobs.length!==1?'s':''),jobRevTotal,'#2dd4bf',pnlOpen,_togglePnl,
         filteredJobs.map(j=>{const f=getJobFinancials(j.id);return _drillChild('rj_'+j.id,j.name,'',f.totalRevenue,'#2dd4bf',()=>{fCtx.setSelectedJob(j.id);fCtx.setPage('jobs')})}),totalRev
       )}
       {pnlRevCats.map(c=>_drillRow('revc_'+c.name,c.name,c.txns.length+' transaction'+(c.txns.length!==1?'s':''),c.total,'#2dd4bf',pnlOpen,_togglePnl,
         c.txns.map(t=>_drillChild('rt_'+t.id,(t.description||'Manual entry'),t.date||'',parseFloat(t.amount)||0,'#2dd4bf',()=>_txnJump(t))),totalRev
       ))}
-      <div style={{borderBottom:"2px solid #222",padding:"10px 0",display:"flex",justifyContent:"space-between",marginTop:12}}><span style={{fontSize:15,fontWeight:700,color:"#f0f0f0"}}>COST OF GOODS SOLD</span><span style={{fontSize:15,fontWeight:700,color:"#f87171",fontFamily:"'JetBrains Mono',monospace"}}><AnimatedNumber value={totalCost} prefix="$"/></span></div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",padding:"22px 0 10px 0",borderBottom:"1px solid rgba(248,113,113,0.25)"}}><span style={{fontSize:11,fontWeight:700,color:"#f87171",letterSpacing:3,fontFamily:"'Satoshi',sans-serif"}}>COST OF GOODS SOLD</span><span style={{fontSize:16,fontWeight:700,color:"#f5f5f5",fontFamily:"'JetBrains Mono',monospace",letterSpacing:-0.3}}><AnimatedNumber value={totalCost} prefix="$"/></span></div>
       {_drillRow('cogs_jobs','Job Costs by Vendor',vendorSpend.length+' vendor'+(vendorSpend.length!==1?'s':''),jobCostTotal,'#f87171',pnlOpen,_togglePnl,
         <>
           {vendorSpend.map(v=>_drillChild('cv_'+v.name,v.name,'',v.spend,'#f87171',()=>{fCtx.setGlobalSearch(v.name);fCtx.setPage('jobs')}))}
@@ -5527,12 +5530,12 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       {pnlExpCats.map(c=>_drillRow('expc_'+c.name,c.name,c.txns.length+' transaction'+(c.txns.length!==1?'s':''),c.total,'#f87171',pnlOpen,_togglePnl,
         c.txns.map(t=>_drillChild('et_'+t.id,(t.description||'Manual expense'),t.date||'',parseFloat(t.amount)||0,'#f87171',()=>_txnJump(t))),totalCost
       ))}
-      <div style={{background:"#0a0a0a",borderRadius:8,padding:"12px 0",marginTop:12,display:"flex",justifyContent:"space-between"}}><span style={{fontSize:15,fontWeight:700,color:"#f0f0f0",paddingLeft:4}}>GROSS PROFIT</span><span style={{fontSize:15,fontWeight:700,color:grossProfit>=0?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace"}}><AnimatedNumber value={grossProfit} prefix="$"/> ({grossMargin.toFixed(1)}%)</span></div>
-      <div style={{borderBottom:"2px solid #222",padding:"10px 0",display:"flex",justifyContent:"space-between",marginTop:12}}><span style={{fontSize:15,fontWeight:700,color:"#f0f0f0"}}>OPERATING EXPENSES</span><span style={{fontSize:15,fontWeight:700,color:"#fbbf24",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalComm)}</span></div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"13px 16px",marginTop:18,borderRadius:12,background:"rgba(255,255,255,0.025)",backdropFilter:"blur(12px) saturate(160%)",WebkitBackdropFilter:"blur(12px) saturate(160%)",border:"1px solid rgba(255,255,255,0.06)"}}><span style={{fontSize:11,fontWeight:700,color:"#e5e5e5",letterSpacing:3,fontFamily:"'Satoshi',sans-serif"}}>GROSS PROFIT</span><span style={{fontSize:15,fontWeight:700,color:grossProfit>=0?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace",letterSpacing:-0.3}}><AnimatedNumber value={grossProfit} prefix="$"/><span style={{fontSize:11,color:"#8a8a8a",marginLeft:8,fontWeight:600}}>{grossMargin.toFixed(1)}%</span></span></div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",padding:"22px 0 10px 0",borderBottom:"1px solid rgba(251,191,36,0.25)"}}><span style={{fontSize:11,fontWeight:700,color:"#fbbf24",letterSpacing:3,fontFamily:"'Satoshi',sans-serif"}}>OPERATING EXPENSES</span><span style={{fontSize:16,fontWeight:700,color:"#f5f5f5",fontFamily:"'JetBrains Mono',monospace",letterSpacing:-0.3}}>{fmt(totalComm)}</span></div>
       {_drillRow('opex_comm','Sales Commissions',commByRep.length+' rep'+(commByRep.length!==1?'s':''),totalComm,'#fbbf24',pnlOpen,_togglePnl,
         commByRep.map(r2=>_drillChild('cm_'+r2.name,r2.name,'',r2.amount,'#fbbf24',null)),totalComm
       )}
-      <div style={{background:"#34d39908",borderRadius:8,padding:"14px 4px",marginTop:16,display:"flex",justifyContent:"space-between",border:"1px solid #34d39920"}}><span style={{fontSize:17,fontWeight:800,color:"#f0f0f0"}}>NET INCOME</span><span style={{fontSize:17,fontWeight:800,color:netIncome>=0?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace"}}><AnimatedNumber value={netIncome} prefix="$"/></span></div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 18px",marginTop:22,borderRadius:14,background:"rgba(255,255,255,0.03)",backdropFilter:"blur(14px) saturate(170%)",WebkitBackdropFilter:"blur(14px) saturate(170%)",border:"1px solid rgba(255,255,255,0.08)",borderTop:"1px solid rgba(255,255,255,0.14)"}}><span style={{fontSize:12,fontWeight:800,color:"#ffffff",letterSpacing:3.5,fontFamily:"'Satoshi',sans-serif"}}>NET INCOME</span><span style={{fontSize:19,fontWeight:800,color:netIncome>=0?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace",letterSpacing:-0.4}}><AnimatedNumber value={netIncome} prefix="$"/></span></div>
     </Card>}
 
 
@@ -5562,22 +5565,22 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
         </div>
 
 
-        <Card style={{padding:20}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:8}}>
+        <Card style={{padding:24,background:"#000000",border:"1px solid rgba(255,255,255,0.05)"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22,flexWrap:"wrap",gap:8}}>
             <div><div style={{fontSize:18,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>Balance Sheet</div><div style={{fontSize:12,color:"#737373",marginTop:2}}>As of {new Date(dateTo).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</div></div>
             <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-              <div style={{display:"flex",borderRadius:8,overflow:"hidden",border:"1px solid #1a1a1a"}}>
+              <div style={{display:"flex",borderRadius:10,overflow:"hidden",border:"1px solid rgba(255,255,255,0.07)",background:"rgba(17,17,17,0.55)",backdropFilter:"blur(12px) saturate(180%)",WebkitBackdropFilter:"blur(12px) saturate(180%)"}}>
                 <button onClick={()=>setBsOpen(_allBsKeys())} style={{padding:"6px 12px",border:"none",background:"transparent",color:"#737373",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.color="#2dd4bf"}} onMouseLeave={e=>{e.currentTarget.style.color="#737373"}}>Expand All</button>
-                <button onClick={()=>setBsOpen({})} style={{padding:"6px 12px",border:"none",borderLeft:"1px solid #1a1a1a",background:"transparent",color:"#737373",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.color="#2dd4bf"}} onMouseLeave={e=>{e.currentTarget.style.color="#737373"}}>Collapse All</button>
+                <button onClick={()=>setBsOpen({})} style={{padding:"6px 12px",border:"none",borderLeft:"1px solid rgba(255,255,255,0.07)",background:"transparent",color:"#737373",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.color="#2dd4bf"}} onMouseLeave={e=>{e.currentTarget.style.color="#737373"}}>Collapse All</button>
               </div>
               <Btn v="secondary" onClick={()=>setTab("banking")} style={{fontSize:11}}><I n="plus" s={12}/> Add Entry</Btn><Btn onClick={()=>generatePDF("balance")}><I n="download" s={14}/> Export PDF</Btn>
             </div>
           </div>
 
 
-          <div style={{background:"#2dd4bf08",borderRadius:10,padding:2,marginBottom:20,border:"1px solid #2dd4bf15"}}>
-            <div style={{padding:"12px 14px",borderBottom:"2px solid #2dd4bf20"}}><span style={{fontSize:15,fontWeight:800,color:"#2dd4bf",letterSpacing:1}}>ASSETS</span></div>
-            <div style={{padding:"8px 14px",borderBottom:"1px solid #222"}}><span style={{fontSize:12,fontWeight:700,color:"#e5e5e5",letterSpacing:0.5}}>Current Assets</span></div>
+          <div style={{marginBottom:30}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,padding:"0 0 10px 0",borderBottom:"1px solid rgba(45,212,191,0.25)"}}><span style={{color:"#2dd4bf",display:"flex"}}><I n="chart" s={13}/></span><span style={{fontSize:11,fontWeight:700,color:"#2dd4bf",letterSpacing:3,fontFamily:"'Satoshi',sans-serif"}}>ASSETS</span></div>
+            <div style={{padding:"12px 14px 4px 14px"}}><span style={{fontSize:9.5,fontWeight:600,color:"#8a8a8a",letterSpacing:2,textTransform:"uppercase",fontFamily:"'Satoshi',sans-serif"}}>Current Assets</span></div>
             {_drillRow('bs_cash','Cash & Cash Equivalents',liveBankAccounts.length>0?liveBankAccounts.length+' bank account'+(liveBankAccounts.length!==1?'s':'')+' (live)':'estimated (no bank sync)',bsCash,'#34d399',bsOpen,_toggleBs,
               liveBankAccounts.length>0?liveBankAccounts.map((a,ai)=>_drillChild('cash_'+ai,(a.name||'Account')+(a.mask?' ***'+a.mask:''),a.subtype||'',Number(a.current)||0,'#34d399',()=>setTab('banking'))):[_drillChild('cash_est','Estimated from collected revenue minus payables','connect the bank feed for live balances',bsCash,'#34d399',()=>setTab('banking'))],bsTotalAssets
             )}
@@ -5593,14 +5596,14 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
             {manualAssets>0&&_drillRow('bs_assets','Other Assets (Manual)',assetTxnsList.length+' entr'+(assetTxnsList.length!==1?'ies':'y'),manualAssets,'#8b5cf6',bsOpen,_toggleBs,
               assetTxnsList.map(t=>_drillChild('as_'+t.id,t.description||'Asset entry',t.date||'',parseFloat(t.amount)||0,'#8b5cf6',()=>_txnJump(t))),bsTotalAssets
             )}
-            <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0",borderTop:"2px solid #2dd4bf30",margin:"0 14px"}}><span style={{fontSize:14,fontWeight:800,color:"#f0f0f0"}}>Total Current Assets</span><span style={{fontSize:15,fontWeight:800,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsTotalCurrentAssets)}</span></div>
-            <div style={{display:"flex",justifyContent:"space-between",padding:"12px 14px",background:"#2dd4bf10",borderRadius:"0 0 8px 8px"}}><span style={{fontSize:15,fontWeight:800,color:"#f0f0f0"}}>TOTAL ASSETS</span><span style={{fontSize:16,fontWeight:800,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsTotalAssets)}</span></div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"11px 14px",borderTop:"1px solid rgba(255,255,255,0.07)"}}><span style={{fontSize:13,fontWeight:600,color:"#d4d4d4",fontFamily:"'Satoshi',sans-serif"}}>Total Current Assets</span><span style={{fontSize:14,fontWeight:700,color:"#f5f5f5",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsTotalCurrentAssets)}</span></div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 14px",borderTop:"1px solid rgba(255,255,255,0.10)",borderBottom:"3px double rgba(255,255,255,0.16)"}}><span style={{fontSize:12,fontWeight:800,color:"#ffffff",letterSpacing:2.5,fontFamily:"'Satoshi',sans-serif"}}>TOTAL ASSETS</span><span style={{fontSize:16,fontWeight:800,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace",letterSpacing:-0.3}}>{fmt(bsTotalAssets)}</span></div>
           </div>
 
 
-          <div style={{background:"#f9731608",borderRadius:10,padding:2,marginBottom:20,border:"1px solid #f9731615"}}>
-            <div style={{padding:"12px 14px",borderBottom:"2px solid #f9731620"}}><span style={{fontSize:15,fontWeight:800,color:"#f97316",letterSpacing:1}}>LIABILITIES</span></div>
-            <div style={{padding:"8px 14px",borderBottom:"1px solid #222"}}><span style={{fontSize:12,fontWeight:700,color:"#e5e5e5",letterSpacing:0.5}}>Current Liabilities</span></div>
+          <div style={{marginBottom:30}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,padding:"0 0 10px 0",borderBottom:"1px solid rgba(249,115,22,0.25)"}}><span style={{color:"#f97316",display:"flex"}}><I n="receipt" s={13}/></span><span style={{fontSize:11,fontWeight:700,color:"#f97316",letterSpacing:3,fontFamily:"'Satoshi',sans-serif"}}>LIABILITIES</span></div>
+            <div style={{padding:"12px 14px 4px 14px"}}><span style={{fontSize:9.5,fontWeight:600,color:"#8a8a8a",letterSpacing:2,textTransform:"uppercase",fontFamily:"'Satoshi',sans-serif"}}>Current Liabilities</span></div>
             {_drillRow('bs_ap','Accounts Payable',apVendorList.length+' vendor'+(apVendorList.length!==1?'s':'')+' owed',totalAP,'#f97316',bsOpen,_toggleBs,
               apVendorList.map(v2=>_drillChild('ap_'+v2.name,v2.name,v2.items+' bill'+(v2.items!==1?'s':''),v2.total,'#f97316',()=>setTab('ap'))),bsTotalCurrentLiab
             )}
@@ -5610,21 +5613,21 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
             {manualLiabilities>0&&_drillRow('bs_liab','Other Liabilities (Manual)',liabTxnsList.length+' entr'+(liabTxnsList.length!==1?'ies':'y'),manualLiabilities,'#f97316',bsOpen,_toggleBs,
               liabTxnsList.map(t=>_drillChild('li_'+t.id,t.description||'Liability entry',t.date||'',parseFloat(t.amount)||0,'#f97316',()=>_txnJump(t))),bsTotalCurrentLiab
             )}
-            <div style={{display:"flex",justifyContent:"space-between",padding:"10px 0",borderTop:"2px solid #f9731630",margin:"0 14px"}}><span style={{fontSize:14,fontWeight:800,color:"#f0f0f0"}}>Total Current Liabilities</span><span style={{fontSize:15,fontWeight:800,color:"#f97316",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsTotalCurrentLiab)}</span></div>
-            <div style={{display:"flex",justifyContent:"space-between",padding:"12px 14px",background:"#f9731610",borderRadius:"0 0 8px 8px"}}><span style={{fontSize:15,fontWeight:800,color:"#f0f0f0"}}>TOTAL LIABILITIES</span><span style={{fontSize:16,fontWeight:800,color:"#f97316",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsTotalLiab)}</span></div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"11px 14px",borderTop:"1px solid rgba(255,255,255,0.07)"}}><span style={{fontSize:13,fontWeight:600,color:"#d4d4d4",fontFamily:"'Satoshi',sans-serif"}}>Total Current Liabilities</span><span style={{fontSize:14,fontWeight:700,color:"#f5f5f5",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsTotalCurrentLiab)}</span></div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 14px",borderTop:"1px solid rgba(255,255,255,0.10)",borderBottom:"3px double rgba(255,255,255,0.16)"}}><span style={{fontSize:12,fontWeight:800,color:"#ffffff",letterSpacing:2.5,fontFamily:"'Satoshi',sans-serif"}}>TOTAL LIABILITIES</span><span style={{fontSize:16,fontWeight:800,color:"#f97316",fontFamily:"'JetBrains Mono',monospace",letterSpacing:-0.3}}>{fmt(bsTotalLiab)}</span></div>
           </div>
 
 
-          <div style={{background:bsEquity>=0?"#34d39908":"#f8717108",borderRadius:10,padding:2,marginBottom:20,border:"1px solid "+(bsEquity>=0?"#34d39915":"#f8717115")}}>
-            <div style={{padding:"12px 14px",borderBottom:"2px solid "+(bsEquity>=0?"#34d39920":"#f8717120")}}><span style={{fontSize:15,fontWeight:800,color:bsEquity>=0?"#34d399":"#f87171",letterSpacing:1}}>EQUITY</span></div>
-            {bsLine("Retained Earnings",bsRetained,true,false,bsRetained>=0?"#34d399":"#f87171")}
-            <div style={{display:"flex",justifyContent:"space-between",padding:"12px 14px",background:bsEquity>=0?"#34d39910":"#f8717110",borderRadius:"0 0 8px 8px"}}><span style={{fontSize:15,fontWeight:800,color:"#f0f0f0"}}>TOTAL EQUITY</span><span style={{fontSize:16,fontWeight:800,color:bsEquity>=0?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsEquity)}</span></div>
+          <div style={{marginBottom:30}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,padding:"0 0 10px 0",borderBottom:"1px solid "+(bsEquity>=0?"rgba(52,211,153,0.25)":"rgba(248,113,113,0.25)")}}><span style={{color:bsEquity>=0?"#34d399":"#f87171",display:"flex"}}><I n="shield" s={13}/></span><span style={{fontSize:11,fontWeight:700,color:bsEquity>=0?"#34d399":"#f87171",letterSpacing:3,fontFamily:"'Satoshi',sans-serif"}}>EQUITY</span></div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"11px 14px",borderBottom:"1px solid rgba(255,255,255,0.05)"}}><span style={{fontSize:13.5,color:"#f5f5f5",fontWeight:600,fontFamily:"'Satoshi',sans-serif"}}>Retained Earnings</span><span style={{fontSize:13.5,fontWeight:700,color:bsRetained>=0?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsRetained)}</span></div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 14px",borderTop:"1px solid rgba(255,255,255,0.10)",borderBottom:"3px double rgba(255,255,255,0.16)"}}><span style={{fontSize:12,fontWeight:800,color:"#ffffff",letterSpacing:2.5,fontFamily:"'Satoshi',sans-serif"}}>TOTAL EQUITY</span><span style={{fontSize:16,fontWeight:800,color:bsEquity>=0?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace",letterSpacing:-0.3}}>{fmt(bsEquity)}</span></div>
           </div>
 
 
-          <div style={{background:isBalanced?"#34d39908":"#f8717108",borderRadius:10,padding:"14px 16px",border:"1px solid "+(isBalanced?"#34d39920":"#f8717120"),display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <span style={{fontSize:17,fontWeight:800,color:"#f0f0f0"}}>TOTAL LIABILITIES & EQUITY</span>
-            <span style={{fontSize:18,fontWeight:800,color:isBalanced?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsTotalLiabEquity)}</span>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 18px",borderRadius:14,background:"rgba(255,255,255,0.03)",backdropFilter:"blur(14px) saturate(170%)",WebkitBackdropFilter:"blur(14px) saturate(170%)",border:"1px solid rgba(255,255,255,0.08)",borderTop:"1px solid rgba(255,255,255,0.14)"}}>
+            <div style={{display:"flex",alignItems:"center",gap:12}}><span style={{fontSize:12,fontWeight:800,color:"#ffffff",letterSpacing:3,fontFamily:"'Satoshi',sans-serif"}}>TOTAL LIABILITIES & EQUITY</span><span style={{fontSize:9,fontWeight:700,color:isBalanced?"#34d399":"#f87171",background:isBalanced?"rgba(52,211,153,0.08)":"rgba(248,113,113,0.08)",border:"1px solid "+(isBalanced?"rgba(52,211,153,0.25)":"rgba(248,113,113,0.25)"),padding:"3px 10px",borderRadius:20,letterSpacing:1.5,fontFamily:"'JetBrains Mono',monospace"}}>{isBalanced?"BALANCED":"A \u2260 L + E"}</span></div>
+            <span style={{fontSize:18,fontWeight:800,color:isBalanced?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace",letterSpacing:-0.4}}>{fmt(bsTotalLiabEquity)}</span>
           </div>
         </Card>
 
