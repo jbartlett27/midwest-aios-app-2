@@ -2136,7 +2136,7 @@ function AnimatedNumber({value,prefix="",suffix="",duration=600}){
     return()=>{ref.current=display};
   },[value]);
   const isNeg=display<0;const abs=Math.abs(display);
-  const formatted=abs>=1000?new Intl.NumberFormat("en-US",{style:"currency",currency:"USD",minimumFractionDigits:0,maximumFractionDigits:0}).format(abs):abs>=1?new Intl.NumberFormat("en-US",{minimumFractionDigits:0,maximumFractionDigits:0}).format(abs):abs.toFixed(1);
+  const formatted=abs>=1000?new Intl.NumberFormat("en-US",{minimumFractionDigits:0,maximumFractionDigits:0}).format(abs):abs>=1?new Intl.NumberFormat("en-US",{minimumFractionDigits:0,maximumFractionDigits:0}).format(abs):abs.toFixed(1);
   return <>{prefix}{isNeg?"-":""}{typeof value==="string"&&value.startsWith("$")?"":""}{formatted}{suffix}</>;
 }
 
