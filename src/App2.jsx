@@ -5501,7 +5501,14 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
     </div>}
 
 
-    {tab==="pnl"&&<Card style={{padding:24,background:"#000000",border:"1px solid rgba(255,255,255,0.05)"}}>
+    {tab==="pnl"&&<div style={{display:"flex",flexDirection:"column",gap:16}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12}} className="resp-grid-4">
+          <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>REVENUE</div><div style={{fontSize:22,fontWeight:800,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}><AnimNum value={fmt(totalRev)}/></div></Card>
+          <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>COGS</div><div style={{fontSize:22,fontWeight:800,color:"#f87171",fontFamily:"'JetBrains Mono',monospace"}}><AnimNum value={fmt(totalCost)}/></div></Card>
+          <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>GROSS PROFIT</div><div style={{fontSize:22,fontWeight:800,color:grossProfit>=0?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace"}}><AnimNum value={fmt(grossProfit)}/></div><div style={{fontSize:11,color:"#737373",marginTop:4}}>{grossMargin.toFixed(1)}% margin</div></Card>
+          <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>NET INCOME</div><div style={{fontSize:22,fontWeight:800,color:netIncome>=0?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace"}}><AnimNum value={fmt(netIncome)}/></div></Card>
+        </div>
+        <Card style={{padding:24,background:"#000000",border:"1px solid rgba(255,255,255,0.05)"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8,flexWrap:"wrap",gap:8}}>
         <div><div style={{fontSize:18,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>Profit & Loss</div><div style={{fontSize:11,color:"#737373",marginTop:2,fontFamily:"'JetBrains Mono',monospace"}}>{_periodLabel}</div></div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
@@ -5536,7 +5543,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
         commByRep.map(r2=>_drillChild('cm_'+r2.name,r2.name,'',r2.amount,'#fbbf24',null)),totalComm
       )}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 18px",marginTop:22,borderRadius:14,background:"rgba(255,255,255,0.03)",backdropFilter:"blur(14px) saturate(170%)",WebkitBackdropFilter:"blur(14px) saturate(170%)",border:"1px solid rgba(255,255,255,0.08)",borderTop:"1px solid rgba(255,255,255,0.14)"}}><span style={{fontSize:12,fontWeight:800,color:"#ffffff",letterSpacing:3.5,fontFamily:"'Satoshi',sans-serif"}}>NET INCOME</span><span style={{fontSize:19,fontWeight:800,color:netIncome>=0?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace",letterSpacing:-0.4}}><AnimatedNumber value={netIncome} prefix="$"/></span></div>
-    </Card>}
+    </Card></div>}
 
 
     {tab==="balance"&&(()=>{
@@ -5558,9 +5565,9 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
 
       return <div style={{display:"flex",flexDirection:"column",gap:16}}>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12}} className="resp-grid-4">
-          <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>TOTAL ASSETS</div><div style={{fontSize:22,fontWeight:800,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsTotalAssets)}</div></Card>
-          <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>TOTAL LIABILITIES</div><div style={{fontSize:22,fontWeight:800,color:"#f97316",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsTotalLiab)}</div></Card>
-          <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>EQUITY</div><div style={{fontSize:22,fontWeight:800,color:bsEquity>=0?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsEquity)}</div></Card>
+          <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>TOTAL ASSETS</div><div style={{fontSize:22,fontWeight:800,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}><AnimNum value={fmt(bsTotalAssets)}/></div></Card>
+          <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>TOTAL LIABILITIES</div><div style={{fontSize:22,fontWeight:800,color:"#f97316",fontFamily:"'JetBrains Mono',monospace"}}><AnimNum value={fmt(bsTotalLiab)}/></div></Card>
+          <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>EQUITY</div><div style={{fontSize:22,fontWeight:800,color:bsEquity>=0?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace"}}><AnimNum value={fmt(bsEquity)}/></div></Card>
           <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>BALANCED</div><div style={{fontSize:22,fontWeight:800,color:isBalanced?"#34d399":"#f87171"}}>{isBalanced?"Yes":"No"}</div><div style={{fontSize:11,color:"#737373",marginTop:4}}>A = L + E</div></Card>
         </div>
 
