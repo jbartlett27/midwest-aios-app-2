@@ -2165,7 +2165,11 @@ function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJo
     const d = new Date(jobReportDate?jobReportDate(j):j.createdDate);
     if (isNaN(d.getTime())) return true;
     if (dateFilter === "week") { const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7); return d >= weekAgo; }
-    if (dateFilter === "month") return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    // "Month" means the TRAILING 30 DAYS, not the calendar month -- early in a new
+    // month a calendar filter went nearly empty while Quarter overlapped it, so the
+    // two views looked frozen or identical. Quarter stays the current business
+    // calendar quarter (Q1-Q4); YTD stays Jan 1 to today.
+    if (dateFilter === "month") { const back = new Date(); back.setDate(back.getDate() - 30); return d >= back; }
     if (dateFilter === "quarter") { const q = Math.floor(now.getMonth() / 3); const jq = Math.floor(d.getMonth() / 3); return jq === q && d.getFullYear() === now.getFullYear(); }
     if (dateFilter === "ytd") return d.getFullYear() === now.getFullYear();
     return true;
@@ -2235,7 +2239,7 @@ function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJo
   return <div style={{animation:"fadeUp 0.4s"}}>
     {/* Header */}
     <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:6,flexWrap:"wrap"}}><h1 style={{fontSize:28,fontWeight:800,color:"#f0f0f0",letterSpacing:-1.5}}>Command Center</h1><div style={{padding:"3px 8px",background:"#34d399",borderRadius:20,fontSize:11,fontWeight:700,color:"#fff"}}>LIVE</div>
-      <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8,flexShrink:0}}><div style={{display:"flex",gap:3,background:"#111",padding:3,borderRadius:8}}>{[["all","All Time"],["ytd","YTD"],["quarter","Quarter"],["month","Month"],["week","Week"]].map(([v,l])=><button key={v} onClick={()=>setDateFilter(v)} style={{padding:"4px 10px",borderRadius:6,border:"none",cursor:"pointer",background:dateFilter===v?"#2dd4bf":"transparent",color:dateFilter===v?"#000":"#525252",fontSize:11,fontWeight:dateFilter===v?600:400,fontFamily:"inherit",transition:"all 0.15s"}}>{l}</button>)}</div></div>
+      <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8,flexShrink:0}}><div style={{display:"flex",gap:3,background:"#111",padding:3,borderRadius:8}}>{[["all","All Time"],["ytd","YTD"],["quarter","Quarter"],["month","30 Days"],["week","Week"]].map(([v,l])=><button key={v} onClick={()=>setDateFilter(v)} style={{padding:"4px 10px",borderRadius:6,border:"none",cursor:"pointer",background:dateFilter===v?"#2dd4bf":"transparent",color:dateFilter===v?"#000":"#525252",fontSize:11,fontWeight:dateFilter===v?600:400,fontFamily:"inherit",transition:"all 0.15s"}}>{l}</button>)}</div></div>
     </div>
     <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>{[
       {label:"Jobs CSV",fn:()=>exportCSV(["Job","Customer","Phase","Revenue","Cost","Margin","Payment"],jobs.map(j=>{const f=getJobFinancials(j.id);return[j.name,customers?.find(c=>c.id===j.customer)?.name||"",j.phase,f.totalRevenue.toFixed(2),f.totalCost.toFixed(2),f.margin.toFixed(1)+"%",j.paymentStatus]}),"midwest-jobs.csv")},
