@@ -3484,6 +3484,11 @@ function DeliveryPage({jobs,lineItems,vendors,customers,reps,userRole,userRepId,
 // ===============================================================
 function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItems,getJobFinancials,_commissionFor,updateJob,updateLineItem,notify,setPage,triggerPrint,pendingCommPreview,setPendingCommPreview,customSops,addSop,deleteSop,lineItemShipTos,setLineItemShipTo,...ctx}){
   const [tab,setTab]=useState("quotes");
+  // Closed accounting periods (GL Phase 1): financial records dated inside a closed
+  // period are locked at the database. Surface it here so nobody is surprised.
+  const [docLocks,setDocLocks]=useState([]);
+  useEffect(()=>{db.fetchPeriodLocks().then(l=>{if(l)setDocLocks(l)}).catch(()=>{})},[]);
+  const _docClosedPeriods=(docLocks||[]).filter(l=>l.status==='closed').map(l=>l.period).sort();
   const [hiddenCols,setHiddenCols]=useState({netCost:true,netTotal:true,shippingEach:true,shippingTotal:true,installEach:true,installTotal:true});
   const [previewDoc,setPreviewDoc]=useState(null);
   const [isProforma,setIsProforma]=useState(false);
@@ -3851,6 +3856,10 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
   const filteredPendingInvJobs = filteredJobs.filter(j=>getJobItems(j.id).some(i=>i.qtyReceived>i.qtyInvoiced));
   const filteredOpenPayJobs = filteredJobs.filter(j=>j.paymentStatus!=="paid");
   return <div style={{animation:"fadeUp 0.4s"}}><Header title="Documents" sub="Quotes, Purchase Orders, Invoices"/>
+    {_docClosedPeriods.length>0&&<div style={{display:"flex",alignItems:"center",gap:12,padding:"11px 16px",borderRadius:12,background:"rgba(251,191,36,0.04)",border:"1px solid rgba(251,191,36,0.2)",marginBottom:14}}>
+      <span style={{color:"#fbbf24",display:"flex"}}><I n="shield" s={13}/></span>
+      <span style={{fontSize:12,color:"#d4d4d4"}}><span style={{color:"#fbbf24",fontWeight:700}}>Closed period{_docClosedPeriods.length!==1?'s':''}:</span> {_docClosedPeriods.join(', ')} -- vendor bills, credits and bank transactions dated inside are locked at the database. Adjustments belong in an open period.</span>
+    </div>}
     <div style={{display:"flex",gap:0,alignItems:"center",marginBottom:16,padding:"10px 16px",background:"#111111",borderRadius:8,fontSize:12,overflowX:"auto",WebkitOverflowScrolling:"touch",color:"#a3a3a3"}}><span style={{color:"#2dd4bf",fontWeight:600}}>Workflow:</span><span style={{margin:"0 8px"}}>Quote</span><span style={{color:"#8a8a8a"}}>&rarr;</span><span style={{margin:"0 8px",color:"#2dd4bf"}}>Approve/Send</span><span style={{color:"#8a8a8a"}}>&rarr;</span><span style={{margin:"0 8px"}}>Purchase Orders</span><span style={{color:"#8a8a8a"}}>&rarr;</span><span style={{margin:"0 8px"}}>Draft/Send</span><span style={{color:"#8a8a8a"}}>&rarr;</span><span style={{margin:"0 8px"}}>Invoices</span><span style={{color:"#8a8a8a"}}>&rarr;</span><span style={{margin:"0 8px",color:"#34d399"}}>Mark Paid</span></div>
 
 
