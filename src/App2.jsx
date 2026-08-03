@@ -1164,6 +1164,12 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
   // unfiltered -- without this filter a sales login could ask the Brain about other
   // reps' jobs, costs, and margins and get real answers. Office and admin are
   // untouched (they see all jobs in the UI already).
+  // Period locks: the DB refuses writes into closed periods; the Brain checks first
+  // so the user gets a clear answer instead of a silent failure.
+  const [brainLocks,setBrainLocks]=useState([]);
+  useEffect(()=>{db.fetchPeriodLocks().then(l=>{if(l)setBrainLocks(l)}).catch(()=>{})},[]);
+  const _brainClosed=new Set((brainLocks||[]).filter(l=>l.status==='closed').map(l=>l.period));
+  const _brainLockCheck=(d)=>{const mp=String(d||'').slice(0,7);return _brainClosed.has(mp)?('Period '+mp+' is closed. Date the entry in an open period, or have an admin reopen it from Financials > Close.'):null};
   if(currentUser&&currentUser.role==='sales'){
     const _visIds=new Set((jobs||[]).map(j=>j.id));
     lineItems=(lineItems||[]).filter(li=>_visIds.has(li.jobId));
@@ -2020,6 +2026,8 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
       }
       if(toolName==="create_transaction"){
         const txnDate=input.date||new Date().toISOString().split('T')[0];
+        const _lockErr=_brainLockCheck(txnDate);
+        if(_lockErr)return{error:_lockErr};
         const txnType=input.type||'expense';
         const txnCat=input.category||(txnType==='revenue'?'Revenue - Product Sales':'Uncategorized');
         const txnAcct=input.account||'Operating';
@@ -2856,6 +2864,8 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         if (!job) return {error: 'Job not found: '+input.job_id};
         const amt = Number(input.amount);
         if (!isFinite(amt) || amt <= 0) return {error: 'amount must be a positive number'};
+        const _lockErr2=_brainLockCheck(input.date||input.credit_date||new Date().toISOString().split('T')[0]);
+        if (_lockErr2) return {error: _lockErr2};
         // Duplicate-cost guard. A standalone bill ADDS its amount to job cost on top
         // of the line items. When the job already has a PO for this vendor, a second
         // (or third) vendor invoice almost always covers items that are -- or should
@@ -5029,6 +5039,33 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
 
 function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,getJobItems,_commissionFor,_bankTxnHash,notify,triggerPrint,dateFilter,jobNum,customSops,addSop,deleteSop,...fCtx}){
   const [tab,setTab]=useState("overview");
+  // ---- GENERAL LEDGER (Phase 1): chart of accounts + period close state ----
+  const [glAccounts,setGlAccounts]=useState(null);
+  const [glLocks,setGlLocks]=useState([]);
+  const [coaSearch,setCoaSearch]=useState('');
+  const [coaShowInactive,setCoaShowInactive]=useState(false);
+  const [coaOpen,setCoaOpen]=useState({});
+  const [coaEditing,setCoaEditing]=useState(null);
+  const [coaForm,setCoaForm]=useState({number:'',name:'',type:'expense',description:''});
+  const [closeYear,setCloseYear]=useState(2026);
+  const [closeMonth,setCloseMonth]=useState(null);
+  const [closeOverrides,setCloseOverrides]=useState({});
+  const [closeAsk,setCloseAsk]=useState(false);
+  const [reopenAsk,setReopenAsk]=useState(false);
+  const [reopenReason,setReopenReason]=useState('');
+  const [reconDraft,setReconDraft]=useState({});
+  const [attachTxn,setAttachTxn]=useState(null);
+  const [attachBusy,setAttachBusy]=useState(false);
+  const [lateOpen,setLateOpen]=useState(false);
+  const _reloadGl=async()=>{const[a,l]=await Promise.all([db.fetchAccounts(),db.fetchPeriodLocks()]);if(a)setGlAccounts(a);if(l)setGlLocks(l)};
+  useEffect(()=>{_reloadGl()},[]);
+  const _closedSet=new Set((glLocks||[]).filter(l=>l.status==='closed').map(l=>l.period));
+  const _periodOf=(d)=>String(d||'').slice(0,7);
+  const _isLockedDate=(d)=>_closedSet.has(_periodOf(d));
+  const _lockMsg=(d)=>'Period '+_periodOf(d)+' is closed. Post a prior-period adjustment dated in an open period, or reopen it from the Close tab.';
+  const _glUser=(fCtx.currentUser&&(fCtx.currentUser.name||fCtx.currentUser.email))||'admin';
+  const _glIsAdmin=fCtx.userRole==='admin'||!fCtx.userRole;
+  const _lateArrivals=(()=>{const r=(customSops||[]).find(s2=>s2.id==='LATE_ARRIVALS_GLOBAL');if(!r)return[];try{const a=JSON.parse(r.content);return Array.isArray(a)?a:[]}catch{return[]}})();
   const now=new Date();
   const [period,setPeriod]=useState("ytd");
   const [dateFrom,setDateFrom]=useState(()=>{const d=new Date(now.getFullYear(),0,1);return d.toISOString().split("T")[0]});
@@ -5455,7 +5492,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       <div style={{display:"flex",gap:6,alignItems:"center"}}><input type="date" value={dateFrom} onChange={e=>{setDateFrom(e.target.value);setPeriod("custom")}} style={{padding:"8px 12px",background:"rgba(17,17,17,0.45)",backdropFilter:"blur(8px) saturate(200%) brightness(1.1)",WebkitBackdropFilter:"blur(8px) saturate(200%) brightness(1.1)",border:"1px solid #333",borderRadius:8,color:"#f0f0f0",fontSize:12,fontFamily:"inherit",outline:"none"}}/><span style={{color:"#525252",fontSize:12}}>to</span><input type="date" value={dateTo} onChange={e=>{setDateTo(e.target.value);setPeriod("custom")}} style={{padding:"8px 12px",background:"rgba(17,17,17,0.45)",backdropFilter:"blur(8px) saturate(200%) brightness(1.1)",WebkitBackdropFilter:"blur(8px) saturate(200%) brightness(1.1)",border:"1px solid #333",borderRadius:8,color:"#f0f0f0",fontSize:12,fontFamily:"inherit",outline:"none"}}/></div>
       <div style={{fontSize:12,color:"#525252",fontFamily:"'JetBrains Mono',monospace"}}>{filteredJobs.length} job{filteredJobs.length!==1?"s":""}</div>
     </div>
-        <div className="fin-tabs" style={{display:"flex",gap:3,background:"#111",padding:3,borderRadius:8,marginBottom:16,flexWrap:"wrap"}}>{[["overview","Overview"],["pnl","P&L"],["balance","Balance Sheet"],["banking","Banking"],["ar","Receivables"],["ap","Payables"],["margin","Margins"],["reports","Reports"]].map(([v,l])=><button key={v} onClick={()=>setTab(v)} style={{padding:"6px 14px",borderRadius:6,border:"none",cursor:"pointer",background:tab===v?"#2dd4bf":"transparent",color:tab===v?"#000":"#737373",fontSize:12,fontWeight:tab===v?600:400,fontFamily:"inherit",transition:"all 0.15s",whiteSpace:"nowrap"}}>{l}</button>)}</div>
+        <div className="fin-tabs" style={{display:"flex",gap:3,background:"#111",padding:3,borderRadius:8,marginBottom:16,flexWrap:"wrap"}}>{[["overview","Overview"],["pnl","P&L"],["balance","Balance Sheet"],["banking","Banking"],["coa","Accounts"],["ar","Receivables"],["ap","Payables"],["margin","Margins"],["reports","Reports"],["close","Close"]].map(([v,l])=><button key={v} onClick={()=>setTab(v)} style={{padding:"6px 14px",borderRadius:6,border:"none",cursor:"pointer",background:tab===v?"#2dd4bf":"transparent",color:tab===v?"#000":"#737373",fontSize:12,fontWeight:tab===v?600:400,fontFamily:"inherit",transition:"all 0.15s",whiteSpace:"nowrap"}}>{l}</button>)}</div>
 
 
     {tab==="overview"&&<div>
@@ -5737,22 +5774,67 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
             }
           }
         }
+        // Closed-period guard: the DB trigger would reject this anyway -- fail with a
+        // clear message instead of a silent nothing. Covers both the new date and,
+        // when editing, the row's original date.
+        const _orig=manualEditing?allTxns.find(x=>x.id===manualEditing):null;
+        if(_isLockedDate(manualForm.date)){notify(_lockMsg(manualForm.date),'error');return}
+        if(_orig&&_isLockedDate(_orig.date)){notify(_lockMsg(_orig.date),'error');return}
         const id=manualEditing||'TXN-'+Date.now()+'-'+Math.random().toString(36).slice(2,6);
-        addSop({id,title:manualForm.description||'Transaction',cat:'ManualTxn',icon:'dollar',content:JSON.stringify(manualForm),custom:true});
+        // Merge over the existing row on edit so fields the form does not carry
+        // (plaidId, source, plaidCategory, attachments) survive the save.
+        addSop({id,title:manualForm.description||'Transaction',cat:'ManualTxn',icon:'dollar',content:JSON.stringify(_orig?{..._orig,...manualForm}:manualForm),custom:true});
         notify(manualEditing?'Transaction updated':'Transaction added');
         setManualForm({date:'',description:'',category:'',amount:'',type:'expense',account:'Operating'});
         setManualEditing(null);
       };
-      const deleteTxn=(id)=>{deleteSop(id);notify('Transaction deleted')};
+      // ---- Receipt attachments: photos and PDFs pinned to a transaction so the
+      // CPA can trace any number to its paper. Files live in Supabase storage under
+      // receipts/<txn id>/ and the list rides on the ManualTxn row itself.
+      const attachAdd=async(t,file)=>{
+        if(!file)return;
+        if(_isLockedDate(t.date)){notify(_lockMsg(t.date),'error');return}
+        if(file.size>10*1024*1024){notify('File is over the 10 MB attachment limit','error');return}
+        setAttachBusy(true);
+        const clean=String(file.name||'receipt').replace(/[^a-zA-Z0-9._-]/g,'_');
+        const path='receipts/'+t.id+'/'+Date.now()+'-'+clean;
+        const url=await db.uploadFile('vendor-invoices',path,file);
+        setAttachBusy(false);
+        if(!url){notify('Upload failed -- check Supabase storage','error');return}
+        const att={name:file.name||clean,url,type:file.type||'',size:file.size||0,at:new Date().toISOString(),by:_glUser};
+        addSop({id:t.id,title:t.description||'Transaction',cat:'ManualTxn',icon:'dollar',content:JSON.stringify({...t,attachments:[...(t.attachments||[]),att]}),custom:true});
+        notify('Receipt attached: '+att.name);
+      };
+      const attachRemove=(t,idx)=>{
+        if(_isLockedDate(t.date)){notify(_lockMsg(t.date),'error');return}
+        const next=(t.attachments||[]).filter((x,i2)=>i2!==idx);
+        addSop({id:t.id,title:t.description||'Transaction',cat:'ManualTxn',icon:'dollar',content:JSON.stringify({...t,attachments:next}),custom:true});
+        notify('Attachment removed');
+      };
+      const deleteTxn=(id)=>{const _t=allTxns.find(x=>x.id===id);if(_t&&_isLockedDate(_t.date)){notify(_lockMsg(_t.date),'error');return}deleteSop(id);notify('Transaction deleted')};
       const editTxn=(t)=>{setManualForm({date:t.date||'',description:t.description||'',category:t.category||'',amount:t.amount||'',type:t.type||'expense',account:t.account||'Operating'});setManualEditing(t.id)};
-      const updateCategory=(txnId,cat)=>{const t=allTxns.find(x=>x.id===txnId);if(!t)return;const newType=cat.startsWith('Revenue')?'revenue':cat==='asset'?'asset':cat==='liability'?'liability':'expense';addSop({id:txnId,title:t.description||'Transaction',cat:'ManualTxn',icon:'dollar',content:JSON.stringify({...t,category:cat,type:newType}),custom:true});notify('Categorized: '+cat)};
+      const updateCategory=(txnId,cat)=>{const t=allTxns.find(x=>x.id===txnId);if(!t)return;if(_isLockedDate(t.date)){notify(_lockMsg(t.date),'error');return}const newType=cat.startsWith('Revenue')?'revenue':cat==='asset'?'asset':cat==='liability'?'liability':'expense';addSop({id:txnId,title:t.description||'Transaction',cat:'ManualTxn',icon:'dollar',content:JSON.stringify({...t,category:cat,type:newType}),custom:true});notify('Categorized: '+cat)};
       const totalBankIn=filteredBankTxns.filter(t=>t.type==='revenue').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
       const totalBankOut=filteredBankTxns.filter(t=>t.type==='expense').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
       const uncategorized=filteredBankTxns.filter(t=>!t.category||t.category==='Uncategorized'||!categories.includes(t.category)).length;
       const toggleTxnSelect=(id)=>{const next=new Set(txnSelected);if(next.has(id))next.delete(id);else next.add(id);setTxnSelected(next)};
       const selectAllTxns=()=>{if(txnSelected.size===filteredBankTxns.length)setTxnSelected(new Set());else setTxnSelected(new Set(filteredBankTxns.map(t=>t.id)))};
-      const bulkDelete=()=>{txnSelected.forEach(id=>deleteSop(id));notify(txnSelected.size+' transaction'+(txnSelected.size!==1?'s':'')+' deleted');setTxnSelected(new Set())};
-      const bulkCategorize=(cat)=>{txnSelected.forEach(id=>{const t=allTxns.find(x=>x.id===id);if(t)updateCategory(id,cat)});notify(txnSelected.size+' transaction'+(txnSelected.size!==1?'s':'')+' categorized as '+cat);setTxnSelected(new Set())};
+      const bulkDelete=()=>{
+        const ids=[...txnSelected];
+        const locked=ids.filter(id=>{const _t=allTxns.find(x=>x.id===id);return _t&&_isLockedDate(_t.date)});
+        const ok=ids.filter(id=>!locked.includes(id));
+        ok.forEach(id=>deleteSop(id));
+        notify(ok.length+' transaction'+(ok.length!==1?'s':'')+' deleted'+(locked.length?' -- '+locked.length+' in closed periods left untouched':''),locked.length&&!ok.length?'error':undefined);
+        setTxnSelected(new Set());
+      };
+      const bulkCategorize=(cat)=>{
+        const ids=[...txnSelected];
+        const locked=ids.filter(id=>{const _t=allTxns.find(x=>x.id===id);return _t&&_isLockedDate(_t.date)});
+        const ok=ids.filter(id=>!locked.includes(id));
+        ok.forEach(id=>{const t=allTxns.find(x=>x.id===id);if(t)updateCategory(id,cat)});
+        notify(ok.length+' transaction'+(ok.length!==1?'s':'')+' categorized as '+cat+(locked.length?' -- '+locked.length+' in closed periods left untouched':''));
+        setTxnSelected(new Set());
+      };
       // CSV export of exactly what is on screen (all active filters applied).
       // Column-for-column comparable against the QuickBooks bank register export,
       // which is the fast manual cross-check during reconciliation.
@@ -5858,7 +5940,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       };
       const _stmtImport=(txnList,sourceLabel)=>{
         const existingHashes=new Set(manualTxns.map(mt=>_bankTxnHash(mt)));
-        let imported=0,skipped=0,invalid=0;
+        let imported=0,skipped=0,invalid=0,lockedOut=0;
         txnList.forEach((t,i)=>{
           if(!t||!t.date||!isFinite(Number(t.amount))||Number(t.amount)<=0){invalid++;return}
           // Imported rows carry the exact same fields the manual Add Transaction form
@@ -5869,12 +5951,14 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
           const rec={date:t.date,description:t.description||'Statement transaction',category:(t.category&&String(t.category).trim())?String(t.category).trim():'Uncategorized',amount:String(Number(t.amount).toFixed(2)),type:t.type==='revenue'?'revenue':'expense',account:stmtAcct,source:'statement',sourceFile:sourceLabel||''};
           const hash=_bankTxnHash(rec);
           if(existingHashes.has(hash)){skipped++;return}
+          // The DB refuses writes into closed periods -- surface it as a skip, not a crash.
+          if(_isLockedDate(rec.date)){lockedOut++;return}
           existingHashes.add(hash);
           const id='TXN-'+Date.now()+'-'+Math.random().toString(36).slice(2,6)+'-S'+i;
           addSop({id,title:rec.description,cat:'ManualTxn',icon:'dollar',content:JSON.stringify(rec),custom:true});
           imported++;
         });
-        return {imported,skipped,invalid};
+        return {imported,skipped,invalid,lockedOut};
       };
       const handleStatementUpload=async(e)=>{
         const file=e.target.files&&e.target.files[0];
@@ -5918,8 +6002,8 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
             txnList=list.map(t=>({date:_stmtNormDate(t.date),description:String(t.description||'').trim(),amount:Math.abs(Number(t.amount)||0),type:(String(t.type||'').toLowerCase()==='credit')?'revenue':'expense'}));
             if(salvaged)notify('Long statement -- recovered '+txnList.length+' complete transactions before the read cut off. After import, spot-check the last few days of the statement; a CSV export from the bank is guaranteed complete.','error');
           }
-          const {imported,skipped,invalid}=_stmtImport(txnList,file.name||'');
-          notify(imported+' transaction'+(imported!==1?'s':'')+' imported to '+stmtAcct+(skipped>0?' -- '+skipped+' skipped (already in system)':'')+(invalid>0?' -- '+invalid+' unreadable row'+(invalid!==1?'s':'')+' ignored':'')+' from '+(file.name||'statement'));
+          const {imported,skipped,invalid,lockedOut}=_stmtImport(txnList,file.name||'');
+          notify(imported+' transaction'+(imported!==1?'s':'')+' imported to '+stmtAcct+(skipped>0?' -- '+skipped+' skipped (already in system)':'')+(invalid>0?' -- '+invalid+' unreadable row'+(invalid!==1?'s':'')+' ignored':'')+(lockedOut>0?' -- '+lockedOut+' in closed period'+(lockedOut!==1?'s':'')+' not imported':'')+' from '+(file.name||'statement'));
         }catch(err){notify('Statement upload error: '+(err&&err.message?err.message:'unknown'),'error')}
         setStmtUploading(false);
       };
@@ -6089,7 +6173,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
           // Balance Sheet's Cash figure with real bank numbers instead of a proxy.
           if(Array.isArray(data.accounts)&&data.accounts.length>0){try{addSop({id:'BANK_BALANCES_GLOBAL',title:'Bank Balances',cat:'BankBalances',icon:'dollar',content:JSON.stringify({asOf:new Date().toISOString(),accounts:data.accounts.map(a=>({id:a.account_id||'',name:a.name||a.official_name||'',mask:a.mask||'',type:a.type||'',subtype:a.subtype||'',current:a.balances?.current??null,available:a.balances?.available??null}))}),custom:true});}catch(_e){}}
           const txns=data.added||data.transactions||[];
-          let imported=0;let skipped=0;
+          let imported=0;let skipped=0;const lateArr=[];
           txns.forEach(t=>{
             // Smart dedup: check Plaid transaction ID first
             if(t.transaction_id&&existingPlaidIds.has(t.transaction_id)){skipped++;return}
@@ -6099,6 +6183,10 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
             // two separate Amazon purchases).
             const hash=_bankTxnHash({date:t.date,amount:t.amount,description:t.name||t.merchant_name||''});
             if(existingHashes.has(hash)){skipped++;return}
+            // Closed-period carve-out: the DB lock would reject this insert outright.
+            // Instead of failing the sync, route the transaction to the Late Arrivals
+            // queue for manual handling in an open period (badge on the Banking tab).
+            if(_isLockedDate(t.date)){lateArr.push({date:t.date||'',description:t.name||t.merchant_name||'',amount:String(Math.abs(t.amount).toFixed(2)),type:t.amount>0?'expense':'revenue',account:t.account_id||'Operating',plaidId:t.transaction_id||'',plaidCategory:t.personal_finance_category?.primary||'',queuedAt:new Date().toISOString()});return}
             // Mark as seen for this sync batch
             if(t.transaction_id)existingPlaidIds.add(t.transaction_id);
             existingHashes.add(hash);
@@ -6116,7 +6204,13 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
           // Update sops PLAID_CONN_STATE so other devices know about the latest sync time.
           // Without this, every device would re-sync the same recent window on its own auto-sync.
           try{const _existRec=(customSops||[]).find(s=>s.id==='PLAID_CONN_STATE');const _existData=_existRec?JSON.parse(_existRec.content||'{}'):{};addSop({id:'PLAID_CONN_STATE',title:'Plaid Connection State',cat:'PlaidConn',icon:'dollar',content:JSON.stringify({status:'connected',accessToken:plaidAccessToken,bankName:plaidBankName||_existData.bankName||'',lastSync:syncTime}),custom:true})}catch{}
-          if(!silent||imported>0)notify(imported+' new'+(skipped>0?', '+skipped+' skipped (already in system)':'')+' ('+startDate+' to '+endDate+')');
+          if(lateArr.length){
+            // Merge into the queue, dedup by plaidId (or date|amount|desc when no id).
+            const seenQ=new Set(_lateArrivals.map(x=>x.plaidId||_bankTxnHash(x)));
+            const fresh=lateArr.filter(x=>!seenQ.has(x.plaidId||_bankTxnHash(x)));
+            if(fresh.length)addSop({id:'LATE_ARRIVALS_GLOBAL',title:'Late Arrivals',cat:'Settings',icon:'clock',content:JSON.stringify([..._lateArrivals,...fresh]),custom:true});
+          }
+          if(!silent||imported>0||lateArr.length>0)notify(imported+' new'+(skipped>0?', '+skipped+' skipped (already in system)':'')+(lateArr.length>0?', '+lateArr.length+' routed to Late Arrivals (closed period)':'')+' ('+startDate+' to '+endDate+')');
         }catch(err){
           setPlaidSyncError(err.message||'Network error');
           if(!silent)notify('Sync error: '+err.message,'error');
@@ -6172,7 +6266,36 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       const plaidNeedsReauth=plaidStatus==='connected'&&/login details|ITEM_LOGIN_REQUIRED|login_required|credentials|re-?authenticate|password reset/i.test(plaidSyncError||'');
 
 
+      const _lockedInRange=[..._closedSet].filter(mp=>{try{const st=new Date(mp+'-01T00:00:00');const en=new Date(st.getFullYear(),st.getMonth()+1,0,23,59,59);return st<=toD&&en>=fromD}catch{return false}}).sort();
+      const dismissLate=(item)=>{const key=item.plaidId||_bankTxnHash(item);const next=_lateArrivals.filter(x=>(x.plaidId||_bankTxnHash(x))!==key);addSop({id:'LATE_ARRIVALS_GLOBAL',title:'Late Arrivals',cat:'Settings',icon:'clock',content:JSON.stringify(next),custom:true});notify('Removed from Late Arrivals')};
+      const recordLate=(item)=>{
+        const today=new Date().toISOString().split('T')[0];
+        if(_isLockedDate(today)){notify(_lockMsg(today),'error');return}
+        const rec={date:today,description:(item.description||'Bank transaction')+' -- late arrival, bank date '+item.date,category:'Uncategorized',amount:item.amount,type:item.type,account:item.account||'Operating',plaidId:item.plaidId||undefined,plaidCategory:item.plaidCategory||'',source:'late_arrival',originalDate:item.date};
+        const id='TXN-'+Date.now()+'-'+Math.random().toString(36).slice(2,6)+'-L';
+        addSop({id,title:rec.description,cat:'ManualTxn',icon:'dollar',content:JSON.stringify(rec),custom:true});
+        dismissLate(item);
+        notify('Recorded in the open period, dated today, with the original bank date in the memo');
+      };
       return <div style={{display:"flex",flexDirection:"column",gap:16}}>
+        {_lockedInRange.length>0&&<div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 16px",borderRadius:12,background:"rgba(251,191,36,0.04)",backdropFilter:"blur(10px)",WebkitBackdropFilter:"blur(10px)",border:"1px solid rgba(251,191,36,0.2)"}}>
+          <span style={{color:"#fbbf24",display:"flex"}}><I n="shield" s={14}/></span>
+          <span style={{fontSize:12.5,color:"#d4d4d4",fontFamily:"'Satoshi',sans-serif"}}><span style={{color:"#fbbf24",fontWeight:700}}>Closed period{_lockedInRange.length!==1?'s':''} in view:</span> {_lockedInRange.join(', ')} -- transactions dated inside are locked at the database. Corrections go through a prior-period adjustment or an audited reopen on the Close tab.</span>
+        </div>}
+        {_lateArrivals.length>0&&<div style={{borderRadius:12,background:"rgba(251,191,36,0.03)",border:"1px solid rgba(251,191,36,0.18)",overflow:"hidden"}}>
+          <div onClick={()=>setLateOpen(!lateOpen)} style={{display:"flex",alignItems:"center",gap:10,padding:"11px 16px",cursor:"pointer"}}>
+            <span style={{fontSize:9,fontWeight:700,color:"#fbbf24",background:"rgba(251,191,36,0.1)",border:"1px solid rgba(251,191,36,0.3)",padding:"3px 10px",borderRadius:20,letterSpacing:1.5,fontFamily:"'JetBrains Mono',monospace"}}>LATE ARRIVALS ({_lateArrivals.length})</span>
+            <span style={{fontSize:11.5,color:"#9a9a9a",flex:1,fontFamily:"'Satoshi',sans-serif"}}>Bank transactions that arrived dated inside a closed period. Record them into the open period or dismiss.</span>
+            <span style={{fontSize:10,color:"#737373",transform:lateOpen?"rotate(90deg)":"none",transition:"transform 0.2s"}}>{'\u25B6'}</span>
+          </div>
+          {lateOpen&&<div style={{borderTop:"1px solid rgba(251,191,36,0.12)"}}>{_lateArrivals.map((item,ix)=><div key={ix} style={{display:"flex",alignItems:"center",gap:12,padding:"8px 16px",borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
+            <span style={{fontSize:11,color:"#9a9a9a",fontFamily:"'JetBrains Mono',monospace",width:78,flexShrink:0}}>{item.date}</span>
+            <span style={{fontSize:12,color:"#d4d4d4",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontFamily:"'Satoshi',sans-serif"}}>{item.description}</span>
+            <span style={{fontSize:12,fontFamily:"'JetBrains Mono',monospace",color:item.type==='revenue'?"#34d399":"#f87171",flexShrink:0}}>{item.type==='revenue'?'+':'-'}{fmt(parseFloat(item.amount)||0)}</span>
+            <Btn v="secondary" style={{fontSize:10,padding:"3px 10px"}} onClick={()=>recordLate(item)}>Record Today</Btn>
+            <button onClick={()=>dismissLate(item)} style={{background:"none",border:"none",color:"#737373",cursor:"pointer",fontSize:10.5,fontFamily:"inherit"}}>Dismiss</button>
+          </div>)}</div>}
+        </div>}
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12}} className="resp-grid-4">
           {kpi("TOTAL IN",fmt(totalBankIn),filteredBankTxns.filter(t=>t.type==='revenue').length+" deposits","#34d399")}
           {kpi("TOTAL OUT",fmt(totalBankOut),filteredBankTxns.filter(t=>t.type==='expense').length+" payments","#f87171")}
@@ -6435,7 +6558,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
               <td style={{padding:"8px"}}><select value={t.category||''} onChange={e=>updateCategory(t.id,e.target.value)} style={{background:"#111",border:"1px solid #222",color:(!t.category||t.category==='Uncategorized'||!categories.includes(t.category))?"#fbbf24":"#a3a3a3",borderRadius:6,padding:"3px 6px",fontSize:11,fontFamily:"inherit",cursor:"pointer"}}><option value="">Uncategorized</option>{categories.map(c=><option key={c} value={c}>{c}</option>)}</select></td>
               <td style={{padding:"8px",color:"#737373",fontSize:11}} title={t.account||''}>{acctDisplayName(t.account)}</td>
               <td style={{padding:"8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,color:t.type==='revenue'?"#34d399":"#f87171"}}>{t.type==='revenue'?'+':'-'}{fmt(parseFloat(t.amount)||0)}</td>
-              <td style={{padding:"8px",textAlign:"right"}}><div style={{display:"flex",gap:4,justifyContent:"flex-end"}}><button onClick={()=>{if(isEditing){setManualEditing(null)}else{editTxn(t)}}} style={{padding:"3px 8px",borderRadius:5,border:"1px solid "+(isEditing?"#14b8a640":"#333"),background:isEditing?"#14b8a610":"transparent",color:isEditing?"#14b8a6":"#a3a3a3",fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>{isEditing?'Close':'Edit'}</button><button onClick={()=>deleteTxn(t.id)} style={{padding:"3px 8px",borderRadius:5,border:"1px solid #f8717130",background:"transparent",color:"#f87171",fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>Del</button></div></td>
+              <td style={{padding:"8px",textAlign:"right"}}><div style={{display:"flex",gap:4,justifyContent:"flex-end"}}><button onClick={()=>setAttachTxn(attachTxn===t.id?null:t.id)} style={{padding:"3px 8px",borderRadius:5,border:"1px solid "+((t.attachments&&t.attachments.length)||attachTxn===t.id?"#a78bfa40":"#333"),background:attachTxn===t.id?"#a78bfa10":"transparent",color:(t.attachments&&t.attachments.length)||attachTxn===t.id?"#a78bfa":"#a3a3a3",fontSize:10,cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:4}}><I n="file" s={10}/>{t.attachments&&t.attachments.length?t.attachments.length:''}</button><button onClick={()=>{if(isEditing){setManualEditing(null)}else{editTxn(t)}}} style={{padding:"3px 8px",borderRadius:5,border:"1px solid "+(isEditing?"#14b8a640":"#333"),background:isEditing?"#14b8a610":"transparent",color:isEditing?"#14b8a6":"#a3a3a3",fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>{isEditing?'Close':'Edit'}</button><button onClick={()=>deleteTxn(t.id)} style={{padding:"3px 8px",borderRadius:5,border:"1px solid #f8717130",background:"transparent",color:"#f87171",fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>Del</button></div></td>
             </tr>
             {isEditing&&<tr style={{borderBottom:"1px solid #111"}}><td colSpan={7} style={{padding:0}}>
               <div style={{padding:"12px 16px",background:"#0d0d0d",borderTop:"2px solid #14b8a640",animation:"fadeUp 0.15s"}}>
@@ -6448,6 +6571,26 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
                   <div><label style={{fontSize:10,color:"#737373",display:"block",marginBottom:3}}>Account</label><select value={manualForm.account} onChange={e=>setManualForm(f=>({...f,account:e.target.value}))} style={inputStyle}>{allAccounts.map(a=><option key={a} value={a}>{a}</option>)}</select></div>
                 </div>
                 <div style={{display:"flex",gap:8}}><Btn onClick={saveTxn} style={{fontSize:11,padding:"5px 14px"}}>Update</Btn><Btn v="secondary" onClick={()=>setManualEditing(null)} style={{fontSize:11,padding:"5px 14px"}}>Cancel</Btn></div>
+              </div>
+            </td></tr>}
+            {attachTxn===t.id&&<tr style={{borderBottom:"1px solid #111"}}><td colSpan={7} style={{padding:0}}>
+              <div style={{padding:"12px 16px",background:"#0d0d0d",borderTop:"2px solid #a78bfa40",animation:"fadeUp 0.15s"}}>
+                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:(t.attachments&&t.attachments.length)?10:0}}>
+                  <span style={{fontSize:11,fontWeight:700,color:"#a78bfa",letterSpacing:1.5,fontFamily:"'Satoshi',sans-serif"}}>RECEIPTS & DOCUMENTS</span>
+                  <span style={{fontSize:10.5,color:"#737373"}}>photo or PDF, 10 MB max -- stored with the transaction for audit</span>
+                  <span style={{flex:1}}/>
+                  <label style={{padding:"5px 12px",borderRadius:6,border:"1px solid #a78bfa40",background:"rgba(167,139,250,0.06)",color:"#a78bfa",fontSize:11,cursor:attachBusy?"wait":"pointer",fontFamily:"inherit",opacity:attachBusy?0.5:1}}>
+                    {attachBusy?'Uploading...':'+ Attach File'}
+                    <input type="file" accept="image/*,.pdf,application/pdf" disabled={attachBusy} style={{display:"none"}} onChange={e=>{const f=e.target.files&&e.target.files[0];e.target.value='';attachAdd(t,f)}}/>
+                  </label>
+                  <button onClick={()=>setAttachTxn(null)} style={{background:"none",border:"none",color:"#737373",cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>Close</button>
+                </div>
+                {(t.attachments&&t.attachments.length)?t.attachments.map((att,ai)=><div key={ai} style={{display:"flex",alignItems:"center",gap:10,padding:"6px 2px",borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
+                  <span style={{color:"#a78bfa",display:"flex",flexShrink:0}}><I n="file" s={12}/></span>
+                  <a href={att.url} target="_blank" rel="noreferrer" style={{fontSize:12,color:"#d4d4d4",textDecoration:"none",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} onMouseEnter={e=>{e.currentTarget.style.color="#a78bfa"}} onMouseLeave={e=>{e.currentTarget.style.color="#d4d4d4"}}>{att.name}</a>
+                  <span style={{fontSize:9.5,color:"#525252",fontFamily:"'JetBrains Mono',monospace",flexShrink:0}}>{att.size?(att.size/1024).toFixed(0)+' KB':''}{att.by?' -- '+att.by:''}{att.at?' -- '+String(att.at).slice(0,10):''}</span>
+                  <button onClick={()=>attachRemove(t,ai)} style={{background:"none",border:"1px solid #f8717130",borderRadius:5,color:"#f87171",cursor:"pointer",fontSize:9.5,fontFamily:"inherit",padding:"2px 8px",flexShrink:0}}>Remove</button>
+                </div>):<div style={{fontSize:11,color:"#525252",padding:"4px 2px"}}>Nothing attached yet.</div>}
               </div>
             </td></tr>}
             </React.Fragment>})}
@@ -6534,6 +6677,296 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
         </Card>)}
       </div>
     </div>}
+
+
+    {tab==="coa"&&(()=>{
+      // ---- CHART OF ACCOUNTS (GL Phase 1) ----------------------------------
+      // Real accounts live in the accounts table. Until the Journal ships (Phase 2)
+      // each account's register shows the categorized bank transactions that map to
+      // it through legacy_category, date-filtered by the page's period selector.
+      const accs=(glAccounts||[]);
+      const q=coaSearch.trim().toLowerCase();
+      const vis=a=>(coaShowInactive||a.isActive)&&(!q||String(a.number).includes(q)||a.name.toLowerCase().includes(q));
+      const parents=accs.filter(a=>!a.parentId).sort((a,b)=>a.number-b.number);
+      const kidsOf=pid=>accs.filter(a=>a.parentId===pid).sort((a,b)=>a.number-b.number).filter(vis);
+      // Movement categories are real categorizations even though they map to no
+      // P&L account (Transfer is bank-to-bank by design) -- without this they would
+      // wrongly surface in the 6990 Uncategorized register.
+      const _knownLegacy=new Set([...accs.map(a=>a.legacyCategory).filter(Boolean),'Transfer','Owner Draw','Owner Investment']);
+      const acctTxns=(a)=>{
+        if(a.subtype==='bank')return filteredManualTxns.filter(t=>t.account===a.bankRef||(a.number===1010&&t.account&&_bankAcctMetaGlobal[t.account]&&!_bankAcctMetaGlobal[t.account].excluded));
+        if(a.number===6990)return filteredManualTxns.filter(t=>!t.category||t.category==='Uncategorized'||t.category==='Other'||!_knownLegacy.has(t.category));
+        if(a.legacyCategory)return filteredManualTxns.filter(t=>t.category===a.legacyCategory);
+        return [];
+      };
+      const activityOf=a=>acctTxns(a).reduce((s2,t)=>s2+(parseFloat(t.amount)||0),0);
+      const balanceOf=a=>{
+        if(a.subtype==='bank'&&a.number===1010)return liveBankCash;
+        if(a.subtype==='ar')return totalAR;
+        if(a.subtype==='ap')return totalAP;
+        if(a.number===2300)return totalComm;
+        return null;
+      };
+      const typeColor={asset:"#2dd4bf",liability:"#f97316",equity:"#34d399",revenue:"#2dd4bf",cogs:"#f87171",expense:"#fbbf24"};
+      const exportCoa=()=>{
+        const esc=v=>{const str=String(v==null?'':v);return /[",\n\r]/.test(str)?'"'+str.replace(/"/g,'""')+'"':str};
+        const rows=[['Number','Name','Type','Subtype','Normal Balance','Legacy Category','Active','System']];
+        accs.sort((a,b)=>a.number-b.number).forEach(a=>rows.push([a.number,a.name,a.type,a.subtype||'',a.normalBalance,a.legacyCategory||'',a.isActive?'yes':'no',a.isSystem?'yes':'no']));
+        const blob=new Blob([rows.map(r=>r.map(esc).join(',')).join('\n')],{type:'text/csv'});
+        const u=URL.createObjectURL(blob);const el=document.createElement('a');el.href=u;el.download='chart_of_accounts.csv';el.click();URL.revokeObjectURL(u);
+        notify('Chart of accounts exported');
+      };
+      const startNew=()=>{setCoaEditing('new');setCoaForm({number:'',name:'',type:'expense',description:''})};
+      const startEdit=(a)=>{setCoaEditing(a.id);setCoaForm({number:String(a.number),name:a.name,type:a.type,description:a.description||''})};
+      const parentForType=ty=>ty==='asset'?'ACC-1000':ty==='liability'?'ACC-2000':ty==='equity'?'ACC-3000':ty==='revenue'?'ACC-4000':ty==='cogs'?'ACC-5000':'ACC-6000';
+      const saveAcct=async()=>{
+        const num=parseInt(coaForm.number,10);const nm=coaForm.name.trim();
+        if(!num||num<1||num>99999){notify('Enter a valid account number','error');return}
+        if(!nm){notify('Enter an account name','error');return}
+        const existing=coaEditing!=='new'?accs.find(a=>a.id===coaEditing):null;
+        if(accs.some(a=>a.number===num&&(!existing||a.id!==existing.id))){notify('Account number '+num+' is already in use','error');return}
+        let rec;
+        if(existing){
+          rec={...existing,name:nm,description:coaForm.description.trim()};
+          if(!existing.isSystem){rec.number=num;rec.type=coaForm.type;rec.parentId=parentForType(coaForm.type);rec.normalBalance=(coaForm.type==='liability'||coaForm.type==='equity'||coaForm.type==='revenue')?'credit':'debit'}
+        }else{
+          rec={id:'ACC-'+num,number:num,name:nm,type:coaForm.type,subtype:'',parentId:parentForType(coaForm.type),normalBalance:(coaForm.type==='liability'||coaForm.type==='equity'||coaForm.type==='revenue')?'credit':'debit',bankRef:'',legacyCategory:nm,isActive:true,isSystem:false,description:coaForm.description.trim()};
+        }
+        const r=await db.saveAccount(rec);
+        if(r&&r.ok){notify(existing?'Account updated':'Account '+num+' created');setCoaEditing(null);_reloadGl()}
+        else notify('Save failed -- the database may have rejected the change','error');
+      };
+      const toggleActive=async(a)=>{
+        const r=await db.saveAccount({...a,isActive:!a.isActive});
+        if(r&&r.ok){notify(a.isActive?'Account deactivated':'Account reactivated');_reloadGl()}else notify('Update failed','error');
+      };
+      return <Card style={{padding:24,background:"#000000",border:"1px solid rgba(255,255,255,0.05)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8,flexWrap:"wrap",gap:10}}>
+          <div><div style={{fontSize:18,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>Chart of Accounts</div><div style={{fontSize:11,color:"#737373",marginTop:2,fontFamily:"'JetBrains Mono',monospace"}}>{accs.filter(a=>a.parentId).length} accounts -- activity reflects the selected period</div></div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+            <input value={coaSearch} onChange={e=>setCoaSearch(e.target.value)} placeholder="Search number or name..." style={{...inputStyle,width:190,fontSize:12}}/>
+            <button onClick={()=>setCoaShowInactive(!coaShowInactive)} style={{padding:"7px 12px",borderRadius:8,border:"1px solid "+(coaShowInactive?"#2dd4bf30":"rgba(255,255,255,0.07)"),background:coaShowInactive?"#2dd4bf0d":"rgba(17,17,17,0.55)",color:coaShowInactive?"#2dd4bf":"#737373",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Show Inactive</button>
+            <Btn v="secondary" style={{fontSize:11,padding:"6px 12px"}} onClick={exportCoa}><I n="download" s={12}/> Export CSV</Btn>
+            <Btn style={{fontSize:11,padding:"6px 12px"}} onClick={startNew}>+ Add Account</Btn>
+          </div>
+        </div>
+        <div style={{fontSize:10.5,color:"#7a7a7a",marginBottom:18,letterSpacing:0.2,fontFamily:"'Satoshi',sans-serif"}}>Open an account to see its register. System accounts are part of the ledger structure -- they can be renamed but never deleted, retyped or renumbered.</div>
+        {glAccounts===null?<div style={{padding:40,textAlign:"center",color:"#525252",fontSize:13}}>Loading chart of accounts...</div>:
+        parents.map(par=>{
+          const ch=kidsOf(par.id);if(ch.length===0)return null;
+          const subtotal=ch.reduce((s2,c)=>s2+activityOf(c),0);
+          const pc=typeColor[par.type]||"#2dd4bf";
+          return <div key={par.id} style={{marginBottom:26}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",padding:"6px 0 10px 0",borderBottom:"1px solid "+pc+"40"}}>
+              <span style={{fontSize:11,fontWeight:700,color:pc,letterSpacing:3,fontFamily:"'Satoshi',sans-serif"}}><span style={{fontFamily:"'JetBrains Mono',monospace",marginRight:10,opacity:0.7}}>{par.number}</span>{par.name}</span>
+              <span style={{fontSize:13,fontWeight:700,color:"#f5f5f5",fontFamily:"'JetBrains Mono',monospace",letterSpacing:-0.2}}>{fmt(subtotal)}</span>
+            </div>
+            {ch.map(a=>{
+              const open=!!coaOpen[a.id];
+              const act=activityOf(a);
+              const bal=balanceOf(a);
+              const isReview=(a.description||'').indexOf('Auto-created')===0;
+              const reg=open?acctTxns(a).slice().sort((x,y)=>(x.date||'').localeCompare(y.date||'')):null;
+              let running=0;
+              return <div key={a.id}>
+                <div onClick={()=>setCoaOpen(o=>({...o,[a.id]:!o[a.id]}))} style={{padding:"10px 12px",display:"flex",alignItems:"center",gap:12,borderBottom:"1px solid rgba(255,255,255,0.05)",cursor:"pointer",background:open?"rgba(255,255,255,0.018)":"transparent",transition:"background 0.2s",opacity:a.isActive?1:0.45}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.035)"}} onMouseLeave={e=>{e.currentTarget.style.background=open?"rgba(255,255,255,0.018)":"transparent"}}>
+                  <span style={{width:16,height:16,borderRadius:5,background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.08)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"transform 0.25s cubic-bezier(0.34,1.4,0.64,1)",transform:open?"rotate(90deg)":"none"}}><span style={{fontSize:7,color:pc,lineHeight:1}}>{'\u25B6'}</span></span>
+                  <span style={{fontSize:11.5,color:"#9a9a9a",fontFamily:"'JetBrains Mono',monospace",width:44,flexShrink:0}}>{a.number}</span>
+                  <span style={{fontSize:13.5,color:"#f5f5f5",fontWeight:600,letterSpacing:0.15,fontFamily:"'Satoshi',sans-serif"}}>{a.name}</span>
+                  {!a.isSystem&&<span style={{fontSize:8.5,fontFamily:"'JetBrains Mono',monospace",color:"#a78bfa",background:"rgba(167,139,250,0.08)",border:"1px solid rgba(167,139,250,0.2)",padding:"2px 8px",borderRadius:20,letterSpacing:0.5}}>CUSTOM</span>}
+                  {isReview&&<span style={{fontSize:8.5,fontFamily:"'JetBrains Mono',monospace",color:"#fbbf24",background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.2)",padding:"2px 8px",borderRadius:20,letterSpacing:0.5}}>REVIEW</span>}
+                  {!a.isActive&&<span style={{fontSize:8.5,fontFamily:"'JetBrains Mono',monospace",color:"#737373",background:"rgba(255,255,255,0.045)",border:"1px solid rgba(255,255,255,0.08)",padding:"2px 8px",borderRadius:20,letterSpacing:0.5}}>INACTIVE</span>}
+                  <span style={{flex:1}}/>
+                  <span style={{fontSize:12.5,fontWeight:600,color:Math.abs(act)>0.005?"#e5e5e5":"#525252",fontFamily:"'JetBrains Mono',monospace",flexShrink:0,minWidth:96,textAlign:"right",letterSpacing:-0.2}}>{fmt(act)}</span>
+                  <span style={{fontSize:12.5,fontWeight:700,color:bal!=null?pc:"#3a3a3a",fontFamily:"'JetBrains Mono',monospace",flexShrink:0,minWidth:110,textAlign:"right",letterSpacing:-0.2}}>{bal!=null?fmt(bal):"--"}</span>
+                  <button onClick={e=>{e.stopPropagation();startEdit(a)}} style={{padding:"4px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.08)",background:"transparent",color:"#737373",fontSize:10.5,cursor:"pointer",fontFamily:"inherit",flexShrink:0,transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.color="#2dd4bf";e.currentTarget.style.borderColor="#2dd4bf40"}} onMouseLeave={e=>{e.currentTarget.style.color="#737373";e.currentTarget.style.borderColor="rgba(255,255,255,0.08)"}}>Edit</button>
+                </div>
+                {open&&<div style={{animation:"fadeUp 0.25s",marginLeft:21,borderLeft:"1px solid rgba(255,255,255,0.07)"}}>
+                  {reg.length===0?<div style={{padding:"12px 18px",fontSize:11.5,color:"#525252",fontFamily:"'Satoshi',sans-serif"}}>No activity in the selected period.</div>:
+                  <>
+                    <div style={{display:"flex",gap:10,padding:"8px 14px 4px 18px",fontSize:9,color:"#7a7a7a",letterSpacing:1.5,textTransform:"uppercase",fontFamily:"'Satoshi',sans-serif"}}><span style={{width:74}}>Date</span><span style={{flex:1}}>Description</span><span style={{width:90,textAlign:"right"}}>Amount</span><span style={{width:100,textAlign:"right"}}>Running</span></div>
+                    {reg.slice(0,200).map((t,i)=>{const amt=parseFloat(t.amount)||0;const signed=a.subtype==='bank'?(t.type==='revenue'?amt:-amt):amt;running+=signed;
+                      return <div key={t.id||i} style={{display:"flex",gap:10,alignItems:"center",padding:"6px 14px 6px 18px",borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
+                        <span style={{width:74,fontSize:11,color:"#9a9a9a",fontFamily:"'JetBrains Mono',monospace",flexShrink:0}}>{t.date||'--'}</span>
+                        <span style={{flex:1,fontSize:12,color:"#b8b8b8",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontFamily:"'Satoshi',sans-serif"}}>{t.description||'--'}</span>
+                        <span style={{width:90,textAlign:"right",fontSize:12,color:a.subtype==='bank'?(signed>=0?"#34d399":"#f87171"):"#d4d4d4",fontFamily:"'JetBrains Mono',monospace",flexShrink:0}}>{a.subtype==='bank'?(signed>=0?'+':'-')+fmt(Math.abs(signed)).replace('$','$'):fmt(amt)}</span>
+                        <span style={{width:100,textAlign:"right",fontSize:12,color:"#8a8a8a",fontFamily:"'JetBrains Mono',monospace",flexShrink:0}}>{fmt(running)}</span>
+                      </div>})}
+                    {reg.length>200&&<div style={{padding:"8px 18px",fontSize:10.5,color:"#525252"}}>Showing first 200 of {reg.length} lines -- narrow the period selector to see the rest.</div>}
+                  </>}
+                </div>}
+              </div>})}
+          </div>})}
+        {coaEditing&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",backdropFilter:"blur(6px)",WebkitBackdropFilter:"blur(6px)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setCoaEditing(null)}>
+          <div onClick={e=>e.stopPropagation()} style={{width:"100%",maxWidth:460,background:"#0a0a0a",border:"1px solid rgba(255,255,255,0.1)",borderRadius:16,padding:24,animation:"fadeUp 0.2s"}}>
+            {(()=>{const existing=coaEditing!=='new'?accs.find(a=>a.id===coaEditing):null;const locked=existing&&existing.isSystem;
+            return <>
+              <div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace",marginBottom:4}}>{existing?'Edit Account':'New Account'}</div>
+              {locked&&<div style={{fontSize:10.5,color:"#fbbf24",marginBottom:12}}>System account -- number and type are locked. Name and description can change.</div>}
+              {!locked&&<div style={{fontSize:10.5,color:"#7a7a7a",marginBottom:12}}>Custom accounts map bank transactions whose category matches the account name.</div>}
+              <div style={{display:"grid",gridTemplateColumns:"110px 1fr",gap:10,marginBottom:10}}>
+                <div><label style={{fontSize:10,color:"#737373",display:"block",marginBottom:3}}>Number</label><input type="number" value={coaForm.number} disabled={!!locked} onChange={e=>setCoaForm(f=>({...f,number:e.target.value}))} style={{...inputStyle,opacity:locked?0.5:1}}/></div>
+                <div><label style={{fontSize:10,color:"#737373",display:"block",marginBottom:3}}>Name</label><input value={coaForm.name} onChange={e=>setCoaForm(f=>({...f,name:e.target.value}))} style={inputStyle}/></div>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+                <div><label style={{fontSize:10,color:"#737373",display:"block",marginBottom:3}}>Type</label><select value={coaForm.type} disabled={!!locked} onChange={e=>setCoaForm(f=>({...f,type:e.target.value}))} style={{...inputStyle,opacity:locked?0.5:1}}>{['asset','liability','equity','revenue','cogs','expense'].map(ty=><option key={ty} value={ty}>{ty}</option>)}</select></div>
+                <div><label style={{fontSize:10,color:"#737373",display:"block",marginBottom:3}}>Description</label><input value={coaForm.description} onChange={e=>setCoaForm(f=>({...f,description:e.target.value}))} style={inputStyle}/></div>
+              </div>
+              <div style={{display:"flex",gap:8,justifyContent:"space-between",marginTop:16}}>
+                <div>{existing&&!existing.isSystem&&<Btn v="secondary" style={{fontSize:11,color:existing.isActive?"#f87171":"#34d399"}} onClick={()=>{toggleActive(existing);setCoaEditing(null)}}>{existing.isActive?'Deactivate':'Reactivate'}</Btn>}</div>
+                <div style={{display:"flex",gap:8}}><Btn v="secondary" style={{fontSize:11}} onClick={()=>setCoaEditing(null)}>Cancel</Btn><Btn style={{fontSize:11}} onClick={saveAcct}>{existing?'Save Changes':'Create Account'}</Btn></div>
+              </div>
+            </>})()}
+          </div>
+        </div>}
+      </Card>;
+    })()}
+
+
+    {tab==="close"&&(()=>{
+      // ---- PERIOD CLOSE + AUDIT LOCK (GL Phase 1) --------------------------
+      // The lock itself is a Postgres trigger -- closing here writes period_locks
+      // and from that moment the database refuses every write into the period,
+      // from this app, the Brain, the Plaid sync, or anyone with the SQL editor.
+      const months=Array.from({length:12},(_,i)=>closeYear+'-'+String(i+1).padStart(2,'0'));
+      const monthName=mp=>new Date(mp+'-15T12:00:00').toLocaleString('en-US',{month:'long'});
+      const lockOf=mp=>(glLocks||[]).find(l=>l.period===mp);
+      const _reconSop=mp=>{const r=(customSops||[]).find(s2=>s2.id==='PERIOD_RECON_'+mp);if(!r)return{};try{return JSON.parse(r.content)||{}}catch{return{}}};
+      // Transfer / Owner Draw / Owner Investment are deliberate categorizations that
+      // map to movement, not P&L accounts -- they must never count as uncategorized
+      // or they would falsely block a period close.
+      const _knownLegacy2=new Set([...(glAccounts||[]).map(a=>a.legacyCategory).filter(Boolean),'Transfer','Owner Draw','Owner Investment']);
+      const monthTxns=mp=>manualTxns.filter(t=>_periodOf(t.date)===mp);
+      const acctLabel=id=>(_bankAcctMetaGlobal[id]&&_bankAcctMetaGlobal[id].nickname)||(id==='Operating'?'Operating':String(id).slice(0,10)+'...');
+      const checklistFor=(mp)=>{
+        const tx=monthTxns(mp);
+        const recon=_reconSop(mp);
+        const acctIds=Array.from(new Set(tx.map(t=>t.account).filter(Boolean))).filter(id=>!(_bankAcctMetaGlobal[id]&&_bankAcctMetaGlobal[id].excluded));
+        const bankPending=acctIds.filter(id=>!recon[id]);
+        const uncat=tx.filter(t=>!t.category||t.category==='Uncategorized'||t.category==='Other'||!_knownLegacy2.has(t.category)).length;
+        const jobsBad=(jobs||[]).filter(j=>{const d=fCtx.jobReportDate?fCtx.jobReportDate(j):j.createdDate;if(_periodOf(d)!==mp)return false;const f=getJobFinancials(j.id);return (f.totalRevenue>0.005&&f.totalCost<0.005)||(f.totalCost>0.005&&f.totalRevenue<0.005)});
+        return [
+          {k:'recon',label:'Every bank account reconciled through month end',pass:acctIds.length===0||bankPending.length===0,detail:acctIds.length===0?'No bank activity this month':(bankPending.length===0?String(acctIds.length)+' account'+(acctIds.length!==1?'s':'')+' attested':String(bankPending.length)+' of '+acctIds.length+' account'+(acctIds.length!==1?'s':'')+' pending'),overridable:true,recon:true,acctIds,reconData:recon},
+          {k:'uncat',label:'Zero uncategorized transactions in the period',pass:uncat===0,detail:uncat===0?'All transactions categorized':String(uncat)+' uncategorized transaction'+(uncat!==1?'s':''),overridable:true,jump:uncat>0?()=>{setTab('banking');setBankCatFilter('__uncat__')}:null},
+          {k:'journal',label:'Zero unposted journal entries in the period',pass:true,detail:'Arrives with the Journal (Phase 2)',phase2:true},
+          {k:'tb',label:'Trial balance in balance',pass:true,detail:'Arrives with the Journal (Phase 2)',phase2:true},
+          {k:'arctl',label:'AR control account ties to the subledger',pass:true,detail:'Arrives with the ledger backfill (Phase 3)',phase2:true},
+          {k:'apctl',label:'AP control account ties to the subledger',pass:true,detail:'Arrives with the ledger backfill (Phase 3)',phase2:true},
+          {k:'jobq',label:'No jobs with revenue and zero cost, or cost and zero revenue',pass:jobsBad.length===0,detail:jobsBad.length===0?'Job data quality clean':String(jobsBad.length)+' job'+(jobsBad.length!==1?'s':'')+' flagged: '+jobsBad.slice(0,3).map(j=>j.name).join(', ')+(jobsBad.length>3?' +'+String(jobsBad.length-3)+' more':''),overridable:true},
+        ];
+      };
+      const saveRecon=(mp,acctId)=>{
+        const v=reconDraft[mp+'|'+acctId];
+        if(v==null||String(v).trim()===''){notify('Enter the statement ending balance first','error');return}
+        const cur=_reconSop(mp);
+        const next={...cur,[acctId]:{balance:String(v).trim(),by:_glUser,at:new Date().toISOString()}};
+        addSop({id:'PERIOD_RECON_'+mp,title:'Reconciliation '+mp,cat:'Settings',icon:'check',content:JSON.stringify(next),custom:true});
+        notify('Marked reconciled: '+acctLabel(acctId));
+      };
+      const doClose=async(mp,items)=>{
+        const failing=items.filter(i=>!i.pass);
+        const missing=failing.filter(i=>!(closeOverrides[mp+i.k]||'').trim());
+        if(missing.length){notify('Every failing item needs a typed override reason before the period can close','error');return}
+        const overrides={};failing.forEach(i=>{overrides[i.k]={reason:closeOverrides[mp+i.k].trim(),item:i.label}});
+        const snapshot=items.map(i=>({k:i.k,label:i.label,pass:i.pass,detail:i.detail}));
+        const r=await db.savePeriodLock({period:mp,status:'closed',closedAt:new Date().toISOString(),closedBy:_glUser,checklist:snapshot,overrides:Object.keys(overrides).length?overrides:null});
+        if(r&&r.ok){db.logAudit({actor:_glUser,action:'close',entity:'period_locks',entity_id:mp,note:Object.keys(overrides).length?'Closed with '+Object.keys(overrides).length+' override(s)':'Closed clean'});notify('Period '+mp+' is closed. The database now refuses writes into it.');setCloseAsk(false);_reloadGl()}
+        else notify('Close failed -- check the connection and try again','error');
+      };
+      const doReopen=async(mp)=>{
+        const lk=lockOf(mp);if(!lk)return;
+        if(reopenReason.trim().length<20){notify('The reopen reason must be at least 20 characters. This goes in the permanent audit trail.','error');return}
+        const r=await db.savePeriodLock({...lk,status:'open',reopenedAt:new Date().toISOString(),reopenedBy:_glUser,reopenReason:reopenReason.trim()});
+        if(r&&r.ok){db.logAudit({actor:_glUser,action:'reopen',entity:'period_locks',entity_id:mp,note:reopenReason.trim()});notify('Period '+mp+' reopened. Any statements previously exported for it are superseded.');setReopenAsk(false);setReopenReason('');_reloadGl()}
+        else notify('Reopen failed','error');
+      };
+      const nowP=_periodOf(new Date().toISOString());
+      const sel=closeMonth;const selLock=sel?lockOf(sel):null;const selClosed=selLock&&selLock.status==='closed';
+      const selItems=sel&&!selClosed?checklistFor(sel):null;
+      const selFails=selItems?selItems.filter(i=>!i.pass):[];
+      const canClose=selItems&&selFails.every(i=>(closeOverrides[sel+i.k]||'').trim().length>0);
+      return <div style={{display:"flex",flexDirection:"column",gap:16}}>
+        <Card style={{padding:24,background:"#000000",border:"1px solid rgba(255,255,255,0.05)"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6,flexWrap:"wrap",gap:8}}>
+            <div><div style={{fontSize:18,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>Period Close</div><div style={{fontSize:11,color:"#737373",marginTop:2,fontFamily:"'JetBrains Mono',monospace"}}>Closed periods are locked at the database -- no app, sync or tool can write into them</div></div>
+            <div style={{display:"flex",alignItems:"center",gap:4,background:"rgba(17,17,17,0.55)",backdropFilter:"blur(12px) saturate(180%)",WebkitBackdropFilter:"blur(12px) saturate(180%)",border:"1px solid rgba(255,255,255,0.07)",borderRadius:10,overflow:"hidden"}}>
+              <button onClick={()=>setCloseYear(y=>y-1)} style={{padding:"7px 12px",border:"none",background:"transparent",color:"#737373",fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>{'\u2039'}</button>
+              <span style={{fontSize:13,fontWeight:700,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace",padding:"0 6px"}}>{closeYear}</span>
+              <button onClick={()=>setCloseYear(y=>y+1)} style={{padding:"7px 12px",border:"none",background:"transparent",color:"#737373",fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>{'\u203A'}</button>
+            </div>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(148px,1fr))",gap:10,marginTop:16}}>
+            {months.map(mp=>{
+              const lk=lockOf(mp);const closed=lk&&lk.status==='closed';
+              const future=mp>nowP;
+              const fails=closed||future?0:checklistFor(mp).filter(i=>!i.pass).length;
+              const selNow=closeMonth===mp;
+              return <div key={mp} onClick={()=>{setCloseMonth(mp);setCloseAsk(false);setReopenAsk(false)}} style={{padding:"14px 14px 12px 14px",borderRadius:12,cursor:"pointer",background:selNow?"rgba(255,255,255,0.04)":"rgba(255,255,255,0.015)",backdropFilter:"blur(10px)",WebkitBackdropFilter:"blur(10px)",border:"1px solid "+(selNow?"rgba(45,212,191,0.4)":closed?"rgba(52,211,153,0.2)":"rgba(255,255,255,0.06)"),transition:"all 0.15s"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                  <span style={{fontSize:12.5,fontWeight:700,color:"#f0f0f0",fontFamily:"'Satoshi',sans-serif"}}>{monthName(mp)}</span>
+                  <span style={{fontSize:10,fontFamily:"'JetBrains Mono',monospace",color:"#525252"}}>{mp}</span>
+                </div>
+                {closed?<span style={{fontSize:9,fontWeight:700,color:"#34d399",background:"rgba(52,211,153,0.08)",border:"1px solid rgba(52,211,153,0.25)",padding:"3px 10px",borderRadius:20,letterSpacing:1.5,fontFamily:"'JetBrains Mono',monospace"}}>CLOSED</span>
+                :future?<span style={{fontSize:9,fontWeight:600,color:"#3a3a3a",background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.04)",padding:"3px 10px",borderRadius:20,letterSpacing:1.5,fontFamily:"'JetBrains Mono',monospace"}}>FUTURE</span>
+                :fails>0?<span style={{fontSize:9,fontWeight:700,color:"#fbbf24",background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.25)",padding:"3px 10px",borderRadius:20,letterSpacing:1.5,fontFamily:"'JetBrains Mono',monospace"}}>{fails} CHECK{fails!==1?'S':''} FAILING</span>
+                :<span style={{fontSize:9,fontWeight:700,color:"#2dd4bf",background:"rgba(45,212,191,0.08)",border:"1px solid rgba(45,212,191,0.25)",padding:"3px 10px",borderRadius:20,letterSpacing:1.5,fontFamily:"'JetBrains Mono',monospace"}}>READY</span>}
+              </div>})}
+          </div>
+        </Card>
+        {sel&&<Card style={{padding:24,background:"#000000",border:"1px solid rgba(255,255,255,0.05)",animation:"fadeUp 0.25s"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
+            <div style={{display:"flex",alignItems:"center",gap:10}}><span style={{color:selClosed?"#34d399":"#2dd4bf",display:"flex"}}><I n="shield" s={14}/></span><span style={{fontSize:11,fontWeight:700,color:selClosed?"#34d399":"#2dd4bf",letterSpacing:3,fontFamily:"'Satoshi',sans-serif"}}>{monthName(sel).toUpperCase()} {sel.slice(0,4)}</span></div>
+            {selClosed&&<span style={{fontSize:10,color:"#737373",fontFamily:"'JetBrains Mono',monospace"}}>closed by {selLock.closedBy||'--'} {selLock.closedAt?'on '+String(selLock.closedAt).slice(0,10):''}</span>}
+          </div>
+          {selClosed?<>
+            <div style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",borderRadius:12,background:"rgba(52,211,153,0.04)",border:"1px solid rgba(52,211,153,0.15)",marginBottom:16}}>
+              <span style={{fontSize:12.5,color:"#d4d4d4",fontFamily:"'Satoshi',sans-serif"}}>This period is locked. The database rejects every insert, update or delete dated inside it. Corrections belong in a prior-period adjustment dated in an open month.</span>
+            </div>
+            {Array.isArray(selLock.checklist)&&<div style={{marginBottom:16}}>{selLock.checklist.map(i=><div key={i.k} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 4px",borderBottom:"1px solid rgba(255,255,255,0.03)"}}><span style={{width:15,height:15,borderRadius:8,background:i.pass?"rgba(52,211,153,0.12)":"rgba(251,191,36,0.12)",border:"1px solid "+(i.pass?"rgba(52,211,153,0.4)":"rgba(251,191,36,0.4)"),display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:8,color:i.pass?"#34d399":"#fbbf24"}}>{i.pass?'\u2713':'!'}</span><span style={{fontSize:12,color:"#b8b8b8",flex:1,fontFamily:"'Satoshi',sans-serif"}}>{i.label}</span><span style={{fontSize:10.5,color:"#737373",fontFamily:"'JetBrains Mono',monospace"}}>{i.detail}</span></div>)}</div>}
+            {selLock.overrides&&<div style={{fontSize:10.5,color:"#fbbf24",marginBottom:16}}>Closed with overrides: {Object.keys(selLock.overrides).join(', ')}</div>}
+            {_glIsAdmin&&(!reopenAsk?
+              <Btn v="secondary" style={{fontSize:11,color:"#f87171",borderColor:"#f8717130"}} onClick={()=>setReopenAsk(true)}>Reopen Period...</Btn>
+              :<div style={{padding:16,borderRadius:12,background:"rgba(248,113,113,0.04)",border:"1px solid rgba(248,113,113,0.2)"}}>
+                <div style={{fontSize:12.5,fontWeight:700,color:"#f87171",marginBottom:8,fontFamily:"'Satoshi',sans-serif"}}>Reopening {monthName(sel)} goes in the permanent audit trail and supersedes any statements already exported for it.</div>
+                <textarea value={reopenReason} onChange={e=>setReopenReason(e.target.value)} placeholder="Why is this period being reopened? Minimum 20 characters." style={{...inputStyle,width:"100%",minHeight:64,resize:"vertical",fontSize:12,marginBottom:4}}/>
+                <div style={{fontSize:9.5,color:reopenReason.trim().length>=20?"#34d399":"#737373",fontFamily:"'JetBrains Mono',monospace",marginBottom:10}}>{reopenReason.trim().length}/20 characters</div>
+                <div style={{display:"flex",gap:8}}><Btn v="secondary" style={{fontSize:11}} onClick={()=>{setReopenAsk(false);setReopenReason('')}}>Cancel</Btn><Btn style={{fontSize:11,background:"#f87171",borderColor:"#f87171"}} onClick={()=>doReopen(sel)}>Confirm Reopen</Btn></div>
+              </div>)}
+            {!_glIsAdmin&&<div style={{fontSize:10.5,color:"#737373"}}>Only an admin can reopen a closed period.</div>}
+          </>:<>
+            <div style={{fontSize:10.5,color:"#7a7a7a",marginBottom:14,fontFamily:"'Satoshi',sans-serif"}}>Every item must pass, or carry a typed override reason that is stored with the close. Ledger items activate in later phases and pass automatically until then.</div>
+            {selItems.map(i=><div key={i.k} style={{padding:"10px 4px",borderBottom:"1px solid rgba(255,255,255,0.04)",opacity:i.phase2?0.45:1}}>
+              <div style={{display:"flex",alignItems:"center",gap:12}}>
+                <span style={{width:16,height:16,borderRadius:9,background:i.pass?"rgba(52,211,153,0.12)":"rgba(248,113,113,0.12)",border:"1px solid "+(i.pass?"rgba(52,211,153,0.4)":"rgba(248,113,113,0.4)"),display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:8.5,color:i.pass?"#34d399":"#f87171"}}>{i.pass?'\u2713':'\u2715'}</span>
+                <span style={{fontSize:13,color:"#f0f0f0",fontWeight:600,flex:1,fontFamily:"'Satoshi',sans-serif"}}>{i.label}</span>
+                <span style={{fontSize:10.5,color:i.pass?"#737373":"#f87171",fontFamily:"'JetBrains Mono',monospace"}}>{i.detail}</span>
+                {i.jump&&<button onClick={i.jump} style={{padding:"3px 10px",borderRadius:6,border:"1px solid rgba(45,212,191,0.3)",background:"rgba(45,212,191,0.06)",color:"#2dd4bf",fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>Go fix</button>}
+              </div>
+              {i.recon&&i.acctIds.length>0&&<div style={{marginLeft:28,marginTop:8,display:"flex",flexDirection:"column",gap:6}}>
+                {i.acctIds.map(id=>{const done=i.reconData[id];return <div key={id} style={{display:"flex",alignItems:"center",gap:10}}>
+                  <span style={{fontSize:11.5,color:"#b8b8b8",width:130,fontFamily:"'Satoshi',sans-serif"}}>{acctLabel(id)}</span>
+                  {done?<span style={{fontSize:10,color:"#34d399",fontFamily:"'JetBrains Mono',monospace"}}>reconciled at ${done.balance} by {done.by}</span>
+                  :<><input type="number" step="0.01" placeholder="Statement ending balance" value={reconDraft[sel+'|'+id]||''} onChange={e=>setReconDraft(d=>({...d,[sel+'|'+id]:e.target.value}))} style={{...inputStyle,width:180,fontSize:11.5,padding:"5px 8px"}}/>
+                  <Btn v="secondary" style={{fontSize:10,padding:"4px 10px"}} onClick={()=>saveRecon(sel,id)}>Mark Reconciled</Btn></>}
+                </div>})}
+              </div>}
+              {!i.pass&&i.overridable&&<div style={{marginLeft:28,marginTop:8}}>
+                <input value={closeOverrides[sel+i.k]||''} onChange={e=>setCloseOverrides(o=>({...o,[sel+i.k]:e.target.value}))} placeholder="Override reason (recorded with the close)..." style={{...inputStyle,width:"100%",maxWidth:440,fontSize:11.5,borderColor:"rgba(251,191,36,0.3)"}}/>
+              </div>}
+            </div>)}
+            <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginTop:18,alignItems:"center"}}>
+              {selFails.length>0&&<span style={{fontSize:10.5,color:canClose?"#fbbf24":"#f87171",fontFamily:"'JetBrains Mono',monospace"}}>{canClose?String(selFails.length)+' item'+(selFails.length!==1?'s':'')+' will close with overrides':String(selFails.length)+' failing item'+(selFails.length!==1?'s':'')+' -- add override reasons to proceed'}</span>}
+              {!closeAsk?<Btn style={{fontSize:12}} onClick={()=>{if(!canClose){notify('Every failing item needs a typed override reason before the period can close','error');return}setCloseAsk(true)}}>Close {monthName(sel)}...</Btn>
+              :<div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderRadius:12,background:"rgba(45,212,191,0.05)",border:"1px solid rgba(45,212,191,0.25)"}}>
+                <span style={{fontSize:11.5,color:"#d4d4d4"}}>Lock {monthName(sel)} {sel.slice(0,4)} at the database?</span>
+                <Btn v="secondary" style={{fontSize:11}} onClick={()=>setCloseAsk(false)}>Cancel</Btn>
+                <Btn style={{fontSize:11}} onClick={()=>doClose(sel,selItems)}>Confirm Close</Btn>
+              </div>}
+            </div>
+          </>}
+        </Card>}
+      </div>;
+    })()}
   </div>;
 }
 
