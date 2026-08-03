@@ -218,6 +218,32 @@ const sopFromDb = (r) => ({
   content: r.content || '', custom: r.custom !== false,
 });
 
+// ---- GENERAL LEDGER (Phase 1: chart of accounts, period locks, audit) ----
+const accountFromDb = (r) => ({
+  id: r.id, number: r.number, name: r.name, type: r.type, subtype: r.subtype || '',
+  parentId: r.parent_id || null, normalBalance: r.normal_balance, bankRef: r.bank_ref || '',
+  legacyCategory: r.legacy_category || '', isActive: r.is_active !== false,
+  isSystem: r.is_system === true, description: r.description || '',
+  createdAt: r.created_at, updatedAt: r.updated_at,
+});
+const accountToDb = (a) => ({
+  id: a.id, number: a.number, name: a.name, type: a.type, subtype: a.subtype || null,
+  parent_id: a.parentId || null, normal_balance: a.normalBalance,
+  bank_ref: a.bankRef || null, legacy_category: a.legacyCategory || null,
+  is_active: a.isActive !== false, is_system: a.isSystem === true,
+  description: a.description || null,
+});
+const periodLockFromDb = (r) => ({
+  period: r.period, status: r.status, closedAt: r.closed_at, closedBy: r.closed_by || '',
+  reopenedAt: r.reopened_at, reopenedBy: r.reopened_by || '', reopenReason: r.reopen_reason || '',
+  checklist: r.checklist || null, overrides: r.overrides || null,
+});
+const periodLockToDb = (p) => ({
+  period: p.period, status: p.status, closed_at: p.closedAt || null, closed_by: p.closedBy || null,
+  reopened_at: p.reopenedAt || null, reopened_by: p.reopenedBy || null,
+  reopen_reason: p.reopenReason || null, checklist: p.checklist || null, overrides: p.overrides || null,
+});
+
 // ---- USERS ----
 async function fetchUsers() {
   try {
@@ -350,6 +376,34 @@ export const db = {
   async deleteRep(id) { return deleteRow('reps', id); },
   async saveSop(s) { return upsertRow('sops', sopToDb(s)); },
   async deleteSop(id) { return deleteRow('sops', id); },
+  // ---- General ledger (Phase 1) ----
+  async fetchAccounts() { const rows = await fetchAll('accounts'); return rows ? rows.map(accountFromDb) : null; },
+  async saveAccount(a) { return upsertRow('accounts', accountToDb(a)); },
+  async deleteAccount(id) { return deleteRow('accounts', id); },
+  async fetchPeriodLocks() { const rows = await fetchAll('period_locks'); return rows ? rows.map(periodLockFromDb) : null; },
+  async savePeriodLock(p) {
+    // period_locks is keyed on "period", not "id" -- needs its own conflict target.
+    try {
+      const r = await fetch(URL + '/period_locks?on_conflict=period', {
+        method: 'POST',
+        headers: { ...hdrs, 'Prefer': 'return=representation,resolution=merge-duplicates' },
+        body: JSON.stringify(periodLockToDb(p)),
+      });
+      return { ok: r.ok };
+    } catch (e) { console.error('Upsert period_locks:', e); return { ok: false }; }
+  },
+  async fetchAudit(limit) {
+    try {
+      const r = await fetch(URL + '/ledger_audit?select=*&order=at.desc&limit=' + (limit || 200), { headers: hdrs });
+      if (!r.ok) return null; const rows = await r.json(); return Array.isArray(rows) ? rows : null;
+    } catch (e) { console.error('Fetch ledger_audit:', e); return null; }
+  },
+  async logAudit(row) {
+    try {
+      const r = await fetch(URL + '/ledger_audit', { method: 'POST', headers: { ...hdrs, 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify(row) });
+      return r.ok;
+    } catch (e) { return false; }
+  },
   async seed(initJobs, initLI, initV, initC, initR) {
     await deleteAll('line_items');
     await deleteAll('jobs');
