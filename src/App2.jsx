@@ -6895,21 +6895,28 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
               <button onClick={()=>setCloseYear(y=>y+1)} style={{padding:"7px 12px",border:"none",background:"transparent",color:"#737373",fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>{'\u203A'}</button>
             </div>
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(148px,1fr))",gap:10,marginTop:16}}>
-            {months.map(mp=>{
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(168px,1fr))",gap:12,marginTop:18}}>
+            {months.map((mp,mi)=>{
               const lk=lockOf(mp);const closed=lk&&lk.status==='closed';
               const future=mp>nowP;
               const fails=closed||future?0:checklistFor(mp).filter(i=>!i.pass).length;
               const selNow=closeMonth===mp;
-              return <div key={mp} onClick={()=>{setCloseMonth(mp);setCloseAsk(false);setReopenAsk(false)}} style={{padding:"14px 14px 12px 14px",borderRadius:12,cursor:"pointer",background:selNow?"rgba(255,255,255,0.04)":"rgba(255,255,255,0.015)",backdropFilter:"blur(10px)",WebkitBackdropFilter:"blur(10px)",border:"1px solid "+(selNow?"rgba(45,212,191,0.4)":closed?"rgba(52,211,153,0.2)":"rgba(255,255,255,0.06)"),transition:"all 0.15s"}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                  <span style={{fontSize:12.5,fontWeight:700,color:"#f0f0f0",fontFamily:"'Satoshi',sans-serif"}}>{monthName(mp)}</span>
-                  <span style={{fontSize:10,fontFamily:"'JetBrains Mono',monospace",color:"#525252"}}>{mp}</span>
+              const accent=closed?"#34d399":future?"#3a3a3a":fails>0?"#fbbf24":"#2dd4bf";
+              const restBg=selNow?"rgba(255,255,255,0.045)":"rgba(255,255,255,0.015)";
+              const restBorder=selNow?accent+"66":closed?"rgba(52,211,153,0.18)":"rgba(255,255,255,0.06)";
+              return <div key={mp} onClick={()=>{setCloseMonth(mp);setCloseAsk(false);setReopenAsk(false)}} style={{padding:"15px 16px 13px 16px",borderRadius:14,cursor:"pointer",position:"relative",overflow:"hidden",background:restBg,backdropFilter:"blur(10px) saturate(150%)",WebkitBackdropFilter:"blur(10px) saturate(150%)",border:"1px solid "+restBorder,opacity:future?0.45:1,transition:"transform 0.22s cubic-bezier(0.34,1.3,0.64,1), border-color 0.22s, background 0.22s, opacity 0.22s",animation:"fadeUp 0.35s both",animationDelay:(mi*0.035)+"s"}} onMouseEnter={e=>{if(!future){e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.background="rgba(255,255,255,0.04)";e.currentTarget.style.borderColor=accent+"55"}e.currentTarget.style.opacity=1}} onMouseLeave={e=>{e.currentTarget.style.transform="none";e.currentTarget.style.background=restBg;e.currentTarget.style.borderColor=restBorder;e.currentTarget.style.opacity=future?0.45:1}}>
+                <div style={{position:"absolute",top:0,left:14,right:14,height:1,background:"linear-gradient(90deg,transparent,"+accent+(closed||selNow?"66":"26")+",transparent)"}}/>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:11,gap:8}}>
+                  <span style={{fontSize:13.5,fontWeight:700,color:future?"#737373":"#f5f5f5",fontFamily:"'Satoshi',sans-serif",letterSpacing:0.2}}>{monthName(mp)}</span>
+                  <span style={{fontSize:9.5,fontFamily:"'JetBrains Mono',monospace",color:"#525252",flexShrink:0}}>{mp}</span>
                 </div>
-                {closed?<span style={{fontSize:9,fontWeight:700,color:"#34d399",background:"rgba(52,211,153,0.08)",border:"1px solid rgba(52,211,153,0.25)",padding:"3px 10px",borderRadius:20,letterSpacing:1.5,fontFamily:"'JetBrains Mono',monospace"}}>CLOSED</span>
-                :future?<span style={{fontSize:9,fontWeight:600,color:"#3a3a3a",background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.04)",padding:"3px 10px",borderRadius:20,letterSpacing:1.5,fontFamily:"'JetBrains Mono',monospace"}}>FUTURE</span>
-                :fails>0?<span style={{fontSize:9,fontWeight:700,color:"#fbbf24",background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.25)",padding:"3px 10px",borderRadius:20,letterSpacing:1.5,fontFamily:"'JetBrains Mono',monospace"}}>{fails} CHECK{fails!==1?'S':''} FAILING</span>
-                :<span style={{fontSize:9,fontWeight:700,color:"#2dd4bf",background:"rgba(45,212,191,0.08)",border:"1px solid rgba(45,212,191,0.25)",padding:"3px 10px",borderRadius:20,letterSpacing:1.5,fontFamily:"'JetBrains Mono',monospace"}}>READY</span>}
+                <div style={{display:"flex",alignItems:"center",gap:8,whiteSpace:"nowrap",overflow:"hidden"}}>
+                  <span style={{width:7,height:7,borderRadius:4,background:accent,flexShrink:0,boxShadow:closed?"0 0 10px rgba(52,211,153,0.55)":(!future&&fails>0)?"0 0 10px rgba(251,191,36,0.45)":(!future&&fails===0)?"0 0 10px rgba(45,212,191,0.35)":"none",animation:(!future&&!closed&&fails>0)?"pulse 2.4s infinite":"none"}}/>
+                  {closed?<span style={{fontSize:11,fontWeight:600,color:"#34d399",fontFamily:"'Satoshi',sans-serif",letterSpacing:0.3}}>Closed{lk.closedBy?<span style={{color:"#527a6a",fontWeight:500}}>{' -- '+String(lk.closedAt||'').slice(5,10)}</span>:null}</span>
+                  :future?<span style={{fontSize:11,fontWeight:500,color:"#525252",fontFamily:"'Satoshi',sans-serif",letterSpacing:0.3}}>Future</span>
+                  :fails>0?<span style={{fontSize:11,fontWeight:600,color:"#fbbf24",fontFamily:"'Satoshi',sans-serif",letterSpacing:0.3,overflow:"hidden",textOverflow:"ellipsis"}}><span style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:700}}>{fails}</span>{' check'+(fails!==1?'s':'')+' failing'}</span>
+                  :<span style={{fontSize:11,fontWeight:600,color:"#2dd4bf",fontFamily:"'Satoshi',sans-serif",letterSpacing:0.3}}>Ready to close</span>}
+                </div>
               </div>})}
           </div>
         </Card>
