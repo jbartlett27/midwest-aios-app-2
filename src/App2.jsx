@@ -4167,7 +4167,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     </div>
   </div>;
 }
-function ProspectsPage({reps,customSops,addSop,deleteSop,notify}){
+function ProspectsPage({reps,customSops,addSop,deleteSop,notify,currentUser,userRepId}){
   const [search,setSearch]=useState('');
   const [statusFilter,setStatusFilter]=useState('all');
   const [stateFilter,setStateFilter]=useState('all');
@@ -4180,13 +4180,19 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify}){
   const [addForm,setAddForm]=useState({name:'',title:'',company:'',email:'',phone:'',city:'',state:'',linkedin:'',website:'',twitter:'',employees:'',status:'New',notes:'',address:'',assignedRep:'',revenue:'',funding:''});
   const [selected,setSelected]=useState(new Set());
   const [expandedId,setExpandedId]=useState(null);
-  const [viewMode,setViewMode]=useState('table');
+  const [viewMode,setViewMode]=useState(currentUser&&currentUser.role==='sales'?'kanban':'table');
   const [pageNum,setPageNum]=useState(0);
   const PAGE_SIZE=50;
   const fileRef=React.useRef(null);
 
 
-  const prospects=(customSops||[]).filter(s=>s.cat==='Prospect').map(s=>{try{return{id:s.id,...JSON.parse(s.content)}}catch{return null}}).filter(Boolean);
+  const _allProspects=(customSops||[]).filter(s=>s.cat==='Prospect').map(s=>{try{return{id:s.id,...JSON.parse(s.content)}}catch{return null}}).filter(Boolean);
+  // Sales-role scoping: a sales login sees ONLY the prospects assigned to them --
+  // stats, chips, board and table all read through this, mirroring visibleJobs.
+  // Dedup/enrich on CSV upload still checks _allProspects so a sales upload can
+  // never silently duplicate a record that belongs to another rep.
+  const _isSales=!!(currentUser&&currentUser.role==='sales'&&userRepId);
+  const prospects=_isSales?_allProspects.filter(p2=>p2.assignedRep===userRepId):_allProspects;
   const statuses=['New','Contacted','Replied','Meeting Set','Proposal','Won','Lost','Nurture'];
   const sc={New:'#525252',Contacted:'#a78bfa',Replied:'#2dd4bf','Meeting Set':'#fbbf24',Proposal:'#f97316',Won:'#34d399',Lost:'#f87171',Nurture:'#8b5cf6'};
 
@@ -4249,7 +4255,7 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify}){
   // Build a Set of all existing prospect keys, ready to test new uploads against.
   const _buildExistingProspectKeys=()=>{
     const set=new Set();
-    prospects.forEach(p=>_prospectKeys(p).forEach(k=>set.add(k)));
+    _allProspects.forEach(p=>_prospectKeys(p).forEach(k=>set.add(k)));
     return set;
   };
   // Test a candidate against an existing-keys Set. Returns either null (not a dup) or the
@@ -4290,7 +4296,7 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify}){
       // bulk?" answer: re-upload a fuller spreadsheet and every matching prospect
       // gets its EMPTY fields (address, phone, email, title, city, ...) filled in.
       // Nothing already entered is ever overwritten.
-      const _keyToProspect={};prospects.forEach(pr=>{_prospectKeys(pr).forEach(k=>{if(!_keyToProspect[k])_keyToProspect[k]=pr})});
+      const _keyToProspect={};_allProspects.forEach(pr=>{_prospectKeys(pr).forEach(k=>{if(!_keyToProspect[k])_keyToProspect[k]=pr})});
       let added=0,skipped=0,enriched=0;const skipReasons={nc:0,e:0,l:0,p:0,n:0};
       for(let i=1;i<lines.length;i++){
         const row=parseRow(lines[i]);if(row.length<3)continue;
@@ -4342,7 +4348,7 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify}){
       notify('Duplicate prospect -- '+reason,'error');
       return;
     }
-    save('PROS-'+Date.now()+'-'+Math.random().toString(36).slice(2,7),{...addForm,rank:prospects.length+1,addedAt:new Date().toISOString()});
+    save('PROS-'+Date.now()+'-'+Math.random().toString(36).slice(2,7),{...addForm,rank:_allProspects.length+1,addedAt:new Date().toISOString()});
     setAddForm({name:'',title:'',company:'',email:'',phone:'',city:'',state:'',linkedin:'',website:'',twitter:'',employees:'',status:'New',notes:'',address:'',assignedRep:'',revenue:'',funding:''});
     setShowAdd(false);
     notify('Added: '+addForm.name);
@@ -4386,7 +4392,7 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify}){
     <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',marginBottom:12}}>
       <input value={search} onChange={e=>{setSearch(e.target.value);setPageNum(0)}} placeholder={"Search "+filtered.length+" prospects..."} style={{...inputStyle,maxWidth:300,background:'#111',border:'1px solid #222',padding:'10px 16px',fontSize:13}}/>
       <select value={stateFilter} onChange={e=>{setStateFilter(e.target.value);setPageNum(0)}} style={{...inputStyle,width:'auto',background:'#111',border:'1px solid #222',padding:'10px 16px',fontSize:13}}><option value="all">All States</option>{allStates.map(s=><option key={s} value={s}>{s}</option>)}</select>
-      <select value={repFilter} onChange={e=>{setRepFilter(e.target.value);setPageNum(0)}} style={{...inputStyle,width:'auto',background:'#111',border:'1px solid #222',padding:'10px 16px',fontSize:13}}><option value="all">All Reps</option><option value="">Unassigned</option>{reps.filter(r=>!r.id.includes('SEED')).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select>
+      {!_isSales&&<select value={repFilter} onChange={e=>{setRepFilter(e.target.value);setPageNum(0)}} style={{...inputStyle,width:'auto',background:'#111',border:'1px solid #222',padding:'10px 16px',fontSize:13}}><option value="all">All Reps</option><option value="">Unassigned</option>{reps.filter(r=>!r.id.includes('SEED')).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select>}
       <div style={{marginLeft:'auto',display:'flex',gap:6,alignItems:'center'}}>
         <div style={{display:'flex',borderRadius:8,overflow:'hidden',border:'1px solid #1a1a1a'}}>
           <button onClick={()=>setViewMode('table')} style={{padding:'6px 12px',border:'none',background:viewMode==='table'?'#2dd4bf15':'transparent',color:viewMode==='table'?'#2dd4bf':'#525252',fontSize:11,cursor:'pointer',fontFamily:"'JetBrains Mono',monospace",fontWeight:600}}>TABLE</button>
@@ -4452,10 +4458,12 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify}){
                 </div>
                 <div style={{display:'flex',gap:4,marginTop:6}}>
                   {p.linkedin&&<a href={p.linkedin.startsWith('http')?p.linkedin:'https://'+p.linkedin} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} style={{padding:'3px 6px',borderRadius:4,background:'#0a66c215',border:'1px solid #0a66c225',color:'#0a66c2',fontSize:9,fontWeight:700,textDecoration:'none'}}>in</a>}
-                  {p.email&&<a href={'mailto:'+p.email} onClick={e=>e.stopPropagation()} style={{padding:'3px 6px',borderRadius:4,background:'#a78bfa10',border:'1px solid #a78bfa20',color:'#a78bfa',fontSize:9,fontWeight:600,textDecoration:'none',fontFamily:"'JetBrains Mono',monospace"}}>EMAIL</a>}
                 </div>
-                <div style={{display:'flex',gap:4,marginTop:6,flexWrap:'wrap'}}>
-                  {statuses.filter(s2=>s2!==status).slice(0,4).map(s2=><button key={s2} onClick={e=>{e.stopPropagation();save(p.id,{...p,status:s2});notify(p.name+' >> '+s2)}} style={{padding:'2px 6px',borderRadius:4,border:'1px solid '+(sc[s2]||'#333')+'25',background:'transparent',color:(sc[s2]||'#525252')+'99',fontSize:8,cursor:'pointer',fontFamily:"'JetBrains Mono',monospace",transition:'all 0.15s'}} onMouseEnter={e=>{e.currentTarget.style.background=(sc[s2]||'#333')+'15'}} onMouseLeave={e=>{e.currentTarget.style.background='transparent'}}>{s2}</button>)}
+                <div style={{marginTop:8,paddingTop:8,borderTop:'1px solid rgba(255,255,255,0.05)',display:'flex',flexDirection:'column',gap:4}}>
+                  {p.email&&<a href={'mailto:'+p.email} onClick={e=>e.stopPropagation()} style={{fontSize:10.5,color:'#a78bfa',fontFamily:"'JetBrains Mono',monospace",textDecoration:'none',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',display:'block'}} onMouseEnter={e=>{e.currentTarget.style.textDecoration='underline'}} onMouseLeave={e=>{e.currentTarget.style.textDecoration='none'}}>{p.email}</a>}
+                  {p.phone&&<a href={'tel:'+String(p.phone).replace(/[^0-9+]/g,'')} onClick={e=>e.stopPropagation()} style={{fontSize:10.5,color:'#c4c4c4',fontFamily:"'JetBrains Mono',monospace",textDecoration:'none',display:'block'}}>{p.phone}</a>}
+                  {(p.address||p.city||p.state)&&<div style={{fontSize:10,color:'#737373',fontFamily:"'Satoshi',sans-serif",overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.address?p.address+(p.city?', ':''):''}{p.city||''}{p.state?(p.city||p.address?', ':'')+p.state:''}</div>}
+                  {!p.email&&!p.phone&&!p.address&&!p.city&&!p.state&&<div style={{fontSize:10,color:'#3a3a3a',fontFamily:"'JetBrains Mono',monospace"}}>no contact info</div>}
                 </div>
               </div>;
             })}
