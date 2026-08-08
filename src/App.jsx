@@ -1828,7 +1828,9 @@ function MidwestAIOSInner() {
     if (userRole === "admin") return true;
     if (item.id === "usermgmt") return false;
     if (userRole === "office") return !["financials","commissions","exitready"].includes(item.id);
-    if (userRole === "sales") return ["dashboard","jobs","documents","deliveries","tasks","notes","brain","salesportal"].includes(item.id);
+    // Sales default now includes Prospects, Directory and Playbook & SOPs
+    // (Maureen 8/7). Per-user pages set in Users & Permissions still override this.
+    if (userRole === "sales") return ["dashboard","jobs","documents","deliveries","tasks","notes","brain","salesportal","prospects","directory","playbook"].includes(item.id);
     return true;
   });
 
