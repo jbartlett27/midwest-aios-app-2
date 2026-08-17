@@ -3169,7 +3169,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         const allItems = getJobItems(job.id);
         const _svc = i => { const m = (i.modelNumber||'').trim(); return /instal|labor|assembl/i.test(i.description||'') && (m==='' || /^(instal|labor|assembl|union|setup)/i.test(m)); };
         const _allRecv = allItems.filter(i => !_svc(i)).every(i => (i.qtyReceived||0) >= (i.qtyOrdered||0));
-        const _iq = i => _svc(i) ? (_allRecv ? ((i.qtyOrdered||0) - (i.qtyInvoiced||0)) : 0) : ((i.qtyReceived||0) - (i.qtyInvoiced||0));
+        const _iq = i => _svc(i) ? Math.max((_allRecv ? (i.qtyOrdered||0) : (i.qtyReceived||0)) - (i.qtyInvoiced||0), 0) : ((i.qtyReceived||0) - (i.qtyInvoiced||0));
         const items = full
           ? allItems.filter(i => (i.qtyOrdered||0) > 0)
           : allItems.filter(i => _iq(i) > 0);
