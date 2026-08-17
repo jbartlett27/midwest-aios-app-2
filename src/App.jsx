@@ -978,7 +978,7 @@ const INIT_JOBS = [
 
 // --- ICONS ---------------------------------------------------
 const I = ({ n, s = 18 }) => {
-  const d = { dashboard: "M3 3h7v7H3zm11 0h7v7h-7zM3 14h7v7H3zm11 0h7v7h-7z", briefcase: "M2 7h20v14H2zM8 7V5a2 2 0 012-2h4a2 2 0 012 2v2", truck: "M1 3h15v13H1zM16 8h4l3 3v5h-7zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z", dollar: "M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6", users: "M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75", chart: "M18 20V10M12 20V4M6 20v-6", check: "M20 6L9 17l-5-5", alert: "M12 2a10 10 0 100 20 10 10 0 000-20zM12 8v4M12 16h.01", file: "M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6", send: "M22 2L11 13M22 2l-7 20-4-9-9-4z", plus: "M12 5v14M5 12h14", close: "M18 6L6 18M6 6l12 12", receipt: "M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1zM8 6h8M8 10h8M8 14h5", shield: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z", brain: "M9.5 2A5.5 5.5 0 004 7.5c0 1.5.5 2.8 1.3 3.8A5 5 0 004 14.5 5.5 5.5 0 009.5 20h1V2zM14.5 2A5.5 5.5 0 0120 7.5c0 1.5-.5 2.8-1.3 3.8A5 5 0 0120 14.5 5.5 5.5 0 0114.5 20h-1V2z", package: "M16.5 9.4l-9-5.19M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12", edit: "M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4z", settings: "M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z", download: "M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3", book: "M4 19.5A2.5 2.5 0 016.5 17H20M4 19.5A2.5 2.5 0 004 17V5a2.5 2.5 0 012.5-2.5H20v15H6.5", target: "M12 22a10 10 0 100-20 10 10 0 000 20zM12 18a6 6 0 100-12 6 6 0 000 12zM12 14a2 2 0 100-4 2 2 0 000 4z", upload: "M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12", search: "M11 19a8 8 0 100-16 8 8 0 000 16zM21 21l-4.35-4.35", "external-link": "M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3" };
+  const d = { dashboard: "M3 3h7v7H3zm11 0h7v7h-7zM3 14h7v7H3zm11 0h7v7h-7z", briefcase: "M2 7h20v14H2zM8 7V5a2 2 0 012-2h4a2 2 0 012 2v2", truck: "M1 3h15v13H1zM16 8h4l3 3v5h-7zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z", dollar: "M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6", users: "M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8zM23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75", chart: "M18 20V10M12 20V4M6 20v-6", check: "M20 6L9 17l-5-5", alert: "M12 2a10 10 0 100 20 10 10 0 000-20zM12 8v4M12 16h.01", file: "M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8zM14 2v6h6", send: "M22 2L11 13M22 2l-7 20-4-9-9-4z", plus: "M12 5v14M5 12h14", close: "M18 6L6 18M6 6l12 12", receipt: "M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1zM8 6h8M8 10h8M8 14h5", shield: "M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z", brain: "M9.5 2A5.5 5.5 0 004 7.5c0 1.5.5 2.8 1.3 3.8A5 5 0 004 14.5 5.5 5.5 0 009.5 20h1V2zM14.5 2A5.5 5.5 0 0120 7.5c0 1.5-.5 2.8-1.3 3.8A5 5 0 0120 14.5 5.5 5.5 0 0114.5 20h-1V2z", package: "M16.5 9.4l-9-5.19M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16zM3.27 6.96L12 12.01l8.73-5.05M12 22.08V12", edit: "M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4z", settings: "M12 15a3 3 0 100-6 3 3 0 000 6zM19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z", download: "M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3", book: "M4 19.5A2.5 2.5 0 016.5 17H20M4 19.5A2.5 2.5 0 004 17V5a2.5 2.5 0 012.5-2.5H20v15H6.5", target: "M12 22a10 10 0 100-20 10 10 0 000 20zM12 18a6 6 0 100-12 6 6 0 000 12zM12 14a2 2 0 100-4 2 2 0 000 4z", upload: "M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12", search: "M11 19a8 8 0 100-16 8 8 0 000 16zM21 21l-4.35-4.35", "external-link": "M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3", calendar: "M3 4h18v18H3zM16 2v4M8 2v4M3 10h18", link: "M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" };
   return <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={d[n]||""}/></svg>;
 };
 
@@ -996,6 +996,176 @@ const exportCSV = (headers, rows, filename) => {
 };
 const statusColor = s => ({complete:"#34d399",paid:"#34d399",invoiced:"#34d399",partial:"#fbbf24","in progress":"#fbbf24",received:"#a78bfa",ordered:"#525252",not_started:"#525252",unpaid:"#f87171",quoting:"#8b5cf6"}[s?.toLowerCase()]||"#525252");
 const inputStyle = {width:"100%",padding:"11px 14px",background:"#0a0a0a",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,color:"#d4d4d4",fontSize:13,outline:"none",fontFamily:"inherit"};
+
+
+// ===============================================================
+// CROSS-APP LINKING -- notes and tasks that attach to the record
+// they belong to, and to a day on the Delivery Calendar.
+//
+// Link fields live on the SOP content JSON and are ALL optional, so
+// every note and task written before this feature parses and renders
+// exactly as it did:
+//   jobId/jobName, customerId/customerName,
+//   vendorId/vendorName, prospectId/prospectName
+//   calDate  -- YYYY-MM-DD, puts a NOTE on the calendar
+//   due      -- YYYY-MM-DD, puts a TASK on the calendar (already existed)
+// There is ONE record per note/task. The Notes page, the Tasks board,
+// the Delivery Calendar and the linked record all read that same row,
+// so anything created in one place shows up in all of them.
+// ===============================================================
+const LINK_KINDS=[
+  {k:"job",     label:"Project",  color:"#2dd4bf", icon:"briefcase", idKey:"jobId",      nameKey:"jobName"},
+  {k:"customer",label:"Customer", color:"#60a5fa", icon:"users",     idKey:"customerId", nameKey:"customerName"},
+  {k:"vendor",  label:"Vendor",   color:"#a78bfa", icon:"truck",     idKey:"vendorId",   nameKey:"vendorName"},
+  {k:"prospect",label:"Prospect", color:"#fbbf24", icon:"target",    idKey:"prospectId", nameKey:"prospectName"}
+];
+
+
+// Date-only strings ("2026-05-01") are parsed as UTC midnight by JS, which lands
+// on the PREVIOUS day in every timezone west of UTC -- calendar cells were placing
+// events one day early. Build the date from its parts, in local time.
+const parseLocalDate=(v)=>{if(v==null||v===""||typeof v==="boolean")return null;const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(String(v));const d=m?new Date(+m[1],+m[2]-1,+m[3]):new Date(v);if(isNaN(d.getTime()))return null;const y=d.getFullYear();return (y<2000||y>2100)?null:d};
+const isoDay=(y,m,d)=>String(y)+"-"+String(m+1).padStart(2,"0")+"-"+String(d).padStart(2,"0");
+
+
+// Prospects are SOP rows -- derive the pick list the way ProspectsPage does.
+const getProspectList=(customSops)=>(customSops||[]).filter(s=>s.cat==="Prospect").map(s=>{try{const d=JSON.parse(s.content);return{id:s.id,name:d.company||d.name||s.title||s.id}}catch{return null}}).filter(Boolean).sort((a,b)=>String(a.name).localeCompare(String(b.name)));
+
+
+const getLinks=(d)=>LINK_KINDS.filter(k=>d&&d[k.idKey]).map(k=>({...k,id:d[k.idKey],name:d[k.nameKey]||d[k.idKey]}));
+
+
+// Stamp the display name next to every id on save, so a chip still reads correctly
+// wherever it renders even when the picker that set it is nowhere on screen.
+const resolveLinkNames=(d,src)=>{
+  const s=src||{};const out={...d};
+  const nameOf=(arr,id)=>{const hit=(arr||[]).find(x=>x&&x.id===id);return hit?String(hit.name||""):""};
+  LINK_KINDS.forEach(k=>{
+    const id=out[k.idKey];
+    if(!id){out[k.idKey]="";out[k.nameKey]="";return}
+    const list=k.k==="job"?s.jobs:k.k==="customer"?s.customers:k.k==="vendor"?s.vendors:s.prospects;
+    out[k.nameKey]=nameOf(list,id)||out[k.nameKey]||id;
+  });
+  return out;
+};
+
+
+// Jump to whatever a link points at, using the same handoffs the rest of the app
+// already uses (window._viewCustId / window._viewVendorId).
+const openLink=(link,nav)=>{
+  if(!link||!nav)return;
+  if(link.k==="job"){if(nav.setSelectedJob)nav.setSelectedJob(link.id);if(nav.setPage)nav.setPage("jobs")}
+  else if(link.k==="customer"){window._viewCustId=link.id;if(nav.setPage)nav.setPage("customer360")}
+  else if(link.k==="vendor"){window._viewVendorId=link.id;if(nav.setPage)nav.setPage("vendor360")}
+  else if(link.k==="prospect"){window._focusProspectId=link.id;if(nav.setPage)nav.setPage("prospects")}
+};
+
+
+// Read-only pills showing what a note or task is attached to.
+const LinkChips=({data,onOpen,showDate=true})=>{
+  const links=getLinks(data);
+  const day=data?(data.calDate||data.due||""):"";
+  if(links.length===0&&!(showDate&&day))return null;
+  return <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
+    {showDate&&day&&<span title="Shows on the Delivery Calendar" style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:10.5,padding:"2px 8px",borderRadius:20,background:"rgba(251,191,36,0.07)",border:"1px solid rgba(251,191,36,0.2)",color:"#fbbf24",fontFamily:"'JetBrains Mono',monospace",letterSpacing:0.3,whiteSpace:"nowrap"}}><span style={{display:"flex",flexShrink:0}}><I n="calendar" s={10}/></span>{day}</span>}
+    {links.map(l=><span key={l.k} onClick={onOpen?(e=>{e.stopPropagation();onOpen(l)}):undefined} title={l.label+": "+l.name} style={{display:"inline-flex",alignItems:"center",gap:4,fontSize:10.5,padding:"2px 8px",borderRadius:20,background:l.color+"0f",border:"1px solid "+l.color+"30",color:l.color,cursor:onOpen?"pointer":"default",maxWidth:200,transition:"all 0.15s"}} onMouseEnter={e=>{if(onOpen)e.currentTarget.style.background=l.color+"22"}} onMouseLeave={e=>{if(onOpen)e.currentTarget.style.background=l.color+"0f"}}><span style={{display:"flex",flexShrink:0}}><I n={l.icon} s={10}/></span><span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.name}</span></span>)}
+  </div>;
+};
+
+
+// The picker used by the Tasks overlay, the Notes editor and the calendar
+// quick-add, so linking looks and behaves identically everywhere.
+const LinkPicker=({value,onChange,jobs,customers,vendors,prospects,showDate=true,dateKey="calDate",dateLabel="On calendar"})=>{
+  const v=value||{};
+  const listFor=(k)=>{
+    const raw=k==="job"?(jobs||[]):k==="customer"?(customers||[]):k==="vendor"?(vendors||[]):(prospects||[]);
+    return raw.filter(Boolean).map(x=>({id:x.id,name:String(x.name||x.id)})).sort((a,b)=>a.name.localeCompare(b.name));
+  };
+  return <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(148px,1fr))",gap:8}}>
+    {LINK_KINDS.map(k=>{
+      const list=listFor(k.k);const on=!!v[k.idKey];
+      return <div key={k.k}>
+        <label style={{fontSize:10.5,fontWeight:600,letterSpacing:0.3,color:on?k.color:"#737373",display:"flex",alignItems:"center",gap:5,marginBottom:4,transition:"color 0.15s"}}><span style={{display:"flex",flexShrink:0}}><I n={k.icon} s={11}/></span>{k.label}</label>
+        <select value={v[k.idKey]||""} onChange={e=>{const id=e.target.value;const hit=list.find(o=>o.id===id);onChange({...v,[k.idKey]:id,[k.nameKey]:hit?hit.name:""})}} style={{...inputStyle,fontSize:12,padding:"7px 9px",borderColor:on?k.color+"55":"rgba(255,255,255,0.08)",color:on?k.color:"#c4c4c4"}}>
+          <option value="" style={{color:"#c4c4c4"}}>None</option>
+          {list.map(o=><option key={o.id} value={o.id} style={{color:"#f0f0f0"}}>{o.name}</option>)}
+        </select>
+      </div>;
+    })}
+    {showDate&&<div>
+      <label style={{fontSize:10.5,fontWeight:600,letterSpacing:0.3,color:v[dateKey]?"#fbbf24":"#737373",display:"flex",alignItems:"center",gap:5,marginBottom:4,transition:"color 0.15s"}}><span style={{display:"flex",flexShrink:0}}><I n="calendar" s={11}/></span>{dateLabel}</label>
+      <input type="date" value={v[dateKey]||""} onChange={e=>onChange({...v,[dateKey]:e.target.value})} style={{...inputStyle,fontSize:12,padding:"6px 9px",borderColor:v[dateKey]?"#fbbf2455":"rgba(255,255,255,0.08)",color:v[dateKey]?"#fbbf24":"#c4c4c4"}}/>
+    </div>}
+  </div>;
+};
+
+
+// Every note and task attached to ONE record, with inline add. Drops into any
+// detail page. These are the same SOP rows the Notes page and Tasks board read,
+// so nothing is duplicated -- it is the one record, shown where it belongs.
+const LinkedItemsPanel=({kind,id,name,customSops,addSop,deleteSop,notify,setPage,setSelectedJob,setFocusSopId,style})=>{
+  const [mode,setMode]=useState(null);
+  const [draft,setDraft]=useState("");
+  const [draftDate,setDraftDate]=useState("");
+  const meta=LINK_KINDS.find(k=>k.k===kind);
+  if(!meta||!id||!addSop)return null;
+  const rows=(customSops||[]).filter(s=>s.cat==="Task"||s.cat==="Notes").map(s=>{let d=null;try{d=JSON.parse(s.content)}catch{d=null}return d?{...d,sopId:s.id,sopCat:s.cat}:null}).filter(r=>r&&r[meta.idKey]===id);
+  const tasks=rows.filter(r=>r.sopCat==="Task");
+  const notes=rows.filter(r=>r.sopCat==="Notes");
+  const openItem=(r)=>{if(setFocusSopId)setFocusSopId(r.sopId);if(setPage)setPage(r.sopCat==="Task"?"tasks":"notes")};
+  const toggleTask=(r)=>{const{sopId,sopCat,...d}=r;const next={...d,status:r.status==="Done"?"To Do":"Done"};addSop({id:sopId,title:String(d.text||"Untitled").slice(0,60),cat:"Task",icon:"check",content:JSON.stringify(next),custom:true});if(notify)notify(next.status==="Done"?"Task marked done":"Task reopened")};
+  const commit=()=>{
+    const txt=draft.trim();
+    if(!txt){if(notify)notify(mode==="task"?"Type the task first":"Type the note first","error");return}
+    const link={[meta.idKey]:id,[meta.nameKey]:name||id};
+    if(mode==="task"){
+      addSop({id:"TASK-"+Math.random().toString(36).slice(2,8),title:txt.slice(0,60),cat:"Task",icon:"check",content:JSON.stringify({text:txt,status:"To Do",assignees:[],due:draftDate||"",priority:"normal",notes:"",link:"",...link}),custom:true});
+      if(notify)notify("Task added to "+(name||meta.label)+(draftDate?" for "+draftDate:""));
+    }else{
+      addSop({id:"NOTE-"+Math.random().toString(36).slice(2,8),title:(txt.split("\n")[0]||"Untitled").slice(0,60),cat:"Notes",icon:"file",content:JSON.stringify({text:txt,folder:"General",date:new Date().toISOString(),calDate:draftDate||"",...link}),custom:true});
+      if(notify)notify("Note added to "+(name||meta.label)+(draftDate?" for "+draftDate:""));
+    }
+    setDraft("");setDraftDate("");setMode(null);
+  };
+  const itemRow=(r)=>{
+    const isTask=r.sopCat==="Task";
+    const done=isTask&&r.status==="Done";
+    const day=isTask?(r.due||""):(r.calDate||"");
+    return <div key={r.sopId} onClick={()=>openItem(r)} style={{display:"flex",alignItems:"flex-start",gap:10,padding:"9px 4px",borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",transition:"background 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.03)"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>
+      {isTask?<div style={{paddingTop:2,flexShrink:0}} onClick={e=>{e.stopPropagation();toggleTask(r)}}><Check checked={done} size={16}/></div>:<div style={{width:16,display:"flex",justifyContent:"center",paddingTop:3,color:"#e879f9",flexShrink:0}}><I n="file" s={13}/></div>}
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:12.5,color:done?"#525252":"#d4d4d4",textDecoration:done?"line-through":"none",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{String(r.text||"Untitled").split("\n")[0]}</div>
+        {getLinks({...r,[meta.idKey]:""}).length>0&&<div style={{marginTop:4}}><LinkChips data={{...r,[meta.idKey]:""}} showDate={false} onOpen={l=>openLink(l,{setPage,setSelectedJob})}/></div>}
+      </div>
+      {day&&<span title="On the Delivery Calendar" style={{fontSize:9.5,fontFamily:"'JetBrains Mono',monospace",color:"#fbbf24",background:"rgba(251,191,36,0.08)",border:"1px solid rgba(251,191,36,0.2)",padding:"2px 7px",borderRadius:20,flexShrink:0,whiteSpace:"nowrap"}}>{day}</span>}
+      {isTask&&<span style={{fontSize:9,fontWeight:700,letterSpacing:0.5,fontFamily:"'JetBrains Mono',monospace",color:done?"#34d399":(r.status==="In Progress"?"#2dd4bf":"#fbbf24"),flexShrink:0,paddingTop:3,whiteSpace:"nowrap"}}>{String(r.status||"To Do").toUpperCase()}</span>}
+    </div>;
+  };
+  const addBtn=(k,label,col)=><button key={k} onClick={()=>{setMode(mode===k?null:k);setDraft("")}} style={{padding:"5px 12px",borderRadius:8,border:"1px solid "+(mode===k?col+"55":"rgba(255,255,255,0.1)"),background:mode===k?col+"14":"transparent",color:mode===k?col:"#9a9a9a",fontSize:11.5,fontWeight:600,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}} onMouseEnter={e=>{if(mode!==k){e.currentTarget.style.borderColor=col+"40";e.currentTarget.style.color=col}}} onMouseLeave={e=>{if(mode!==k){e.currentTarget.style.borderColor="rgba(255,255,255,0.1)";e.currentTarget.style.color="#9a9a9a"}}}>{label}</button>;
+  return <Card style={{marginTop:24,...(style||{})}}>
+    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12,flexWrap:"wrap"}}>
+      <span style={{display:"flex",color:"#2dd4bf",flexShrink:0}}><I n="link" s={15}/></span>
+      <div style={{fontSize:14,fontWeight:700,color:"#e5e5e5"}}>Notes and Tasks</div>
+      <span style={{fontSize:11,color:"#525252",fontFamily:"'JetBrains Mono',monospace"}}>{tasks.length} task{tasks.length===1?"":"s"} / {notes.length} note{notes.length===1?"":"s"}</span>
+      <span style={{flex:1}}/>
+      {addBtn("task","+ Task","#60a5fa")}
+      {addBtn("note","+ Note","#e879f9")}
+    </div>
+    {mode&&<div style={{padding:12,borderRadius:12,background:"#0a0a0a",border:"1px solid "+(mode==="task"?"rgba(96,165,250,0.2)":"rgba(232,121,249,0.2)"),marginBottom:12,animation:"fadeUp 0.2s"}}>
+      <textarea value={draft} onChange={e=>setDraft(e.target.value)} autoFocus rows={mode==="task"?2:3} placeholder={mode==="task"?"What needs to be done for "+(name||"this record")+"?":"What do you want to remember about "+(name||"this record")+"?"} style={{...inputStyle,resize:"vertical",fontSize:13,lineHeight:1.6}}/>
+      <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginTop:8}}>
+        <span style={{fontSize:10.5,color:"#737373"}}>{mode==="task"?"Due date":"Calendar date"}</span>
+        <input type="date" value={draftDate} onChange={e=>setDraftDate(e.target.value)} style={{...inputStyle,width:160,fontSize:12,padding:"6px 9px"}}/>
+        <Btn style={{fontSize:12,padding:"6px 14px"}} onClick={commit}>Save</Btn>
+        <Btn v="secondary" style={{fontSize:12,padding:"6px 12px"}} onClick={()=>{setMode(null);setDraft("");setDraftDate("")}}>Cancel</Btn>
+        <span style={{fontSize:10,color:"#525252"}}>Give it a date and it appears on the Delivery Calendar.</span>
+      </div>
+    </div>}
+    {rows.length===0&&!mode&&<div style={{fontSize:12,color:"#525252",padding:"4px 2px",lineHeight:1.6}}>Nothing linked yet. A task or note added here also shows on the Tasks board and in Notes, and lands on the Delivery Calendar if you give it a date.</div>}
+    {tasks.map(t=>itemRow(t))}
+    {notes.map(n=>itemRow(n))}
+  </Card>;
+};
 
 
 // --- SHARED COMPONENTS ---------------------------------------
@@ -1181,6 +1351,9 @@ function MidwestAIOSInner() {
   const [pendingCommPreview, setPendingCommPreview] = useState(null);
   const [pendingBrainFile, setPendingBrainFile] = useState(null);
   const [pendingBrainEmail, setPendingBrainEmail] = useState(null);
+  // Cross-page focus: click a task or note anywhere (calendar, a job, a customer)
+  // and the Tasks board / Notes page opens that exact record.
+  const [focusSopId, setFocusSopId] = useState(null);
   const [jobs, setJobs] = useState(INIT_JOBS);
   const [lineItems, setLineItems] = useState(INIT_LINE_ITEMS);
   const [reps, setReps] = useState(INIT_REPS);
@@ -1862,7 +2035,7 @@ function MidwestAIOSInner() {
   // it passes through for everyone; Vendor 360 reads the unfiltered line-item
   // ledger (vendor spend across ALL jobs), so sales-role users are excluded.
   const _allowedPageIds = new Set([...navItems.map(i=>i.id),"customer360",...(userRole==="sales"?[]:["vendor360"])]);
-  const ctx = {jobs:visibleJobs,allJobs:jobs,setJobs,jobNum,currentUser,userRole,userRepId,logout,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,_commissionFor,_bankTxnHash,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,forceDeleteVendor,forceDeleteLineItem,forceDeleteCustomer,forceDeleteRep,db,lineItemShipTos,setLineItemShipTo,setPage:p=>{const _tp=_allowedPageIds.has(p)?p:(navItems[0]?.id||"dashboard");setPage(_tp);setMobileMenuOpen(false);window.scrollTo(0,0);const mc=document.querySelector('.main-content');if(mc)mc.scrollTop=0},viewCustomer:id=>{setPage("customer360");window._viewCustId=id;window.scrollTo(0,0)},jobReportDate,brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter,pendingCommPreview,setPendingCommPreview,pendingBrainFile,setPendingBrainFile,pendingBrainEmail,setPendingBrainEmail};
+  const ctx = {jobs:visibleJobs,allJobs:jobs,setJobs,jobNum,currentUser,userRole,userRepId,logout,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,_commissionFor,_bankTxnHash,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,forceDeleteVendor,forceDeleteLineItem,forceDeleteCustomer,forceDeleteRep,db,lineItemShipTos,setLineItemShipTo,setPage:p=>{const _tp=_allowedPageIds.has(p)?p:(navItems[0]?.id||"dashboard");setPage(_tp);setMobileMenuOpen(false);window.scrollTo(0,0);const mc=document.querySelector('.main-content');if(mc)mc.scrollTop=0},viewCustomer:id=>{setPage("customer360");window._viewCustId=id;window.scrollTo(0,0)},jobReportDate,brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter,pendingCommPreview,setPendingCommPreview,pendingBrainFile,setPendingBrainFile,pendingBrainEmail,setPendingBrainEmail,focusSopId,setFocusSopId};
 
 
   const loadingScreen = (
@@ -3211,6 +3384,10 @@ function JobDetail({job,ctx}){
     {(()=>{const jobAudit=job.auditTrail||[];return jobAudit.length>0?<Card style={{marginTop:24,marginBottom:8}}><details><summary style={{fontSize:14,fontWeight:700,color:"#a78bfa",cursor:"pointer"}}>Audit Trail ({jobAudit.length} changes)</summary><div style={{maxHeight:250,overflow:"auto",marginTop:8}}>{jobAudit.map((log,idx)=><div key={idx} style={{padding:"6px 0",borderBottom:"1px solid #1a1a1a",fontSize:12}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:2}}><span style={{color:"#a78bfa"}}>{log.entity==="job"?"Job":"Line Item"+(log.desc?" ("+log.desc+")":"")} edited</span><span style={{color:"#555"}}>{new Date(log.time).toLocaleString()}</span></div>{log.fields.map((f,fi)=><div key={fi} style={{color:"#a3a3a3",paddingLeft:12}}><span style={{color:"#e5e5e5"}}>{f.field}</span>: <span style={{color:"#f87171"}}>{String(f.from===undefined?"--":f.from).slice(0,40)}</span> &rarr; <span style={{color:"#34d399"}}>{String(f.to===undefined?"--":f.to).slice(0,40)}</span></div>)}</div>)}</div></details></Card>:null})()}
 
 
+    {/* --- LINKED NOTES + TASKS ---------------------------------- */}
+    <LinkedItemsPanel kind="job" id={job.id} name={job.name} customSops={ctx.customSops} addSop={ctx.addSop} deleteSop={ctx.deleteSop} notify={notify} setPage={ctx.setPage} setSelectedJob={setSelectedJob} setFocusSopId={ctx.setFocusSopId} style={{marginTop:32}}/>
+
+
     {/* --- ACTIVITY FEED ---------------------------------------- */}
     <Card style={{marginTop:32}}>
       <div style={{fontSize:14,fontWeight:700,color:"#e5e5e5",marginBottom:12}}>Activity Log</div>
@@ -3227,7 +3404,7 @@ function JobDetail({job,ctx}){
 // ===============================================================
 // DELIVERY CALENDAR
 // ===============================================================
-function DeliveryCalendar({jobs,lineItems,vendors,customers,getJobItems,setPage,setSelectedJob,notify,jobNum,updateJob,updateLineItem}){
+function DeliveryCalendar({jobs,lineItems,vendors,customers,reps,getJobItems,setPage,setSelectedJob,notify,jobNum,updateJob,updateLineItem,customSops,addSop,deleteSop,setFocusSopId}){
   const [monthOffset,setMonthOffset]=useState(0);
   const [calFilter,setCalFilter]=useState("all"); // all, pending, delivered, po, due
   // Click a day to open its panel: see everything happening that day and schedule
@@ -3236,6 +3413,14 @@ function DeliveryCalendar({jobs,lineItems,vendors,customers,getJobItems,setPage,
   const [dayPanel,setDayPanel]=useState(null);
   const [schedJobId,setSchedJobId]=useState('');
   const [schedItemId,setSchedItemId]=useState('');
+  // Quick-add on the clicked day. A task or note written here is a real record --
+  // the Tasks board and the Notes page pick it up immediately, and it stays on
+  // this day until someone moves it.
+  const [addKind,setAddKind]=useState(null);
+  const [addText,setAddText]=useState('');
+  const [addLinks,setAddLinks]=useState({});
+  const [addAssignees,setAddAssignees]=useState([]);
+  const [addPriority,setAddPriority]=useState('normal');
   const now=new Date();
   const viewDate=new Date(now.getFullYear(),now.getMonth()+monthOffset,1);
   const year=viewDate.getFullYear();
@@ -3254,29 +3439,47 @@ function DeliveryCalendar({jobs,lineItems,vendors,customers,getJobItems,setPage,
     // Pending deliveries (not fully received, has a delivery/due date)
     if(item.qtyReceived<item.qtyOrdered){
       const dateStr=item.deliveryDate||job?.dueDate||"";
-      if(dateStr){const d=new Date(dateStr);if(d.getFullYear()===year&&d.getMonth()===month){
+      if(dateStr){const d=parseLocalDate(dateStr);if(d&&d.getFullYear()===year&&d.getMonth()===month){
         events.push({day:d.getDate(),label:vName+": "+(item.qtyOrdered-item.qtyReceived)+" "+item.description.slice(0,25),type:"pending",color:"#fbbf24",jobId:job?.id,jobName:job?.name||"",detail:item.description,qty:item.qtyOrdered-item.qtyReceived,vendor:vName});
       }}
     }
     // Delivered items (has delivery date and received qty > 0)
     if(item.qtyReceived>0&&item.deliveryDate){
-      const d=new Date(item.deliveryDate);if(d.getFullYear()===year&&d.getMonth()===month){
+      const d=parseLocalDate(item.deliveryDate);if(d&&d.getFullYear()===year&&d.getMonth()===month){
         events.push({day:d.getDate(),label:vName+": "+item.qtyReceived+" "+item.description.slice(0,25)+" received",type:"delivered",color:"#34d399",jobId:job?.id,jobName:job?.name||"",detail:item.description,qty:item.qtyReceived,vendor:vName});
       }
     }
     // PO dates (when the order was placed)
     if(item.poDate){
-      const d=new Date(item.poDate);if(d.getFullYear()===year&&d.getMonth()===month){
+      const d=parseLocalDate(item.poDate);if(d&&d.getFullYear()===year&&d.getMonth()===month){
         events.push({day:d.getDate(),label:"PO: "+vName+" -- "+item.description.slice(0,25),type:"po",color:"#a78bfa",jobId:job?.id,jobName:job?.name||"",detail:item.description,qty:item.qtyOrdered,vendor:vName});
       }
     }
   });
   // Job due dates
   jobs.forEach(j=>{
-    if(j.dueDate){const d=new Date(j.dueDate);if(d.getFullYear()===year&&d.getMonth()===month){
+    if(j.dueDate){const d=parseLocalDate(j.dueDate);if(d&&d.getFullYear()===year&&d.getMonth()===month){
       const cust=customers.find(c=>c.id===j.customer);
       events.push({day:d.getDate(),label:"DUE: "+j.name,type:"due",color:"#f87171",jobId:j.id,jobName:j.name,detail:(cust?.name||"")+" -- "+j.phase,qty:0,vendor:""});
     }}
+  });
+
+
+  // Tasks and notes that carry a date. These are the SAME records the Tasks board
+  // and the Notes page read -- one row, surfaced everywhere it belongs. A task
+  // anchors on its due date, a note on the calendar date set on it.
+  (customSops||[]).forEach(s=>{
+    if(s.cat!=="Task"&&s.cat!=="Notes")return;
+    let data=null;try{data=JSON.parse(s.content)}catch{data=null}
+    if(!data)return;
+    const isTask=s.cat==="Task";
+    const ds=isTask?(data.due||""):(data.calDate||"");
+    if(!ds)return;
+    const d=parseLocalDate(ds);
+    if(!d||d.getFullYear()!==year||d.getMonth()!==month)return;
+    const txt=String(data.text||s.title||"Untitled").split("\n")[0];
+    const done=isTask&&data.status==="Done";
+    events.push({day:d.getDate(),label:(isTask?"TASK: ":"NOTE: ")+txt.slice(0,32),type:isTask?"task":"note",color:isTask?(done?"#34d399":"#60a5fa"):"#e879f9",jobId:data.jobId||"",jobName:data.jobName||"",detail:txt,qty:0,vendor:"",sopId:s.id,sopCat:s.cat,itemData:data,done:done});
   });
 
 
@@ -3286,15 +3489,19 @@ function DeliveryCalendar({jobs,lineItems,vendors,customers,getJobItems,setPage,
   for(let d=1;d<=daysInMonth;d++)days.push(d);
 
 
-  const filterBtns=[["all","All Events"],["pending","Pending"],["delivered","Delivered"],["po","PO Sent"],["due","Due Dates"]];
-  const filterColors={all:"#2dd4bf",pending:"#fbbf24",delivered:"#34d399",po:"#a78bfa",due:"#f87171"};
+  const filterBtns=[["all","All Events"],["pending","Pending"],["delivered","Delivered"],["po","PO Sent"],["due","Due Dates"],["task","Tasks"],["note","Notes"]];
+  const filterColors={all:"#2dd4bf",pending:"#fbbf24",delivered:"#34d399",po:"#a78bfa",due:"#f87171",task:"#60a5fa",note:"#e879f9"};
+  const typeLabel=(t)=>t==="pending"?"PENDING":t==="delivered"?"RECEIVED":t==="po"?"PO SENT":t==="task"?"TASK":t==="note"?"NOTE":"DUE";
+  // A delivery event opens its job. A task or note opens that exact record on the
+  // Tasks board or the Notes page.
+  const openEvent=(ev)=>{if(!ev)return;if(ev.sopId){if(setFocusSopId)setFocusSopId(ev.sopId);setPage(ev.sopCat==="Task"?"tasks":"notes");return}if(ev.jobId){setSelectedJob(ev.jobId);setPage("jobs")}};
 
 
   return <div style={{animation:"fadeUp 0.4s"}}>
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:10}}>
       <div>
         <div style={{fontSize:22,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>{monthName} {year}</div>
-        <div style={{fontSize:12,color:"#a3a3a3",marginTop:2}}>{filtered.length} event{filtered.length!==1?"s":""} this month -- click any day to view it or schedule onto it</div>
+        <div style={{fontSize:12,color:"#a3a3a3",marginTop:2}}>{filtered.length} event{filtered.length!==1?"s":""} this month -- click any day to view it, schedule onto it, or add a task or note</div>
       </div>
       <div style={{display:"flex",gap:6,alignItems:"center"}}>
         <button onClick={()=>{setMonthOffset(p=>p-1);setDayPanel(null)}} style={{width:36,height:36,borderRadius:10,border:"1px solid #222",background:"transparent",color:"#a3a3a3",fontSize:16,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="#2dd4bf";e.currentTarget.style.color="#2dd4bf"}} onMouseLeave={e=>{e.currentTarget.style.borderColor="#222";e.currentTarget.style.color="#a3a3a3"}}>&larr;</button>
@@ -3315,7 +3522,7 @@ function DeliveryCalendar({jobs,lineItems,vendors,customers,getJobItems,setPage,
         const isPast=day&&new Date(year,month,day)<new Date(now.getFullYear(),now.getMonth(),now.getDate());
         return <div key={i} onClick={()=>{if(day){setDayPanel(dayPanel===day?null:day);setSchedJobId('');setSchedItemId('')}}} style={{minHeight:90,padding:6,background:day?(dayPanel===day?"rgba(45,212,191,0.04)":isToday?"#0d0d0d":"#000000"):"#0a0a0a",borderTop:"1px solid #222222",position:"relative",opacity:isPast&&!isToday?0.6:1,cursor:day?"pointer":"default",boxShadow:dayPanel===day?"inset 0 0 0 1px rgba(45,212,191,0.45)":"none",transition:"background 0.15s, box-shadow 0.15s"}} onMouseEnter={e=>{if(day&&dayPanel!==day)e.currentTarget.style.background="rgba(255,255,255,0.03)"}} onMouseLeave={e=>{e.currentTarget.style.background=day?(dayPanel===day?"rgba(45,212,191,0.04)":isToday?"#0d0d0d":"#000000"):"#0a0a0a"}}>
           {day&&<div style={{fontSize:12,fontWeight:isToday?700:400,color:isToday?"#2dd4bf":"#525252",marginBottom:4}}>{isToday?<span style={{background:"#2dd4bf",color:"#000000",borderRadius:10,padding:"1px 6px",fontSize:11}}>{day}</span>:day}</div>}
-          {dayEvents.slice(0,3).map((ev,ei)=><div key={ei} title={ev.label+(ev.jobName?' -- '+ev.jobName:'')} onClick={e=>{e.stopPropagation();if(ev.jobId){setSelectedJob(ev.jobId);setPage("jobs")}}} style={{fontSize:10,padding:"2px 4px",marginBottom:2,borderRadius:4,background:ev.color+"15",color:ev.color,cursor:"pointer",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",borderLeft:"2px solid "+ev.color,transition:"all 0.15s"}} onMouseEnter={e=>e.currentTarget.style.background=ev.color+"25"} onMouseLeave={e=>e.currentTarget.style.background=ev.color+"15"}>{ev.label}</div>)}
+          {dayEvents.slice(0,3).map((ev,ei)=><div key={ei} title={ev.label+(ev.jobName?' -- '+ev.jobName:'')} onClick={e=>{e.stopPropagation();openEvent(ev)}} style={{fontSize:10,padding:"2px 4px",marginBottom:2,borderRadius:4,background:ev.color+"15",color:ev.color,cursor:"pointer",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",borderLeft:"2px solid "+ev.color,textDecoration:ev.done?"line-through":"none",opacity:ev.done?0.7:1,transition:"all 0.15s"}} onMouseEnter={e=>e.currentTarget.style.background=ev.color+"25"} onMouseLeave={e=>e.currentTarget.style.background=ev.color+"15"}>{ev.label}</div>)}
           {dayEvents.length>3&&<div style={{fontSize:10,color:"#737373",padding:"1px 4px"}}>+{dayEvents.length-3} more</div>}
         </div>
       })}
@@ -3335,10 +3542,10 @@ function DeliveryCalendar({jobs,lineItems,vendors,customers,getJobItems,setPage,
           <span style={{flex:1}}/>
           <button onClick={()=>setDayPanel(null)} style={{background:"none",border:"none",color:"#737373",cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>Close</button>
         </div>
-        {dayEvs.length>0?<div style={{marginBottom:16}}>{dayEvs.map((ev,i)=><div key={i} onClick={()=>{if(ev.jobId){setSelectedJob(ev.jobId);setPage("jobs")}}} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 4px",borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:ev.jobId?"pointer":"default",transition:"background 0.15s"}} onMouseEnter={e=>{if(ev.jobId)e.currentTarget.style.background="rgba(255,255,255,0.03)"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>
+        {dayEvs.length>0?<div style={{marginBottom:16}}>{dayEvs.map((ev,i)=><div key={i} onClick={()=>openEvent(ev)} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 4px",borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:(ev.jobId||ev.sopId)?"pointer":"default",transition:"background 0.15s"}} onMouseEnter={e=>{if(ev.jobId||ev.sopId)e.currentTarget.style.background="rgba(255,255,255,0.03)"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>
           <div style={{width:4,height:24,borderRadius:2,background:ev.color,flexShrink:0}}/>
-          <div style={{flex:1,minWidth:0}}><div style={{fontSize:12.5,color:"#d4d4d4",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ev.label}</div>{ev.jobName&&<div style={{fontSize:10.5,color:"#737373"}}>{ev.jobName}</div>}</div>
-          <span style={{fontSize:9,padding:"2px 8px",borderRadius:20,background:ev.color+"12",color:ev.color,fontWeight:700,flexShrink:0,fontFamily:"'JetBrains Mono',monospace",letterSpacing:0.5}}>{ev.type==="pending"?"PENDING":ev.type==="delivered"?"RECEIVED":ev.type==="po"?"PO SENT":"DUE"}</span>
+          <div style={{flex:1,minWidth:0}}><div style={{fontSize:12.5,color:ev.done?"#525252":"#d4d4d4",textDecoration:ev.done?"line-through":"none",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ev.label}</div>{ev.sopId?(getLinks(ev.itemData).length>0?<div style={{marginTop:3}}><LinkChips data={ev.itemData} showDate={false} onOpen={l=>openLink(l,{setPage,setSelectedJob})}/></div>:null):(ev.jobName?<div style={{fontSize:10.5,color:"#737373"}}>{ev.jobName}</div>:null)}</div>
+          <span style={{fontSize:9,padding:"2px 8px",borderRadius:20,background:ev.color+"12",color:ev.color,fontWeight:700,flexShrink:0,fontFamily:"'JetBrains Mono',monospace",letterSpacing:0.5}}>{typeLabel(ev.type)}</span>
         </div>)}</div>
         :<div style={{fontSize:12,color:"#525252",marginBottom:16,padding:"4px 2px"}}>Nothing scheduled on this day yet.</div>}
         {updateJob&&updateLineItem&&<>
@@ -3361,19 +3568,57 @@ function DeliveryCalendar({jobs,lineItems,vendors,customers,getJobItems,setPage,
           </div>
           <div style={{fontSize:10,color:"#525252",marginTop:10}}>Dates save straight to the job record and line item -- the tracker, job pages and this calendar all update together.</div>
         </>}
+        {addSop&&<>
+          <div style={{fontSize:10,fontWeight:700,color:"#60a5fa",letterSpacing:2.5,marginBottom:10,paddingTop:14,borderTop:"1px solid rgba(96,165,250,0.15)"}}>ADD A TASK OR NOTE TO THIS DAY</div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            {[["task","New Task","#60a5fa","check"],["note","New Note","#e879f9","file"]].map(([k,lbl,col,ic])=><button key={k} onClick={()=>{setAddKind(addKind===k?null:k);setAddText('')}} style={{padding:"7px 14px",borderRadius:9,border:"1px solid "+(addKind===k?col+"55":"rgba(255,255,255,0.1)"),background:addKind===k?col+"14":"transparent",color:addKind===k?col:"#9a9a9a",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:6,transition:"all 0.15s"}} onMouseEnter={e=>{if(addKind!==k){e.currentTarget.style.borderColor=col+"40";e.currentTarget.style.color=col}}} onMouseLeave={e=>{if(addKind!==k){e.currentTarget.style.borderColor="rgba(255,255,255,0.1)";e.currentTarget.style.color="#9a9a9a"}}}><span style={{display:"flex",flexShrink:0}}><I n={ic} s={12}/></span>{lbl}</button>)}
+          </div>
+          {addKind&&<div style={{marginTop:10,padding:14,borderRadius:12,background:"#0a0a0a",border:"1px solid "+(addKind==="task"?"rgba(96,165,250,0.2)":"rgba(232,121,249,0.2)"),animation:"fadeUp 0.2s"}}>
+            <textarea value={addText} onChange={e=>setAddText(e.target.value)} autoFocus rows={addKind==="task"?2:3} placeholder={addKind==="task"?"What needs to be done on this day?":"What should everyone know about this day?"} style={{...inputStyle,resize:"vertical",fontSize:13,lineHeight:1.6,marginBottom:12}}/>
+            <div style={{fontSize:10,fontWeight:700,color:"#525252",letterSpacing:1.8,marginBottom:8}}>LINK IT TO</div>
+            <LinkPicker value={addLinks} onChange={setAddLinks} jobs={jobs} customers={customers} vendors={vendors} prospects={getProspectList(customSops)} showDate={false}/>
+            {addKind==="task"&&<div style={{marginTop:12,display:"flex",gap:12,flexWrap:"wrap",alignItems:"flex-start"}}>
+              <div style={{flex:1,minWidth:200}}>
+                <div style={{fontSize:10.5,fontWeight:600,color:"#737373",marginBottom:5}}>Assign</div>
+                <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{(reps||[]).filter(r=>r&&!String(r.id||"").includes("SEED_FLAG")&&isSalesRep(r)).map(r=>{const on=addAssignees.includes(r.name);return <button key={r.id} onClick={()=>setAddAssignees(on?addAssignees.filter(a=>a!==r.name):[...addAssignees,r.name])} style={{padding:"4px 10px",borderRadius:6,border:"1px solid "+(on?"#2dd4bf":"rgba(255,255,255,0.08)"),background:on?"rgba(45,212,191,0.1)":"transparent",color:on?"#2dd4bf":"#737373",fontSize:11.5,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>{String(r.name||"").split(" ")[0]}</button>})}</div>
+              </div>
+              <div style={{width:130}}>
+                <div style={{fontSize:10.5,fontWeight:600,color:"#737373",marginBottom:5}}>Priority</div>
+                <select value={addPriority} onChange={e=>setAddPriority(e.target.value)} style={{...inputStyle,fontSize:12,padding:"7px 9px"}}><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select>
+              </div>
+            </div>}
+            <div style={{display:"flex",gap:8,marginTop:14,alignItems:"center",flexWrap:"wrap"}}>
+              <Btn style={{fontSize:12,padding:"7px 16px"}} onClick={()=>{
+                const txt=addText.trim();
+                if(!txt){notify(addKind==="task"?"Type the task first":"Type the note first","error");return}
+                const links=resolveLinkNames({...addLinks},{jobs,customers,vendors,prospects:getProspectList(customSops)});
+                if(addKind==="task"){
+                  addSop({id:"TASK-"+Math.random().toString(36).slice(2,8),title:txt.slice(0,60),cat:"Task",icon:"check",content:JSON.stringify({text:txt,status:"To Do",assignees:addAssignees,due:iso,priority:addPriority,notes:"",link:"",...links}),custom:true});
+                  notify("Task added to "+iso+" -- it is on the Tasks board too");
+                }else{
+                  addSop({id:"NOTE-"+Math.random().toString(36).slice(2,8),title:(txt.split("\n")[0]||"Untitled").slice(0,60),cat:"Notes",icon:"file",content:JSON.stringify({text:txt,folder:"General",date:new Date().toISOString(),calDate:iso,...links}),custom:true});
+                  notify("Note added to "+iso+" -- it is in Notes too");
+                }
+                setAddText('');setAddLinks({});setAddAssignees([]);setAddPriority('normal');setAddKind(null);
+              }}>{addKind==="task"?"Add Task":"Add Note"}</Btn>
+              <Btn v="secondary" style={{fontSize:12,padding:"7px 14px"}} onClick={()=>{setAddKind(null);setAddText('');setAddLinks({});setAddAssignees([]);setAddPriority('normal')}}>Cancel</Btn>
+              <span style={{fontSize:10.5,color:"#525252"}}>Saves into {addKind==="task"?"Tasks":"Notes"} and stays on this day.</span>
+            </div>
+          </div>}
+        </>}
       </Card>})()}
     {/* Event legend */}
     <div style={{display:"flex",gap:16,marginTop:12,flexWrap:"wrap"}}>
-      {[["#fbbf24","Pending Delivery"],["#34d399","Received"],["#a78bfa","PO Sent"],["#f87171","Job Due Date"]].map(([c,l])=><div key={l} style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:"#737373"}}><div style={{width:10,height:10,borderRadius:3,background:c}}/>{l}</div>)}
+      {[["#fbbf24","Pending Delivery"],["#34d399","Received"],["#a78bfa","PO Sent"],["#f87171","Job Due Date"],["#60a5fa","Task"],["#e879f9","Note"]].map(([c,l])=><div key={l} style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:"#737373"}}><div style={{width:10,height:10,borderRadius:3,background:c}}/>{l}</div>)}
     </div>
     {/* Monthly summary list */}
-    {filtered.length>0&&<Card style={{marginTop:16}}><div style={{fontSize:14,fontWeight:700,color:"#e5e5e5",marginBottom:12}}>{monthName} {year} -- {filtered.length} Events</div>{filtered.sort((a,b)=>a.day-b.day).map((ev,i)=><div key={i} className="slide-row" onClick={()=>{if(ev.jobId){setSelectedJob(ev.jobId);setPage("jobs")}}} style={{display:"flex",alignItems:"center",gap:12,padding:"8px 0",borderBottom:i<filtered.length-1?"1px solid #111":"none",cursor:"pointer",transition:"background 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.background="#0a0a0a"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>
+    {filtered.length>0&&<Card style={{marginTop:16}}><div style={{fontSize:14,fontWeight:700,color:"#e5e5e5",marginBottom:12}}>{monthName} {year} -- {filtered.length} Events</div>{filtered.sort((a,b)=>a.day-b.day).map((ev,i)=><div key={i} className="slide-row" onClick={()=>openEvent(ev)} style={{display:"flex",alignItems:"center",gap:12,padding:"8px 0",borderBottom:i<filtered.length-1?"1px solid #111":"none",cursor:"pointer",transition:"background 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.background="#0a0a0a"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>
       <div style={{width:36,textAlign:"center"}}><div style={{fontSize:16,fontWeight:700,color:"#f0f0f0",lineHeight:1}}>{ev.day}</div><div style={{fontSize:9,color:"#525252",textTransform:"uppercase"}}>{new Date(year,month,ev.day).toLocaleString("default",{weekday:"short"})}</div></div>
       <div style={{width:4,height:28,borderRadius:2,background:ev.color,flexShrink:0}}/>
       <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600,color:"#d4d4d4",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ev.label}</div><div style={{fontSize:11,color:"#737373"}}>{ev.jobName}{ev.qty?" -- "+ev.qty+" units":""}</div></div>
-      <span style={{fontSize:10,padding:"3px 8px",borderRadius:6,background:ev.color+"12",color:ev.color,fontWeight:600,flexShrink:0}}>{ev.type==="pending"?"PENDING":ev.type==="delivered"?"RECEIVED":ev.type==="po"?"PO SENT":"DUE"}</span>
+      <span style={{fontSize:10,padding:"3px 8px",borderRadius:6,background:ev.color+"12",color:ev.color,fontWeight:600,flexShrink:0}}>{typeLabel(ev.type)}</span>
     </div>)}</Card>}
-    {filtered.length===0&&<Card style={{marginTop:16,textAlign:"center",padding:30}}><div style={{fontSize:14,color:"#a3a3a3"}}>No {calFilter==="all"?"events":calFilter} for {monthName} {year}. Click any day to schedule a job due date or an item delivery onto it.</div></Card>}
+    {filtered.length===0&&<Card style={{marginTop:16,textAlign:"center",padding:30}}><div style={{fontSize:14,color:"#a3a3a3"}}>No {calFilter==="all"?"events":calFilter} for {monthName} {year}. Click any day to schedule a delivery, a due date, a task or a note onto it.</div></Card>}
   </div>;
 }
 
@@ -3381,7 +3626,7 @@ function DeliveryCalendar({jobs,lineItems,vendors,customers,getJobItems,setPage,
 // ===============================================================
 // DELIVERY TRACKER -- Real updates to state
 // ===============================================================
-function DeliveryPage({jobs,lineItems,vendors,customers,reps,userRole,userRepId,getItemStatus,getJobItems,updateLineItem,updateJob,setPage,setSelectedJob,notify,jobNum}){
+function DeliveryPage({jobs,lineItems,vendors,customers,reps,userRole,userRepId,getItemStatus,getJobItems,updateLineItem,updateJob,setPage,setSelectedJob,notify,jobNum,customSops,addSop,deleteSop,setFocusSopId}){
   const [deliveryView,setDeliveryView]=useState("tracker");
   const [delFilter,setDelFilter]=useState("pending");
   const [receiveModal,setReceiveModal]=useState(null);
@@ -3442,7 +3687,7 @@ function DeliveryPage({jobs,lineItems,vendors,customers,reps,userRole,userRepId,
       {!isSalesRole&&reps&&reps.filter(r=>!r.id.includes("SEED_FLAG")&&isSalesRep(r)).length>0&&<select value={repFilter} onChange={e=>setRepFilter(e.target.value)} style={{padding:"8px 12px",background:"#0a0a0a",border:"1px solid #222",borderRadius:8,color:"#f0f0f0",fontSize:12,fontFamily:"inherit",cursor:"pointer",minWidth:170}}><option value="all">All Sales Reps</option>{reps.filter(r=>!r.id.includes("SEED_FLAG")&&isSalesRep(r)).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select>}
       {(searchQuery||repFilter!=="all")&&<button onClick={()=>{setSearchQuery("");setRepFilter("all")}} style={{padding:"6px 12px",background:"transparent",border:"1px solid #333",borderRadius:8,color:"#a3a3a3",fontSize:11,fontFamily:"inherit",cursor:"pointer",fontWeight:600}} title="Clear search and filters">Clear</button>}
     </div>
-    {deliveryView==="calendar"&&<DeliveryCalendar jobs={jobsForView} lineItems={lineItemsForView} vendors={vendors} customers={customers} getJobItems={getJobItems} setPage={setPage} setSelectedJob={setSelectedJob} notify={notify} updateJob={updateJob} updateLineItem={updateLineItem}/>}
+    {deliveryView==="calendar"&&<DeliveryCalendar jobs={jobsForView} lineItems={lineItemsForView} vendors={vendors} customers={customers} reps={reps} getJobItems={getJobItems} setPage={setPage} setSelectedJob={setSelectedJob} notify={notify} updateJob={updateJob} updateLineItem={updateLineItem} customSops={customSops} addSop={addSop} deleteSop={deleteSop} setFocusSopId={setFocusSopId}/>}
     {deliveryView==="tracker"&&<>
     <div className="resp-grid-4" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:14,marginBottom:24}}>
       <StatCard label="Pending Delivery" value={allItems.length} sub="line items" icon="truck" color="#fbbf24"/>
@@ -5900,5 +6145,5 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
 }
 
 
-export { AnimNum, AnimatedNumber, Badge, Bar, Btn, Card, Check, CheckMinus, DEFAULT_SOPS, Dashboard, DocumentsPage, Header, I, fmt, fmtN, getRoles, inputStyle, isSalesRep, pct, shipKey, statusColor };
+export { AnimNum, AnimatedNumber, Badge, Bar, Btn, Card, Check, CheckMinus, DEFAULT_SOPS, Dashboard, DocumentsPage, Header, I, LINK_KINDS, LinkChips, LinkPicker, LinkedItemsPanel, fmt, fmtN, getLinks, getProspectList, getRoles, inputStyle, isSalesRep, isoDay, openLink, parseLocalDate, pct, resolveLinkNames, shipKey, statusColor };
 export default function MidwestAIOS(){return <ErrorBoundary><MidwestAIOSInner/></ErrorBoundary>}
