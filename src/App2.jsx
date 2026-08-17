@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { db } from "./supabase.js";
 import { useUser, useClerk, SignIn, UserButton, useAuth } from "@clerk/clerk-react";
 import{BarChart,Bar as RBar,XAxis,YAxis,Tooltip,ResponsiveContainer,LineChart,Line,PieChart,Pie,Cell}from"recharts";
-import { AnimNum, AnimatedNumber, Badge, Bar, Btn, Card, Check, CheckMinus, DEFAULT_SOPS, Dashboard, DocumentsPage, Header, I, fmt, fmtN, getRoles, inputStyle, isSalesRep, pct, shipKey, statusColor } from "./App.jsx";
+import { AnimNum, AnimatedNumber, Badge, Bar, Btn, Card, Check, CheckMinus, DEFAULT_SOPS, Dashboard, DocumentsPage, Header, I, LINK_KINDS, LinkChips, LinkPicker, LinkedItemsPanel, fmt, fmtN, getLinks, getProspectList, getRoles, inputStyle, isSalesRep, isoDay, openLink, parseLocalDate, pct, resolveLinkNames, shipKey, statusColor } from "./App.jsx";
 // ===============================================================
 // COMMISSIONS -- Editable Reps + PDF Export
 // ===============================================================
@@ -240,7 +240,7 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
 
 
     {/* TASKS */}
-    {crmTab==="tasks"&&<TasksKanban jobs={rj} allJobs={jobs} reps={reps} updateJob={updateJob} notify={notify} inputStyle={inputStyle} customSops={customSops} addSop={addSop} deleteSop={deleteSop}/>}
+    {crmTab==="tasks"&&<TasksKanban jobs={rj} allJobs={jobs} reps={reps} updateJob={updateJob} notify={notify} inputStyle={inputStyle} customSops={customSops} addSop={addSop} deleteSop={deleteSop} customers={customers} vendors={vendors} setPage={setPage} setSelectedJob={setSelectedJob}/>}
 
 
     {/* NOTES */}
@@ -330,7 +330,7 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
 // ===============================================================
 // CUSTOMER 360 - Full Customer Profile
 // ===============================================================
-function Customer360Page({jobs,lineItems,vendors,customers,reps,getJobFinancials,getJobItems,setPage,setSelectedJob,notify,updateCustomer,jobNum}){
+function Customer360Page({jobs,lineItems,vendors,customers,reps,getJobFinancials,getJobItems,setPage,setSelectedJob,notify,updateCustomer,jobNum,customSops,addSop,deleteSop,setFocusSopId}){
   const custId=window._viewCustId||customers[0]?.id;
   const cust=customers.find(c=>c.id===custId);
   if(!cust) return <div style={{animation:"fadeUp 0.4s"}}><Header title="Customer Profile" sub="Select a customer from the Directory"/><Card style={{textAlign:"center",padding:40}}><div style={{color:"#737373",fontSize:14}}>No customer selected. Go to Directory and click a customer name.</div></Card></div>;
@@ -453,6 +453,9 @@ function Customer360Page({jobs,lineItems,vendors,customers,reps,getJobFinancials
     </Card>}
 
 
+    <LinkedItemsPanel kind="customer" id={cust.id} name={cust.name} customSops={customSops} addSop={addSop} deleteSop={deleteSop} notify={notify} setPage={setPage} setSelectedJob={setSelectedJob} setFocusSopId={setFocusSopId} style={{marginBottom:16}}/>
+
+
     <Card><div style={{fontSize:15,fontWeight:700,color:"#f0f0f0",marginBottom:14}}>Activity Timeline</div>
       {allActivities.length===0?<div style={{fontSize:13,color:"#737373",padding:"12px 0"}}>No activity recorded yet. Changes to jobs will appear here.</div>:
       allActivities.map((a,i)=><div key={i} style={{display:"flex",gap:14,padding:"12px 0",borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
@@ -472,7 +475,7 @@ function Customer360Page({jobs,lineItems,vendors,customers,reps,getJobFinancials
 // ===============================================================
 // VENDOR 360 -- Full profile page mirroring Customer360Page
 // ===============================================================
-function Vendor360Page({jobs,lineItems,vendors,customers,reps,getJobFinancials,getJobItems,setPage,setSelectedJob,notify,updateVendor,jobNum}){
+function Vendor360Page({jobs,lineItems,vendors,customers,reps,getJobFinancials,getJobItems,setPage,setSelectedJob,notify,updateVendor,jobNum,customSops,addSop,deleteSop,setFocusSopId}){
   const vendorId=window._viewVendorId||vendors[0]?.id;
   const vend=vendors.find(v=>v.id===vendorId);
   if(!vend) return <div style={{animation:"fadeUp 0.4s"}}><Header title="Vendor Profile" sub="Select a vendor from the Directory"/><Card style={{textAlign:"center",padding:40}}><div style={{color:"#737373",fontSize:14}}>No vendor selected. Go to Directory and click a vendor name.</div></Card></div>;
@@ -600,6 +603,9 @@ function Vendor360Page({jobs,lineItems,vendors,customers,reps,getJobFinancials,g
         <div style={{height:"100%",width:(totalReceived/totalOrdered*100)+"%",background:"linear-gradient(90deg,#2dd4bf,#34d399)",borderRadius:5,transition:"width 1.5s ease"}}/>
       </div>
     </Card>}
+
+
+    <LinkedItemsPanel kind="vendor" id={vend.id} name={vend.name} customSops={customSops} addSop={addSop} deleteSop={deleteSop} notify={notify} setPage={setPage} setSelectedJob={setSelectedJob} setFocusSopId={setFocusSopId} style={{marginBottom:16}}/>
 
 
     <Card><div style={{fontSize:15,fontWeight:700,color:"#f0f0f0",marginBottom:14}}>Activity Timeline</div>
@@ -796,13 +802,20 @@ function PlaybookPage({jobs,reps,vendors,customers,lineItems,getJobFinancials,se
 // ===============================================================
 // TASKS KANBAN (drag-and-drop, used in Sales Portal + standalone)
 // ===============================================================
-function TasksKanban({jobs,allJobs,reps,updateJob,notify,customSops,addSop,deleteSop,filterRep,filterJob,currentUser}){
+function TasksKanban({jobs,allJobs,reps,updateJob,notify,customSops,addSop,deleteSop,filterRep,filterJob,currentUser,customers,vendors,setPage,setSelectedJob,focusSopId,setFocusSopId}){
   const [editTask,setEditTask]=useState(null);
   const [dragId,setDragId]=useState(null);
 
 
   const allTasks=(customSops||[]).filter(s=>s.cat==="Task").map(s=>{try{const d=JSON.parse(s.content);return{...d,id:s.id,sopId:s.id}}catch{return{id:s.id,sopId:s.id,text:s.title,status:"To Do",assignees:[],due:"",jobId:"",jobName:"",notes:"",link:"",priority:"normal"}}});
   const filtered=allTasks.filter(t=>{if(filterRep&&filterRep!=="all"&&!(t.assignees||[]).includes(filterRep))return false;if(filterJob&&filterJob!=="all"&&t.jobId!==filterJob)return false;return true});
+  // Opened from somewhere else (the calendar, a job, a customer, a vendor):
+  // focus that exact task so the click lands on the record, not just the board.
+  useEffect(()=>{
+    if(!focusSopId)return;
+    const hit=allTasks.find(t=>t.sopId===focusSopId);
+    if(hit){setEditTask(hit);if(setFocusSopId)setFocusSopId(null)}
+  },[focusSopId,customSops]);
   const cols={"To Do":[],"In Progress":[],"Done":[]};
   filtered.forEach(t=>{const s=t.status||"To Do";if(cols[s])cols[s].push(t);else cols["To Do"].push(t)});
   const colColors={"To Do":"#fbbf24","In Progress":"#2dd4bf","Done":"#34d399"};
@@ -908,7 +921,9 @@ function TasksKanban({jobs,allJobs,reps,updateJob,notify,customSops,addSop,delet
     const addedAssignees = newAssignees.filter(a => !oldAssignees.includes(a));
     const statusChanged = !!(oldTask && oldTask.status !== td.status);
     const {id:_id,sopId:_sid,isNew:_n,...cleanTd}=td;
-    const enrichedTd = {...cleanTd, jobName: jn};
+    // Stamp a display name next to every linked id so chips read correctly on the
+    // calendar, on the linked record, and anywhere else this task is rendered.
+    const enrichedTd = resolveLinkNames({...cleanTd, jobName: jn},{jobs:(allJobs||jobs),customers,vendors,prospects:getProspectList(customSops)});
     const sop={id:existingId||("TASK-"+Math.random().toString(36).slice(2,8)),title:td.text||"Untitled",cat:"Task",icon:"check",content:JSON.stringify(enrichedTd),custom:true};
     addSop(sop);
     notify(existingId?"Task updated":"Task created");
@@ -949,14 +964,14 @@ function TasksKanban({jobs,allJobs,reps,updateJob,notify,customSops,addSop,delet
 
 
   return <div>
-    {editTask&&<EditTaskOverlay task={editTask} setEditTask={setEditTask} jobs={jobs} reps={reps} saveTask={saveTask} deleteSop={deleteSop} notify={notify} inputStyle={inputStyle} sendTaskEmail={_sendTaskEmail}/>}
+    {editTask&&<EditTaskOverlay task={editTask} setEditTask={setEditTask} jobs={jobs} reps={reps} customers={customers} vendors={vendors} prospects={getProspectList(customSops)} saveTask={saveTask} deleteSop={deleteSop} notify={notify} inputStyle={inputStyle} sendTaskEmail={_sendTaskEmail}/>}
     <div className="resp-grid-3" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:14}}>
       {["To Do","In Progress","Done"].map(status=><div key={status} onDrop={e=>handleDrop(e,status)} onDragOver={handleDragOver} style={{background:"#0a0a0a",borderRadius:14,border:"1px solid rgba(255,255,255,0.04)",padding:16,minHeight:200,transition:"border-color 0.2s"}} onDragEnter={e=>{e.currentTarget.style.borderColor=colColors[status]+"60"}} onDragLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.04)"}}>
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16}}><div style={{width:12,height:12,borderRadius:"50%",background:colColors[status]}}/><span style={{fontSize:16,fontWeight:800,color:"#f0f0f0"}}>{status}</span><span style={{fontSize:13,color:"#525252",background:"rgba(255,255,255,0.04)",padding:"2px 10px",borderRadius:12,marginLeft:"auto",fontFamily:"'JetBrains Mono',monospace"}}>{cols[status].length}</span><button onClick={()=>setEditTask({text:"",due:"",assignees:[],status:status,jobId:"",notes:"",link:"",priority:"normal",isNew:true})} style={{width:28,height:28,borderRadius:8,border:"1px dashed rgba(255,255,255,0.12)",background:"transparent",color:"#2dd4bf",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontFamily:"inherit"}}>+</button></div>
         {cols[status].length===0&&<div style={{fontSize:13,color:"#333",padding:"28px 0",textAlign:"center",border:"1px dashed rgba(255,255,255,0.06)",borderRadius:10}}>Drop tasks here</div>}
         {cols[status].map(t=><div key={t.id} draggable onDragStart={e=>handleDragStart(e,t.id)} onClick={()=>setEditTask(t)} style={{padding:"14px 16px",background:"#111",borderRadius:12,marginBottom:10,border:"1px solid rgba(255,255,255,0.04)",cursor:"grab",transition:"all 0.15s",borderLeft:"3px solid "+(priColors[t.priority]||"#525252")}} onMouseEnter={e=>{e.currentTarget.style.borderColor="rgba(45,212,191,0.15)";e.currentTarget.style.transform="translateY(-1px)"}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.04)";e.currentTarget.style.transform="translateY(0)"}}>
           <div style={{fontSize:15,fontWeight:600,color:status==="Done"?"#737373":"#f0f0f0",textDecoration:status==="Done"?"line-through":"none",marginBottom:8,lineHeight:1.4}}>{t.text}</div>
-          <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>{t.jobName&&<span style={{fontSize:11,padding:"2px 8px",borderRadius:5,background:"rgba(45,212,191,0.06)",color:"#2dd4bf"}}>{t.jobName}</span>}{t.due&&<span style={{fontSize:11,padding:"2px 8px",borderRadius:5,background:"rgba(251,191,36,0.06)",color:"#fbbf24"}}>{t.due}</span>}{(t.assignees||[]).map(a=><span key={a} style={{fontSize:11,padding:"2px 8px",borderRadius:5,background:"rgba(167,139,250,0.06)",color:"#a78bfa"}}>{a}</span>)}{t.priority==="high"&&<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(248,113,113,0.08)",color:"#f87171",fontWeight:600}}>HIGH</span>}</div>
+          <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}><LinkChips data={t} onOpen={l=>openLink(l,{setPage,setSelectedJob})}/>{(t.assignees||[]).map(a=><span key={a} style={{fontSize:11,padding:"2px 8px",borderRadius:5,background:"rgba(167,139,250,0.06)",color:"#a78bfa"}}>{a}</span>)}{t.priority==="high"&&<span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:"rgba(248,113,113,0.08)",color:"#f87171",fontWeight:600}}>HIGH</span>}</div>
           {t.notes&&<div style={{fontSize:13,color:"#c4c4c4",marginTop:8,padding:"8px 12px",background:"rgba(255,255,255,0.03)",borderRadius:8,lineHeight:1.6,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:3,WebkitBoxOrient:"vertical",borderLeft:"2px solid rgba(167,139,250,0.2)"}}><span style={{fontSize:10,color:"#a78bfa",fontWeight:600,textTransform:"uppercase",letterSpacing:1,display:"block",marginBottom:3}}>Notes</span>{t.notes}</div>}
           {t.link&&<a href={t.link} target="_blank" rel="noopener" onClick={e=>e.stopPropagation()} style={{fontSize:11,color:"#2dd4bf",marginTop:4,display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.link}</a>}
         </div>)}
@@ -967,7 +982,7 @@ function TasksKanban({jobs,allJobs,reps,updateJob,notify,customSops,addSop,delet
 
 
 // Edit Task Overlay (click blank space to close)
-function EditTaskOverlay({task,setEditTask,jobs,reps,saveTask,deleteSop,notify,inputStyle,sendTaskEmail}){
+function EditTaskOverlay({task,setEditTask,jobs,reps,customers,vendors,prospects,saveTask,deleteSop,notify,inputStyle,sendTaskEmail}){
   const [t,setT]=useState({...task});
   const [emailSending,setEmailSending]=useState(false);
   const handleSave=()=>{if(t.text?.trim()){saveTask(t,t.isNew?null:(t.sopId||t.id))}setEditTask(null)};
@@ -994,7 +1009,11 @@ function EditTaskOverlay({task,setEditTask,jobs,reps,saveTask,deleteSop,notify,i
         <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Status</label><select value={t.status||"To Do"} onChange={e=>setT({...t,status:e.target.value})} style={inputStyle}><option>To Do</option><option>In Progress</option><option>Done</option></select></div>
         <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Due</label><input type="date" value={t.due||""} onChange={e=>setT({...t,due:e.target.value})} style={inputStyle}/></div>
         <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Priority</label><select value={t.priority||"normal"} onChange={e=>setT({...t,priority:e.target.value})} style={inputStyle}><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select></div>
-        <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Project</label><select value={t.jobId||""} onChange={e=>setT({...t,jobId:e.target.value})} style={inputStyle}><option value="">None</option>{jobs.map(j=><option key={j.id} value={j.id}>{j.name}</option>)}</select></div>
+        </div>
+      <div style={{marginBottom:12,padding:12,borderRadius:12,background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.05)"}}>
+        <div style={{fontSize:10,fontWeight:700,color:"#525252",letterSpacing:1.8,marginBottom:8}}>LINK THIS TASK TO</div>
+        <LinkPicker value={t} onChange={next=>setT({...t,...next})} jobs={jobs} customers={customers} vendors={vendors} prospects={prospects} showDate={false}/>
+        <div style={{fontSize:10,color:"#525252",marginTop:8,lineHeight:1.5}}>Whatever you link shows this task on its own page. A due date also puts it on the Delivery Calendar.</div>
       </div>
       <div style={{marginBottom:12}}><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Assign</label><div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{reps.filter(r=>!r.id.includes("SEED_FLAG")&&isSalesRep(r)).map(r=>{const on=(t.assignees||[]).includes(r.name);return <button key={r.id} onClick={()=>setT({...t,assignees:on?(t.assignees||[]).filter(a=>a!==r.name):[...(t.assignees||[]),r.name]})} style={{padding:"4px 10px",borderRadius:6,border:"1px solid "+(on?"#2dd4bf":"rgba(255,255,255,0.08)"),background:on?"rgba(45,212,191,0.1)":"transparent",color:on?"#2dd4bf":"#737373",fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>{r.name.split(" ")[0]}</button>})}</div></div>
       <div style={{marginBottom:12}}><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Notes</label><textarea value={t.notes||""} onChange={e=>setT({...t,notes:e.target.value})} rows={3} placeholder="Details, context, follow-ups..." style={{...inputStyle,resize:"vertical"}}/></div>
@@ -1010,7 +1029,7 @@ function EditTaskOverlay({task,setEditTask,jobs,reps,saveTask,deleteSop,notify,i
 }
 
 
-function TasksPage({jobs,reps,updateJob,notify,customSops,addSop,deleteSop,currentUser}){
+function TasksPage({jobs,reps,updateJob,notify,customSops,addSop,deleteSop,currentUser,customers,vendors,setPage,setSelectedJob,focusSopId,setFocusSopId}){
   const [filterRep,setFilterRep]=useState("all");
   const [filterJob,setFilterJob]=useState("all");
   const open=(customSops||[]).filter(s=>s.cat==="Task").filter(s=>{try{return JSON.parse(s.content).status!=="Done"}catch{return true}}).length;
@@ -1019,7 +1038,7 @@ function TasksPage({jobs,reps,updateJob,notify,customSops,addSop,deleteSop,curre
       <select value={filterRep} onChange={e=>setFilterRep(e.target.value)} style={{...inputStyle,width:160,padding:"6px 10px",fontSize:12}}><option value="all">Everyone</option>{reps.filter(r=>!r.id.includes("SEED_FLAG")&&isSalesRep(r)).map(r=><option key={r.id} value={r.name}>{r.name}</option>)}</select>
       <select value={filterJob} onChange={e=>setFilterJob(e.target.value)} style={{...inputStyle,width:180,padding:"6px 10px",fontSize:12}}><option value="all">All Projects</option>{jobs.map(j=><option key={j.id} value={j.id}>{j.name}</option>)}</select>
     </div>
-    <TasksKanban jobs={jobs} allJobs={jobs} reps={reps} updateJob={updateJob} notify={notify} customSops={customSops} addSop={addSop} deleteSop={deleteSop} filterRep={filterRep} filterJob={filterJob} currentUser={currentUser}/>
+    <TasksKanban jobs={jobs} allJobs={jobs} reps={reps} updateJob={updateJob} notify={notify} customSops={customSops} addSop={addSop} deleteSop={deleteSop} filterRep={filterRep} filterJob={filterJob} currentUser={currentUser} customers={customers} vendors={vendors} setPage={setPage} setSelectedJob={setSelectedJob} focusSopId={focusSopId} setFocusSopId={setFocusSopId}/>
   </div>;
 }
 
@@ -1027,7 +1046,7 @@ function TasksPage({jobs,reps,updateJob,notify,customSops,addSop,deleteSop,curre
 // ===============================================================
 // NOTES
 // ===============================================================
-function NotesView({customSops,addSop,deleteSop,jobs,reps,notify,triggerPrint}){
+function NotesView({customSops,addSop,deleteSop,jobs,reps,customers,vendors,notify,triggerPrint,setPage,setSelectedJob,focusSopId,setFocusSopId}){
   const [content,setContent]=useState("");
   const [folder,setFolder]=useState("General");
   const [newFolder,setNewFolder]=useState("");
@@ -1040,6 +1059,12 @@ function NotesView({customSops,addSop,deleteSop,jobs,reps,notify,triggerPrint}){
   const [draftId,setDraftId]=useState(()=>"NOTE-"+Math.random().toString(36).slice(2,8));
   const [saved,setSaved]=useState(false);
   const saveTimerRef=useRef(null);
+  // Links live on the note record itself, so a note written here also shows on the
+  // job / customer / vendor / prospect it belongs to, and on the Delivery Calendar.
+  const [linkDraft,setLinkDraft]=useState({});
+  const [showDraftLinks,setShowDraftLinks]=useState(false);
+  const [showViewLinks,setShowViewLinks]=useState(false);
+  const [viewLinks,setViewLinks]=useState({});
 
 
   const notes=(customSops||[]).filter(s=>s.cat==="Notes").sort((a,b)=>b.id.localeCompare(a.id));
@@ -1047,13 +1072,23 @@ function NotesView({customSops,addSop,deleteSop,jobs,reps,notify,triggerPrint}){
   const allFolders=[...new Set(["General",...notes.map(n=>(parseNote(n).folder||"General"))])].sort();
   const folders=["All",...allFolders];
   const filtered=notes.filter(n=>{if(search){const q=search.toLowerCase();if(!n.title.toLowerCase().includes(q)&&!(parseNote(n).text||"").toLowerCase().includes(q))return false}if(folder!=="All"&&(parseNote(n).folder||"General")!==folder)return false;return true});
+  const prospectList=getProspectList(customSops);
+  // Opened from the calendar or from a linked record: jump straight to that note.
+  useEffect(()=>{
+    if(!focusSopId)return;
+    if(notes.some(n=>n.id===focusSopId)){setActiveNote(focusSopId);setEditId(null);setShowViewLinks(false);if(setFocusSopId)setFocusSopId(null)}
+  },[focusSopId,customSops]);
 
 
   // Auto-save as you type
-  const autoSave=(text)=>{setContent(text);setSaved(false);if(saveTimerRef.current)clearTimeout(saveTimerRef.current);if(!text.trim())return;saveTimerRef.current=setTimeout(()=>{const title=text.split("\n")[0].replace(/^#+\s*/,"").slice(0,60)||"Untitled";const data={text,folder:folder==="All"?"General":folder,date:new Date().toISOString()};const existing=(customSops||[]).find(s=>s.id===draftId);if(existing)deleteSop(draftId);addSop({id:draftId,title,cat:"Notes",icon:"file",content:JSON.stringify(data),custom:true});setSaved(true)},800)};
+  const persistDraft=(text,links)=>{const title=text.split("\n")[0].replace(/^#+\s*/,"").slice(0,60)||"Untitled";const data={text,folder:folder==="All"?"General":folder,date:new Date().toISOString(),...resolveLinkNames({...(links||{})},{jobs,customers,vendors,prospects:prospectList})};const existing=(customSops||[]).find(s=>s.id===draftId);if(existing)deleteSop(draftId);addSop({id:draftId,title,cat:"Notes",icon:"file",content:JSON.stringify(data),custom:true});setSaved(true)};
+  const autoSave=(text)=>{setContent(text);setSaved(false);if(saveTimerRef.current)clearTimeout(saveTimerRef.current);if(!text.trim())return;saveTimerRef.current=setTimeout(()=>persistDraft(text,linkDraft),800)};
+  // Changing a link on a note that already has text saves it right away, so the
+  // link can never be lost by clicking away before the typing timer fires.
+  const changeDraftLinks=(next)=>{setLinkDraft(next);if(content.trim())persistDraft(content,next)};
 
 
-  const finishNote=()=>{if(!content.trim())return;const id=draftId;setContent("");setActiveNote(id);setDraftId("NOTE-"+Math.random().toString(36).slice(2,8));setSaved(false)};
+  const finishNote=()=>{if(!content.trim())return;const id=draftId;setContent("");setActiveNote(id);setDraftId("NOTE-"+Math.random().toString(36).slice(2,8));setSaved(false);setLinkDraft({});setShowDraftLinks(false)};
 
 
   const updateNote=(note,newText)=>{const data=parseNote(note);const title=(newText||data.text||"").split("\n")[0].replace(/^#+\s*/,"").slice(0,60)||"Untitled";addSop({...note,title,content:JSON.stringify({...data,text:newText||data.text})});notify("Saved")};
@@ -1079,7 +1114,7 @@ function NotesView({customSops,addSop,deleteSop,jobs,reps,notify,triggerPrint}){
       {showNewFolder&&<div style={{display:"flex",gap:4}}><input value={newFolder} onChange={e=>setNewFolder(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")createFolder()}} placeholder="Name" autoFocus style={{...inputStyle,padding:"4px 8px",fontSize:11,flex:1}}/><Btn style={{fontSize:10,padding:"3px 8px"}} onClick={createFolder}>Add</Btn></div>}
       <div style={{flex:1,overflow:"auto",display:"flex",flexDirection:"column",gap:3}}>
         <div onClick={()=>{setActiveNote(null);setEditId(null);setContent("")}} style={{padding:"8px 10px",borderRadius:8,background:!activeNote?"rgba(45,212,191,0.06)":"transparent",border:"1px solid "+(!activeNote?"rgba(45,212,191,0.12)":"transparent"),cursor:"pointer"}}><div style={{fontSize:12,fontWeight:600,color:"#2dd4bf"}}>+ New Note</div></div>
-        {filtered.map(n=>{const d=parseNote(n);return <div key={n.id} onClick={()=>{setActiveNote(n.id);setEditId(null)}} style={{padding:"8px 10px",borderRadius:8,background:activeNote===n.id?"rgba(255,255,255,0.03)":"transparent",border:"1px solid "+(activeNote===n.id?"rgba(255,255,255,0.06)":"transparent"),cursor:"pointer"}}><div style={{fontSize:12,fontWeight:600,color:activeNote===n.id?"#f0f0f0":"#a3a3a3",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{n.title}</div><div style={{fontSize:10,color:"#525252"}}>{d.date?new Date(d.date).toLocaleDateString():""}</div></div>})}
+        {filtered.map(n=>{const d=parseNote(n);return <div key={n.id} onClick={()=>{setActiveNote(n.id);setEditId(null)}} style={{padding:"8px 10px",borderRadius:8,background:activeNote===n.id?"rgba(255,255,255,0.03)":"transparent",border:"1px solid "+(activeNote===n.id?"rgba(255,255,255,0.06)":"transparent"),cursor:"pointer"}}><div style={{fontSize:12,fontWeight:600,color:activeNote===n.id?"#f0f0f0":"#a3a3a3",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{n.title}</div><div style={{fontSize:10,color:"#525252",display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>{d.date?new Date(d.date).toLocaleDateString():""}{d.calDate?<span style={{color:"#fbbf24",fontFamily:"'JetBrains Mono',monospace"}}>{d.calDate}</span>:null}{getLinks(d).map(l=><span key={l.k} title={l.label+": "+l.name} style={{width:6,height:6,borderRadius:"50%",background:l.color,display:"inline-block",flexShrink:0}}/>)}</div></div>})}
       </div>
     </div>
 
@@ -1100,13 +1135,18 @@ function NotesView({customSops,addSop,deleteSop,jobs,reps,notify,triggerPrint}){
           <button onClick={()=>insertLine("[ ] ")} style={{padding:"4px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.08)",background:"transparent",color:"#2dd4bf",cursor:"pointer",fontFamily:"inherit",fontSize:11}}>Checklist</button>
           <div style={{width:1,height:20,background:"rgba(255,255,255,0.06)",margin:"0 4px"}}/>
           <select value={folder==="All"?"General":folder} onChange={e=>{if(e.target.value==="__new")setShowNewFolder(true);else setFolder(e.target.value)}} style={{...inputStyle,width:110,padding:"4px 8px",fontSize:11}}>{[...new Set(["General",...allFolders])].map(f=><option key={f}>{f}</option>)}<option value="__new">+ Folder</option></select>
-          <select id="noteJobSelect" style={{...inputStyle,width:120,padding:"4px 8px",fontSize:11}}><option value="">No project</option>{(jobs||[]).map(j=><option key={j.id} value={j.id}>{j.name}</option>)}</select>
-          <select id="noteAssignSelect" style={{...inputStyle,width:110,padding:"4px 8px",fontSize:11}}><option value="">Unassigned</option>{(reps||[]).filter(r=>!r.id?.includes("SEED_FLAG")).map(r=><option key={r.id} value={r.name}>{r.name}</option>)}</select>
+          {(()=>{const lc=getLinks(linkDraft).length+(linkDraft.calDate?1:0);const hot=showDraftLinks||lc>0;return <button onClick={()=>setShowDraftLinks(v=>!v)} title="Attach this note to a project, customer, vendor or prospect, and put it on the Delivery Calendar" style={{padding:"4px 10px",borderRadius:6,border:"1px solid "+(hot?"rgba(45,212,191,0.4)":"rgba(255,255,255,0.08)"),background:showDraftLinks?"rgba(45,212,191,0.08)":"transparent",color:hot?"#2dd4bf":"#a3a3a3",cursor:"pointer",fontFamily:"inherit",fontSize:11,display:"inline-flex",alignItems:"center",gap:5,transition:"all 0.15s"}}><span style={{display:"flex",flexShrink:0}}><I n="link" s={11}/></span>Link{lc>0?" ("+lc+")":""}</button>})()}
           <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8}}>
             {content.trim()&&<span style={{fontSize:11,color:saved?"#34d399":"#525252"}}>{saved?"Saved":"..."}</span>}
             {content.trim()&&<Btn v="ghost" style={{fontSize:11,padding:"4px 10px"}} onClick={finishNote}>Done</Btn>}
           </div>
         </div>
+        {showDraftLinks&&<div style={{marginBottom:10,padding:12,borderRadius:12,background:"#0a0a0a",border:"1px solid rgba(45,212,191,0.18)",animation:"fadeUp 0.2s"}}>
+          <div style={{fontSize:10,fontWeight:700,color:"#525252",letterSpacing:1.8,marginBottom:8}}>LINK THIS NOTE TO</div>
+          <LinkPicker value={linkDraft} onChange={changeDraftLinks} jobs={jobs} customers={customers} vendors={vendors} prospects={prospectList} dateLabel="On calendar"/>
+          <div style={{fontSize:10,color:"#525252",marginTop:8,lineHeight:1.5}}>Linked records show this note on their own page. A calendar date puts it on the Delivery Calendar.</div>
+        </div>}
+        {!showDraftLinks&&(getLinks(linkDraft).length>0||linkDraft.calDate)?<div style={{marginBottom:8}}><LinkChips data={linkDraft} onOpen={l=>openLink(l,{setPage,setSelectedJob})}/></div>:null}
         {/* Editor */}
         <textarea ref={editorRef} value={content} onChange={e=>autoSave(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){const lines=content.slice(0,e.target.selectionStart).split("\n");const last=lines[lines.length-1]||"";if(last.startsWith("[ ] ")||last.startsWith("[x] ")){e.preventDefault();autoSave(content.slice(0,e.target.selectionStart)+"\n[ ] "+content.slice(e.target.selectionEnd))}else if(last.startsWith("- ")){e.preventDefault();autoSave(content.slice(0,e.target.selectionStart)+"\n- "+content.slice(e.target.selectionEnd))}}}} placeholder={"Start typing...\n\nFirst line becomes the title.\nAuto-saves as you type."} style={{flex:1,width:"100%",padding:20,background:"#000",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,color:"#e5e5e5",fontSize:15,lineHeight:1.8,fontFamily:"inherit",resize:"none",minHeight:320,outline:"none"}}/>
       </div>}
@@ -1115,9 +1155,18 @@ function NotesView({customSops,addSop,deleteSop,jobs,reps,notify,triggerPrint}){
       {/* VIEW existing note */}
       {viewing&&!editId&&<div>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16,gap:12,flexWrap:"wrap"}}>
-          <div style={{flex:1}}><div style={{fontSize:22,fontWeight:800,color:"#f0f0f0",marginBottom:4}}>{viewing.title}</div><div style={{fontSize:12,color:"#525252"}}>{viewData?.date?new Date(viewData.date).toLocaleDateString():""}{viewData?.folder&&viewData.folder!=="General"?" | "+viewData.folder:""}</div></div>
-          <div style={{display:"flex",gap:6,flexShrink:0}}><Btn v="ghost" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>{setEditId(viewing.id);setEditContent(viewData?.text||"")}}>Edit</Btn><Btn v="ghost" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>exportPDF(viewing)}>PDF</Btn><Btn v="danger" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>{deleteSop(viewing.id);setActiveNote(null);notify("Deleted")}}>Delete</Btn></div>
+          <div style={{flex:1}}><div style={{fontSize:22,fontWeight:800,color:"#f0f0f0",marginBottom:4}}>{viewing.title}</div><div style={{fontSize:12,color:"#525252"}}>{viewData?.date?new Date(viewData.date).toLocaleDateString():""}{viewData?.folder&&viewData.folder!=="General"?" | "+viewData.folder:""}</div>{(getLinks(viewData).length>0||viewData?.calDate)?<div style={{marginTop:8}}><LinkChips data={viewData} onOpen={l=>openLink(l,{setPage,setSelectedJob})}/></div>:null}</div>
+          <div style={{display:"flex",gap:6,flexShrink:0}}><Btn v="ghost" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>{setViewLinks({...(viewData||{})});setShowViewLinks(v=>!v)}}>Links</Btn><Btn v="ghost" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>{setEditId(viewing.id);setEditContent(viewData?.text||"")}}>Edit</Btn><Btn v="ghost" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>exportPDF(viewing)}>PDF</Btn><Btn v="danger" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>{deleteSop(viewing.id);setActiveNote(null);notify("Deleted")}}>Delete</Btn></div>
         </div>
+        {showViewLinks&&<div style={{marginBottom:16,padding:12,borderRadius:12,background:"#0a0a0a",border:"1px solid rgba(45,212,191,0.18)",animation:"fadeUp 0.2s"}}>
+          <div style={{fontSize:10,fontWeight:700,color:"#525252",letterSpacing:1.8,marginBottom:8}}>LINK THIS NOTE TO</div>
+          <LinkPicker value={viewLinks} onChange={setViewLinks} jobs={jobs} customers={customers} vendors={vendors} prospects={prospectList} dateLabel="On calendar"/>
+          <div style={{display:"flex",gap:8,marginTop:10,alignItems:"center",flexWrap:"wrap"}}>
+            <Btn style={{fontSize:11,padding:"5px 12px"}} onClick={()=>{const merged=resolveLinkNames({...(viewData||{}),...viewLinks},{jobs,customers,vendors,prospects:prospectList});addSop({...viewing,content:JSON.stringify(merged)});setShowViewLinks(false);notify("Links saved")}}>Save Links</Btn>
+            <Btn v="secondary" style={{fontSize:11,padding:"5px 12px"}} onClick={()=>setShowViewLinks(false)}>Cancel</Btn>
+            <span style={{fontSize:10,color:"#525252"}}>A calendar date puts this note on the Delivery Calendar.</span>
+          </div>
+        </div>}
         <div style={{fontSize:14,color:"#c4c4c4",lineHeight:1.9}}>
           {(viewData?.text||"").split("\n").map((line,i)=>{
             if(line.startsWith("[x] "))return <div key={i} style={{display:"flex",gap:10,alignItems:"center",padding:"4px 0",cursor:"pointer"}}><div style={{flexShrink:0}}><Check checked={true} size={18} onChange={()=>toggleItem(viewing,i)}/></div><span onClick={()=>toggleItem(viewing,i)} style={{textDecoration:"line-through",color:"#525252",cursor:"pointer"}}>{line.slice(4)}</span></div>;
@@ -1153,8 +1202,8 @@ function NotesView({customSops,addSop,deleteSop,jobs,reps,notify,triggerPrint}){
 }
 
 
-function NotesPage({customSops,addSop,deleteSop,jobs,reps,notify,triggerPrint}){
-  return <div style={{animation:"fadeUp 0.4s"}}><Header title="Notes" sub={(customSops||[]).filter(s=>s.cat==="Notes").length+" notes saved"}/><NotesView customSops={customSops} addSop={addSop} deleteSop={deleteSop} jobs={jobs} reps={reps} notify={notify} triggerPrint={triggerPrint}/></div>;
+function NotesPage({customSops,addSop,deleteSop,jobs,reps,customers,vendors,notify,triggerPrint,setPage,setSelectedJob,focusSopId,setFocusSopId}){
+  return <div style={{animation:"fadeUp 0.4s"}}><Header title="Notes" sub={(customSops||[]).filter(s=>s.cat==="Notes").length+" notes saved"}/><NotesView customSops={customSops} addSop={addSop} deleteSop={deleteSop} jobs={jobs} reps={reps} customers={customers} vendors={vendors} notify={notify} triggerPrint={triggerPrint} setPage={setPage} setSelectedJob={setSelectedJob} focusSopId={focusSopId} setFocusSopId={setFocusSopId}/></div>;
 }
 
 
@@ -4167,7 +4216,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     </div>
   </div>;
 }
-function ProspectsPage({reps,customSops,addSop,deleteSop,notify,currentUser,userRepId}){
+function ProspectsPage({reps,customSops,addSop,deleteSop,notify,currentUser,userRepId,setPage,setFocusSopId}){
   const [search,setSearch]=useState('');
   const [statusFilter,setStatusFilter]=useState('all');
   const [stateFilter,setStateFilter]=useState('all');
@@ -4546,6 +4595,7 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify,currentUser,user
                 {p.notes&&<div style={{marginTop:6,fontSize:12,color:'#737373',fontStyle:'italic'}}>{p.notes}</div>}
               </div>
             </div>}
+            <LinkedItemsPanel kind="prospect" id={p.id} name={p.company||p.name||p.id} customSops={customSops} addSop={addSop} deleteSop={deleteSop} notify={notify} setPage={setPage} setFocusSopId={setFocusSopId} style={{marginTop:14,background:'#0a0a0a'}}/>
           </td></tr>}
           </React.Fragment>;
         })}</tbody>
