@@ -3227,9 +3227,15 @@ function JobDetail({job,ctx}){
 // ===============================================================
 // DELIVERY CALENDAR
 // ===============================================================
-function DeliveryCalendar({jobs,lineItems,vendors,customers,getJobItems,setPage,setSelectedJob,notify,jobNum}){
+function DeliveryCalendar({jobs,lineItems,vendors,customers,getJobItems,setPage,setSelectedJob,notify,jobNum,updateJob,updateLineItem}){
   const [monthOffset,setMonthOffset]=useState(0);
   const [calFilter,setCalFilter]=useState("all"); // all, pending, delivered, po, due
+  // Click a day to open its panel: see everything happening that day and schedule
+  // onto it directly -- set a job due date or an item delivery date without leaving
+  // the calendar. This is the "enter information on the calendar" Maureen asked for.
+  const [dayPanel,setDayPanel]=useState(null);
+  const [schedJobId,setSchedJobId]=useState('');
+  const [schedItemId,setSchedItemId]=useState('');
   const now=new Date();
   const viewDate=new Date(now.getFullYear(),now.getMonth()+monthOffset,1);
   const year=viewDate.getFullYear();
@@ -3288,12 +3294,12 @@ function DeliveryCalendar({jobs,lineItems,vendors,customers,getJobItems,setPage,
     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:10}}>
       <div>
         <div style={{fontSize:22,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>{monthName} {year}</div>
-        <div style={{fontSize:12,color:"#a3a3a3",marginTop:2}}>{filtered.length} event{filtered.length!==1?"s":""} this month</div>
+        <div style={{fontSize:12,color:"#a3a3a3",marginTop:2}}>{filtered.length} event{filtered.length!==1?"s":""} this month -- click any day to view it or schedule onto it</div>
       </div>
       <div style={{display:"flex",gap:6,alignItems:"center"}}>
-        <button onClick={()=>setMonthOffset(p=>p-1)} style={{width:36,height:36,borderRadius:10,border:"1px solid #222",background:"transparent",color:"#a3a3a3",fontSize:16,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="#2dd4bf";e.currentTarget.style.color="#2dd4bf"}} onMouseLeave={e=>{e.currentTarget.style.borderColor="#222";e.currentTarget.style.color="#a3a3a3"}}>&larr;</button>
-        <button onClick={()=>setMonthOffset(0)} style={{padding:"8px 16px",borderRadius:10,border:"1px solid "+(monthOffset===0?"#2dd4bf40":"#222"),background:monthOffset===0?"#2dd4bf10":"transparent",color:monthOffset===0?"#2dd4bf":"#a3a3a3",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>Today</button>
-        <button onClick={()=>setMonthOffset(p=>p+1)} style={{width:36,height:36,borderRadius:10,border:"1px solid #222",background:"transparent",color:"#a3a3a3",fontSize:16,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="#2dd4bf";e.currentTarget.style.color="#2dd4bf"}} onMouseLeave={e=>{e.currentTarget.style.borderColor="#222";e.currentTarget.style.color="#a3a3a3"}}>&rarr;</button>
+        <button onClick={()=>{setMonthOffset(p=>p-1);setDayPanel(null)}} style={{width:36,height:36,borderRadius:10,border:"1px solid #222",background:"transparent",color:"#a3a3a3",fontSize:16,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="#2dd4bf";e.currentTarget.style.color="#2dd4bf"}} onMouseLeave={e=>{e.currentTarget.style.borderColor="#222";e.currentTarget.style.color="#a3a3a3"}}>&larr;</button>
+        <button onClick={()=>{setMonthOffset(0);setDayPanel(null)}} style={{padding:"8px 16px",borderRadius:10,border:"1px solid "+(monthOffset===0?"#2dd4bf40":"#222"),background:monthOffset===0?"#2dd4bf10":"transparent",color:monthOffset===0?"#2dd4bf":"#a3a3a3",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>Today</button>
+        <button onClick={()=>{setMonthOffset(p=>p+1);setDayPanel(null)}} style={{width:36,height:36,borderRadius:10,border:"1px solid #222",background:"transparent",color:"#a3a3a3",fontSize:16,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.borderColor="#2dd4bf";e.currentTarget.style.color="#2dd4bf"}} onMouseLeave={e=>{e.currentTarget.style.borderColor="#222";e.currentTarget.style.color="#a3a3a3"}}>&rarr;</button>
       </div>
     </div>
     {/* Filter bar */}
@@ -3307,13 +3313,55 @@ function DeliveryCalendar({jobs,lineItems,vendors,customers,getJobItems,setPage,
         const dayEvents=day?filtered.filter(e=>e.day===day):[];
         const isToday=day&&month===now.getMonth()&&year===now.getFullYear()&&day===now.getDate();
         const isPast=day&&new Date(year,month,day)<new Date(now.getFullYear(),now.getMonth(),now.getDate());
-        return <div key={i} style={{minHeight:90,padding:6,background:day?(isToday?"#0d0d0d":"#000000"):"#0a0a0a",borderTop:"1px solid #222222",position:"relative",opacity:isPast&&!isToday?0.6:1}}>
+        return <div key={i} onClick={()=>{if(day){setDayPanel(dayPanel===day?null:day);setSchedJobId('');setSchedItemId('')}}} style={{minHeight:90,padding:6,background:day?(dayPanel===day?"rgba(45,212,191,0.04)":isToday?"#0d0d0d":"#000000"):"#0a0a0a",borderTop:"1px solid #222222",position:"relative",opacity:isPast&&!isToday?0.6:1,cursor:day?"pointer":"default",boxShadow:dayPanel===day?"inset 0 0 0 1px rgba(45,212,191,0.45)":"none",transition:"background 0.15s, box-shadow 0.15s"}} onMouseEnter={e=>{if(day&&dayPanel!==day)e.currentTarget.style.background="rgba(255,255,255,0.03)"}} onMouseLeave={e=>{e.currentTarget.style.background=day?(dayPanel===day?"rgba(45,212,191,0.04)":isToday?"#0d0d0d":"#000000"):"#0a0a0a"}}>
           {day&&<div style={{fontSize:12,fontWeight:isToday?700:400,color:isToday?"#2dd4bf":"#525252",marginBottom:4}}>{isToday?<span style={{background:"#2dd4bf",color:"#000000",borderRadius:10,padding:"1px 6px",fontSize:11}}>{day}</span>:day}</div>}
-          {dayEvents.slice(0,3).map((ev,ei)=><div key={ei} onClick={()=>{if(ev.jobId){setSelectedJob(ev.jobId);setPage("jobs")}}} style={{fontSize:10,padding:"2px 4px",marginBottom:2,borderRadius:4,background:ev.color+"15",color:ev.color,cursor:"pointer",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",borderLeft:"2px solid "+ev.color,transition:"all 0.15s"}} onMouseEnter={e=>e.currentTarget.style.background=ev.color+"25"} onMouseLeave={e=>e.currentTarget.style.background=ev.color+"15"}>{ev.label}</div>)}
+          {dayEvents.slice(0,3).map((ev,ei)=><div key={ei} title={ev.label+(ev.jobName?' -- '+ev.jobName:'')} onClick={e=>{e.stopPropagation();if(ev.jobId){setSelectedJob(ev.jobId);setPage("jobs")}}} style={{fontSize:10,padding:"2px 4px",marginBottom:2,borderRadius:4,background:ev.color+"15",color:ev.color,cursor:"pointer",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",borderLeft:"2px solid "+ev.color,transition:"all 0.15s"}} onMouseEnter={e=>e.currentTarget.style.background=ev.color+"25"} onMouseLeave={e=>e.currentTarget.style.background=ev.color+"15"}>{ev.label}</div>)}
           {dayEvents.length>3&&<div style={{fontSize:10,color:"#737373",padding:"1px 4px"}}>+{dayEvents.length-3} more</div>}
         </div>
       })}
     </div>
+    {/* Day panel: everything on the clicked day + schedule directly onto it */}
+    {dayPanel&&(()=>{
+      const _pad=n=>String(n).padStart(2,'0');
+      const iso=year+'-'+_pad(month+1)+'-'+_pad(dayPanel);
+      const dayEvs=filtered.filter(e=>e.day===dayPanel);
+      const pendingItems=lineItems.filter(it=>it.qtyReceived<it.qtyOrdered);
+      const dateLabel=new Date(year,month,dayPanel).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
+      const sortedJobs=[...jobs].sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+      return <Card style={{marginTop:16,padding:20,background:"#000000",border:"1px solid rgba(45,212,191,0.25)",animation:"fadeUp 0.25s"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,flexWrap:"wrap"}}>
+          <span style={{fontSize:14,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>{dateLabel}</span>
+          <span style={{fontSize:9,fontFamily:"'JetBrains Mono',monospace",color:"#2dd4bf",background:"rgba(45,212,191,0.08)",border:"1px solid rgba(45,212,191,0.25)",padding:"2px 8px",borderRadius:20,letterSpacing:0.5}}>{iso}</span>
+          <span style={{flex:1}}/>
+          <button onClick={()=>setDayPanel(null)} style={{background:"none",border:"none",color:"#737373",cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>Close</button>
+        </div>
+        {dayEvs.length>0?<div style={{marginBottom:16}}>{dayEvs.map((ev,i)=><div key={i} onClick={()=>{if(ev.jobId){setSelectedJob(ev.jobId);setPage("jobs")}}} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 4px",borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:ev.jobId?"pointer":"default",transition:"background 0.15s"}} onMouseEnter={e=>{if(ev.jobId)e.currentTarget.style.background="rgba(255,255,255,0.03)"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>
+          <div style={{width:4,height:24,borderRadius:2,background:ev.color,flexShrink:0}}/>
+          <div style={{flex:1,minWidth:0}}><div style={{fontSize:12.5,color:"#d4d4d4",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ev.label}</div>{ev.jobName&&<div style={{fontSize:10.5,color:"#737373"}}>{ev.jobName}</div>}</div>
+          <span style={{fontSize:9,padding:"2px 8px",borderRadius:20,background:ev.color+"12",color:ev.color,fontWeight:700,flexShrink:0,fontFamily:"'JetBrains Mono',monospace",letterSpacing:0.5}}>{ev.type==="pending"?"PENDING":ev.type==="delivered"?"RECEIVED":ev.type==="po"?"PO SENT":"DUE"}</span>
+        </div>)}</div>
+        :<div style={{fontSize:12,color:"#525252",marginBottom:16,padding:"4px 2px"}}>Nothing scheduled on this day yet.</div>}
+        {updateJob&&updateLineItem&&<>
+          <div style={{fontSize:10,fontWeight:700,color:"#2dd4bf",letterSpacing:2.5,marginBottom:10,paddingTop:12,borderTop:"1px solid rgba(45,212,191,0.15)"}}>SCHEDULE ON THIS DAY</div>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:8}}>
+            <span style={{fontSize:11.5,color:"#9a9a9a",width:120}}>Job due date</span>
+            <select value={schedJobId} onChange={e=>setSchedJobId(e.target.value)} style={{...inputStyle,flex:1,minWidth:220,fontSize:12,padding:"7px 10px"}}>
+              <option value="">Choose a job...</option>
+              {sortedJobs.map(j=><option key={j.id} value={j.id}>{j.name}{j.dueDate?" (due "+j.dueDate+")":" (no due date)"}</option>)}
+            </select>
+            <Btn style={{fontSize:11,padding:"6px 14px"}} onClick={()=>{if(!schedJobId){notify('Choose a job first','error');return}const jb=jobs.find(j=>j.id===schedJobId);updateJob(schedJobId,{dueDate:iso});notify((jb?jb.name:'Job')+' due date set to '+iso);setSchedJobId('')}}>Set Due Date</Btn>
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            <span style={{fontSize:11.5,color:"#9a9a9a",width:120}}>Item delivery</span>
+            <select value={schedItemId} onChange={e=>setSchedItemId(e.target.value)} style={{...inputStyle,flex:1,minWidth:220,fontSize:12,padding:"7px 10px"}}>
+              <option value="">Choose a pending item...</option>
+              {pendingItems.map(it=>{const jb=jobs.find(j=>j.id===it.jobId);return <option key={it.id} value={it.id}>{(it.vendor?it.vendor+" -- ":"")+String(it.description||'').slice(0,44)+(jb?" ("+jb.name+")":"")}</option>})}
+            </select>
+            <Btn style={{fontSize:11,padding:"6px 14px"}} onClick={()=>{if(!schedItemId){notify('Choose an item first','error');return}updateLineItem(schedItemId,{deliveryDate:iso});notify('Delivery date set to '+iso);setSchedItemId('')}}>Set Delivery Date</Btn>
+          </div>
+          <div style={{fontSize:10,color:"#525252",marginTop:10}}>Dates save straight to the job record and line item -- the tracker, job pages and this calendar all update together.</div>
+        </>}
+      </Card>})()}
     {/* Event legend */}
     <div style={{display:"flex",gap:16,marginTop:12,flexWrap:"wrap"}}>
       {[["#fbbf24","Pending Delivery"],["#34d399","Received"],["#a78bfa","PO Sent"],["#f87171","Job Due Date"]].map(([c,l])=><div key={l} style={{display:"flex",alignItems:"center",gap:6,fontSize:11,color:"#737373"}}><div style={{width:10,height:10,borderRadius:3,background:c}}/>{l}</div>)}
@@ -3325,7 +3373,7 @@ function DeliveryCalendar({jobs,lineItems,vendors,customers,getJobItems,setPage,
       <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600,color:"#d4d4d4",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ev.label}</div><div style={{fontSize:11,color:"#737373"}}>{ev.jobName}{ev.qty?" -- "+ev.qty+" units":""}</div></div>
       <span style={{fontSize:10,padding:"3px 8px",borderRadius:6,background:ev.color+"12",color:ev.color,fontWeight:600,flexShrink:0}}>{ev.type==="pending"?"PENDING":ev.type==="delivered"?"RECEIVED":ev.type==="po"?"PO SENT":"DUE"}</span>
     </div>)}</Card>}
-    {filtered.length===0&&<Card style={{marginTop:16,textAlign:"center",padding:30}}><div style={{fontSize:14,color:"#a3a3a3"}}>No {calFilter==="all"?"events":calFilter} for {monthName} {year}. Set delivery dates on line items or due dates on jobs to populate the calendar.</div></Card>}
+    {filtered.length===0&&<Card style={{marginTop:16,textAlign:"center",padding:30}}><div style={{fontSize:14,color:"#a3a3a3"}}>No {calFilter==="all"?"events":calFilter} for {monthName} {year}. Click any day to schedule a job due date or an item delivery onto it.</div></Card>}
   </div>;
 }
 
@@ -3333,7 +3381,7 @@ function DeliveryCalendar({jobs,lineItems,vendors,customers,getJobItems,setPage,
 // ===============================================================
 // DELIVERY TRACKER -- Real updates to state
 // ===============================================================
-function DeliveryPage({jobs,lineItems,vendors,customers,reps,userRole,userRepId,getItemStatus,getJobItems,updateLineItem,setPage,setSelectedJob,notify,jobNum}){
+function DeliveryPage({jobs,lineItems,vendors,customers,reps,userRole,userRepId,getItemStatus,getJobItems,updateLineItem,updateJob,setPage,setSelectedJob,notify,jobNum}){
   const [deliveryView,setDeliveryView]=useState("tracker");
   const [delFilter,setDelFilter]=useState("pending");
   const [receiveModal,setReceiveModal]=useState(null);
@@ -3394,7 +3442,7 @@ function DeliveryPage({jobs,lineItems,vendors,customers,reps,userRole,userRepId,
       {!isSalesRole&&reps&&reps.filter(r=>!r.id.includes("SEED_FLAG")&&isSalesRep(r)).length>0&&<select value={repFilter} onChange={e=>setRepFilter(e.target.value)} style={{padding:"8px 12px",background:"#0a0a0a",border:"1px solid #222",borderRadius:8,color:"#f0f0f0",fontSize:12,fontFamily:"inherit",cursor:"pointer",minWidth:170}}><option value="all">All Sales Reps</option>{reps.filter(r=>!r.id.includes("SEED_FLAG")&&isSalesRep(r)).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select>}
       {(searchQuery||repFilter!=="all")&&<button onClick={()=>{setSearchQuery("");setRepFilter("all")}} style={{padding:"6px 12px",background:"transparent",border:"1px solid #333",borderRadius:8,color:"#a3a3a3",fontSize:11,fontFamily:"inherit",cursor:"pointer",fontWeight:600}} title="Clear search and filters">Clear</button>}
     </div>
-    {deliveryView==="calendar"&&<DeliveryCalendar jobs={jobsForView} lineItems={lineItemsForView} vendors={vendors} customers={customers} getJobItems={getJobItems} setPage={setPage} setSelectedJob={setSelectedJob} notify={notify}/>}
+    {deliveryView==="calendar"&&<DeliveryCalendar jobs={jobsForView} lineItems={lineItemsForView} vendors={vendors} customers={customers} getJobItems={getJobItems} setPage={setPage} setSelectedJob={setSelectedJob} notify={notify} updateJob={updateJob} updateLineItem={updateLineItem}/>}
     {deliveryView==="tracker"&&<>
     <div className="resp-grid-4" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:14,marginBottom:24}}>
       <StatCard label="Pending Delivery" value={allItems.length} sub="line items" icon="truck" color="#fbbf24"/>
