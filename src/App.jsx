@@ -998,6 +998,20 @@ const statusColor = s => ({complete:"#34d399",paid:"#34d399",invoiced:"#34d399",
 const inputStyle = {width:"100%",padding:"11px 14px",background:"#0a0a0a",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,color:"#d4d4d4",fontSize:13,outline:"none",fontFamily:"inherit"};
 
 
+// One canonical customer-type list. The type used to be hard-coded separately in
+// four different dropdowns with four different sets of options, which is why
+// "K-12 District" was the only type some of them offered. Every type picker in the
+// app now reads this list, so adding a type is a one-line change here.
+const CUSTOMER_TYPES=["K-12 District","Private School","Charter School","Preschool / Early Learning","University","Community College","Library","Museum","Park District","Government","Municipality","Healthcare","Corporate","Non-Profit","Church","Other"];
+
+
+// Options for a customer-type picker: the canonical list, plus whatever the record
+// already carries if it came from an import or an older list. Without this, opening
+// an edit form on a customer whose type is not in the list would show a blank select
+// and silently blank the type on save.
+const customerTypeOptions=(current)=>{const c=String(current==null?"":current).trim();return c&&CUSTOMER_TYPES.indexOf(c)===-1?[c].concat(CUSTOMER_TYPES):CUSTOMER_TYPES};
+
+
 // ===============================================================
 // CROSS-APP LINKING -- notes and tasks that attach to the record
 // they belong to, and to a day on the Delivery Calendar.
@@ -2939,7 +2953,7 @@ Never use emoji. Be concise.`;
         {uploading?'Importing...':'Import '+uploadSelCount+' Line Items as New Quoting Job'}
       </Btn>
     </Card>}
-    {newCust&&<Card style={{marginBottom:20,border:"1px solid #2563eb30"}}><div style={{fontSize:14,fontWeight:700,marginBottom:16,color:"#a78bfa"}}>Add New Customer</div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12,marginBottom:12}}>{[["name","Name"],["contact","Contact"],["email","Email"],["phone","Phone"]].map(([k,l])=><div key={k}><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>{l}</label><input value={custForm[k]} onChange={e=>setCustForm({...custForm,[k]:e.target.value})} style={inputStyle}/></div>)}</div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12,marginBottom:12}}><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Type</label><select value={custForm.type||"K-12 District"} onChange={e=>setCustForm({...custForm,type:e.target.value})} style={inputStyle}><option>K-12 District</option><option>Private School</option><option>University</option><option>Government</option><option>Corporate</option><option>Other</option></select></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Address</label><input value={custForm.address||""} onChange={e=>setCustForm({...custForm,address:e.target.value})} placeholder="Full address (street, city, state, zip)" style={inputStyle}/></div></div><div style={{display:"flex",gap:8}}><Btn onClick={()=>{if(custForm.name){addCustomer(custForm);setNewCust(false);setCustForm({name:"",contact:"",email:"",phone:"",type:"K-12 District",address:""});notify("Customer added")}}}>Add Customer</Btn><Btn v="secondary" onClick={()=>setNewCust(false)}>Cancel</Btn></div></Card>}
+    {newCust&&<Card style={{marginBottom:20,border:"1px solid #2563eb30"}}><div style={{fontSize:14,fontWeight:700,marginBottom:16,color:"#a78bfa"}}>Add New Customer</div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12,marginBottom:12}}>{[["name","Name"],["contact","Contact"],["email","Email"],["phone","Phone"]].map(([k,l])=><div key={k}><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>{l}</label><input value={custForm[k]} onChange={e=>setCustForm({...custForm,[k]:e.target.value})} style={inputStyle}/></div>)}</div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12,marginBottom:12}}><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Type</label><select value={custForm.type||"K-12 District"} onChange={e=>setCustForm({...custForm,type:e.target.value})} style={inputStyle}>{customerTypeOptions(custForm.type).map(t=><option key={t}>{t}</option>)}</select></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Address</label><input value={custForm.address||""} onChange={e=>setCustForm({...custForm,address:e.target.value})} placeholder="Full address (street, city, state, zip)" style={inputStyle}/></div></div><div style={{display:"flex",gap:8}}><Btn onClick={()=>{if(custForm.name){addCustomer(custForm);setNewCust(false);setCustForm({name:"",contact:"",email:"",phone:"",type:"K-12 District",address:""});notify("Customer added")}}}>Add Customer</Btn><Btn v="secondary" onClick={()=>setNewCust(false)}>Cancel</Btn></div></Card>}
 
 
     {viewMode==="table"&&<>
@@ -4488,13 +4502,22 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           if (bill.isCredit) { plan.push({bill, payAmt: 0, creditsApplied: []}); continue; }
           let owe = typeof bill.balance === 'number' ? bill.balance : bill.cost;
           const creditsApplied = [];
-          // Apply credits for the same vendor + same job. Smallest credits first so
-          // we don't waste a large credit on a small bill if a smaller one would do.
-          const matching = creditPool
-            .filter(c => c.remaining > 0.005 && c.vendorId === bill.vendorId && c.jobId === bill.job?.id)
-            .sort((a,b) => a.remaining - b.remaining);
+          // A vendor credit is a balance on the VENDOR account, not on one job.
+          // Prefer a credit raised on the same job first, because that keeps job
+          // costing exact; then fall back to any other open credit from the same
+          // vendor. Without the fallback, a vendor account with credits and bills
+          // spread across several jobs (Doane Keyes, ~14 bills on one check) could
+          // never be settled in a single batch. Smallest credits first inside each
+          // pass so a large credit is not spent on a small bill.
+          const _sameVendor = c => c.remaining > 0.005 && c.vendorId === bill.vendorId;
+          const _smallestFirst = (a,b) => a.remaining - b.remaining;
+          const matching = creditPool.filter(c => _sameVendor(c) && c.jobId === bill.job?.id).sort(_smallestFirst)
+            .concat(creditPool.filter(c => _sameVendor(c) && c.jobId !== bill.job?.id).sort(_smallestFirst));
           for (const c of matching) {
             if (owe <= 0.005) break;
+            // Re-check: a credit can be drained earlier in this same loop now that
+            // the list is built up front across two passes.
+            if (c.remaining <= 0.005) continue;
             const use = Math.min(c.remaining, owe);
             c.remaining -= use;
             owe -= use;
@@ -4532,6 +4555,24 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
         });
         const totalCredit = plan.reduce((s,p) => s + p.creditsApplied.reduce((s2,ca) => s2+ca.creditedAmt, 0), 0);
         return {plan, creditConsumes, totalCredit};
+      };
+      // Settle a STANDALONE vendor bill that was included in a batch check. These
+      // records live in customSops with a flat paid/payDate/checkNum, so there is no
+      // payments[] trail to append to -- the credit breakdown goes in the memo
+      // instead so the record still explains why the check was smaller than the bill.
+      const _settleStandaloneBill = (bill, {todayIso, checkNo, label, creditsApplied}) => {
+        const sop = (customSops || []).find(s => s.id === bill._sopId);
+        if (!sop) return;
+        let d = {}; try { d = JSON.parse(sop.content || '{}'); } catch { return; }
+        const creditTotal = (creditsApplied || []).reduce((s2, ca) => s2 + ca.creditedAmt, 0);
+        const creditNote = creditTotal > 0.005 ? ' | credits applied ' + fmt(creditTotal) : '';
+        addSop({id: sop.id, title: sop.title, cat: sop.cat, icon: sop.icon, content: JSON.stringify({
+          ...d,
+          paid: true,
+          payDate: todayIso,
+          checkNum: checkNo || d.checkNum || '',
+          memo: (d.memo ? d.memo + ' | ' : '') + label + creditNote
+        }), custom: true});
       };
       // Mark a credit SOP as consumed. If fully used, set paid:true so it disappears
       // from the unpaid list. If partially used (rare in current data shape), reduce
@@ -4719,6 +4760,11 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           // why no check came out of the printer.
           plan.forEach(p => {
             const {bill, creditsApplied} = p;
+            // Standalone vendor bills are flat paid/unpaid SOP records with no
+            // payments[] history, so they settle on the SOP. Writing a docStatus
+            // keyed by their SOP id would print them on the check and leave them
+            // showing as unpaid forever.
+            if (bill._standalone) { _settleStandaloneBill(bill, {todayIso, checkNo: '', label: 'Credit settled', creditsApplied}); return; }
             const existing = typeof docStatuses[bill.billDocNum]==='object' ? docStatuses[bill.billDocNum] : {};
             const prevPayments = _getBillPayments(existing, bill.cost);
             const newEntries = creditsApplied.map(ca => ({date: todayIso, amount: ca.creditedAmt, checkNum: '', memo: 'Credit '+(ca.refNumber?'#'+ca.refNumber+' ':'')+'from '+ca.vendorName, method: 'credit'}));
@@ -4820,18 +4866,18 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
   <div class="payto-row"><div class="payto-label">PAY TO THE<br>ORDER OF</div><div class="payto-name">${vendorName}</div><div class="amount-dollars">$ **${amtFmt}</div></div>
   <div class="words-row">${amtWords}${'*'.repeat(Math.max(0,80-amtWords.length))} DOLLARS</div>
   <div class="vendor-addr">${vendorAddrHtml}</div>
-  <div class="memo-sig-row"><div class="memo-row"><span class="memo-label">MEMO</span><span class="memo-val">Batch -- ${selectedNonCredits.length} POs</span></div><div class="sig-line">MP</div></div>
+  <div class="memo-sig-row"><div class="memo-row"><span class="memo-label">MEMO</span><span class="memo-val">Batch -- ${selectedNonCredits.length} bill${selectedNonCredits.length===1?'':'s'}</span></div><div class="sig-line">MP</div></div>
   <div style="text-align:center;margin-top:38px;position:relative;z-index:1"><div style="font-family:'MICR',monospace;font-size:14pt;letter-spacing:3px;color:#111">${micrFontStr}</div></div>
 </div>
 <div class="stub-section">
   <div class="stub-header"><div><div class="stub-company">MIDWEST EDUCATIONAL FURNISHINGS, INC</div><div class="stub-date-vendor">${dateStr}&nbsp;&nbsp;&nbsp;&nbsp;${vendorName}</div></div><div class="stub-checkno">${checkNo}</div></div>
-  <table class="stub-table"><thead><tr><th>Date</th><th>Type</th><th>Reference</th><th class="amt">Original Amount</th><th class="amt">Balance Due</th><th class="amt">Payment</th></tr></thead><tbody>${stubRows}<tr class="stub-total-row"><td colspan="3">${selectedNonCredits.length} POs</td><td></td><td>Check Amount</td><td class="amt">${amtFmt}</td></tr></tbody></table>
+  <table class="stub-table"><thead><tr><th>Date</th><th>Type</th><th>Reference</th><th class="amt">Original Amount</th><th class="amt">Balance Due</th><th class="amt">Payment</th></tr></thead><tbody>${stubRows}<tr class="stub-total-row"><td colspan="3">${selectedNonCredits.length} bill${selectedNonCredits.length===1?'':'s'}</td><td></td><td>Check Amount</td><td class="amt">${amtFmt}</td></tr></tbody></table>
   <div class="stub-footer"><div class="stub-bank">Cornerstone Bank Ch</div><div class="stub-amount">${amtFmt}</div></div>
 </div>
 <div class="stub-section" style="border-bottom:none">
   <div class="payment-record">PAYMENT RECORD</div>
   <div class="stub-header"><div><div class="stub-company">MIDWEST EDUCATIONAL FURNISHINGS, INC</div><div class="stub-date-vendor">${dateStr}&nbsp;&nbsp;&nbsp;&nbsp;${vendorName}</div></div><div class="stub-checkno">${checkNo}</div></div>
-  <table class="stub-table"><thead><tr><th>Date</th><th>Type</th><th>Reference</th><th class="amt">Original Amount</th><th class="amt">Balance Due</th><th class="amt">Payment</th></tr></thead><tbody>${stubRows}<tr class="stub-total-row"><td colspan="3">${selectedNonCredits.length} POs</td><td></td><td>Check Amount</td><td class="amt">${amtFmt}</td></tr></tbody></table>
+  <table class="stub-table"><thead><tr><th>Date</th><th>Type</th><th>Reference</th><th class="amt">Original Amount</th><th class="amt">Balance Due</th><th class="amt">Payment</th></tr></thead><tbody>${stubRows}<tr class="stub-total-row"><td colspan="3">${selectedNonCredits.length} bill${selectedNonCredits.length===1?'':'s'}</td><td></td><td>Check Amount</td><td class="amt">${amtFmt}</td></tr></tbody></table>
   <div class="stub-footer"><div class="stub-bank">Cornerstone Bank Ch</div><div class="stub-amount">${amtFmt}</div></div>
 </div>
 </body></html>`;
@@ -4845,6 +4891,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
         // credit entries explain why the check was smaller than the bill total).
         plan.forEach(p => {
           const {bill, payAmt, creditsApplied} = p;
+          if (bill._standalone) { _settleStandaloneBill(bill, {todayIso, checkNo, label: 'Batch check #'+checkNo, creditsApplied}); return; }
           const existing = typeof docStatuses[bill.billDocNum]==='object' ? docStatuses[bill.billDocNum] : {};
           const prevPayments = _getBillPayments(existing, bill.cost);
           const newEntries = [];
@@ -4862,7 +4909,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
         // Mark applied credits as consumed.
         _consumeCreditSops(creditConsumes, todayIso);
         const creditMsg = totalCredit > 0 ? ' (with '+fmt(totalCredit)+' in credits applied)' : '';
-        notify('Batch Check #'+checkNo+' printed for '+vendorName+' -- '+fmt(totalCost)+' ('+selectedNonCredits.length+' POs)'+creditMsg);
+        notify('Batch Check #'+checkNo+' printed for '+vendorName+' -- '+fmt(totalCost)+' ('+selectedNonCredits.length+' bill'+(selectedNonCredits.length===1?'':'s')+')'+creditMsg);
         setBillSelected(new Set());
       };
       // Print a check for an expense / reimbursement without first creating a bill.
@@ -5529,7 +5576,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
               const isDueSoon=bill.daysUntil>=0&&bill.daysUntil<=14&&!bill.paid;
               const unpaidIdx=unpaidBills.indexOf(bill);
               return <tr key={idx} style={{borderBottom:"1px solid #111",background:bill._isDeleted?"#f8717108":bill.voided?"#52525208":bill.paid?"#34d39905":isOverdue?"#f8717108":billSelected.has(unpaidIdx)?"#f9731610":"transparent",transition:"background 0.15s",cursor:"pointer",opacity:bill._isDeleted?0.55:bill.voided?0.5:1}} onClick={()=>{if(bill._standalone){openAdjustModal(bill._standaloneKind==='VendorCredit'?'credit':'bill',bill);return}setBillInvNum(bill.vendorInvNum);setBillCheckNum(bill.checkNum);setBillPayDate(bill.payDate);setBillMemo(bill.memo);setBillPayAmount(String(bill.balance||bill.cost));setBillPayInputDate(new Date().toISOString().split('T')[0]);setBillPayCheckInput('');setBillPayInvInput('');setBillPayMemoInput('');setBillDetail(bill)}} onMouseEnter={e=>{if(!bill.paid&&!bill.voided&&!bill._isDeleted&&!billSelected.has(unpaidIdx))e.currentTarget.style.background=isOverdue?"#f8717112":"#111"}} onMouseLeave={e=>{e.currentTarget.style.background=bill._isDeleted?"#f8717108":bill.voided?"#52525208":bill.paid?"#34d39905":isOverdue?"#f8717108":billSelected.has(unpaidIdx)?"#f9731610":"transparent"}}>
-                <td style={{padding:"10px 8px",textAlign:"center",width:36}} onClick={e=>e.stopPropagation()}>{!bill.paid&&!bill._standalone&&!bill._isDeleted&&<input type="checkbox" checked={billSelected.has(unpaidIdx)} onChange={()=>toggleSelect(unpaidIdx)} style={{accentColor:"#2dd4bf",width:16,height:16,cursor:"pointer"}}/>}{bill.paid&&<I n="check" s={14} color="#34d399"/>}{!bill.paid&&bill._standalone&&!bill._isDeleted&&<span style={{fontSize:10,color:bill.isCredit?"#34d399":"#f97316",fontWeight:700,letterSpacing:0.5}}>{bill.isCredit?"CR":"ADJ"}</span>}{bill._isDeleted&&<I n="close" s={14} color="#f87171"/>}</td>
+                <td style={{padding:"10px 8px",textAlign:"center",width:36}} onClick={e=>e.stopPropagation()}>{!bill.paid&&!bill._isDeleted&&!bill.isCredit&&<input type="checkbox" title={bill._standalone?"Standalone vendor bill -- can be paid on a batch check":"Select for batch payment"} checked={billSelected.has(unpaidIdx)} onChange={()=>toggleSelect(unpaidIdx)} style={{accentColor:"#2dd4bf",width:16,height:16,cursor:"pointer"}}/>}{bill.paid&&<I n="check" s={14} color="#34d399"/>}{!bill.paid&&bill._standalone&&!bill._isDeleted&&<span style={{fontSize:10,color:bill.isCredit?"#34d399":"#f97316",fontWeight:700,letterSpacing:0.5}}>{bill.isCredit?"CR":"ADJ"}</span>}{bill._isDeleted&&<I n="close" s={14} color="#f87171"/>}</td>
                 <td style={{padding:"10px 8px"}}><div style={{fontWeight:600,color:"#e5e5e5",display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>{bill.vendorName}{bill.isCredit&&<span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:"#34d39920",color:"#34d399",fontWeight:700,letterSpacing:0.5}}>CREDIT {(()=>{const ca=typeof bill.creditAmount==='number'?bill.creditAmount:bill.cost;return ca<bill.cost-0.005?fmt(ca):'FULL'})()}</span>}</div><div style={{fontSize:11,color:"#737373"}}>{bill.itemCount} item{bill.itemCount!==1?'s':''}</div></td>
                 <td style={{padding:"10px 8px"}}><span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:11,color:"#a78bfa",cursor:"pointer",textDecoration:"underline",textUnderlineOffset:2}} onClick={e=>{e.stopPropagation();const pos2=genPOs?genPOs(bill.job):[];const thisPO2=pos2.find(p=>p.docNum===bill.poDocNum);if(thisPO2){setPreviewDoc({type:"po",data:thisPO2,job:bill.job});setTab("preview")}}}>{bill.poDocNum}</span></td>
                 <td style={{padding:"10px 8px",fontFamily:"'JetBrains Mono',monospace",fontSize:11,color:bill.vendorInvNum?"#f97316":"#333"}}>{bill.vendorInvNum||'--'}{bill._standalone&&bill._fileUrl&&<a href={bill._fileUrl} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} title={bill._fileName||'View attached file'} style={{marginLeft:8,display:"inline-flex",alignItems:"center",gap:3,padding:"1px 6px",background:"#a78bfa10",border:"1px solid #a78bfa25",borderRadius:4,color:"#a78bfa",textDecoration:"none",fontSize:10,fontWeight:600,fontFamily:"inherit"}}><I n="file" s={10} color="#a78bfa"/> File</a>}</td>
@@ -6145,5 +6192,5 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
 }
 
 
-export { AnimNum, AnimatedNumber, Badge, Bar, Btn, Card, Check, CheckMinus, DEFAULT_SOPS, Dashboard, DocumentsPage, Header, I, LINK_KINDS, LinkChips, LinkPicker, LinkedItemsPanel, fmt, fmtN, getLinks, getProspectList, getRoles, inputStyle, isSalesRep, isoDay, openLink, parseLocalDate, pct, resolveLinkNames, shipKey, statusColor };
+export { AnimNum, AnimatedNumber, Badge, Bar, Btn, CUSTOMER_TYPES, Card, Check, CheckMinus, DEFAULT_SOPS, Dashboard, DocumentsPage, Header, I, LINK_KINDS, LinkChips, LinkPicker, LinkedItemsPanel, customerTypeOptions, fmt, fmtN, getLinks, getProspectList, getRoles, inputStyle, isSalesRep, isoDay, openLink, parseLocalDate, pct, resolveLinkNames, shipKey, statusColor };
 export default function MidwestAIOS(){return <ErrorBoundary><MidwestAIOSInner/></ErrorBoundary>}
