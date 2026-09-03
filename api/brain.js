@@ -47,7 +47,10 @@ export default async function handler(req, res) {
     const isSimple = !isComplex && (wordCount <= 12 || simpleKeywords.some(k => txt === k || txt.startsWith(k+' ') || txt.endsWith(' '+k)));
 
     const selectedModel = isSimple ? 'claude-haiku-4-5' : 'claude-sonnet-5';
-    const selectedMaxTokens = isSimple ? 2048 : 8192;
+    // 8192 left too little headroom once a complex turn spent part of its budget on
+    // internal reasoning: the turn hit the ceiling with nothing written and the chat
+    // showed a raw payload instead of an answer.
+    const selectedMaxTokens = isSimple ? 2048 : 16384;
 
     // Prompt caching: wrap system prompt and tools with cache_control markers.
     // Anthropic caches large repetitive context across requests; subsequent calls
@@ -176,6 +179,30 @@ export default async function handler(req, res) {
           return res.status(r2.status).json(d2);
         }
 
+        // A turn that spends its whole budget thinking comes back stop_reason
+        // max_tokens with no text and no tool_use -- nothing the client can render.
+        // Give it one more pass with a bigger ceiling before handing that back.
+        if (response.ok && !stream && data && data.stop_reason === 'max_tokens' && Array.isArray(data.content)
+            && !data.content.some(b => b && (b.type === 'text' || b.type === 'tool_use'))) {
+          try {
+            const retryBody = { ...body, max_tokens: Math.min((body.max_tokens || 8192) * 2, 32000) };
+            delete retryBody.stream;
+            const rr = await fetch('https://api.anthropic.com/v1/messages', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-api-key': key,
+                'anthropic-version': '2023-06-01',
+                'anthropic-beta': 'pdfs-2024-09-25,prompt-caching-2024-07-31',
+              },
+              body: JSON.stringify(retryBody),
+            });
+            const rdata = await rr.json();
+            if (rr.ok && Array.isArray(rdata.content) && rdata.content.some(b => b && (b.type === 'text' || b.type === 'tool_use'))) {
+              return res.status(rr.status).json(rdata);
+            }
+          } catch {}
+        }
         if (response.status === 401 && i < keys.length - 1) continue;
         return res.status(response.status).json(data);
       } catch (err) {
