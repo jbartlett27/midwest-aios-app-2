@@ -1012,6 +1012,49 @@ const CUSTOMER_TYPES=["K-12 District","Private School","Charter School","Prescho
 const customerTypeOptions=(current)=>{const c=String(current==null?"":current).trim();return c&&CUSTOMER_TYPES.indexOf(c)===-1?[c].concat(CUSTOMER_TYPES):CUSTOMER_TYPES};
 
 
+// Vendor worksheets -- KI's in particular -- put the product name on the FIRST line
+// of the description cell and the detail that has to reach the vendor PO (options,
+// finish, fabric, dimensions, configuration) on the lines beneath it. The importer
+// kept only line 1, so all of that detail was dropped on the way in and the POs went
+// out incomplete.
+// The headline is still computed exactly as it was and still drives every group and
+// skip test in the parsers >> this only puts the detail lines back underneath it for
+// storage. Nothing downstream needs to change: the printed and emailed documents
+// already convert newlines to <br> (buildDesc), and the on-screen rows already use
+// pre-line / pre-wrap.
+const DESC_LABEL_ONLY=/^(item specifics|specifications?|options?|features?|details?|notes?|includes?)\s*[:\-]*\s*$/i;
+const withItemDetail=(raw,head)=>{
+  const h=String(head==null?"":head).trim();
+  const lines=String(raw==null?"":raw).replace(/\r\n/g,"\n").replace(/\r/g,"").split("\n");
+  const cand=[];
+  // "Item Specifics" is trimmed off the headline on purpose, but the text after it is
+  // exactly the specification Midwest has to show the vendor, so it comes back as the
+  // first detail line rather than being thrown away.
+  const first=String(lines[0]||"").trim();
+  const spec=first.search(/item specifics/i);
+  if(spec>0)cand.push(first.slice(spec).trim());
+  else if(!h)cand.push(first);
+  for(let i=1;i<lines.length;i++)cand.push(String(lines[i]||"").trim());
+  const detail=[];
+  const seen=new Set(h?[h.toLowerCase()]:[]);
+  for(const line of cand){
+    if(!line)continue;
+    if(DESC_LABEL_ONLY.test(line))continue;            // a bare section label with nothing after it
+    if(/^[-_=*.\u2022\s]+$/.test(line))continue;        // separator or bullet-only row
+    if(/^-{0,2}\s*room number\b/i.test(line))continue;  // room tags belong in the tag column
+    const k=line.toLowerCase();
+    if(seen.has(k))continue;                           // the headline repeated underneath itself
+    seen.add(k);
+    detail.push(line);
+    if(detail.length>=15)break;                        // a runaway cell cannot bloat the record
+  }
+  if(detail.length===0)return h;
+  let out=(h?h+"\n":"")+detail.join("\n");
+  if(out.length>1500)out=out.slice(0,1500).replace(/\s+\S*$/,"").trim();
+  return out;
+};
+
+
 // ===============================================================
 // CROSS-APP LINKING -- notes and tasks that attach to the record
 // they belong to, and to a day on the Delivery Calendar.
@@ -2655,7 +2698,7 @@ function JobsPage(ctx){
           if(!instPU&&instTot&&qty>0)instPU=instTot/qty;
           else if(instPU&&!instTot&&qty>1&&net>0&&instPU>net)instPU=instPU/qty;
           items.push({tag:tag.replace(/\.0$/,''),manufacturer:mfr||sn,
-            modelNumber:model.replace(/\.0$/,''),description:cleanDesc,
+            modelNumber:model.replace(/\.0$/,''),description:withItemDetail(desc,cleanDesc),
             color:s('color'),qtyOrdered:qty||1,listPrice:list,
             unitCost:net||0,shippingPerUnit:shipPU||0,
             installPerUnit:instPU||0,unitPrice:price||(priceExt&&qty>0?priceExt/qty:0)||0,
@@ -3227,7 +3270,7 @@ function JobDetail({job,ctx}){
           let instPU=n('install');const instTot=cm.installTotal!==undefined?n('installTotal'):0;
           if(!instPU&&instTot&&qty>0)instPU=instTot/qty;
           addLineItem({id:'LI-'+Date.now()+'-'+String(si*10000+r).padStart(6,'0')+'-'+Math.random().toString(36).slice(2,6),jobId:job.id,
-            description:cleanDesc,vendor:vMap[vk]||'',tag:tag.replace(/\.0$/,''),group:grp||tag||'',
+            description:withItemDetail(desc,cleanDesc),vendor:vMap[vk]||'',tag:tag.replace(/\.0$/,''),group:grp||tag||'',
             manufacturer:mfr||sn,modelNumber:model.replace(/\.0$/,''),color:s('color'),
             listPrice:list,unitCost:net||0,unitPrice:price||(priceExt&&qty>0?priceExt/qty:0)||0,
             shippingPerUnit:shipPU||0,installPerUnit:instPU||0,priceExtended:priceExt||0,
