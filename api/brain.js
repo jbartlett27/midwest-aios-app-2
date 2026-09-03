@@ -1,3 +1,26 @@
+// ---------------------------------------------------------------------------
+// OUTPUT CEILINGS
+// Lisa hit "That answer ran past the length limit" importing Braeside through
+// the Brain: the turn spent its whole budget before it wrote anything the chat
+// could render. These are the real per-model output caps the API enforces, so
+// the Brain is CAPABLE of a maximum-length answer when a turn genuinely needs
+// one. max_tokens is a ceiling, not a target -- Anthropic bills the tokens
+// actually written, so a high ceiling costs nothing on a short answer.
+// Everyday turns still run on a smaller working budget and only escalate to
+// the full ceiling when a turn actually runs out of room.
+const MODEL_OUTPUT_CAP = { 'claude-sonnet-5': 128000, 'claude-haiku-4-5': 64000 };
+const DEFAULT_OUTPUT_CAP = 16384;
+// A NON-streaming request whose max_tokens implies a possibly-10-minute
+// generation is refused by the API with a "streaming is required" error, and
+// would outlive the serverless invocation anyway. Document import, quote upload
+// and transcript cleanup all run non-streamed, so they are held under that line
+// while the Brain chat -- which streams -- gets the full model ceiling.
+const NON_STREAM_CAP = 21333;
+const outputCapFor = (model, streaming) => {
+  const hard = MODEL_OUTPUT_CAP[model] || DEFAULT_OUTPUT_CAP;
+  return streaming ? hard : Math.min(hard, NON_STREAM_CAP);
+};
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -47,10 +70,12 @@ export default async function handler(req, res) {
     const isSimple = !isComplex && (wordCount <= 12 || simpleKeywords.some(k => txt === k || txt.startsWith(k+' ') || txt.endsWith(' '+k)));
 
     const selectedModel = isSimple ? 'claude-haiku-4-5' : 'claude-sonnet-5';
-    // 8192 left too little headroom once a complex turn spent part of its budget on
-    // internal reasoning: the turn hit the ceiling with nothing written and the chat
-    // showed a raw payload instead of an answer.
-    const selectedMaxTokens = isSimple ? 2048 : 16384;
+    // Working budget: generous, but not the ceiling. A turn that actually runs
+    // out of room is retried at the full ceiling further down, so a long answer
+    // completes instead of being cut off. Clamped to what this model and this
+    // transport (streamed vs not) can legally accept.
+    const hardCap = outputCapFor(selectedModel, !!stream);
+    const selectedMaxTokens = Math.min(isSimple ? 8192 : 64000, hardCap);
 
     // Prompt caching: wrap system prompt and tools with cache_control markers.
     // Anthropic caches large repetitive context across requests; subsequent calls
@@ -88,6 +113,27 @@ export default async function handler(req, res) {
       }
     }
     body.tools = allTools;
+
+    // Forward an upstream SSE body to the client unchanged.
+    const pipeSSE = async (upstream) => {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache, no-transform');
+      res.setHeader('Connection', 'keep-alive');
+      res.setHeader('X-Accel-Buffering', 'no');
+      if (typeof res.flushHeaders === 'function') res.flushHeaders();
+      const rdr = upstream.body.getReader();
+      try {
+        while (true) {
+          const { done, value } = await rdr.read();
+          if (done) break;
+          res.write(Buffer.from(value));
+          if (typeof res.flush === 'function') res.flush();
+        }
+      } catch (e) {
+        try { res.write('event: error\ndata: ' + JSON.stringify({ message: e.message || 'Stream error' }) + '\n\n'); } catch {}
+      }
+      try { res.end(); } catch {}
+    };
 
     for (let i = 0; i < keys.length; i++) {
       const key = keys[i];
@@ -142,11 +188,39 @@ export default async function handler(req, res) {
 
         if ((response.status === 429 || response.status === 529) && i < keys.length - 1) continue;
 
+        // Self-heal on a ceiling mismatch. If a model's published output cap
+        // ever changes under us, the API answers with the exact number it will
+        // accept ("max_tokens: 128001 > 128000, which is the maximum allowed
+        // number of output tokens for ..."). Retry once at that number rather
+        // than handing the user a 400 they can do nothing about.
+        if (!response.ok && data && data.error && typeof data.error.message === 'string') {
+          const capMatch = /max_tokens:\s*\d+\s*>\s*(\d+)/.exec(data.error.message);
+          const allowed = capMatch ? parseInt(capMatch[1], 10) : NaN;
+          if (isFinite(allowed) && allowed > 0 && allowed < (body.max_tokens || 0)) {
+            try {
+              const fixBody = { ...body, max_tokens: allowed };
+              const fr = await fetch('https://api.anthropic.com/v1/messages', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'x-api-key': key,
+                  'anthropic-version': '2023-06-01',
+                  'anthropic-beta': 'pdfs-2024-09-25,prompt-caching-2024-07-31',
+                },
+                body: JSON.stringify(fixBody),
+              });
+              if (stream && fr.ok && fr.body) { await pipeSSE(fr); return; }
+              const fdata = await fr.json();
+              return res.status(fr.status).json(fdata);
+            } catch {}
+          }
+        }
+
         if (data.error && data.error.type === 'not_found_error') {
           // Fallback uses a current bare alias (not a dated snapshot) so that if the
           // primary model is ever unavailable, the Brain degrades to a working model
           // instead of erroring. Dated snapshots get retired over time; aliases do not.
-          const r2body = { ...body, model: 'claude-haiku-4-5', max_tokens: 4096 };
+          const r2body = { ...body, model: 'claude-haiku-4-5', max_tokens: Math.min(16384, outputCapFor('claude-haiku-4-5', !!stream)) };
           // The fallback model also respects the streaming flag.
           if (stream) r2body.stream = true; else delete r2body.stream;
           const r2 = await fetch('https://api.anthropic.com/v1/messages', {
@@ -185,7 +259,10 @@ export default async function handler(req, res) {
         if (response.ok && !stream && data && data.stop_reason === 'max_tokens' && Array.isArray(data.content)
             && !data.content.some(b => b && (b.type === 'text' || b.type === 'tool_use'))) {
           try {
-            const retryBody = { ...body, max_tokens: Math.min((body.max_tokens || 8192) * 2, 32000) };
+            // Escalate to the full ceiling this model and transport allow --
+            // the whole point of the retry is to give the turn enough room to
+            // finish, so half measures just burn another round trip.
+            const retryBody = { ...body, max_tokens: outputCapFor(body.model, false) };
             delete retryBody.stream;
             const rr = await fetch('https://api.anthropic.com/v1/messages', {
               method: 'POST',
