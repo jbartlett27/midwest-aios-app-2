@@ -3896,6 +3896,12 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
   const [billPayDate,setBillPayDate]=useState('');
   const [billMemo,setBillMemo]=useState('');
   const [billSelected,setBillSelected]=useState(new Set());
+  // Vendor filter for the Vendor Bills table. '' means "show every vendor".
+  // Previously, picking a vendor only highlighted that vendor's rows while every other
+  // vendor's bills stayed on screen, so paying one vendor meant scrolling the whole list.
+  // This narrows the rendered table to the chosen vendor. Selection indices are keyed to
+  // the full unpaidBills array (identity lookup), so filtering never breaks a selection.
+  const [billVendorFilter,setBillVendorFilter]=useState('');
   // New-payment form inputs (used in the Payment Trail card of the bill detail panel).
   // Pre-populated with the bill's current balance and today's date when the panel opens.
   // Names prefixed with billPay... to avoid collision with the unrelated Payment tab state
@@ -4504,6 +4510,12 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
       const overdueBills=allBills.filter(b=>b.daysUntil<0&&!b.paid&&!b.voided&&!b._isDeleted&&b.entered);
       const dueSoonBills=allBills.filter(b=>b.daysUntil>=0&&b.daysUntil<=14&&!b.paid&&!b.voided&&!b._isDeleted);
       const unpaidBills=allBills.filter(b=>!b.paid&&!b.voided&&!b._isDeleted);
+      // Rows actually rendered. vendorFilterActive re-checks that the filtered vendor still
+      // has bills, so a stale filter can never blank the table -- it falls back to "all".
+      const vendorFilterActive=!!billVendorFilter&&allBills.some(b=>b.vendorName===billVendorFilter);
+      const visibleBills=vendorFilterActive?allBills.filter(b=>b.vendorName===billVendorFilter):allBills;
+      const filteredOpen=visibleBills.filter(b=>!b.paid&&!b.voided&&!b._isDeleted);
+      const filteredOpenAmt=filteredOpen.reduce((s,b)=>s+(b.isCredit?-(typeof b.creditAmount==='number'?b.creditAmount:b.cost):(typeof b.balance==='number'?b.balance:b.cost)),0);
       // Credits reduce the total balance owed by the credit amount (defaults to full bill cost
       // when no custom amount is entered, allowing partial-credit support).
       // For non-credit bills, use balance (cost minus payments already recorded) so partial
@@ -4684,7 +4696,11 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
         notify(billSelected.size+' bill'+(billSelected.size!==1?'s':'')+' marked as paid'+creditMsg);
         setBillSelected(new Set());
       };
-      const selectByVendor=(vendorName)=>{const next=new Set();unpaidBills.forEach((b,i)=>{if(b.vendorName===vendorName)next.add(i)});setBillSelected(next)};
+      // Clicking a vendor chip does two things: narrows the table to that vendor AND
+      // pre-selects that vendor's open bills, so a batch check is one more click.
+      // Clicking the active chip again, or "All Vendors", clears the filter and selection.
+      const selectByVendor=(vendorName)=>{const next=new Set();unpaidBills.forEach((b,i)=>{if(b.vendorName===vendorName)next.add(i)});setBillSelected(next);setBillVendorFilter(vendorName)};
+      const clearVendorFilter=()=>{setBillVendorFilter('');setBillSelected(new Set())};
       const selectByJob=(jobName)=>{const next=new Set();unpaidBills.forEach((b,i)=>{if((b.job?.name||'(No Project)')===jobName)next.add(i)});setBillSelected(next)};
       // Standalone Vendor Credit / Vendor Bill handlers. Records live in customSops
       // (cat 'VendorCredit' or 'StandaloneBill') so they propagate via the same
@@ -5238,8 +5254,8 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
           // MICR E-13B line rendered as inline SVG with precise character paths
           // Each character matches the ANSI X9.27 E-13B specification proportions
           // MICR E-13B: provide both MICR Encoding font chars (A=Transit, C=On-Us) and Unicode fallback
-          // If MICR Encoding font is installed: A renders as ⑈, C renders as ⑆
-          // If no MICR font: Unicode symbols ⑈⑆ render directly
+          // If MICR Encoding font is installed: A renders as ‚ëà, C renders as ‚ëÜ
+          // If no MICR font: Unicode symbols ‚ëà‚ëÜ render directly
           const micrFontStr='C'+micrCheckNum+'C   A071926155A   C01597962C';
           const micrUnicodeStr='\u2448'+micrCheckNum+'\u2448   \u2446071926155\u2446   \u244801597962\u2448';
           // Use system-installed MICR font with comprehensive fallback chain
@@ -5606,15 +5622,19 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
         </div>
         {/* Group-by buttons */}
         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,flexWrap:"wrap"}}>
-          <span style={{fontSize:11,color:"#a3a3a3",fontWeight:700,letterSpacing:1}}>SELECT BY VENDOR:</span>
-          {[...new Set(unpaidBills.map(b=>b.vendorName))].sort().map(v=>{const ct=unpaidBills.filter(b=>b.vendorName===v).length;const isActive=billSelected.size>0&&Array.from(billSelected).every(i=>unpaidBills[i]?.vendorName===v)&&unpaidBills.filter(b=>b.vendorName===v).length===billSelected.size;return ct>1?<button key={v} onClick={()=>selectByVendor(v)} style={{padding:"5px 12px",borderRadius:6,border:"1px solid "+(isActive?"#a78bfa":"#333"),background:isActive?"#a78bfa20":"#111",color:isActive?"#a78bfa":"#e5e5e5",fontSize:12,fontWeight:isActive?600:500,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}} onMouseEnter={e=>{if(!isActive){e.currentTarget.style.background="#1a1a1a";e.currentTarget.style.borderColor="#a78bfa60"}}} onMouseLeave={e=>{if(!isActive){e.currentTarget.style.background="#111";e.currentTarget.style.borderColor="#333"}}}>{v} <span style={{color:isActive?"#a78bfa":"#737373",fontWeight:700}}>({ct})</span></button>:null})}
+          <span style={{fontSize:11,color:"#a3a3a3",fontWeight:700,letterSpacing:1}}>FILTER BY VENDOR:</span>
+          <button onClick={clearVendorFilter} title="Show bills from every vendor" style={{padding:"5px 12px",borderRadius:6,border:"1px solid "+(vendorFilterActive?"#333":"#a78bfa"),background:vendorFilterActive?"#111":"#a78bfa20",color:vendorFilterActive?"#e5e5e5":"#a78bfa",fontSize:12,fontWeight:vendorFilterActive?500:600,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>All Vendors <span style={{color:vendorFilterActive?"#737373":"#a78bfa",fontWeight:700}}>({unpaidBills.length})</span></button>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",maxHeight:120,overflowY:"auto",flex:1,minWidth:0}}>
+          {[...new Set(unpaidBills.map(b=>b.vendorName))].sort().map(v=>{const ct=unpaidBills.filter(b=>b.vendorName===v).length;const isActive=billVendorFilter===v;return <button key={v} onClick={()=>{if(isActive)clearVendorFilter();else selectByVendor(v)}} title={isActive?("Showing only "+v+". Click again to show every vendor."):("Show only "+v+" and select their open bills for payment")} style={{padding:"5px 12px",borderRadius:6,border:"1px solid "+(isActive?"#a78bfa":"#333"),background:isActive?"#a78bfa20":"#111",color:isActive?"#a78bfa":"#e5e5e5",fontSize:12,fontWeight:isActive?600:500,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}} onMouseEnter={e=>{if(!isActive){e.currentTarget.style.background="#1a1a1a";e.currentTarget.style.borderColor="#a78bfa60"}}} onMouseLeave={e=>{if(!isActive){e.currentTarget.style.background="#111";e.currentTarget.style.borderColor="#333"}}}>{v} <span style={{color:isActive?"#a78bfa":"#737373",fontWeight:700}}>({ct})</span></button>})}
+          </div>
+          {vendorFilterActive&&<span style={{fontSize:11,color:"#a78bfa",fontWeight:600,fontFamily:"'JetBrains Mono',monospace",whiteSpace:"nowrap"}}>Showing {visibleBills.length} of {allBills.length} bills &gt;&gt; {filteredOpen.length} open &gt;&gt; {fmt(filteredOpenAmt)}</span>}
         </div>
         {billSelected.size>0&&<div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12,padding:"10px 14px",background:"#f9731610",border:"1px solid #f9731625",borderRadius:8,flexWrap:"wrap"}}><span style={{fontSize:13,color:"#f97316",fontWeight:600}}>{billSelected.size} bill{billSelected.size!==1?'s':''} selected</span><span style={{fontSize:13,color:"#a3a3a3"}}>({fmt(Array.from(billSelected).reduce((s,i)=>{const b=unpaidBills[i];return s+(b?(typeof b.balance==='number'?b.balance:b.cost):0)},0))})</span><Btn onClick={printBatchCheck} style={{fontSize:12,padding:"4px 12px",background:"#14b8a6",color:"#000"}}><I n="file" s={12}/> Print Batch Check</Btn><Btn onClick={markSelectedPaid} style={{fontSize:12,padding:"4px 12px",background:"#34d399",color:"#000"}}>Mark Paid</Btn><button onClick={()=>setBillSelected(new Set())} style={{background:"none",border:"none",color:"#737373",cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>Clear</button></div>}
         {allBills.length===0?<Card style={{padding:40,textAlign:"center"}}><div style={{fontSize:14,color:"#525252"}}>No vendor bills yet. Bills appear after POs are drafted or sent.</div></Card>:
         <Card style={{padding:0,overflow:"hidden"}}>
           <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:900}}>
             <thead><tr style={{background:"#111111",borderBottom:"2px solid #222"}}>{["","Payee","Ref / PO #","Vendor Inv #","Job","Due Date","Status","Open Balance",""].map((h,i)=><th key={i} style={{padding:"10px 8px",textAlign:i>=7?"right":i===0?"center":"left",fontWeight:600,color:"#a3a3a3",fontSize:11,textTransform:"uppercase",letterSpacing:0.8,whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
-            <tbody>{allBills.map((bill,idx)=>{
+            <tbody>{visibleBills.map((bill,idx)=>{
               const isOverdue=bill.daysUntil<0&&!bill.paid&&bill.entered;
               const isDueSoon=bill.daysUntil>=0&&bill.daysUntil<=14&&!bill.paid;
               const unpaidIdx=unpaidBills.indexOf(bill);
@@ -5643,7 +5663,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
                 <td style={{padding:"10px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",fontWeight:700,color:bill.paid?"#34d399":bill.isPartiallyPaid?"#fbbf24":isOverdue?"#f87171":"#f0f0f0"}}>{(()=>{if(bill.paid)return <span style={{textDecoration:"line-through",opacity:0.5}}>{fmt(bill.cost)}</span>;if(bill.isCredit){const ca=typeof bill.creditAmount==='number'?bill.creditAmount:bill.cost;const remaining=bill.cost-ca;const isPartial=ca<bill.cost-0.005;return <div><div style={{color:"#34d399",fontSize:12}}>{isPartial?fmt(remaining):"-"+fmt(ca)}</div><div style={{fontSize:9,color:"#34d399",fontWeight:600,marginTop:2,letterSpacing:0.5}}>{isPartial?'CREDIT '+fmt(ca):'FULL CREDIT'}</div></div>}if(bill.isPartiallyPaid){const pc=(bill.payments||[]).length;return <div><div>{fmt(bill.balance)}</div><div style={{fontSize:9,color:"#a3a3a3",fontWeight:500,marginTop:2,letterSpacing:0.3}}>of {fmt(bill.cost)} ({pc} pmt{pc!==1?'s':''})</div></div>}return fmt(bill.cost)})()}</td>
                 <td style={{padding:"10px 8px",textAlign:"right"}} onClick={e=>e.stopPropagation()}>{!bill.paid&&!bill.voided&&!bill.isCredit&&!bill._isDeleted&&<button onClick={()=>{if(bill._standalone){const sop=(customSops||[]).find(s=>s.id===bill._sopId);if(!sop){notify('Record not found','error');return}let d={};try{d=JSON.parse(sop.content||'{}')}catch{}const today=new Date().toISOString().split('T')[0];const updated={...d,paid:true,payDate:today};addSop({id:sop.id,title:sop.title,cat:sop.cat,icon:sop.icon,content:JSON.stringify(updated),custom:true});notify('Bill marked paid: '+(d.vendorName||'vendor'));return}setBillInvNum(bill.vendorInvNum);setBillCheckNum(bill.checkNum);setBillPayDate(new Date().toISOString().split('T')[0]);setBillMemo(bill.memo);setBillPayAmount(String(bill.balance||bill.cost));setBillPayInputDate(new Date().toISOString().split('T')[0]);setBillPayCheckInput('');setBillPayInvInput('');setBillPayMemoInput('');setBillDetail(bill)}} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #34d39930",background:"transparent",color:"#34d399",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s",whiteSpace:"nowrap"}} onMouseEnter={e=>{e.currentTarget.style.background="#34d39915"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>{bill.isPartiallyPaid?'Pay Balance':'Pay'}</button>}</td>
               </tr>})}
-              <tr style={{borderTop:"2px solid #222",background:"#0a0a0a"}}><td colSpan={7} style={{padding:"10px 8px",fontWeight:700,color:"#f0f0f0"}}>TOTAL OUTSTANDING</td><td style={{padding:"10px 8px",textAlign:"right",fontWeight:800,fontFamily:"'JetBrains Mono',monospace",color:"#f97316",fontSize:14}}>{fmt(totalOwed)}</td><td/></tr>
+              <tr style={{borderTop:"2px solid #222",background:"#0a0a0a"}}><td colSpan={7} style={{padding:"10px 8px",fontWeight:700,color:"#f0f0f0"}}>TOTAL OUTSTANDING{vendorFilterActive&&<span style={{color:"#a78bfa",fontWeight:600}}> &gt;&gt; {billVendorFilter}</span>}</td><td style={{padding:"10px 8px",textAlign:"right",fontWeight:800,fontFamily:"'JetBrains Mono',monospace",color:"#f97316",fontSize:14}}>{fmt(vendorFilterActive?filteredOpenAmt:totalOwed)}</td><td/></tr>
             </tbody>
           </table></div>
         </Card>}
