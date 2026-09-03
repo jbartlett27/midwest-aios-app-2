@@ -4021,7 +4021,20 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
           setAnimatingIdx(history.length+1);setTimeout(()=>setAnimatingIdx(-1),800);
         }
       } else {
-        setHistory(p=>[...p,{role:"assistant",content:"Unexpected response: "+JSON.stringify(data).slice(0,200)}]);
+        // Nothing renderable came back -- no text and no tool calls. The usual cause
+        // is a turn that spends its whole budget on an internal reasoning block and
+        // stops at the token ceiling, which used to dump the raw API payload into the
+        // conversation. Say something the user can act on instead, and keep the JSON
+        // out of the transcript.
+        const _stop=data&&data.stop_reason;
+        const _blocks=Array.isArray(data&&data.content)?data.content:[];
+        const _thinkOnly=_blocks.length>0&&_blocks.every(b=>b&&(b.type==="thinking"||b.type==="redacted_thinking"));
+        const _msg=_stop==="max_tokens"
+          ?"That answer ran past the length limit before I finished writing it. Nothing on your side was changed. Ask it again, or narrow it a little -- one job, one month, one vendor -- and I will get it in a single pass."
+          :(_thinkOnly
+            ?"I worked that one through but the response closed before the answer came back. Please ask it again."
+            :"I did not get a usable answer back that time. Please ask again, and if it keeps happening let J know.");
+        setHistory(p=>[...p,{role:"assistant",content:_msg}]);
       }
     } catch (err) {
       setHistory(p => [...p, { role: "assistant", content: "Connection error: " + err.message }]);
