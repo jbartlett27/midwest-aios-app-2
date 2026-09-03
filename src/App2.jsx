@@ -4234,12 +4234,13 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify,currentUser,user
   const [statusFilter,setStatusFilter]=useState('all');
   const [stateFilter,setStateFilter]=useState('all');
   const [repFilter,setRepFilter]=useState('all');
+  const [typeFilter,setTypeFilter]=useState('all');
   const [sortCol,setSortCol]=useState('rank');
   const [sortDir,setSortDir]=useState('asc');
   const [editing,setEditing]=useState(null);
   const [editForm,setEditForm]=useState({});
   const [showAdd,setShowAdd]=useState(false);
-  const [addForm,setAddForm]=useState({name:'',title:'',company:'',email:'',phone:'',city:'',state:'',linkedin:'',website:'',twitter:'',employees:'',status:'New',notes:'',address:'',assignedRep:'',revenue:'',funding:''});
+  const [addForm,setAddForm]=useState({name:'',title:'',company:'',email:'',phone:'',city:'',state:'',linkedin:'',website:'',twitter:'',employees:'',status:'New',notes:'',address:'',assignedRep:'',revenue:'',funding:'',type:''});
   const [selected,setSelected]=useState(new Set());
   const [expandedId,setExpandedId]=useState(null);
   const [viewMode,setViewMode]=useState(currentUser&&currentUser.role==='sales'?'kanban':'table');
@@ -4260,11 +4261,17 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify,currentUser,user
 
 
   const allStates=[...new Set(prospects.map(p=>p.state).filter(Boolean))].sort();
+  // Customer type on a prospect reads the SAME shared CUSTOMER_TYPES list the customer
+  // records use, so a prospect that converts carries its type across unchanged. The
+  // filter offers the types already in use first, then the rest of the standard list.
+  const allTypes=[...new Set(prospects.map(p=>p.type).filter(Boolean))].sort();
+  const typeOptions=[...new Set([...allTypes,...CUSTOMER_TYPES])];
   let filtered=prospects;
-  if(search){const q=search.toLowerCase();filtered=filtered.filter(p=>[p.name,p.company,p.email,p.city,p.title,p.state,p.address].some(f=>(f||'').toLowerCase().includes(q)))}
+  if(search){const q=search.toLowerCase();filtered=filtered.filter(p=>[p.name,p.company,p.email,p.city,p.title,p.state,p.address,p.type].some(f=>(f||'').toLowerCase().includes(q)))}
   if(statusFilter!=='all')filtered=filtered.filter(p=>p.status===statusFilter);
   if(stateFilter!=='all')filtered=filtered.filter(p=>p.state===stateFilter);
   if(repFilter!=='all')filtered=filtered.filter(p=>p.assignedRep===repFilter);
+  if(typeFilter!=='all')filtered=filtered.filter(p=>(p.type||'')===typeFilter);
   filtered.sort((a,b)=>{let va=a[sortCol]||'',vb=b[sortCol]||'';if(['employees','rank'].includes(sortCol)){va=parseInt(va)||0;vb=parseInt(vb)||0}else{va=String(va).toLowerCase();vb=String(vb).toLowerCase()}return sortDir==='asc'?(va<vb?-1:va>vb?1:0):(va>vb?-1:va<vb?1:0)});
 
 
@@ -4411,7 +4418,7 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify,currentUser,user
       return;
     }
     save('PROS-'+Date.now()+'-'+Math.random().toString(36).slice(2,7),{...addForm,rank:_allProspects.length+1,addedAt:new Date().toISOString()});
-    setAddForm({name:'',title:'',company:'',email:'',phone:'',city:'',state:'',linkedin:'',website:'',twitter:'',employees:'',status:'New',notes:'',address:'',assignedRep:'',revenue:'',funding:''});
+    setAddForm({name:'',title:'',company:'',email:'',phone:'',city:'',state:'',linkedin:'',website:'',twitter:'',employees:'',status:'New',notes:'',address:'',assignedRep:'',revenue:'',funding:'',type:''});
     setShowAdd(false);
     notify('Added: '+addForm.name);
   };
@@ -4454,6 +4461,7 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify,currentUser,user
     <div style={{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center',marginBottom:12}}>
       <input value={search} onChange={e=>{setSearch(e.target.value);setPageNum(0)}} placeholder={"Search "+filtered.length+" prospects..."} style={{...inputStyle,maxWidth:300,background:'#111',border:'1px solid #222',padding:'10px 16px',fontSize:13}}/>
       <select value={stateFilter} onChange={e=>{setStateFilter(e.target.value);setPageNum(0)}} style={{...inputStyle,width:'auto',background:'#111',border:'1px solid #222',padding:'10px 16px',fontSize:13}}><option value="all">All States</option>{allStates.map(s=><option key={s} value={s}>{s}</option>)}</select>
+      <select value={typeFilter} onChange={e=>{setTypeFilter(e.target.value);setPageNum(0)}} title="Filter prospects by customer type" style={{...inputStyle,width:'auto',background:'#111',border:'1px solid #222',padding:'10px 16px',fontSize:13}}><option value="all">All Customer Types</option>{typeOptions.map(t=><option key={t} value={t}>{t}</option>)}</select>
       {!_isSales&&<select value={repFilter} onChange={e=>{setRepFilter(e.target.value);setPageNum(0)}} style={{...inputStyle,width:'auto',background:'#111',border:'1px solid #222',padding:'10px 16px',fontSize:13}}><option value="all">All Reps</option><option value="">Unassigned</option>{reps.filter(r=>!r.id.includes('SEED')).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select>}
       <div style={{marginLeft:'auto',display:'flex',gap:6,alignItems:'center'}}>
         <div style={{display:'flex',borderRadius:8,overflow:'hidden',border:'1px solid #1a1a1a'}}>
@@ -4491,6 +4499,7 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify,currentUser,user
         {[['name','Name *'],['title','Title'],['company','Company'],['email','Email'],['phone','Phone'],['city','City'],['state','State'],['address','Address'],['linkedin','LinkedIn URL'],['website','Website'],['twitter','Twitter'],['employees','Employees'],['revenue','Annual Revenue'],['funding','Latest Funding']].map(([k,label])=>
           <div key={k}><label style={{fontSize:12,color:'#737373',display:'block',marginBottom:2,fontFamily:"'JetBrains Mono',monospace",textTransform:'uppercase',letterSpacing:0.5}}>{label}</label><input value={addForm[k]||''} onChange={e=>setAddForm({...addForm,[k]:e.target.value})} style={{...is,fontSize:11}} placeholder={label}/></div>
         )}
+        <div><label style={{fontSize:12,color:'#737373',display:'block',marginBottom:2,fontFamily:"'JetBrains Mono',monospace",textTransform:'uppercase',letterSpacing:0.5}}>Customer Type</label><select value={addForm.type||''} onChange={e=>setAddForm({...addForm,type:e.target.value})} style={{...is,fontSize:11}}><option value="">--</option>{customerTypeOptions(addForm.type).map(t=><option key={t} value={t}>{t}</option>)}</select></div>
         <div><label style={{fontSize:12,color:'#737373',display:'block',marginBottom:2,fontFamily:"'JetBrains Mono',monospace",textTransform:'uppercase',letterSpacing:0.5}}>Rep</label><select value={addForm.assignedRep||''} onChange={e=>setAddForm({...addForm,assignedRep:e.target.value})} style={{...is,fontSize:11}}><option value="">--</option>{reps.filter(r=>!r.id.includes('SEED')).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></div>
       </div>
       <div style={{display:'flex',gap:6}}><Btn onClick={addSingle} style={{fontSize:11}}>Save</Btn><Btn v="secondary" onClick={()=>setShowAdd(false)} style={{fontSize:11}}>Cancel</Btn></div>
@@ -4546,7 +4555,7 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify,currentUser,user
       <table style={{width:'100%',borderCollapse:'collapse',minWidth:900}}>
         <thead><tr style={{background:'#050505'}}>
           <th style={{padding:'10px 6px',width:32}}><Check checked={selected.size===paged.length&&paged.length>0} onChange={selectAll}/></th>
-          {[['name','Name',180],['title','Title',130],['company','Company',150],['email','Email',180],['phone','Phone',120],['city','Location',120],['employees','Size',60],['status','Status',90],['assignedRep','Rep',80],['','',100]].map(([col,label,w])=>
+          {[['name','Name',180],['title','Title',130],['company','Company',150],['type','Type',110],['email','Email',180],['phone','Phone',120],['city','Location',120],['employees','Size',60],['status','Status',90],['assignedRep','Rep',80],['','',100]].map(([col,label,w])=>
             <th key={label||'actions'} onClick={col?()=>handleSort(col):undefined} style={{padding:'10px 6px',textAlign:'left',fontSize:12,fontWeight:700,color:'#737373',textTransform:'uppercase',letterSpacing:1.2,cursor:col?'pointer':'default',whiteSpace:'nowrap',fontFamily:"'JetBrains Mono',monospace",minWidth:w,borderBottom:'1px solid #111'}}>{label}{sortCol===col&&<span style={{color:'#2dd4bf',marginLeft:3}}>{sortDir==='asc'?'\u25B2':'\u25BC'}</span>}</th>
           )}
         </tr></thead>
@@ -4559,6 +4568,7 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify,currentUser,user
             <td style={{padding:'8px 6px'}}><span style={{fontWeight:600,color:'#e5e5e5',fontSize:12}}>{p.name}</span></td>
             <td style={{padding:'8px 6px',fontSize:12,color:'#c4c4c4',maxWidth:140,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.title||'--'}</td>
             <td style={{padding:'8px 6px'}}>{p.website?<a href={p.website.startsWith('http')?p.website:'https://'+p.website} target="_blank" rel="noopener noreferrer" style={{color:'#2dd4bf',fontSize:12,textDecoration:'none',fontWeight:500}} onClick={e=>e.stopPropagation()}>{p.company||'--'}</a>:<span style={{fontSize:12,color:'#a3a3a3'}}>{p.company||'--'}</span>}</td>
+            <td style={{padding:'8px 6px'}}>{p.type?<span style={{fontSize:10,color:'#2dd4bf',border:'1px solid #2dd4bf30',background:'#2dd4bf10',borderRadius:5,padding:'2px 7px',fontFamily:"'JetBrains Mono',monospace",whiteSpace:'nowrap'}}>{p.type}</span>:<span style={{color:'#333',fontSize:10}}>--</span>}</td>
             <td style={{padding:'8px 6px'}} onClick={e=>e.stopPropagation()}>{p.email?<a href={'mailto:'+p.email} style={{color:'#a78bfa',fontSize:12,textDecoration:'none',fontFamily:"'JetBrains Mono',monospace"}}>{p.email}</a>:<span style={{color:'#333',fontSize:10}}>--</span>}</td>
             <td style={{padding:'8px 6px',fontSize:12,color:'#c4c4c4',fontFamily:"'JetBrains Mono',monospace",whiteSpace:'nowrap'}}>{p.phone||'--'}</td>
             <td style={{padding:'8px 6px',fontSize:12,color:'#737373',whiteSpace:'nowrap'}}>{p.city?(p.city+(p.state?', '+p.state:'')):'--'}</td>
@@ -4572,12 +4582,13 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify,currentUser,user
             </td>
           </tr>
           {/* Expanded detail row */}
-          {isExp&&<tr style={{background:'#050505'}}><td colSpan={11} style={{padding:'12px 16px 16px 42px',borderBottom:'1px solid #1a1a1a'}}>
+          {isExp&&<tr style={{background:'#050505'}}><td colSpan={12} style={{padding:'12px 16px 16px 42px',borderBottom:'1px solid #1a1a1a'}}>
             {editing===p.id?<div>
               <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(160px,1fr))',gap:8,marginBottom:10}}>
                 {[['name','Name'],['title','Title'],['company','Company'],['email','Email'],['phone','Phone'],['city','City'],['state','State'],['address','Address'],['linkedin','LinkedIn'],['website','Website'],['twitter','Twitter'],['employees','Employees'],['revenue','Revenue'],['funding','Funding'],['notes','Notes']].map(([k,l])=>
                   <div key={k}><label style={{fontSize:12,color:'#737373',display:'block',marginBottom:2,fontFamily:"'JetBrains Mono',monospace",textTransform:'uppercase',letterSpacing:0.8}}>{l}</label><input value={editForm[k]||''} onChange={e=>setEditForm({...editForm,[k]:e.target.value})} style={{...is,fontSize:11,padding:'6px 10px'}}/></div>
                 )}
+                <div><label style={{fontSize:12,color:'#737373',display:'block',marginBottom:2,fontFamily:"'JetBrains Mono',monospace",textTransform:'uppercase',letterSpacing:0.8}}>Customer Type</label><select value={editForm.type||''} onChange={e=>setEditForm({...editForm,type:e.target.value})} style={{...is,fontSize:11,padding:'6px 10px'}}><option value="">--</option>{customerTypeOptions(editForm.type).map(t=><option key={t} value={t}>{t}</option>)}</select></div>
                 <div><label style={{fontSize:12,color:'#737373',display:'block',marginBottom:2,fontFamily:"'JetBrains Mono',monospace",textTransform:'uppercase',letterSpacing:0.8}}>Rep</label><select value={editForm.assignedRep||''} onChange={e=>setEditForm({...editForm,assignedRep:e.target.value})} style={{...is,fontSize:11,padding:'6px 10px'}}><option value="">--</option>{reps.filter(r=>!r.id.includes('SEED')).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></div>
               </div>
               <div style={{display:'flex',gap:6}}><Btn onClick={()=>{save(p.id,editForm);setEditing(null);notify('Updated: '+editForm.name)}} style={{fontSize:11}}>Save</Btn><Btn v="secondary" onClick={()=>setEditing(null)} style={{fontSize:11}}>Cancel</Btn></div>
@@ -4592,6 +4603,7 @@ function ProspectsPage({reps,customSops,addSop,deleteSop,notify,currentUser,user
                 <div style={{fontSize:13,fontWeight:700,color:'#f0f0f0',marginBottom:2}}>{p.name}</div>
                 <div style={{fontSize:12,color:'#c4c4c4',marginBottom:2}}>{p.title||'--'}</div>
                 <div style={{fontSize:12,color:'#a3a3a3',marginBottom:6}}>{p.company||'--'}</div>
+                {p.type&&<div style={{display:'inline-block',fontSize:10,color:'#2dd4bf',border:'1px solid #2dd4bf30',background:'#2dd4bf10',borderRadius:5,padding:'2px 7px',marginBottom:6,fontFamily:"'JetBrains Mono',monospace",letterSpacing:0.5}}>{p.type}</div>}
                 {p.email&&<div style={{fontSize:11,marginBottom:2}}><a href={'mailto:'+p.email} style={{color:'#a78bfa',textDecoration:'none',fontFamily:"'JetBrains Mono',monospace",fontSize:10}}>{p.email}</a></div>}
                 {p.phone&&<div style={{fontSize:12,color:'#c4c4c4',fontFamily:"'JetBrains Mono',monospace",marginBottom:2}}>{p.phone}</div>}
               </div>
