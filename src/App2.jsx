@@ -1046,6 +1046,46 @@ function TasksPage({jobs,reps,updateJob,notify,customSops,addSop,deleteSop,curre
 // ===============================================================
 // NOTES
 // ===============================================================
+// ===============================================================
+// NOTE RICH TEXT -- one renderer, used live and when saved
+// ===============================================================
+// The note editor and the saved note now run through the SAME renderer, so
+// what Maureen sees while she is typing is exactly what gets stored. Before,
+// **bold** stayed as literal asterisks until the note was saved and reopened.
+//
+// The text is HTML-escaped BEFORE the markdown replacements. The output goes
+// through dangerouslySetInnerHTML, so a note containing something like
+// <img onerror=...> would otherwise have run as markup the moment the note was
+// opened. Escaping first means the note shows those characters as typed.
+//
+// Order matters: ** before * (otherwise bold gets eaten as two italics), and
+// the character classes stop at a newline so an unclosed marker cannot run
+// away and swallow the rest of the note.
+const _noteEscape=(v)=>String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+const noteInlineHtml=(line)=>_noteEscape(line)
+  .replace(/\*\*([^*\n]+)\*\*/g,"<b>$1</b>")
+  .replace(/__([^_\n]+)__/g,"<u>$1</u>")
+  .replace(/\*([^*\n]+)\*/g,"<i>$1</i>");
+
+// onToggle is optional. The saved note passes it so the checkboxes tick; the
+// live preview leaves it off so the preview never writes to a note.
+function NoteBody({text,onToggle}){
+  const rows=String(text==null?"":text).split("\n");
+  const hit=(i)=>{if(onToggle)onToggle(i)};
+  const cur=onToggle?"pointer":"default";
+  return <div style={{fontSize:14,color:"#c4c4c4",lineHeight:1.9}}>
+    {rows.map((line,i)=>{
+      if(line.startsWith("[x] "))return <div key={i} style={{display:"flex",gap:10,alignItems:"center",padding:"4px 0",cursor:cur}}><div style={{flexShrink:0}}><Check checked={true} size={18} onChange={()=>hit(i)}/></div><span onClick={()=>hit(i)} style={{textDecoration:"line-through",color:"#525252",cursor:cur}} dangerouslySetInnerHTML={{__html:noteInlineHtml(line.slice(4))}}/></div>;
+      if(line.startsWith("[ ] "))return <div key={i} style={{display:"flex",gap:10,alignItems:"center",padding:"4px 0",cursor:cur}}><div style={{flexShrink:0}}><Check checked={false} size={18} onChange={()=>hit(i)}/></div><span onClick={()=>hit(i)} style={{cursor:cur}} dangerouslySetInnerHTML={{__html:noteInlineHtml(line.slice(4))}}/></div>;
+      if(line.startsWith("- "))return <div key={i} style={{display:"flex",gap:10,alignItems:"flex-start",padding:"3px 0"}}><div style={{width:6,height:6,borderRadius:"50%",background:"#2dd4bf",marginTop:8,flexShrink:0}}/><span dangerouslySetInnerHTML={{__html:noteInlineHtml(line.slice(2))}}/></div>;
+      if(!line)return <div key={i} style={{padding:"2px 0",minHeight:16}}/>;
+      return <div key={i} style={{padding:"2px 0"}} dangerouslySetInnerHTML={{__html:noteInlineHtml(line)}}/>;
+    })}
+  </div>;
+}
+
+const NOTE_PREVIEW_HINT="Bold, italic, underline, bullets and checklists format here as you type. Nothing needs to be saved first.";
+
 function NotesView({customSops,addSop,deleteSop,jobs,reps,customers,vendors,notify,triggerPrint,setPage,setSelectedJob,focusSopId,setFocusSopId}){
   const [content,setContent]=useState("");
   const [folder,setFolder]=useState("General");
@@ -1148,7 +1188,13 @@ function NotesView({customSops,addSop,deleteSop,jobs,reps,customers,vendors,noti
         </div>}
         {!showDraftLinks&&(getLinks(linkDraft).length>0||linkDraft.calDate)?<div style={{marginBottom:8}}><LinkChips data={linkDraft} onOpen={l=>openLink(l,{setPage,setSelectedJob})}/></div>:null}
         {/* Editor */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,flex:1,minHeight:0}} className="resp-grid-2">
         <textarea ref={editorRef} value={content} onChange={e=>autoSave(e.target.value)} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){const lines=content.slice(0,e.target.selectionStart).split("\n");const last=lines[lines.length-1]||"";if(last.startsWith("[ ] ")||last.startsWith("[x] ")){e.preventDefault();autoSave(content.slice(0,e.target.selectionStart)+"\n[ ] "+content.slice(e.target.selectionEnd))}else if(last.startsWith("- ")){e.preventDefault();autoSave(content.slice(0,e.target.selectionStart)+"\n- "+content.slice(e.target.selectionEnd))}}}} placeholder={"Start typing...\n\nFirst line becomes the title.\nAuto-saves as you type."} style={{flex:1,width:"100%",padding:20,background:"#000",border:"1px solid rgba(255,255,255,0.06)",borderRadius:14,color:"#e5e5e5",fontSize:15,lineHeight:1.8,fontFamily:"inherit",resize:"none",minHeight:320,outline:"none"}}/>
+        <div style={{background:"#000",border:"1px solid rgba(45,212,191,0.14)",borderRadius:14,padding:20,minHeight:320,overflowY:"auto"}}>
+          <div style={{fontSize:10,fontWeight:700,color:"#525252",letterSpacing:1.8,marginBottom:10}}>LIVE PREVIEW</div>
+          {content.trim()?<NoteBody text={content}/>:<div style={{fontSize:12.5,color:"#333",lineHeight:1.7}}>{NOTE_PREVIEW_HINT}</div>}
+        </div>
+        </div>
       </div>}
 
 
@@ -1167,17 +1213,7 @@ function NotesView({customSops,addSop,deleteSop,jobs,reps,customers,vendors,noti
             <span style={{fontSize:10,color:"#525252"}}>A calendar date puts this note on the Delivery Calendar.</span>
           </div>
         </div>}
-        <div style={{fontSize:14,color:"#c4c4c4",lineHeight:1.9}}>
-          {(viewData?.text||"").split("\n").map((line,i)=>{
-            if(line.startsWith("[x] "))return <div key={i} style={{display:"flex",gap:10,alignItems:"center",padding:"4px 0",cursor:"pointer"}}><div style={{flexShrink:0}}><Check checked={true} size={18} onChange={()=>toggleItem(viewing,i)}/></div><span onClick={()=>toggleItem(viewing,i)} style={{textDecoration:"line-through",color:"#525252",cursor:"pointer"}}>{line.slice(4)}</span></div>;
-            if(line.startsWith("[ ] "))return <div key={i} style={{display:"flex",gap:10,alignItems:"center",padding:"4px 0",cursor:"pointer"}}><div style={{flexShrink:0}}><Check checked={false} size={18} onChange={()=>toggleItem(viewing,i)}/></div><span onClick={()=>toggleItem(viewing,i)} style={{cursor:"pointer"}}>{line.slice(4)}</span></div>;
-            if(line.startsWith("- "))return <div key={i} style={{display:"flex",gap:10,alignItems:"flex-start",padding:"3px 0"}}><div style={{width:6,height:6,borderRadius:"50%",background:"#2dd4bf",marginTop:8,flexShrink:0}}/><span>{line.slice(2)}</span></div>;
-            // Bold **text**, Italic *text*, Underline __text__
-            const rendered=line.replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>").replace(/\*([^*]+)\*/g,"<i>$1</i>").replace(/__([^_]+)__/g,"<u>$1</u>");
-            if(rendered!==line)return <div key={i} style={{padding:"2px 0"}} dangerouslySetInnerHTML={{__html:rendered}}/>;
-            return <div key={i} style={{padding:"2px 0",minHeight:line?"auto":16}}>{line}</div>;
-          })}
-        </div>
+        <NoteBody text={viewData?.text||""} onToggle={(idx)=>toggleItem(viewing,idx)}/>
       </div>}
 
 
@@ -1191,7 +1227,13 @@ function NotesView({customSops,addSop,deleteSop,jobs,reps,customers,vendors,noti
           <button onClick={()=>setEditContent(c=>c+(c?"\n":"")+"- ")} style={{width:30,height:30,borderRadius:6,border:"1px solid rgba(255,255,255,0.08)",background:"transparent",color:"#a3a3a3",cursor:"pointer",fontSize:14,fontFamily:"inherit"}}>*</button>
           <button onClick={()=>setEditContent(c=>c+(c?"\n":"")+"[ ] ")} style={{width:30,height:30,borderRadius:6,border:"1px solid rgba(255,255,255,0.08)",background:"transparent",color:"#2dd4bf",cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>&#9745;</button>
         </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,flex:1,minHeight:0}} className="resp-grid-2">
         <textarea id="editTA" value={editContent} onChange={e=>setEditContent(e.target.value)} style={{flex:1,width:"100%",padding:20,background:"#000",border:"1px solid rgba(167,139,250,0.15)",borderRadius:14,color:"#e5e5e5",fontSize:15,lineHeight:1.8,fontFamily:"inherit",resize:"none",minHeight:320,outline:"none"}}/>
+        <div style={{background:"#000",border:"1px solid rgba(167,139,250,0.15)",borderRadius:14,padding:20,minHeight:320,overflowY:"auto"}}>
+          <div style={{fontSize:10,fontWeight:700,color:"#525252",letterSpacing:1.8,marginBottom:10}}>LIVE PREVIEW</div>
+          {editContent.trim()?<NoteBody text={editContent}/>:<div style={{fontSize:12.5,color:"#333",lineHeight:1.7}}>{NOTE_PREVIEW_HINT}</div>}
+        </div>
+        </div>
         <div style={{display:"flex",gap:8,marginTop:10}}>
           <Btn onClick={()=>{const note=notes.find(n=>n.id===editId);if(note)updateNote(note,editContent);setEditId(null);setActiveNote(editId)}}>Save</Btn>
           <Btn v="secondary" onClick={()=>setEditId(null)}>Cancel</Btn>
