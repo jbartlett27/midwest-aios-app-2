@@ -802,6 +802,18 @@ function PlaybookPage({jobs,reps,vendors,customers,lineItems,getJobFinancials,se
 // ===============================================================
 // TASKS KANBAN (drag-and-drop, used in Sales Portal + standalone)
 // ===============================================================
+// A task set for a FUTURE date no longer emails the assignee the moment it is
+// created -- that was the one day they did not need telling. The daily reminder
+// job (api/task-reminders.js) sends it on the morning of the day the task is
+// actually set for. Undated, due-today and overdue tasks still notify at once,
+// because for those there is no later moment to wait for.
+// Local calendar date, not UTC: a bare YYYY-MM-DD due date is a wall-clock date,
+// so comparing it against toISOString() would call "tomorrow" today for the last
+// few hours of every Central evening.
+const localToday=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
+const isFutureDue=(due)=>{const v=String(due==null?'':due).trim();return /^\d{4}-\d{2}-\d{2}$/.test(v)&&v>localToday()};
+const dueDateLabel=(due)=>{const v=String(due==null?'':due).trim();if(!/^\d{4}-\d{2}-\d{2}$/.test(v))return v;const p=v.split('-');return p[1]+'/'+p[2]+'/'+p[0]};
+
 function TasksKanban({jobs,allJobs,reps,updateJob,notify,customSops,addSop,deleteSop,filterRep,filterJob,currentUser,customers,vendors,setPage,setSelectedJob,focusSopId,setFocusSopId}){
   const [editTask,setEditTask]=useState(null);
   const [dragId,setDragId]=useState(null);
@@ -929,10 +941,16 @@ function TasksKanban({jobs,allJobs,reps,updateJob,notify,customSops,addSop,delet
     notify(existingId?"Task updated":"Task created");
     // Fire notifications AFTER the save commits. Wrapped in try so any failure here
     // is fully isolated from the save itself.
+    // Dated ahead? The reminder job owns it. Tell the user so the absence of an
+    // email right now reads as intended behaviour rather than a broken feature.
+    const deferToDueDate = isFutureDue(enrichedTd.due);
     try {
+      if (deferToDueDate && (newAssignees.length > 0)) {
+        notify('Reminder scheduled for '+dueDateLabel(enrichedTd.due)+' -- the assignee is emailed that morning, not today');
+      }
       if (!oldTask) {
         // Brand-new task: notify every assignee (if any).
-        if (newAssignees.length > 0) {
+        if (newAssignees.length > 0 && !deferToDueDate) {
           _sendTaskEmail({task: enrichedTd, recipients: newAssignees, kind: 'assigned'});
         }
       } else {
@@ -940,9 +958,11 @@ function TasksKanban({jobs,allJobs,reps,updateJob,notify,customSops,addSop,delet
         //   - addedAssignees get an 'assigned' email (more informative -- includes status)
         //   - assignees who were already on it AND remain on it get a 'status_changed' email
         //     IF the status actually changed
-        if (addedAssignees.length > 0) {
+        if (addedAssignees.length > 0 && !deferToDueDate) {
           _sendTaskEmail({task: enrichedTd, recipients: addedAssignees, kind: 'assigned'});
         }
+        // Status changes are announced immediately whatever the due date --
+        // "this moved to Done" is news today, not on the due date.
         if (statusChanged) {
           const continuing = oldAssignees.filter(a => newAssignees.includes(a) && !addedAssignees.includes(a));
           if (continuing.length > 0) {
@@ -1007,7 +1027,7 @@ function EditTaskOverlay({task,setEditTask,jobs,reps,customers,vendors,prospects
       <input value={t.text||""} onChange={e=>setT({...t,text:e.target.value})} autoFocus placeholder="What needs to be done?" style={{...inputStyle,fontSize:18,fontWeight:700,background:"transparent",border:"none",padding:"8px 0",color:"#f0f0f0",marginBottom:12}}/>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:8,marginBottom:12}}>
         <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Status</label><select value={t.status||"To Do"} onChange={e=>setT({...t,status:e.target.value})} style={inputStyle}><option>To Do</option><option>In Progress</option><option>Done</option></select></div>
-        <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Due</label><input type="date" value={t.due||""} onChange={e=>setT({...t,due:e.target.value})} style={inputStyle}/></div>
+        <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Due</label><input type="date" value={t.due||""} onChange={e=>setT({...t,due:e.target.value})} style={inputStyle}/>{isFutureDue(t.due)&&<div style={{fontSize:10,color:"#2dd4bf",marginTop:4,lineHeight:1.4}}>Assignees are emailed on the morning of {dueDateLabel(t.due)}, not today.</div>}</div>
         <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Priority</label><select value={t.priority||"normal"} onChange={e=>setT({...t,priority:e.target.value})} style={inputStyle}><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select></div>
         </div>
       <div style={{marginBottom:12,padding:12,borderRadius:12,background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.05)"}}>
