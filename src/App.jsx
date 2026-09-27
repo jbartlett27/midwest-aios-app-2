@@ -1357,6 +1357,215 @@ function ShareQuotePortal({quoteData,onApprove}){
 
 
 
+// ===============================================================
+// BANK FEED IMPORT -- dedup, tombstones, category rules (Sep 2026)
+// ===============================================================
+// Module scope so App3 (Financials sync, Review tab) and the app-level silent sync
+// run the SAME plan. Plain hoisted functions and literal consts only: nothing here
+// runs at module-eval time (App3 imports these through a circular import).
+// Why: Plaid re-issues transaction ids (pending -> posted, and when the bank rewrites
+// the memo: 'Deposit' became 'TELLER CREDIT'), so a re-id'd row with a new memo passed
+// the date|amount|desc12 hash and landed twice. Deletions were not remembered either:
+// three duplicate deposits Maureen deleted on 9/27 came back on the next sync.
+const BANK_RULES_ID='BANK_RULES_GLOBAL';            // sops row, cat 'Settings', icon 'tag', content: JSON array of rules
+const BANK_REVIEW_QUEUE_ID='BANK_REVIEW_QUEUE';     // sops row, cat 'Settings', icon 'shield', content: {held:[...], keep:[acctKey,...]}
+// Balance-sheet movements, not P&L: paying the card or the line of credit is not an expense.
+const BANK_LIABILITY_CATEGORIES=['Credit Card Payment','Line of Credit'];
+const BANK_RULE_DEFAULTS=[
+  {id:'r-ck',match:'CK #',mode:'starts',category:'COGS - Vendor Payments',type:'expense',direction:'out',enabled:true},
+  {id:'r-amex',match:'AMEX',mode:'contains',category:'Credit Card Payment',type:'liability',direction:'out',enabled:true},
+  {id:'r-citi',match:'CITI',mode:'contains',category:'Credit Card Payment',type:'liability',direction:'out',enabled:true},
+  {id:'r-capone',match:'CAPITAL ONE',mode:'contains',category:'Credit Card Payment',type:'liability',direction:'out',enabled:true},
+  {id:'r-chase',match:'CHASE',mode:'contains',category:'Credit Card Payment',type:'liability',direction:'out',enabled:true},
+  {id:'r-loan',match:'PAYMENT TO LOAN',mode:'contains',category:'Line of Credit',type:'liability',direction:'out',enabled:true},
+  {id:'r-loan2',match:'TRANSFER TO LOAN',mode:'contains',category:'Line of Credit',type:'liability',direction:'out',enabled:true},
+];
+// Dedup fingerprint: date|abs-amount-2dp|first-12-chars-of-description-lowercase.
+// The bank_txn_tombstones trigger computes the SAME string in SQL -- change one,
+// change both, or deleted rows stop matching their tombstones.
+function bankTxnFingerprint(rec) {
+  const date = String(rec?.date || '').trim();
+  const amt = Math.abs(parseFloat(rec?.amount) || 0).toFixed(2);
+  const desc = String(rec?.description || '').slice(0, 12).toLowerCase().trim();
+  return date + '|' + amt + '|' + desc;
+}
+// Same account, same day, same amount -- ignores the memo, which is exactly what the
+// bank rewrites on a re-id. A match here is a POSSIBLE duplicate, never a certain one,
+// so the planner holds it for review instead of skipping it. '' = no usable key.
+function bankTxnAcctKey(rec) {
+  const date = String(rec?.date || '').trim();
+  const amt = Math.abs(parseFloat(rec?.amount) || 0).toFixed(2);
+  if (!date || amt === '0.00') return '';
+  return String(rec?.account || '') + '|' + date + '|' + amt;
+}
+function bankCategoryType(category, fallback) {
+  const c = String(category == null ? '' : category);
+  if (BANK_LIABILITY_CATEGORIES.includes(c)) return 'liability';
+  if (/^Revenue/.test(c)) return 'revenue';
+  if (c === 'asset') return 'asset';
+  if (c === 'liability') return 'liability';
+  return fallback || 'expense';
+}
+// Rules live in one sops row so every device and both syncs read the same list. An
+// explicit empty array means "no rules" (she turned them all off); a missing or
+// unreadable row falls back to the defaults. Rules without a category or a match are
+// dropped: an empty match would categorize every transaction.
+function parseBankRules(customSops) {
+  let raw = null;
+  try {
+    const rec = Array.isArray(customSops) ? customSops.find(s => s && s.id === BANK_RULES_ID) : null;
+    if (rec) { const v = typeof rec.content === 'string' ? JSON.parse(rec.content) : rec.content; if (Array.isArray(v)) raw = v; }
+  } catch { raw = null; }
+  if (!raw) raw = BANK_RULE_DEFAULTS;
+  const out = []; const used = new Set();
+  raw.forEach((r, i) => {
+    if (!r || typeof r !== 'object') return;
+    const category = typeof r.category === 'string' ? r.category.trim() : '';
+    const match = String(r.match == null ? '' : r.match).trim();
+    if (!category || !match) return;
+    let id = r.id != null && String(r.id).trim() ? String(r.id).trim() : '';
+    if (!id || used.has(id)) { let n = i + 1; while (used.has('r-' + n)) n++; id = 'r-' + n; }
+    used.add(id);
+    const type = ['expense','revenue','liability','asset'].includes(r.type) ? r.type : bankCategoryType(category, 'expense');
+    out.push({ id, match, mode: r.mode === 'starts' ? 'starts' : 'contains', category, type, direction: ['out','in','any'].includes(r.direction) ? r.direction : 'any', enabled: r.enabled !== false });
+  });
+  return out;
+}
+// First enabled match wins. Direction keeps a CHASE deposit (money in) from being
+// filed as a card payment: 'out' needs expense/liability, 'in' needs revenue/asset.
+function applyBankRules(rules, cand) {
+  try {
+    if (!Array.isArray(rules) || !cand || typeof cand !== 'object') return null;
+    const desc = String(cand.description == null ? '' : cand.description).replace(/\s+/g, ' ').trim().toLowerCase();
+    if (!desc) return null;
+    for (const r of rules) {
+      if (!r || typeof r !== 'object' || r.enabled === false || !r.category) continue;
+      const m = String(r.match == null ? '' : r.match).replace(/\s+/g, ' ').trim().toLowerCase();
+      if (!m) continue;
+      if (!(r.mode === 'starts' ? desc.startsWith(m) : desc.includes(m))) continue;
+      if (r.direction === 'out' && cand.type !== 'expense' && cand.type !== 'liability') continue;
+      if (r.direction === 'in' && cand.type !== 'revenue' && cand.type !== 'asset') continue;
+      const category = String(r.category);
+      const type = ['expense','revenue','liability','asset'].includes(r.type) ? r.type : bankCategoryType(category, 'expense');
+      return { category, type, ruleId: r.id == null ? '' : String(r.id) };
+    }
+  } catch {}
+  return null;
+}
+// PURE import plan for one Plaid batch. Callers read the DB fresh (and abort when they
+// cannot), pass what they found, then persist the result. Per txn, in order:
+// pending -> skip | posted version of a pending row we hold -> promote in place |
+// known plaid id -> skip | tombstoned id -> skip | same fingerprint -> skip |
+// tombstoned fingerprint -> skip | same account+date+amount as a row or tombstone
+// (memo differs) -> HOLD for review | closed period -> Late Arrivals | else import,
+// categorized by the rules or 'Uncategorized'. Plaid's own labels (TRANSFER_IN,
+// LOAN_PAYMENTS...) only ever land in plaidCategory, never in category.
+function planPlaidImport(input) {
+  const counts = { imported: 0, promoted: 0, held: 0, late: 0, pending: 0, skippedSame: 0, skippedDeleted: 0 };
+  const result = { additions: [], updates: [], held: [], late: [], counts };
+  try {
+    const inp = input && typeof input === 'object' ? input : {};
+    const now = typeof inp.now === 'string' && inp.now ? inp.now : new Date().toISOString();
+    const objs = (a) => (Array.isArray(a) ? a.filter(x => x && typeof x === 'object') : []);
+    const txns = Array.isArray(inp.txns) ? inp.txns : [];
+    const existing = objs(inp.existing);
+    const heldIn = objs(inp.held);
+    const tombs = objs(inp.tombstones).filter(t => !(t.restoredAt || t.restored_at));
+    const rules = Array.isArray(inp.rules) ? inp.rules : parseBankRules(null);
+    const isLocked = typeof inp.isLocked === 'function' ? (d) => { try { return !!inp.isLocked(d); } catch { return false; } } : () => false;
+    const newId = (n) => (typeof inp.idPrefix === 'string' && inp.idPrefix ? inp.idPrefix : 'TXN-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6) + '-') + n;
+    const seenIds = new Set(); const seenFps = new Set(); const heldKeys = new Set();
+    const byPlaidId = new Map(); const acctRows = new Map();
+    const tombIds = new Set(); const tombFps = new Set(); const tombAcct = new Map();
+    existing.forEach(row => {
+      const ids = [row.plaidId, ...(Array.isArray(row.priorPlaidIds) ? row.priorPlaidIds : [])].filter(Boolean);
+      ids.forEach(pid => { seenIds.add(pid); if (!byPlaidId.has(pid)) byPlaidId.set(pid, row); });
+      seenFps.add(bankTxnFingerprint(row));
+      const ak = bankTxnAcctKey(row); if (ak && !acctRows.has(ak)) acctRows.set(ak, row);
+    });
+    heldIn.forEach(h => {
+      if (h.plaidId) { seenIds.add(h.plaidId); heldKeys.add(h.plaidId); }
+      const fp = h.fingerprint || bankTxnFingerprint(h); seenFps.add(fp); heldKeys.add(fp);
+    });
+    tombs.forEach(t => {
+      const pid = t.plaidId || t.plaid_id; if (pid) tombIds.add(pid);
+      const fp = t.fingerprint || bankTxnFingerprint({ date: t.date || t.txn_date, amount: t.amount, description: t.description }); tombFps.add(fp);
+      const ak = t.acctKey || t.acct_key || bankTxnAcctKey({ account: t.account, date: t.date || t.txn_date, amount: t.amount });
+      if (ak && !tombAcct.has(ak)) tombAcct.set(ak, t);
+    });
+    for (const t of txns) {
+      try {
+        if (!t || typeof t !== 'object') continue;
+        const date = typeof t.date === 'string' ? t.date.trim() : '';
+        if (!date || t.amount === null || t.amount === undefined || t.amount === '') continue;
+        const amtNum = Number(t.amount);
+        if (!isFinite(amtNum)) continue;
+        if (t.pending === true) { counts.pending++; continue; }
+        const pid = t.transaction_id ? String(t.transaction_id) : '';
+        const description = String(t.name || t.merchant_name || '');
+        const amount = Math.abs(amtNum).toFixed(2);
+        const type = amtNum > 0 ? 'expense' : 'revenue';
+        const account = t.account_id || 'Operating';
+        const plaidCategory = t.personal_finance_category?.primary || (Array.isArray(t.category) ? t.category.join(' > ') : '') || '';
+        const fp = bankTxnFingerprint({ date, amount, description });
+        const acctKey = bankTxnAcctKey({ account, date, amount });
+        // Pending -> posted: Plaid names the pending id it replaces. Update that row in
+        // place so her category, type, bill match and attachments survive. The posted id
+        // already on file means it was promoted on an earlier sync: fall through to skip.
+        const pendRow = t.pending_transaction_id && !(pid && seenIds.has(pid)) ? byPlaidId.get(String(t.pending_transaction_id)) : null;
+        if (pendRow) {
+          if (isLocked(pendRow.date) || isLocked(date)) { counts.skippedSame++; if (pid) seenIds.add(pid); seenFps.add(fp); continue; }
+          const { id: rowId, ...rest } = pendRow;
+          const prior = [...(Array.isArray(rest.priorPlaidIds) ? rest.priorPlaidIds : []), rest.plaidId].filter(Boolean);
+          const content = { ...rest, plaidId: pid || rest.plaidId, priorPlaidIds: Array.from(new Set(prior.filter(x => x !== pid))), description: description || rest.description || '', date, plaidCategory: plaidCategory || rest.plaidCategory || '', postedAt: now };
+          result.updates.push({ id: rowId, title: content.description || 'Bank transaction', cat: 'ManualTxn', icon: 'dollar', content: JSON.stringify(content), custom: true });
+          counts.promoted++;
+          const merged = { id: rowId, ...content };
+          if (pid) { seenIds.add(pid); byPlaidId.set(pid, merged); }
+          seenFps.add(fp); seenFps.add(bankTxnFingerprint(merged));
+          const mak = bankTxnAcctKey(merged); if (mak && !acctRows.has(mak)) acctRows.set(mak, merged);
+          continue;
+        }
+        if (pid && seenIds.has(pid)) { counts.skippedSame++; continue; }
+        if (pid && tombIds.has(pid)) { counts.skippedDeleted++; continue; }
+        if (seenFps.has(fp)) { counts.skippedSame++; continue; }
+        if (tombFps.has(fp)) { counts.skippedDeleted++; continue; }
+        const rowMatch = acctKey ? acctRows.get(acctKey) : null;
+        const tombMatch = acctKey && !rowMatch ? tombAcct.get(acctKey) : null;
+        if (rowMatch || tombMatch) {
+          if ((pid && heldKeys.has(pid)) || heldKeys.has(fp)) { counts.skippedSame++; continue; }
+          const m = rowMatch || tombMatch;
+          result.held.push({ key: pid || fp, plaidId: pid, date, description, amount, type, account, plaidCategory, acctKey, fingerprint: fp,
+            matchId: rowMatch ? (rowMatch.id || null) : null, matchDescription: String(m.description || ''), matchCategory: String(m.category || ''),
+            matchSource: rowMatch ? 'existing' : 'deleted', heldAt: now });
+          counts.held++;
+          if (pid) { seenIds.add(pid); heldKeys.add(pid); }
+          seenFps.add(fp); heldKeys.add(fp);
+          continue;
+        }
+        if (isLocked(date)) {
+          result.late.push({ date, description, amount, type, account, plaidId: pid, plaidCategory, queuedAt: now });
+          counts.late++;
+          if (pid) seenIds.add(pid);
+          seenFps.add(fp);
+          continue;
+        }
+        const hit = applyBankRules(rules, { description, type });
+        const content = { date, description, category: hit ? hit.category : 'Uncategorized', amount, type: hit ? hit.type : type, account, plaidId: pid || undefined, plaidCategory, importedAt: now };
+        if (hit && hit.ruleId) content.ruleId = hit.ruleId;
+        result.additions.push({ id: newId(counts.imported), title: description || 'Bank transaction', cat: 'ManualTxn', icon: 'dollar', content: JSON.stringify(content), custom: true });
+        counts.imported++;
+        if (pid) seenIds.add(pid);
+        seenFps.add(fp);
+      } catch {}
+    }
+  } catch {}
+  return result;
+}
+
+
+
+
 function MidwestAIOSInner() {
   // Shared quote portal - check URL hash on load
   const [sharedQuote,setSharedQuote]=useState(()=>{try{const h=window.location.hash;if(h.startsWith("#quote=")){return JSON.parse(atob(h.slice(7)))}return null}catch{return null}});
@@ -1632,6 +1841,11 @@ function MidwestAIOSInner() {
   }, [appReady, currentUser?.id]);
 
 
+  // (Sep 2026) The silent sync reads current state through this ref: its plan is computed
+  // once, outside any setCustomSops updater (updaters must stay pure; React may run them twice).
+  const customSopsRef = useRef(customSops);
+  customSopsRef.current = customSops;
+
   // App-scope Plaid auto-sync. This runs regardless of which page the user
   // is viewing, ensuring transactions stay current even if she never opens
   // the Banking tab. The FinancialsPage-scoped auto-sync still handles UI
@@ -1688,44 +1902,65 @@ function MidwestAIOSInner() {
         try { localStorage.removeItem("mw_plaid_sync_error"); } catch {}
         const txns = data.added || data.transactions || [];
         if (cancelled) return;
-        // Build dedup sets fresh from current customSops state via setCustomSops
-        // updater (lets us read the latest value without depending on closure).
-        setCustomSops(prev => {
-          if (cancelled) return prev;
-          const manualTxns = (prev || []).filter(s => s.cat === "ManualTxn").map(s => { try { return { id: s.id, ...JSON.parse(s.content) }; } catch { return null; } }).filter(Boolean);
-          const existingPlaidIds = new Set(manualTxns.filter(mt => mt.plaidId).map(mt => mt.plaidId));
-          // Use shared _bankTxnHash for both build and candidate-check so manual entries
-          // (amount stored as string "125") and Plaid records (amount as number 125.00)
-          // collapse into the same key "...|125.00|...".
-          const existingHashes = new Set(manualTxns.map(mt => _bankTxnHash(mt)));
-          const additions = [];
-          let imported = 0;
-          for (const t of txns) {
-            if (t.transaction_id && existingPlaidIds.has(t.transaction_id)) continue;
-            const hash = _bankTxnHash({date: t.date, amount: t.amount, description: t.name || t.merchant_name || ''});
-            if (existingHashes.has(hash)) continue;
-            if (t.transaction_id) existingPlaidIds.add(t.transaction_id);
-            existingHashes.add(hash);
-            const id = "TXN-" + Date.now() + "-" + Math.random().toString(36).slice(2, 6) + "-" + imported;
-            const isDebit = t.amount > 0;
-            const sopRecord = {
-              id, title: t.name || t.merchant_name || "Bank transaction", cat: "ManualTxn", icon: "dollar",
-              content: JSON.stringify({
-                date: t.date || "", description: t.name || t.merchant_name || "",
-                category: t.personal_finance_category?.primary || "Uncategorized",
-                amount: String(Math.abs(t.amount).toFixed(2)),
-                type: isDebit ? "expense" : "revenue", account: t.account_id || "Operating",
-                plaidId: t.transaction_id, plaidCategory: t.category?.join(" > ") || ""
-              }), custom: true
-            };
-            additions.push(sopRecord);
-            // Persist to Supabase via db.saveSop (fire-and-forget, same pattern as addSop).
-            try { db.deleteSop(sopRecord.id).then(() => db.saveSop(sopRecord)).catch(() => {}); } catch {}
-            imported++;
-          }
-          if (additions.length === 0) return prev;
-          return [...prev, ...additions];
+        // (Sep 2026) Plan against an AUTHORITATIVE fresh read, never React state alone.
+        // This sync used to dedup inside the setCustomSops updater against state: when the
+        // sops load was partial it re-imported a whole quarter (131 duplicates on 9/16),
+        // it wrote Plaid's raw label (TRANSFER_IN, LOAN_PAYMENTS) into category, and it had
+        // no memory of deleted rows. Now it reads sops, tombstones and period locks fresh;
+        // if any read fails it aborts -- it never inserts against books it cannot verify.
+        const _safeRead = (fn) => Promise.resolve().then(fn).catch(() => null);
+        const [freshSops, tombstones, locks] = await Promise.all([
+          _safeRead(() => db.fetchSops()), _safeRead(() => db.fetchTombstones()), _safeRead(() => db.fetchPeriodLocks()),
+        ]);
+        if (cancelled) return;
+        if (!Array.isArray(freshSops) || !Array.isArray(tombstones) || !Array.isArray(locks)) {
+          try { localStorage.setItem("mw_plaid_sync_error", "Sync aborted: could not verify existing transactions against the database. Nothing was imported."); } catch {}
+          return;
+        }
+        // Rows added this session but not yet round-tripped count as existing too.
+        const stateSops = Array.isArray(customSopsRef.current) ? customSopsRef.current : [];
+        const freshIds = new Set(freshSops.map(s => s.id));
+        const txnSops = [...freshSops, ...stateSops.filter(s => s && !freshIds.has(s.id))].filter(s => s && s.cat === "ManualTxn");
+        const existing = txnSops.map(s => { try { return { id: s.id, ...JSON.parse(s.content) }; } catch { return null; } }).filter(Boolean);
+        const sopById = (id) => freshSops.find(s => s.id === id) || stateSops.find(s => s && s.id === id) || null;
+        const queueRec = sopById(BANK_REVIEW_QUEUE_ID);
+        let queue = {};
+        try { const q = queueRec ? JSON.parse(queueRec.content) : null; if (q && typeof q === "object" && !Array.isArray(q)) queue = q; } catch {}
+        const queueHeld = Array.isArray(queue.held) ? queue.held : [];
+        const closed = new Set(locks.filter(l => l && l.status === "closed").map(l => l.period));
+        // Computed ONCE here; the state updater below only merges the result.
+        const plan = planPlaidImport({
+          txns, existing, held: queueHeld, tombstones, rules: parseBankRules(freshSops),
+          isLocked: (d) => closed.has(String(d || "").slice(0, 7)), now: new Date().toISOString(),
         });
+        const writes = [...plan.additions, ...plan.updates];
+        if (plan.held.length) writes.push({ id: BANK_REVIEW_QUEUE_ID, title: "Bank Review Queue", cat: "Settings", icon: "shield", content: JSON.stringify({ ...queue, held: [...queueHeld, ...plan.held], keep: Array.isArray(queue.keep) ? queue.keep : [] }), custom: true });
+        if (plan.late.length) {
+          // Same merge as the Financials sync: dedup by plaidId (or the fingerprint when no id).
+          const lateRec = sopById("LATE_ARRIVALS_GLOBAL");
+          let lateQ = [];
+          try { const a = lateRec ? JSON.parse(lateRec.content) : []; if (Array.isArray(a)) lateQ = a; } catch {}
+          const seenQ = new Set(lateQ.map(x => x.plaidId || bankTxnFingerprint(x)));
+          const freshLate = plan.late.filter(x => !seenQ.has(x.plaidId || bankTxnFingerprint(x)));
+          if (freshLate.length) writes.push({ id: "LATE_ARRIVALS_GLOBAL", title: "Late Arrivals", cat: "Settings", icon: "clock", content: JSON.stringify([...lateQ, ...freshLate]), custom: true });
+        }
+        if (cancelled) return;
+        // Upsert only, no delete first: deleting a ManualTxn row now writes a tombstone.
+        // State takes only what the database accepted -- a row the tombstone or period-lock
+        // trigger refused would otherwise show until the next reload and then vanish.
+        const results = await Promise.all(writes.map(s => Promise.resolve().then(() => db.saveSop(s)).catch(() => ({ ok: false }))));
+        const accepted = writes.filter((s, i) => !(results[i] && results[i].ok === false));
+        const refused = writes.length - accepted.length;
+        if (accepted.length) {
+          const byId = new Map(accepted.map(s => [s.id, s]));
+          setCustomSops(prev => {
+            const next = (prev || []).map(s => (s && byId.has(s.id)) ? byId.get(s.id) : s);
+            const have = new Set(next.map(s => s && s.id));
+            accepted.forEach(s => { if (!have.has(s.id)) next.push(s); });
+            return next;
+          });
+        }
+        if (refused) { try { localStorage.setItem("mw_plaid_sync_error", refused + " bank record" + (refused === 1 ? " was" : "s were") + " refused by the database; the next sync will try again."); } catch {} }
         const syncTime = new Date().toISOString();
         try { localStorage.setItem("mw_plaid_last_sync", syncTime); } catch {}
       } catch (err) {
@@ -1818,12 +2053,9 @@ function MidwestAIOSInner() {
   // normalizes both into the same key "125.00". The 12-char description prefix matches
   // the prior Plaid implementation to avoid collapsing distinct same-day same-amount
   // transactions (e.g., two separate Amazon purchases) into a single record.
-  const _bankTxnHash = (rec) => {
-    const date = String(rec?.date || '').trim();
-    const amt = Math.abs(parseFloat(rec?.amount) || 0).toFixed(2);
-    const desc = String(rec?.description || '').slice(0, 12).toLowerCase().trim();
-    return date + '|' + amt + '|' + desc;
-  };
+  // (Sep 2026) Body moved to module-scope bankTxnFingerprint so App3, the import planner
+  // and the SQL tombstone trigger all share one definition.
+  const _bankTxnHash = (rec) => bankTxnFingerprint(rec);
 
 
   // BANKING TRANSACTION DEDUP -- Single source of truth used by:
@@ -2092,7 +2324,7 @@ function MidwestAIOSInner() {
   // it passes through for everyone; Vendor 360 reads the unfiltered line-item
   // ledger (vendor spend across ALL jobs), so sales-role users are excluded.
   const _allowedPageIds = new Set([...navItems.map(i=>i.id),"customer360",...(userRole==="sales"?[]:["vendor360"])]);
-  const ctx = {jobs:visibleJobs,allJobs:jobs,setJobs,jobNum,currentUser,userRole,userRepId,logout,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,_commissionFor,_bankTxnHash,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,forceDeleteVendor,forceDeleteLineItem,forceDeleteCustomer,forceDeleteRep,db,lineItemShipTos,setLineItemShipTo,setPage:p=>{const _tp=_allowedPageIds.has(p)?p:(navItems[0]?.id||"dashboard");setPage(_tp);setMobileMenuOpen(false);window.scrollTo(0,0);const mc=document.querySelector('.main-content');if(mc)mc.scrollTop=0},viewCustomer:id=>{setPage("customer360");window._viewCustId=id;window.scrollTo(0,0)},jobReportDate,brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter,pendingCommPreview,setPendingCommPreview,pendingBrainFile,setPendingBrainFile,pendingBrainEmail,setPendingBrainEmail,focusSopId,setFocusSopId};
+  const ctx = {jobs:visibleJobs,allJobs:jobs,setJobs,jobNum,currentUser,userRole,userRepId,logout,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,_commissionFor,_bankTxnHash,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,forceDeleteVendor,forceDeleteLineItem,forceDeleteCustomer,forceDeleteRep,db,lineItemShipTos,setLineItemShipTo,setPage:p=>{const _tp=_allowedPageIds.has(p)?p:(navItems[0]?.id||"dashboard");setPage(_tp);setMobileMenuOpen(false);window.scrollTo(0,0);const mc=document.querySelector('.main-content');if(mc)mc.scrollTop=0},viewCustomer:id=>{setPage("customer360");window._viewCustId=id;window.scrollTo(0,0)},jobReportDate,brainQuery,setBrainQuery,customSops,setCustomSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter,pendingCommPreview,setPendingCommPreview,pendingBrainFile,setPendingBrainFile,pendingBrainEmail,setPendingBrainEmail,focusSopId,setFocusSopId};
 
 
   const loadingScreen = (
@@ -6380,5 +6612,5 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
 }
 
 
-export { AnimNum, AnimatedNumber, Badge, Bar, Btn, CUSTOMER_TYPES, Card, Check, CheckMinus, DEFAULT_SOPS, Dashboard, DocumentsPage, Header, I, LINK_KINDS, LinkChips, LinkPicker, LinkedItemsPanel, customerTypeOptions, fmt, fmtN, getLinks, getProspectList, getRoles, inputStyle, isSalesRep, isoDay, openLink, parseLocalDate, pct, resolveLinkNames, shipKey, statusColor };
+export { AnimNum, AnimatedNumber, BANK_LIABILITY_CATEGORIES, BANK_REVIEW_QUEUE_ID, BANK_RULES_ID, BANK_RULE_DEFAULTS, Badge, Bar, Btn, CUSTOMER_TYPES, Card, Check, CheckMinus, DEFAULT_SOPS, Dashboard, DocumentsPage, Header, I, LINK_KINDS, LinkChips, LinkPicker, LinkedItemsPanel, applyBankRules, bankCategoryType, bankTxnAcctKey, bankTxnFingerprint, customerTypeOptions, fmt, fmtN, getLinks, getProspectList, getRoles, inputStyle, isSalesRep, isoDay, openLink, parseBankRules, parseLocalDate, pct, planPlaidImport, resolveLinkNames, shipKey, statusColor };
 export default function MidwestAIOS(){return <ErrorBoundary><MidwestAIOSInner/></ErrorBoundary>}
