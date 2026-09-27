@@ -743,7 +743,7 @@ function PlaybookPage({jobs,reps,vendors,customers,lineItems,getJobFinancials,se
   //   LineItemShipTo -> per-line ship-to overrides applied silently in PO generation
   //   PlaidConn -> Plaid connection token storage
   //   VendorCredit / StandaloneBill -> Documents > Vendor Bills tab
-  const internalCats=new Set(["Notes","Task","DocStatuses","ManualTxn","HistoricalDoc","Settings","BrainMemory","Prospect","Config","File","LineItemShipTo","PlaidConn","VendorCredit","StandaloneBill","ExpenseCheck","BankBalances","Invoice"]);
+  const internalCats=new Set(["Notes","Task","DocStatuses","ManualTxn","HistoricalDoc","Settings","BrainMemory","Prospect","Config","File","LineItemShipTo","PlaidConn","VendorCredit","StandaloneBill","ExpenseCheck","BankBalances","Invoice","VendorBill"]);
   const customIds=new Set((customSops||[]).filter(s=>!internalCats.has(s.cat)).map(s=>s.overrideId||s.id));const allSops=[...DEFAULT_SOPS.filter(d=>!customIds.has(d.id)),...(customSops||[])].filter(s=>!internalCats.has(s.cat));
   const cats=[...new Set(allSops.map(s=>s.cat))];
   const filtered=search?allSops.filter(s=>s.title.toLowerCase().includes(search.toLowerCase())||s.content.toLowerCase().includes(search.toLowerCase())):allSops;
@@ -5187,6 +5187,43 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
 }
 
 
+// ---------------------------------------------------------------
+// Vendor bills (Sep 2026). A bill entered the way QuickBooks enters one: vendor,
+// bill date, due date, and category lines that must add up to the bill total.
+// The bill lives in sops as cat "VendorBill" and its lines flow into the P&L by
+// category ON THE BILL DATE (accrual). Paying a bill records a payment on the
+// bill and, when matched, stamps the bank-feed row with billId and moves it to
+// the "Bill Payment" category, which is a movement category (like Transfer) so
+// the same dollars are never counted twice. Record shape:
+// {id, vendorId, vendorName, ref, date, dueDate, memo, total,
+//  lines:[{category, amount, memo}],
+//  payments:[{id, date, amount, method, ref, txnId, txnDescription}],
+//  void, createdAt, createdBy}
+// ---------------------------------------------------------------
+const FIN_DEFAULT_CATEGORIES=['Uncategorized','Revenue - Product Sales','Revenue - Shipping','Revenue - Installation','COGS - Vendor Payments','COGS - Freight','Operating - Rent','Operating - Utilities','Operating - Insurance','Operating - Office Supplies','Operating - Commissions','Operating - Payroll','Operating - Marketing','Operating - Professional Services','Tax Payment','Transfer','Owner Draw','Owner Investment','Bill Payment','Refund','Other'];
+const BILL_PAYMENT_CATEGORY='Bill Payment';
+const VENDOR_BILL_PREFIX='VB-';
+const _vbMoney=(n)=>{const v=Number(n);return isFinite(v)?Math.round(v*100)/100:0};
+const parseVendorBills=(customSops)=>(Array.isArray(customSops)?customSops:[]).filter(s=>s&&s.cat==='VendorBill').map(s=>{let d=null;try{d=JSON.parse(s.content)}catch{d=null}return d&&typeof d==='object'&&!Array.isArray(d)?{...d,id:s.id}:null}).filter(Boolean);
+const billLinesTotal=(lines)=>_vbMoney((Array.isArray(lines)?lines:[]).reduce((s,l)=>s+(Number(l&&l.amount)||0),0));
+const billTotal=(b)=>{const t=Number(b&&b.total);return isFinite(t)&&t>0?_vbMoney(t):billLinesTotal(b&&b.lines)};
+const billPaidTotal=(b)=>_vbMoney((Array.isArray(b&&b.payments)?b.payments:[]).reduce((s,p)=>s+(Number(p&&p.amount)||0),0));
+const billBalance=(b)=>Math.max(0,_vbMoney(billTotal(b)-billPaidTotal(b)));
+const billStatus=(b)=>{if(b&&b.void===true)return 'void';const t=billTotal(b);const p=billPaidTotal(b);if(t<=0.005)return 'open';if(p>=t-0.005)return 'paid';if(p>0.005)return 'partial';return 'open'};
+// Categories a bill line may use: everything on the Financials list except the
+// revenue side, the movement categories and the placeholders.
+const billLineCategories=(categories)=>(Array.isArray(categories)?categories:[]).filter(c=>c&&!/^Revenue/i.test(c)&&!['Uncategorized','Transfer','Owner Draw','Owner Investment','Refund',BILL_PAYMENT_CATEGORY].includes(c));
+// Amount already linked to bill payments, per bank transaction id, across every
+// live bill. A check that paid two bills is linked twice; its remaining unlinked
+// amount is what the next match can still claim.
+const billLinkedByTxn=(bills)=>{const m={};(Array.isArray(bills)?bills:[]).forEach(b=>{if(!b||b.void===true)return;(Array.isArray(b.payments)?b.payments:[]).forEach(p=>{if(p&&p.txnId)m[p.txnId]=_vbMoney((m[p.txnId]||0)+(Number(p.amount)||0))})});return m};
+// Rank bank-feed rows as candidates for a bill payment: exact amount first, then
+// a vendor-name hit in the description (worth more than date closeness, because
+// a payee name is the strongest human signal after the amount), then closeness
+// in date to the due date and the bill date. Rows already fully linked drop out; a vendor bill only ever
+// matches money going OUT.
+const rankBankMatches=(txns,bill,wantAmount,linkedMap,query)=>{const q=String(query||'').trim().toLowerCase();const vendor=String((bill&&bill.vendorName)||'').toLowerCase();const vWords=vendor.split(/[^a-z0-9]+/).filter(w=>w.length>2);const want=_vbMoney(wantAmount);const due=parseLocalDate(bill&&bill.dueDate)||parseLocalDate(bill&&bill.date);const bd=parseLocalDate(bill&&bill.date);const out=[];(Array.isArray(txns)?txns:[]).forEach(t=>{if(!t||t.type!=='expense')return;const amt=_vbMoney(t.amount);if(amt<=0)return;const remaining=_vbMoney(amt-((linkedMap&&linkedMap[t.id])||0));if(remaining<=0.005)return;const desc=String(t.description||'').toLowerCase();if(q&&!desc.includes(q)&&!String(t.date||'').includes(q)&&!String(amt).includes(q))return;let score=0;const exact=want>0&&(Math.abs(remaining-want)<0.005||Math.abs(amt-want)<0.005);if(exact)score+=100;const td=parseLocalDate(t.date);if(td){const ref=due||bd;if(ref){const days=Math.abs(Math.round((td-ref)/86400000));score+=Math.max(0,30-Math.min(30,days))}if(bd&&td<bd)score-=15}const dWords=desc.split(/[^a-z0-9]+/).filter(w=>w.length>2);if(vWords.some(w=>desc.includes(w))||vWords.some(w=>dWords.some(d=>d.slice(0,3)===w.slice(0,3))))score+=50;out.push({t,remaining,score,exact})});return out.sort((a,b)=>b.score-a.score||String(b.t.date||'').localeCompare(String(a.t.date||'')))};
+
 function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,getJobItems,_commissionFor,_bankTxnHash,notify,triggerPrint,dateFilter,jobNum,customSops,addSop,deleteSop,...fCtx}){
   const [tab,setTab]=useState("overview");
   // ---- GENERAL LEDGER (Phase 1): chart of accounts + period close state ----
@@ -5223,6 +5260,12 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   // Banking / manual transaction state
   const [manualForm,setManualForm]=useState({date:'',description:'',category:'',amount:'',type:'expense',account:'Operating'});
   const [manualEditing,setManualEditing]=useState(null);
+  // Vendor bills (QuickBooks-style bill entry) -- see the helpers above FinancialsPage.
+  const [billForm,setBillForm]=useState(null);
+  const [billPay,setBillPay]=useState(null);
+  const [billsFilter,setBillsFilter]=useState('open');
+  const [billsSearch,setBillsSearch]=useState('');
+  const [billOpen,setBillOpen]=useState(null);
   // Initial Plaid state: prefer the cross-device sops record (source of truth)
   // over localStorage. This way, when Maureen opens the app on a fresh device,
   // the Banking tab immediately shows 'connected' instead of flashing 'not connected'
@@ -5337,7 +5380,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
     if(t.account&&_bankAcctMetaGlobal[t.account]&&_bankAcctMetaGlobal[t.account].excluded)return false;
     if(_acctFilterActiveGlobal&&!_selectedAcctIdsGlobal.includes(t.account))return false;
     if(!t.date)return true;
-    const d=new Date(t.date);
+    const d=parseLocalDate(t.date)||new Date(t.date);
     return d>=fromD&&d<=toD;
   });
   // P&L "manual" figures count true manual entries only (no plaidId). Plaid bank-feed
@@ -5354,12 +5397,102 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   //      between accounts or between the business and its owner is never revenue or
   //      expense. This is the QuickBooks reconciliation rule: transfers map to
   //      Transfer and stay off the P&L.
-  const _plMovementCats=new Set(['Transfer','Owner Draw','Owner Investment']);
+  // ---- Vendor bills: derived data and the write paths. Lines flow into the P&L by
+  // category on the BILL date; open balances flow into Payables and the Balance
+  // Sheet; a matched bank payment is re-categorized to Bill Payment so it stays off
+  // every expense total. ----
+  const vendorBillsAll=parseVendorBills(customSops);
+  const vendorBills=vendorBillsAll.filter(b=>b.void!==true);
+  const _billLinked=billLinkedByTxn(vendorBills);
+  const _billInRange=(b)=>{const d=parseLocalDate(b&&b.date);return !!d&&d>=fromD&&d<=toD};
+  const billLinesInRange=vendorBills.filter(_billInRange).flatMap(b=>(Array.isArray(b.lines)?b.lines:[]).map((l,i)=>({id:'VBL-'+b.id+'-'+i,_billId:b.id,description:'Bill: '+(b.vendorName||'Vendor')+(b.ref?' #'+b.ref:'')+(l&&l.memo?' -- '+l.memo:''),date:b.date||'',category:(l&&l.category)||'Uncategorized',amount:String(_vbMoney(l&&l.amount)),type:'expense'})));
+  const vendorBillExpenses=_vbMoney(billLinesInRange.reduce((s,l)=>s+(parseFloat(l.amount)||0),0));
+  const _finCustomCats=(()=>{const r=(customSops||[]).find(s=>s.id==='CUSTOM_CATEGORIES');if(!r)return[];try{const a=JSON.parse(r.content);return Array.isArray(a)?a:[]}catch{return[]}})();
+  const _finCategories=[...FIN_DEFAULT_CATEGORIES,..._finCustomCats.filter(c=>!FIN_DEFAULT_CATEGORIES.includes(c))];
+  const _vbToday=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
+  const _vbPlusDays=(iso,n)=>{const d=parseLocalDate(iso);if(!d)return '';d.setDate(d.getDate()+n);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
+  const _vbIsDate=(v)=>/^\d{4}-\d{2}-\d{2}$/.test(String(v||''))&&!!parseLocalDate(v);
+  const _vbWrite=(b)=>{const {id,...body}=b;addSop({id,title:('Bill '+(body.vendorName||'Vendor')+(body.ref?' #'+body.ref:'')+' '+(body.date||'')+' '+fmt(billTotal(body))).slice(0,80),cat:'VendorBill',icon:'receipt',content:JSON.stringify(body),custom:true})};
+  const _vbTxnWrite=(t)=>{const {id,...body}=t;addSop({id,title:body.description||'Transaction',cat:'ManualTxn',icon:'dollar',content:JSON.stringify(body),custom:true})};
+  const openNewBill=()=>{const today=_vbToday();setBillPay(null);setBillForm({id:null,vendorName:'',vendorId:'',ref:'',date:today,dueDate:_vbPlusDays(today,30),memo:'',total:'',lines:[{category:'',amount:'',memo:''},{category:'',amount:'',memo:''}]})};
+  const openEditBill=(b)=>{if(_isLockedDate(b.date)){notify(_lockMsg(b.date),'error');return}setBillPay(null);setBillForm({id:b.id,vendorName:b.vendorName||'',vendorId:b.vendorId||'',ref:b.ref||'',date:b.date||'',dueDate:b.dueDate||'',memo:b.memo||'',total:String(billTotal(b)),lines:(Array.isArray(b.lines)&&b.lines.length?b.lines:[{category:'',amount:'',memo:''}]).map(l=>({category:l.category||'',amount:String(l.amount==null?'':l.amount),memo:l.memo||''}))})};
+  const saveBillForm=()=>{
+    if(!billForm)return;
+    const vendorName=String(billForm.vendorName||'').trim();
+    if(!vendorName){notify('Enter the vendor first','error');return}
+    if(!_vbIsDate(billForm.date)){notify('Enter the bill date','error');return}
+    if(billForm.dueDate&&!_vbIsDate(billForm.dueDate)){notify('Due date must be a full date','error');return}
+    if(_isLockedDate(billForm.date)){notify(_lockMsg(billForm.date),'error');return}
+    const lines=(billForm.lines||[]).map(l=>({category:String(l.category||'').trim(),amount:_vbMoney(String(l.amount||'').replace(/[$,\s]/g,'')),memo:String(l.memo||'').trim().slice(0,200)})).filter(l=>l.category||l.amount||l.memo);
+    if(lines.length===0){notify('Add at least one category line','error');return}
+    const bad=lines.find(l=>!l.category||!_finCategories.includes(l.category));
+    if(bad){notify('Every line needs a category from the Financials list','error');return}
+    if(lines.some(l=>l.amount<=0)){notify('Every line needs an amount above zero','error');return}
+    const linesTotal=billLinesTotal(lines);
+    const totalRaw=String(billForm.total||'').replace(/[$,\s]/g,'');
+    const total=totalRaw===''?linesTotal:_vbMoney(totalRaw);
+    if(!(total>0)){notify('Enter the bill total','error');return}
+    if(Math.abs(total-linesTotal)>0.005){notify('The category lines add up to '+fmt(linesTotal)+', not '+fmt(total)+' -- fix a line or the total before saving','error');return}
+    const existing=billForm.id?vendorBillsAll.find(b=>b.id===billForm.id):null;
+    if(existing&&billPaidTotal(existing)>total+0.005){notify('This bill already has '+fmt(billPaidTotal(existing))+' paid against it; the total cannot go below that','error');return}
+    const vend=(vendors||[]).find(v=>v&&v.name&&v.name.trim().toLowerCase()===vendorName.toLowerCase());
+    const rec={...(existing||{createdAt:new Date().toISOString(),createdBy:_glUser,payments:[]}),id:billForm.id||(VENDOR_BILL_PREFIX+Date.now().toString(36)+Math.random().toString(36).slice(2,6)),vendorName:vend?vend.name:vendorName,vendorId:vend?vend.id:'',ref:String(billForm.ref||'').trim().slice(0,60),date:billForm.date,dueDate:billForm.dueDate||_vbPlusDays(billForm.date,30),memo:String(billForm.memo||'').trim().slice(0,300),total,lines};
+    _vbWrite(rec);
+    setBillForm(null);setBillOpen(rec.id);
+    notify((existing?'Bill updated: ':'Bill entered: ')+rec.vendorName+' '+fmt(total)+' in '+lines.length+' categor'+(lines.length!==1?'ies':'y'));
+  };
+  const voidBill=async(b)=>{
+    if(_isLockedDate(b.date)){notify(_lockMsg(b.date),'error');return}
+    const ok=typeof fCtx.confirm==='function'?await fCtx.confirm('Void bill '+(b.vendorName||'')+' '+fmt(billTotal(b))+'? Its lines leave the P&L and any matched bank payments go back to their own category.'):true;
+    if(!ok)return;
+    const linked=(b.payments||[]).map(p=>p.txnId).filter(Boolean);
+    _vbWrite({...b,void:true,voidedAt:new Date().toISOString(),voidedBy:_glUser});
+    linked.forEach(txnId=>{const other=vendorBills.some(o=>o.id!==b.id&&(o.payments||[]).some(p=>p.txnId===txnId));if(other)return;const t=manualTxns.find(x=>x.id===txnId);if(!t||!t.billId)return;const {billId,billLinkedCategory,...rest}=t;_vbTxnWrite({...rest,category:billLinkedCategory||'Uncategorized'})});
+    if(billOpen===b.id)setBillOpen(null);
+    notify('Bill voided: '+(b.vendorName||''));
+  };
+  const openPayBill=(b)=>{const bal=billBalance(b);setBillForm(null);setBillOpen(b.id);setBillPay({billId:b.id,amount:String(bal),date:_vbToday(),method:'ACH',ref:'',txnId:'',search:''})};
+  const pickPayTxn=(t,remaining)=>{setBillPay(p=>{if(!p)return p;const b=vendorBills.find(x=>x.id===p.billId);const bal=b?billBalance(b):0;if(p.txnId===t.id)return {...p,txnId:''};return {...p,txnId:t.id,amount:String(_vbMoney(Math.min(remaining,bal))),date:t.date||p.date}})};
+  const recordBillPayment=()=>{
+    if(!billPay)return;
+    const b=vendorBills.find(x=>x.id===billPay.billId);if(!b){setBillPay(null);return}
+    const amount=_vbMoney(String(billPay.amount||'').replace(/[$,\s]/g,''));
+    if(!(amount>0)){notify('Enter the payment amount','error');return}
+    if(!_vbIsDate(billPay.date)){notify('Enter the payment date','error');return}
+    if(_isLockedDate(billPay.date)){notify(_lockMsg(billPay.date),'error');return}
+    if(_isLockedDate(b.date)){notify(_lockMsg(b.date),'error');return}
+    const bal=billBalance(b);
+    if(amount>bal+0.005){notify('That is more than the '+fmt(bal)+' still open on this bill','error');return}
+    let txn=null;
+    if(billPay.txnId){
+      txn=manualTxns.find(x=>x.id===billPay.txnId);
+      if(!txn){notify('That bank transaction is no longer here -- pick another or record the payment without a match','error');return}
+      if(txn.type!=='expense'){notify('Only money going out can pay a bill','error');return}
+      if(_isLockedDate(txn.date)){notify(_lockMsg(txn.date),'error');return}
+      const remaining=_vbMoney(_vbMoney(txn.amount)-(_billLinked[txn.id]||0));
+      if(amount>remaining+0.005){notify('Only '+fmt(remaining)+' of that bank transaction is still unassigned','error');return}
+    }
+    const pay={id:'BP-'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),date:billPay.date,amount,method:billPay.method||'ACH',ref:String(billPay.ref||'').trim().slice(0,60),txnId:txn?txn.id:'',txnDescription:txn?String(txn.description||'').slice(0,120):'',recordedAt:new Date().toISOString(),recordedBy:_glUser};
+    _vbWrite({...b,payments:[...(b.payments||[]),pay]});
+    if(txn&&!txn.billId){_vbTxnWrite({...txn,billId:b.id,billLinkedCategory:txn.category||'',category:BILL_PAYMENT_CATEGORY,type:'expense'})}
+    setBillPay(null);
+    const after=_vbMoney(bal-amount);
+    notify('Payment recorded: '+fmt(amount)+(txn?' matched to the bank feed':'')+(after>0.005?' -- '+fmt(after)+' still open':' -- bill paid in full'));
+  };
+  const removeBillPayment=async(b,pay)=>{
+    if(_isLockedDate(pay.date)){notify(_lockMsg(pay.date),'error');return}
+    const ok=typeof fCtx.confirm==='function'?await fCtx.confirm('Remove this '+fmt(pay.amount)+' payment from the bill?'+(pay.txnId?' The bank transaction goes back to its own category.':'')):true;
+    if(!ok)return;
+    _vbWrite({...b,payments:(b.payments||[]).filter(p=>p.id!==pay.id)});
+    if(pay.txnId){const other=vendorBills.some(o=>(o.payments||[]).some(p=>p.txnId===pay.txnId&&p.id!==pay.id));if(!other){const t=manualTxns.find(x=>x.id===pay.txnId);if(t&&t.billId){const {billId,billLinkedCategory,...rest}=t;_vbTxnWrite({...rest,category:billLinkedCategory||'Uncategorized'})}}}
+    notify('Payment removed');
+  };
+  const _plMovementCats=new Set(['Transfer','Owner Draw','Owner Investment',BILL_PAYMENT_CATEGORY]);
   // Also hard-exclude balance-sheet rows (asset/liability by type OR legacy category)
   // so no row can ever count in both the P&L and the Balance Sheet.
-  const _isManualPL=t=>!t.plaidId&&t.source!=='statement'&&!_plMovementCats.has(t.category)&&t.type!=='asset'&&t.type!=='liability'&&t.category!=='asset'&&t.category!=='liability';
+  const _isManualPL=t=>!t.plaidId&&!t.billId&&t.source!=='statement'&&!_plMovementCats.has(t.category)&&t.type!=='asset'&&t.type!=='liability'&&t.category!=='asset'&&t.category!=='liability';
   const manualRevenue=filteredManualTxns.filter(t=>t.type==='revenue'&&_isManualPL(t)).reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
-  const manualExpenses=filteredManualTxns.filter(t=>t.type==='expense'&&_isManualPL(t)).reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
+  const manualExpenses=filteredManualTxns.filter(t=>t.type==='expense'&&_isManualPL(t)).reduce((s,t)=>s+(parseFloat(t.amount)||0),0)+vendorBillExpenses;
   // Asset/liability entries are keyed by TYPE (what the manual-entry Type selector
   // sets). The old category==='asset' test only matched rows whose category text was
   // literally 'asset', so real asset entries with a named category never reached the
@@ -5466,6 +5599,8 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       if(!due||isNaN(due.getTime()))due=new Date();
       out.push({vName:d.vendorName||(v?v.name:'Unknown'),owed:amt,due});
     });
+    // Vendor bills entered on the Bills tab: whatever is still unpaid, aged by due date.
+    vendorBills.forEach(b=>{const owed=billBalance(b);if(owed<=0.005)return;const bd=parseLocalDate(b.date);if(bd&&bd>toD)return;const due=parseLocalDate(b.dueDate)||bd||new Date();out.push({vName:b.vendorName||'Vendor',owed,due})});
     return out;
   })();
   const apAging={current:0,t30:0,t60:0,t90:0,over90:0};
@@ -5515,7 +5650,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   const _vendorSpendSum=vendorSpend.reduce((s,v)=>s+v.spend,0);
   const _jobCostAdj=jobCostTotal-_vendorSpendSum; // credits + standalone bills + rounding
   const pnlRevCats=(()=>{const m={};filteredManualTxns.filter(t=>t.type==='revenue'&&_isManualPL(t)).forEach(t=>{const c=(t.category&&t.category!=='Uncategorized')?t.category:'Uncategorized Revenue';if(!m[c])m[c]={name:c,total:0,txns:[]};m[c].total+=parseFloat(t.amount)||0;m[c].txns.push(t);});return Object.values(m).sort((a,b)=>b.total-a.total);})();
-  const pnlExpCats=(()=>{const m={};filteredManualTxns.filter(t=>t.type==='expense'&&_isManualPL(t)).forEach(t=>{const c=(t.category&&t.category!=='Uncategorized')?t.category:'Uncategorized Expenses';if(!m[c])m[c]={name:c,total:0,txns:[]};m[c].total+=parseFloat(t.amount)||0;m[c].txns.push(t);});return Object.values(m).sort((a,b)=>b.total-a.total);})();
+  const pnlExpCats=(()=>{const m={};[...filteredManualTxns.filter(t=>t.type==='expense'&&_isManualPL(t)),...billLinesInRange].forEach(t=>{const c=(t.category&&t.category!=='Uncategorized')?t.category:'Uncategorized Expenses';if(!m[c])m[c]={name:c,total:0,txns:[]};m[c].total+=parseFloat(t.amount)||0;m[c].txns.push(t);});return Object.values(m).sort((a,b)=>b.total-a.total);})();
   const liveBankAccounts=(()=>{const r=(customSops||[]).find(s2=>s2.id==='BANK_BALANCES_GLOBAL');if(!r)return [];try{const d=JSON.parse(r.content||'{}');return Array.isArray(d.accounts)?d.accounts.filter(a=>(a.type||'')==='depository'&&!(a.id&&_bankAcctMetaGlobal[a.id]&&_bankAcctMetaGlobal[a.id].excluded)):[]}catch{return []}})();
   const arJobsList=filteredJobs.filter(j=>j.paymentStatus!=="paid"&&_jobInvoiced(j,getJobFinancials(j.id))).map(j=>({job:j,amount:getJobFinancials(j.id).totalRevenue,customer:customers.find(c=>c.id===j.customer)?.name||''})).sort((a,b)=>b.amount-a.amount);
   const invItemsList=filteredItems.filter(i=>(i.qtyOrdered||0)>(i.qtyReceived||0)).map(i=>({item:i,value:(i.unitCost||0)*((i.qtyOrdered||0)-(i.qtyReceived||0)),jobName:(jobs.find(j=>j.id===i.jobId)||{}).name||'',jobId:i.jobId})).filter(x=>x.value>0.005).sort((a,b)=>b.value-a.value);
@@ -5631,7 +5766,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
     {open&&<div style={{animation:"fadeUp 0.25s",marginLeft:21,borderLeft:"1px solid rgba(255,255,255,0.07)"}}>{children}</div>}
   </div>};
   const _drillChild=(key2,label,sub,value,color,onClick)=><div key={key2} onClick={onClick} style={{padding:"6px 14px 6px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,borderBottom:"1px solid rgba(255,255,255,0.03)",cursor:onClick?"pointer":"default",transition:"background 0.18s"}} onMouseEnter={e=>{if(onClick)e.currentTarget.style.background="rgba(255,255,255,0.03)"}} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><span style={{fontSize:12,color:"#b8b8b8",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontFamily:"'Satoshi',sans-serif"}}>{onClick&&<span style={{color:(color||"#2dd4bf")+"66",marginRight:7,fontSize:9}}>{'\u2197'}</span>}{label}{sub?<span style={{fontSize:9.5,color:"#7a7a7a",marginLeft:8,fontFamily:"'JetBrains Mono',monospace"}}>{sub}</span>:null}</span><span style={{fontSize:12,color:"#d4d4d4",fontFamily:"'JetBrains Mono',monospace",flexShrink:0}}>{fmt(value)}</span></div>;
-  const _txnJump=(t)=>{setBankSearch(t.description||'');setBankCatFilter('all');setTab('banking')};
+  const _txnJump=(t)=>{if(t&&t._billId){setBillOpen(t._billId);setBillsFilter('all');setBillsSearch('');setBillForm(null);setTab('bills');return}setBankSearch(t.description||'');setBankCatFilter('all');setTab('banking')};
   const kpi=(label,value,sub,color)=><Card style={{padding:16,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:6}}>{label}</div><div style={{fontSize:"clamp(18px,4vw,28px)",fontWeight:800,color:color||"#f0f0f0",fontFamily:"'JetBrains Mono',monospace",lineHeight:1}}><AnimNum value={value}/></div>{sub&&<div style={{fontSize:12,color:"#a3a3a3",marginTop:6}}>{sub}</div>}</Card>;
 
 
@@ -5642,7 +5777,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       <div style={{display:"flex",gap:6,alignItems:"center"}}><input type="date" value={dateFrom} onChange={e=>{setDateFrom(e.target.value);setPeriod("custom")}} style={{padding:"8px 12px",background:"rgba(17,17,17,0.45)",backdropFilter:"blur(8px) saturate(200%) brightness(1.1)",WebkitBackdropFilter:"blur(8px) saturate(200%) brightness(1.1)",border:"1px solid #333",borderRadius:8,color:"#f0f0f0",fontSize:12,fontFamily:"inherit",outline:"none"}}/><span style={{color:"#525252",fontSize:12}}>to</span><input type="date" value={dateTo} onChange={e=>{setDateTo(e.target.value);setPeriod("custom")}} style={{padding:"8px 12px",background:"rgba(17,17,17,0.45)",backdropFilter:"blur(8px) saturate(200%) brightness(1.1)",WebkitBackdropFilter:"blur(8px) saturate(200%) brightness(1.1)",border:"1px solid #333",borderRadius:8,color:"#f0f0f0",fontSize:12,fontFamily:"inherit",outline:"none"}}/></div>
       <div style={{fontSize:12,color:"#525252",fontFamily:"'JetBrains Mono',monospace"}}>{filteredJobs.length} job{filteredJobs.length!==1?"s":""}</div>
     </div>
-        <div className="fin-tabs" style={{display:"flex",gap:3,background:"#111",padding:3,borderRadius:8,marginBottom:16,flexWrap:"wrap"}}>{[["overview","Overview"],["pnl","P&L"],["balance","Balance Sheet"],["banking","Banking"],["coa","Accounts"],["ar","Receivables"],["ap","Payables"],["margin","Margins"],["reports","Reports"],["close","Close"]].map(([v,l])=><button key={v} onClick={()=>setTab(v)} style={{padding:"6px 14px",borderRadius:6,border:"none",cursor:"pointer",background:tab===v?"#2dd4bf":"transparent",color:tab===v?"#000":"#737373",fontSize:12,fontWeight:tab===v?600:400,fontFamily:"inherit",transition:"all 0.15s",whiteSpace:"nowrap"}}>{l}</button>)}</div>
+        <div className="fin-tabs" style={{display:"flex",gap:3,background:"#111",padding:3,borderRadius:8,marginBottom:16,flexWrap:"wrap"}}>{[["overview","Overview"],["pnl","P&L"],["balance","Balance Sheet"],["banking","Banking"],["bills","Bills"],["coa","Accounts"],["ar","Receivables"],["ap","Payables"],["margin","Margins"],["reports","Reports"],["close","Close"]].map(([v,l])=><button key={v} onClick={()=>setTab(v)} style={{padding:"6px 14px",borderRadius:6,border:"none",cursor:"pointer",background:tab===v?"#2dd4bf":"transparent",color:tab===v?"#000":"#737373",fontSize:12,fontWeight:tab===v?600:400,fontFamily:"inherit",transition:"all 0.15s",whiteSpace:"nowrap"}}>{l}</button>)}</div>
 
 
     {tab==="overview"&&<div>
@@ -5838,7 +5973,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
 
 
     {tab==="banking"&&(()=>{
-      const defaultCats=['Uncategorized','Revenue - Product Sales','Revenue - Shipping','Revenue - Installation','COGS - Vendor Payments','COGS - Freight','Operating - Rent','Operating - Utilities','Operating - Insurance','Operating - Office Supplies','Operating - Commissions','Operating - Payroll','Operating - Marketing','Operating - Professional Services','Tax Payment','Transfer','Owner Draw','Owner Investment','Refund','Other'];
+      const defaultCats=FIN_DEFAULT_CATEGORIES;
       const customCatRecord=(customSops||[]).find(s=>s.id==='CUSTOM_CATEGORIES');
       const customCats=customCatRecord?(()=>{try{return JSON.parse(customCatRecord.content)}catch{return []}})():[];
       const categories=[...defaultCats,...customCats.filter(c=>!defaultCats.includes(c))];
@@ -5963,7 +6098,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       };
       const deleteTxn=(id)=>{const _t=allTxns.find(x=>x.id===id);if(_t&&_isLockedDate(_t.date)){notify(_lockMsg(_t.date),'error');return}deleteSop(id);notify('Transaction deleted')};
       const editTxn=(t)=>{setManualForm({date:t.date||'',description:t.description||'',category:t.category||'',amount:t.amount||'',type:t.type||'expense',account:t.account||'Operating'});setManualEditing(t.id)};
-      const updateCategory=(txnId,cat)=>{const t=allTxns.find(x=>x.id===txnId);if(!t)return;if(_isLockedDate(t.date)){notify(_lockMsg(t.date),'error');return}const newType=cat.startsWith('Revenue')?'revenue':cat==='asset'?'asset':cat==='liability'?'liability':'expense';addSop({id:txnId,title:t.description||'Transaction',cat:'ManualTxn',icon:'dollar',content:JSON.stringify({...t,category:cat,type:newType}),custom:true});notify('Categorized: '+cat)};
+      const updateCategory=(txnId,cat)=>{const t=allTxns.find(x=>x.id===txnId);if(!t)return;if(t.billId&&cat!==BILL_PAYMENT_CATEGORY){notify('This bank transaction is matched to a vendor bill payment -- remove the payment on the Bills tab to release it','error');return}if(_isLockedDate(t.date)){notify(_lockMsg(t.date),'error');return}const newType=cat.startsWith('Revenue')?'revenue':cat==='asset'?'asset':cat==='liability'?'liability':'expense';addSop({id:txnId,title:t.description||'Transaction',cat:'ManualTxn',icon:'dollar',content:JSON.stringify({...t,category:cat,type:newType}),custom:true});notify('Categorized: '+cat)};
       const totalBankIn=filteredBankTxns.filter(t=>t.type==='revenue').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
       const totalBankOut=filteredBankTxns.filter(t=>t.type==='expense').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
       const uncategorized=filteredBankTxns.filter(t=>!t.category||t.category==='Uncategorized'||!categories.includes(t.category)).length;
@@ -6704,7 +6839,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
             <tbody>{filteredBankTxns.map(t=>{const isEditing=manualEditing===t.id;return <React.Fragment key={t.id}><tr style={{borderBottom:isEditing?"none":"1px solid #111",background:txnSelected.has(t.id)?"#2dd4bf08":"transparent",transition:"background 0.15s"}} onMouseEnter={e=>{if(!txnSelected.has(t.id)&&!isEditing)e.currentTarget.style.background="#111"}} onMouseLeave={e=>{e.currentTarget.style.background=txnSelected.has(t.id)?"#2dd4bf08":"transparent"}}>
               <td style={{padding:"8px",textAlign:"center",width:36}}><input type="checkbox" checked={txnSelected.has(t.id)} onChange={()=>toggleTxnSelect(t.id)} style={{accentColor:"#2dd4bf",width:14,height:14,cursor:"pointer"}}/></td>
               <td style={{padding:"8px",color:"#a3a3a3",whiteSpace:"nowrap"}}>{t.date||'--'}</td>
-              <td style={{padding:"8px",color:"#e5e5e5",fontWeight:500}}>{t.description||'--'}{t.plaidId&&<span style={{fontSize:9,color:"#525252",marginLeft:4}}>bank</span>}</td>
+              <td style={{padding:"8px",color:"#e5e5e5",fontWeight:500}}>{t.description||'--'}{t.plaidId&&<span style={{fontSize:9,color:"#525252",marginLeft:4}}>bank</span>}{t.billId&&<span className="vb-badge" onClick={e=>{e.stopPropagation();setBillOpen(t.billId);setBillsFilter('all');setBillsSearch('');setTab('bills')}} title="Matched to a vendor bill payment -- click to open the bill" style={{fontSize:9,color:"#2dd4bf",marginLeft:6,padding:"1px 6px",borderRadius:4,background:"#2dd4bf15",fontWeight:700,letterSpacing:0.4,cursor:"pointer"}}>BILL</span>}</td>
               <td style={{padding:"8px"}}><select value={t.category||''} onChange={e=>updateCategory(t.id,e.target.value)} style={{background:"#111",border:"1px solid #222",color:(!t.category||t.category==='Uncategorized'||!categories.includes(t.category))?"#fbbf24":"#a3a3a3",borderRadius:6,padding:"3px 6px",fontSize:11,fontFamily:"inherit",cursor:"pointer"}}><option value="">Uncategorized</option>{categories.map(c=><option key={c} value={c}>{c}</option>)}</select></td>
               <td style={{padding:"8px",color:"#737373",fontSize:11}} title={t.account||''}>{acctDisplayName(t.account)}</td>
               <td style={{padding:"8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,color:t.type==='revenue'?"#34d399":"#f87171"}}>{t.type==='revenue'?'+':'-'}{fmt(parseFloat(t.amount)||0)}</td>
@@ -6751,6 +6886,135 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       </div>})()}
 
 
+    {tab==="bills"&&(()=>{
+      const _mono={fontFamily:"'JetBrains Mono',monospace"};
+      const _lbl={fontSize:10,color:"#737373",display:"block",marginBottom:4,fontWeight:600,letterSpacing:0.6,textTransform:"uppercase"};
+      const _inp={...inputStyle,padding:"9px 12px",fontSize:12};
+      const _small={padding:"4px 10px",borderRadius:6,border:"1px solid #333",background:"transparent",color:"#a3a3a3",fontSize:10,cursor:"pointer",fontFamily:"inherit"};
+      const lineCats=billLineCategories(_finCategories);
+      const q=billsSearch.trim().toLowerCase();
+      const visibleBills=vendorBills.filter(b=>{const st=billStatus(b);if(billsFilter==='open'&&st==='paid')return false;if(billsFilter==='paid'&&st!=='paid')return false;if(!q)return true;const hay=[b.vendorName,b.ref,b.memo,b.date,b.dueDate,...(b.lines||[]).map(l=>l.category+' '+(l.memo||'')),...(b.payments||[]).map(p=>p.ref+' '+(p.txnDescription||''))].join(' ').toLowerCase();return hay.includes(q)||String(billTotal(b)).includes(q)}).sort((a,b)=>String(b.date||'').localeCompare(String(a.date||''))||String(b.id).localeCompare(String(a.id)));
+      const openBills=vendorBills.filter(b=>billStatus(b)!=='paid');
+      const openBalance=_vbMoney(openBills.reduce((s,b)=>s+billBalance(b),0));
+      const overdueBalance=_vbMoney(openBills.filter(b=>{const d=parseLocalDate(b.dueDate);return !!d&&d<now}).reduce((s,b)=>s+billBalance(b),0));
+      const paidInPeriod=_vbMoney(vendorBills.reduce((s,b)=>s+(b.payments||[]).filter(p=>{const d=parseLocalDate(p.date);return !!d&&d>=fromD&&d<=toD}).reduce((s2,p)=>s2+(Number(p.amount)||0),0),0));
+      const enteredInPeriod=_vbMoney(vendorBills.filter(_billInRange).reduce((s,b)=>s+billTotal(b),0));
+      const daysLabel=(b)=>{const d=parseLocalDate(b.dueDate);if(!d)return '';const days=Math.floor((now-d)/86400000);if(days>0)return days+'d overdue';if(days===0)return 'due today';return 'due in '+(-days)+'d'};
+      const statusBadge=(st)=><Badge label={st==='paid'?'paid':st==='partial'?'partially paid':st==='void'?'void':'open'} color={st==='paid'?'#34d399':st==='partial'?'#fbbf24':st==='void'?'#525252':'#f87171'}/>;
+      const setLine=(i,patch)=>setBillForm(f=>({...f,lines:f.lines.map((l,k)=>k===i?{...l,...patch}:l)}));
+      const formLinesTotal=billForm?billLinesTotal((billForm.lines||[]).map(l=>({amount:String(l.amount||'').replace(/[$,\s]/g,'')}))):0;
+      const formTotalRaw=billForm?String(billForm.total||'').replace(/[$,\s]/g,''):'';
+      const formTotal=formTotalRaw===''?formLinesTotal:_vbMoney(formTotalRaw);
+      const formDiff=_vbMoney(formTotal-formLinesTotal);
+      const formBalanced=billForm&&formTotal>0&&Math.abs(formDiff)<=0.005;
+      const payBill=billPay?vendorBills.find(b=>b.id===billPay.billId):null;
+      const payMatches=payBill?rankBankMatches(manualTxns,payBill,_vbMoney(String(billPay.amount||'').replace(/[$,\s]/g,'')),_billLinked,billPay.search).slice(0,8):[];
+      const acctName=(id)=>{if(!id)return '--';const m=_bankAcctMetaGlobal[id];return m&&m.nickname?m.nickname:(String(id).length>20?String(id).slice(0,10)+'...':id)};
+      return <div className="vb-tab" style={{display:"flex",flexDirection:"column",gap:16}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12}} className="resp-grid-4">
+          {kpi('OPEN BALANCE',fmt(openBalance),openBills.length+' open bill'+(openBills.length!==1?'s':''),'#a78bfa')}
+          {kpi('OVERDUE',fmt(overdueBalance),overdueBalance>0?'past the due date':'nothing past due',overdueBalance>0?'#f87171':'#34d399')}
+          {kpi('BILLED THIS PERIOD',fmt(enteredInPeriod),'by bill date, on the P&L','#f87171')}
+          {kpi('PAID THIS PERIOD',fmt(paidInPeriod),'payments recorded','#34d399')}
+        </div>
+        <Card style={{padding:20}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap",marginBottom:12}}>
+            <div><div style={{fontSize:18,fontWeight:800,color:"#f0f0f0",..._mono}}>Vendor Bills</div><div style={{fontSize:11,color:"#737373",marginTop:2}}>Entered the way QuickBooks enters them: category lines that add up to the bill, paid from the bank feed, reported on the bill date.</div></div>
+            <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+              <input value={billsSearch} onChange={e=>setBillsSearch(e.target.value)} placeholder="Search vendor, category, memo, amount..." style={{..._inp,width:240}}/>
+              <div style={{display:"flex",background:"#0a0a0a",borderRadius:8,padding:2,border:"1px solid rgba(255,255,255,0.06)"}}>{[['open','Open'],['all','All'],['paid','Paid']].map(([v,l])=><button key={v} className="vb-filter" onClick={()=>setBillsFilter(v)} style={{padding:"5px 12px",borderRadius:6,border:"none",cursor:"pointer",background:billsFilter===v?"#2dd4bf":"transparent",color:billsFilter===v?"#000":"#737373",fontSize:11,fontWeight:billsFilter===v?700:400,fontFamily:"inherit"}}>{l}</button>)}</div>
+              {!billForm&&<Btn onClick={openNewBill}><I n="plus" s={13}/> Enter Bill</Btn>}
+            </div>
+          </div>
+          {billForm&&<div className="vb-form" style={{padding:16,background:"#0a0a0a",border:"1px solid #2dd4bf30",borderRadius:12,marginBottom:14,animation:"fadeUp 0.2s"}}>
+            <div style={{fontSize:12,fontWeight:700,color:"#2dd4bf",marginBottom:12,letterSpacing:0.5}}>{billForm.id?'EDIT BILL':'NEW BILL'}</div>
+            <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr",gap:10,marginBottom:12}} className="resp-grid-4">
+              <div><label style={_lbl}>Vendor</label><input list="vb-vendor-list" value={billForm.vendorName} onChange={e=>setBillForm(f=>({...f,vendorName:e.target.value}))} placeholder="American Express, Chase, Citi..." style={_inp} autoComplete="off"/><datalist id="vb-vendor-list">{(vendors||[]).map(v=><option key={v.id} value={v.name}/>)}</datalist></div>
+              <div><label style={_lbl}>Bill # / reference</label><input value={billForm.ref} onChange={e=>setBillForm(f=>({...f,ref:e.target.value}))} placeholder="statement 9/15" style={{..._inp,..._mono}}/></div>
+              <div><label style={_lbl}>Bill date</label><input type="date" value={billForm.date} onChange={e=>setBillForm(f=>({...f,date:e.target.value,dueDate:f.dueDate||_vbPlusDays(e.target.value,30)}))} style={{..._inp,..._mono}}/></div>
+              <div><label style={_lbl}>Due date</label><input type="date" value={billForm.dueDate} onChange={e=>setBillForm(f=>({...f,dueDate:e.target.value}))} style={{..._inp,..._mono}}/></div>
+            </div>
+            <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:560}}>
+              <thead><tr style={{borderBottom:"1px solid #222"}}>{["Category","Amount","Memo",""].map((h,i)=><th key={i} style={{padding:"6px 6px",textAlign:i===1?"right":"left",fontSize:10,color:"#737373",fontWeight:600,textTransform:"uppercase",letterSpacing:0.6}}>{h}</th>)}</tr></thead>
+              <tbody>{billForm.lines.map((l,i)=><tr key={i} className="vb-line" style={{borderBottom:"1px solid #161616"}}>
+                <td style={{padding:"5px 6px",width:"38%"}}><select value={l.category} onChange={e=>setLine(i,{category:e.target.value})} style={{..._inp,color:l.category?"#e5e5e5":"#737373",cursor:"pointer"}}><option value="">Pick a category...</option>{lineCats.map(c=><option key={c} value={c}>{c}</option>)}</select></td>
+                <td style={{padding:"5px 6px",width:140}}><input type="number" min="0" step="0.01" value={l.amount} onChange={e=>setLine(i,{amount:e.target.value})} placeholder="0.00" style={{..._inp,..._mono,textAlign:"right"}}/></td>
+                <td style={{padding:"5px 6px"}}><input value={l.memo} onChange={e=>setLine(i,{memo:e.target.value})} placeholder="optional" style={_inp}/></td>
+                <td style={{padding:"5px 6px",width:36,textAlign:"right"}}>{billForm.lines.length>1&&<button onClick={()=>setBillForm(f=>({...f,lines:f.lines.filter((x,k)=>k!==i)}))} title="Remove line" style={{..._small,color:"#f87171",borderColor:"#f8717130",padding:"4px 8px"}}>x</button>}</td>
+              </tr>)}</tbody>
+            </table></div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",marginTop:8}}>
+              <button className="vb-add-line" onClick={()=>setBillForm(f=>({...f,lines:[...f.lines,{category:'',amount:'',memo:''}]}))} style={{..._small,color:"#2dd4bf",borderColor:"#2dd4bf40"}}>+ Add line</button>
+              <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+                <div style={{fontSize:11,color:"#a3a3a3"}}>Lines <span style={{..._mono,color:"#e5e5e5",fontWeight:700}}>{fmt(formLinesTotal)}</span></div>
+                <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:11,color:"#a3a3a3"}}>Bill total</span><input value={billForm.total} onChange={e=>setBillForm(f=>({...f,total:e.target.value}))} placeholder={fmt(formLinesTotal)} style={{..._inp,..._mono,width:120,textAlign:"right"}}/></div>
+                <span className="vb-balance" style={{fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:20,background:formBalanced?"#34d39915":"#f8717115",color:formBalanced?"#34d399":"#f87171",..._mono}}>{formTotal<=0?'enter amounts':formBalanced?'balanced':'off by '+fmt(Math.abs(formDiff))}</span>
+                {!formBalanced&&formTotalRaw!==''&&formLinesTotal>0&&<button onClick={()=>setBillForm(f=>({...f,total:String(formLinesTotal)}))} style={_small}>Use line total</button>}
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:10,alignItems:"end",marginTop:12}}>
+              <div><label style={_lbl}>Memo</label><input value={billForm.memo} onChange={e=>setBillForm(f=>({...f,memo:e.target.value}))} placeholder="optional note for the whole bill" style={_inp}/></div>
+              <div style={{display:"flex",gap:6}}><Btn onClick={saveBillForm} style={{opacity:formBalanced?1:0.55}} title={formBalanced?'':'The category lines must add up to the bill total'}><I n="check" s={13}/> Save Bill</Btn><Btn v="ghost" onClick={()=>setBillForm(null)}>Cancel</Btn></div>
+            </div>
+          </div>}
+          {visibleBills.length===0?<div style={{padding:"36px 0",textAlign:"center"}}><div style={{fontSize:14,color:"#a3a3a3",marginBottom:4}}>{vendorBills.length===0?'No vendor bills yet.':'No bills match this view.'}</div><div style={{fontSize:12,color:"#525252",maxWidth:520,margin:"0 auto"}}>{vendorBills.length===0?'Enter a credit card statement or any vendor bill with its category breakdown. The categories land on the P&L on the bill date; when you pay it, match the payment to the bank feed so the same dollars are never counted twice.':'Try another filter or search.'}</div></div>:
+          <div style={{overflowX:"auto"}}><table className="vb-table" style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:760}}>
+            <thead><tr style={{borderBottom:"2px solid #222"}}>{["Vendor","Bill date","Due","Categories","Total","Paid","Balance","Status",""].map((h,i)=><th key={i} style={{padding:"9px 8px",textAlign:i>=4&&i<=6?"right":"left",fontSize:10,color:"#737373",fontWeight:600,textTransform:"uppercase",letterSpacing:0.6,whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+            <tbody>{visibleBills.map(b=>{const st=billStatus(b);const isOpen=billOpen===b.id;const total=billTotal(b);const paid=billPaidTotal(b);const bal=billBalance(b);const overdue=st!=='paid'&&(()=>{const d=parseLocalDate(b.dueDate);return !!d&&d<now})();const cats=(b.lines||[]).map(l=>l.category).filter(Boolean);const catLabel=cats.length===0?'--':cats.length===1?cats[0]:cats[0]+' +'+(cats.length-1);return <React.Fragment key={b.id}>
+              <tr className="vb-row" onClick={()=>setBillOpen(isOpen?null:b.id)} style={{borderBottom:"1px solid #161616",cursor:"pointer",background:isOpen?"rgba(255,255,255,0.025)":"transparent"}} onMouseEnter={e=>{if(!isOpen)e.currentTarget.style.background="#111"}} onMouseLeave={e=>{e.currentTarget.style.background=isOpen?"rgba(255,255,255,0.025)":"transparent"}}>
+                <td style={{padding:"9px 8px"}}><div style={{color:"#e5e5e5",fontWeight:600}}>{b.vendorName||'Vendor'}</div>{b.ref?<div style={{fontSize:10,color:"#737373",..._mono}}>#{b.ref}</div>:null}</td>
+                <td style={{padding:"9px 8px",..._mono,color:"#a3a3a3",whiteSpace:"nowrap"}}>{b.date||'--'}</td>
+                <td style={{padding:"9px 8px",whiteSpace:"nowrap"}}><div style={{..._mono,color:overdue?"#f87171":"#a3a3a3"}}>{b.dueDate||'--'}</div>{st!=='paid'&&b.dueDate?<div style={{fontSize:10,color:overdue?"#f87171":"#525252"}}>{daysLabel(b)}</div>:null}</td>
+                <td style={{padding:"9px 8px",color:"#c4c4c4",maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={cats.join(', ')}>{catLabel}</td>
+                <td style={{padding:"9px 8px",textAlign:"right",..._mono,color:"#e5e5e5",fontWeight:600}}>{fmt(total)}</td>
+                <td style={{padding:"9px 8px",textAlign:"right",..._mono,color:paid>0?"#34d399":"#525252"}}>{paid>0?fmt(paid):'--'}</td>
+                <td style={{padding:"9px 8px",textAlign:"right",..._mono,color:bal>0?"#fbbf24":"#525252",fontWeight:bal>0?700:400}}>{bal>0?fmt(bal):'--'}</td>
+                <td style={{padding:"9px 8px"}}>{statusBadge(st)}</td>
+                <td style={{padding:"9px 8px",textAlign:"right",whiteSpace:"nowrap"}} onClick={e=>e.stopPropagation()}><div style={{display:"flex",gap:4,justifyContent:"flex-end"}}>{st!=='paid'&&<button className="vb-pay" onClick={()=>openPayBill(b)} style={{..._small,color:"#2dd4bf",borderColor:"#2dd4bf40",fontWeight:700}}>Pay</button>}<button onClick={()=>openEditBill(b)} style={_small}>Edit</button><button onClick={()=>voidBill(b)} style={{..._small,color:"#f87171",borderColor:"#f8717130"}}>Void</button></div></td>
+              </tr>
+              {isOpen&&<tr className="vb-detail"><td colSpan={9} style={{padding:0}}><div style={{padding:"12px 16px 16px 24px",background:"#0d0d0d",borderBottom:"1px solid #161616",animation:"fadeUp 0.15s"}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:18}} className="resp-grid-2">
+                  <div>
+                    <div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:0.6,textTransform:"uppercase",marginBottom:6}}>Category lines</div>
+                    {(b.lines||[]).map((l,i)=><div key={i} className="vb-detail-line" style={{display:"flex",justifyContent:"space-between",gap:10,padding:"4px 0",fontSize:12,borderBottom:"1px solid #161616"}}><span style={{color:"#c4c4c4"}}>{l.category}{l.memo?<span style={{color:"#737373",marginLeft:8,fontSize:11}}>{l.memo}</span>:null}</span><span style={{..._mono,color:"#e5e5e5"}}>{fmt(l.amount)}</span></div>)}
+                    <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:12}}><span style={{color:"#737373"}}>Bill total</span><span style={{..._mono,color:"#e5e5e5",fontWeight:700}}>{fmt(total)}</span></div>
+                    {b.memo?<div style={{fontSize:11,color:"#737373",marginTop:4}}>{b.memo}</div>:null}
+                  </div>
+                  <div>
+                    <div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:0.6,textTransform:"uppercase",marginBottom:6}}>Payments</div>
+                    {(b.payments||[]).length===0&&<div style={{fontSize:12,color:"#525252",padding:"4px 0"}}>None yet{st!=='paid'?' -- click Pay to record one and match it to the bank feed.':''}</div>}
+                    {(b.payments||[]).map(p=><div key={p.id} className="vb-payment" style={{display:"flex",justifyContent:"space-between",gap:10,padding:"5px 0",fontSize:12,borderBottom:"1px solid #161616",alignItems:"center"}}><span><span style={{..._mono,color:"#a3a3a3"}}>{p.date}</span><span style={{color:"#c4c4c4",marginLeft:8}}>{p.method||''}{p.ref?' '+p.ref:''}</span>{p.txnId?<span title={p.txnDescription||''} style={{marginLeft:8,fontSize:9,padding:"1px 6px",borderRadius:4,background:"#2dd4bf15",color:"#2dd4bf",fontWeight:700,letterSpacing:0.4}}>BANK MATCHED</span>:<span style={{marginLeft:8,fontSize:9,padding:"1px 6px",borderRadius:4,background:"#fbbf2415",color:"#fbbf24",fontWeight:700,letterSpacing:0.4}}>NO BANK MATCH</span>}</span><span style={{display:"flex",alignItems:"center",gap:8}}><span style={{..._mono,color:"#34d399",fontWeight:600}}>{fmt(p.amount)}</span><button onClick={()=>removeBillPayment(b,p)} style={{..._small,padding:"2px 7px",color:"#f87171",borderColor:"#f8717130"}}>Remove</button></span></div>)}
+                    <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:12}}><span style={{color:"#737373"}}>Balance</span><span style={{..._mono,color:bal>0?"#fbbf24":"#34d399",fontWeight:700}}>{fmt(bal)}</span></div>
+                  </div>
+                </div>
+                {billPay&&billPay.billId===b.id&&<div className="vb-pay-panel" style={{marginTop:12,padding:14,background:"#0a0a0a",border:"1px solid #2dd4bf30",borderRadius:10}}>
+                  <div style={{fontSize:12,fontWeight:700,color:"#2dd4bf",marginBottom:10,letterSpacing:0.5}}>PAY BILL</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:10,marginBottom:10}} className="resp-grid-4">
+                    <div><label style={_lbl}>Amount</label><input value={billPay.amount} onChange={e=>setBillPay(p=>({...p,amount:e.target.value}))} style={{..._inp,..._mono,textAlign:"right"}}/></div>
+                    <div><label style={_lbl}>Date</label><input type="date" value={billPay.date} onChange={e=>setBillPay(p=>({...p,date:e.target.value}))} style={{..._inp,..._mono}}/></div>
+                    <div><label style={_lbl}>Method</label><select value={billPay.method} onChange={e=>setBillPay(p=>({...p,method:e.target.value}))} style={{..._inp,cursor:"pointer"}}>{['ACH','Check','Credit Card','Cash','Other'].map(m=><option key={m} value={m}>{m}</option>)}</select></div>
+                    <div><label style={_lbl}>Check # / reference</label><input value={billPay.ref} onChange={e=>setBillPay(p=>({...p,ref:e.target.value}))} placeholder="optional" style={{..._inp,..._mono}}/></div>
+                  </div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:6}}>
+                    <div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:0.6,textTransform:"uppercase"}}>Match to the bank feed <span style={{color:"#525252",fontWeight:400,textTransform:"none",letterSpacing:0}}>-- the matched transaction moves to Bill Payment so it is not counted as an expense again</span></div>
+                    <input value={billPay.search} onChange={e=>setBillPay(p=>({...p,search:e.target.value}))} placeholder="search description or amount" style={{..._inp,width:220,padding:"6px 10px",fontSize:11}}/>
+                  </div>
+                  {payMatches.length===0?<div style={{fontSize:12,color:"#525252",padding:"8px 0"}}>No unassigned bank payments to match. You can still record the payment without a match.</div>:
+                  <div style={{display:"flex",flexDirection:"column",gap:4}}>{payMatches.map(({t,remaining,exact})=>{const sel=billPay.txnId===t.id;return <div key={t.id} className="vb-match" onClick={()=>pickPayTxn(t,remaining)} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 10px",borderRadius:8,cursor:"pointer",background:sel?"#2dd4bf12":"transparent",border:"1px solid "+(sel?"#2dd4bf60":"rgba(255,255,255,0.05)")}}>
+                    <span style={{width:14,height:14,borderRadius:7,border:"2px solid "+(sel?"#2dd4bf":"#444"),background:sel?"#2dd4bf":"transparent",flexShrink:0}}/>
+                    <span style={{..._mono,color:"#a3a3a3",fontSize:11,whiteSpace:"nowrap"}}>{t.date||'--'}</span>
+                    <span style={{flex:1,color:"#e5e5e5",fontSize:12,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.description||'--'}<span style={{color:"#525252",fontSize:10,marginLeft:8}}>{acctName(t.account)}</span></span>
+                    {exact&&<span style={{fontSize:9,padding:"1px 6px",borderRadius:4,background:"#34d39915",color:"#34d399",fontWeight:700,letterSpacing:0.4}}>EXACT</span>}
+                    <span style={{..._mono,color:"#f87171",fontWeight:600,fontSize:12,whiteSpace:"nowrap"}}>{fmt(remaining)}{remaining<_vbMoney(t.amount)-0.005?<span style={{color:"#525252",fontSize:10}}> of {fmt(t.amount)}</span>:null}</span>
+                  </div>})}</div>}
+                  <div style={{display:"flex",gap:6,justifyContent:"flex-end",marginTop:12}}><Btn className="vb-record" onClick={recordBillPayment}><I n="check" s={13}/> Record Payment{billPay.txnId?' + Match':''}</Btn><Btn v="ghost" onClick={()=>setBillPay(null)}>Cancel</Btn></div>
+                </div>}
+              </div></td></tr>}
+            </React.Fragment>})}</tbody>
+          </table></div>}
+        </Card>
+      </div>;
+    })()}
     {tab==="ar"&&<div style={{display:"flex",flexDirection:"column",gap:16}}>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12}} className="resp-grid-4">
         <Card style={{padding:16,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:6}}>TOTAL AR</div><div style={{fontSize:"clamp(18px,4vw,28px)",fontWeight:800,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace",lineHeight:1}}><AnimNum value={fmt(totalAR)}/></div><div style={{fontSize:12,color:"#a3a3a3",marginTop:6}}>{unpaidJobCount} unpaid job{unpaidJobCount!==1?"s":""}</div></Card>
@@ -6985,7 +7249,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       // Transfer / Owner Draw / Owner Investment are deliberate categorizations that
       // map to movement, not P&L accounts -- they must never count as uncategorized
       // or they would falsely block a period close.
-      const _knownLegacy2=new Set([...(glAccounts||[]).map(a=>a.legacyCategory).filter(Boolean),'Transfer','Owner Draw','Owner Investment']);
+      const _knownLegacy2=new Set([...(glAccounts||[]).map(a=>a.legacyCategory).filter(Boolean),'Transfer','Owner Draw','Owner Investment',BILL_PAYMENT_CATEGORY]);
       const monthTxns=mp=>manualTxns.filter(t=>_periodOf(t.date)===mp);
       const acctLabel=id=>(_bankAcctMetaGlobal[id]&&_bankAcctMetaGlobal[id].nickname)||(id==='Operating'?'Operating':String(id).slice(0,10)+'...');
       const checklistFor=(mp)=>{
