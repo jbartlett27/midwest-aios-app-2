@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { db } from "./supabase.js";
 import { useUser, useClerk, SignIn, UserButton, useAuth } from "@clerk/clerk-react";
 import{BarChart,Bar as RBar,XAxis,YAxis,Tooltip,ResponsiveContainer,LineChart,Line,PieChart,Pie,Cell}from"recharts";
-import { AnimNum, AnimatedNumber, Badge, Bar, Btn, Card, Header, I, fmt, inputStyle, parseLocalDate, shipKey, statusColor } from "./App.jsx";
+import { AnimNum, AnimatedNumber, BANK_LIABILITY_CATEGORIES, BANK_REVIEW_QUEUE_ID, BANK_RULES_ID, BANK_RULE_DEFAULTS, Badge, Bar, Btn, Card, Header, I, applyBankRules, bankCategoryType, bankTxnAcctKey, bankTxnFingerprint, fmt, inputStyle, parseBankRules, parseLocalDate, planPlaidImport, shipKey, statusColor } from "./App.jsx";
 // ---------------------------------------------------------------
 // Vendor bills (Sep 2026). A bill entered the way QuickBooks enters one: vendor,
 // bill date, due date, and category lines that must add up to the bill total.
@@ -27,8 +27,9 @@ const billPaidTotal=(b)=>_vbMoney((Array.isArray(b&&b.payments)?b.payments:[]).r
 const billBalance=(b)=>Math.max(0,_vbMoney(billTotal(b)-billPaidTotal(b)));
 const billStatus=(b)=>{if(b&&b.void===true)return 'void';const t=billTotal(b);const p=billPaidTotal(b);if(t<=0.005)return 'open';if(p>=t-0.005)return 'paid';if(p>0.005)return 'partial';return 'open'};
 // Categories a bill line may use: everything on the Financials list except the
-// revenue side, the movement categories and the placeholders.
-const billLineCategories=(categories)=>(Array.isArray(categories)?categories:[]).filter(c=>c&&!/^Revenue/i.test(c)&&!['Uncategorized','Transfer','Owner Draw','Owner Investment','Refund',BILL_PAYMENT_CATEGORY].includes(c));
+// revenue side, the movement categories and the placeholders. Card and loan payments
+// are balance-sheet movements (Sep 2026): a bill line filed there would vanish from the P&L.
+const billLineCategories=(categories)=>(Array.isArray(categories)?categories:[]).filter(c=>c&&!/^Revenue/i.test(c)&&!['Uncategorized','Transfer','Owner Draw','Owner Investment','Refund',BILL_PAYMENT_CATEGORY].includes(c)&&!BANK_LIABILITY_CATEGORIES.includes(c));
 // Amount already linked to bill payments, per bank transaction id, across every
 // live bill. A check that paid two bills is linked twice; its remaining unlinked
 // amount is what the next match can still claim.
@@ -60,7 +61,19 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   const [attachTxn,setAttachTxn]=useState(null);
   const [attachBusy,setAttachBusy]=useState(false);
   const [lateOpen,setLateOpen]=useState(false);
-  const _reloadGl=async()=>{const[a,l]=await Promise.all([db.fetchAccounts(),db.fetchPeriodLocks()]);if(a)setGlAccounts(a);if(l)setGlLocks(l)};
+  // Bank review (Sep 2026). tombstones = live rows of bank_txn_tombstones (every deleted
+  // bank row, so a sync cannot bring it back); null until the first read lands.
+  const [tombstones,setTombstones]=useState(null);
+  const [reviewRecOnly,setReviewRecOnly]=useState(false);
+  const [reviewDupLimit,setReviewDupLimit]=useState(40);
+  const [reviewBusy,setReviewBusy]=useState(false);
+  const [ruleDraft,setRuleDraft]=useState({match:'',mode:'contains',category:'',direction:'out'});
+  const [ruleApplyOpen,setRuleApplyOpen]=useState(false);
+  const _reloadGl=async()=>{const[a,l,tb]=await Promise.all([db.fetchAccounts(),db.fetchPeriodLocks(),db.fetchTombstones().catch(()=>null)]);if(a)setGlAccounts(a);if(l)setGlLocks(l);if(tb)setTombstones(tb)};
+  // The DB trigger writes the tombstone, and deleteSop does not hand back its promise:
+  // show the deletion at once with a local stand-in, then re-read the real list.
+  const _reloadTombs=async()=>{const tb=await db.fetchTombstones().catch(()=>null);if(tb)setTombstones(tb)};
+  const _noteDeleted=(rows)=>{const list=(Array.isArray(rows)?rows:[rows]).filter(t=>t&&t.id);if(!list.length)return;const at=new Date().toISOString();setTombstones(prev=>[...(prev||[]),...list.map(t=>({id:'local-'+t.id,sopId:t.id,plaidId:t.plaidId||null,fingerprint:bankTxnFingerprint(t),acctKey:bankTxnAcctKey(t)||null,account:t.account||'',date:t.date||'',amount:String(t.amount==null?'':t.amount),description:t.description||'',category:t.category||'',deletedAt:at,restoredAt:null,note:'',_local:true}))]);setTimeout(_reloadTombs,1500)};
   useEffect(()=>{_reloadGl()},[]);
   const _closedSet=new Set((glLocks||[]).filter(l=>l.status==='closed').map(l=>l.period));
   const _periodOf=(d)=>String(d||'').slice(0,7);
@@ -225,6 +238,25 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   const vendorBillExpenses=_vbMoney(billLinesInRange.reduce((s,l)=>s+(parseFloat(l.amount)||0),0));
   const _finCustomCats=(()=>{const r=(customSops||[]).find(s=>s.id==='CUSTOM_CATEGORIES');if(!r)return[];try{const a=JSON.parse(r.content);return Array.isArray(a)?a:[]}catch{return[]}})();
   const _finCategories=[...FIN_DEFAULT_CATEGORIES,..._finCustomCats.filter(c=>!FIN_DEFAULT_CATEGORIES.includes(c))];
+  // ---- Bank review (Sep 2026): computed here, not in the tab, so the tab strip can
+  // badge it. The bank-feed category list adds the two balance-sheet payment categories.
+  const _bankCategories=[...FIN_DEFAULT_CATEGORIES,...BANK_LIABILITY_CATEGORIES.filter(c=>!FIN_DEFAULT_CATEGORIES.includes(c)),..._finCustomCats.filter(c=>!FIN_DEFAULT_CATEGORIES.includes(c)&&!BANK_LIABILITY_CATEGORIES.includes(c))];
+  // Queue sop: {held:[rows a sync held back as possible copies], keep:[acctKeys she marked all real]}.
+  const _reviewQueue=(()=>{const r=(customSops||[]).find(s=>s.id===BANK_REVIEW_QUEUE_ID);let q=null;try{q=r?JSON.parse(r.content):null}catch{q=null}q=q&&typeof q==='object'&&!Array.isArray(q)?q:{};return {...q,held:Array.isArray(q.held)?q.held.filter(x=>x&&typeof x==='object'):[],keep:Array.isArray(q.keep)?q.keep.map(String):[]}})();
+  // A raw bank label is what Plaid writes: ALL_CAPS_WITH_UNDERSCORES (TRANSPORTATION, LOAN_PAYMENTS).
+  // A category a person typed (Charitable Contributions, Personal - Non-Business) is never raw,
+  // even when it is missing from the category list, so the rules and the recommended delete
+  // never overrule a human decision.
+  const _isRawBankCat=(c)=>!c||c==='Uncategorized'||(!_bankCategories.includes(c)&&/^[A-Z][A-Z0-9_]*$/.test(String(c)));
+  // When a row was created: importedAt, else the ms stamp inside a TXN-<ms>-xxxx id.
+  const _txnCreatedMs=(t)=>{const a=Date.parse((t&&t.importedAt)||'');if(isFinite(a))return a;const m=/^TXN-(\d{11,})/.exec(String((t&&t.id)||''));return m?Number(m[1]):0};
+  // Possible duplicates: same account, day and amount, more than one row (the memo is what
+  // the bank rewrites on a re-id, so it is ignored). The recommended delete is the copy
+  // nobody worked on -- no bill match, no receipt, still Uncategorized or a raw bank label
+  // -- newest first. A group where every row is categorized and clean gets no
+  // recommendation: two real same-day charges happen and only Maureen can tell.
+  const _reviewDupGroups=(()=>{const keep=new Set(_reviewQueue.keep);const by=new Map();manualTxns.forEach(t=>{if(t.account&&_bankAcctMetaGlobal[t.account]&&_bankAcctMetaGlobal[t.account].excluded)return;const k=bankTxnAcctKey(t);if(!k||keep.has(k))return;if(!by.has(k))by.set(k,[]);by.get(k).push(t)});const out=[];by.forEach((rows,key)=>{if(rows.length<2)return;const sorted=[...rows].sort((a,b)=>_txnCreatedMs(a)-_txnCreatedMs(b)||String(a.id).localeCompare(String(b.id)));const cand=sorted.filter(t=>!t.billId&&!(Array.isArray(t.attachments)&&t.attachments.length)&&_isRawBankCat(t.category));out.push({key,date:sorted[0].date||'',amount:Math.abs(parseFloat(sorted[0].amount)||0).toFixed(2),account:sorted[0].account||'',rows:sorted,rec:cand.length?cand[cand.length-1]:null})});return out.sort((a,b)=>String(b.date).localeCompare(String(a.date))||a.key.localeCompare(b.key))})();
+  const _reviewCount=_reviewQueue.held.length+_reviewDupGroups.length;
   const _vbToday=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
   const _vbPlusDays=(iso,n)=>{const d=parseLocalDate(iso);if(!d)return '';d.setDate(d.getDate()+n);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
   const _vbIsDate=(v)=>/^\d{4}-\d{2}-\d{2}$/.test(String(v||''))&&!!parseLocalDate(v);
@@ -593,7 +625,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       <div style={{display:"flex",gap:6,alignItems:"center"}}><input type="date" value={dateFrom} onChange={e=>{setDateFrom(e.target.value);setPeriod("custom")}} style={{padding:"8px 12px",background:"rgba(17,17,17,0.45)",backdropFilter:"blur(8px) saturate(200%) brightness(1.1)",WebkitBackdropFilter:"blur(8px) saturate(200%) brightness(1.1)",border:"1px solid #333",borderRadius:8,color:"#f0f0f0",fontSize:12,fontFamily:"inherit",outline:"none"}}/><span style={{color:"#525252",fontSize:12}}>to</span><input type="date" value={dateTo} onChange={e=>{setDateTo(e.target.value);setPeriod("custom")}} style={{padding:"8px 12px",background:"rgba(17,17,17,0.45)",backdropFilter:"blur(8px) saturate(200%) brightness(1.1)",WebkitBackdropFilter:"blur(8px) saturate(200%) brightness(1.1)",border:"1px solid #333",borderRadius:8,color:"#f0f0f0",fontSize:12,fontFamily:"inherit",outline:"none"}}/></div>
       <div style={{fontSize:12,color:"#525252",fontFamily:"'JetBrains Mono',monospace"}}>{filteredJobs.length} job{filteredJobs.length!==1?"s":""}</div>
     </div>
-        <div className="fin-tabs" style={{display:"flex",gap:3,background:"#111",padding:3,borderRadius:8,marginBottom:16,flexWrap:"wrap"}}>{[["overview","Overview"],["pnl","P&L"],["balance","Balance Sheet"],["banking","Banking"],["bills","Bills"],["coa","Accounts"],["ar","Receivables"],["ap","Payables"],["margin","Margins"],["reports","Reports"],["close","Close"]].map(([v,l])=><button key={v} onClick={()=>setTab(v)} style={{padding:"6px 14px",borderRadius:6,border:"none",cursor:"pointer",background:tab===v?"#2dd4bf":"transparent",color:tab===v?"#000":"#737373",fontSize:12,fontWeight:tab===v?600:400,fontFamily:"inherit",transition:"all 0.15s",whiteSpace:"nowrap"}}>{l}</button>)}</div>
+        <div className="fin-tabs" style={{display:"flex",gap:3,background:"#111",padding:3,borderRadius:8,marginBottom:16,flexWrap:"wrap"}}>{[["overview","Overview"],["pnl","P&L"],["balance","Balance Sheet"],["banking","Banking"],["review","Review"],["bills","Bills"],["coa","Accounts"],["ar","Receivables"],["ap","Payables"],["margin","Margins"],["reports","Reports"],["close","Close"]].map(([v,l])=><button key={v} onClick={()=>setTab(v)} style={{padding:"6px 14px",borderRadius:6,border:"none",cursor:"pointer",background:tab===v?"#2dd4bf":"transparent",color:tab===v?"#000":"#737373",fontSize:12,fontWeight:tab===v?600:400,fontFamily:"inherit",transition:"all 0.15s",whiteSpace:"nowrap"}}>{l}{v==='review'&&_reviewCount>0?<span className="rv-count" style={{marginLeft:6,padding:"1px 6px",borderRadius:10,fontSize:10,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",background:tab===v?"rgba(0,0,0,0.18)":"rgba(248,113,113,0.14)",color:tab===v?"#000":"#f87171"}}>{_reviewCount}</span>:null}</button>)}</div>
 
 
     {tab==="overview"&&<div>
@@ -792,7 +824,8 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       const defaultCats=FIN_DEFAULT_CATEGORIES;
       const customCatRecord=(customSops||[]).find(s=>s.id==='CUSTOM_CATEGORIES');
       const customCats=customCatRecord?(()=>{try{return JSON.parse(customCatRecord.content)}catch{return []}})():[];
-      const categories=[...defaultCats,...customCats.filter(c=>!defaultCats.includes(c))];
+      // Card and loan payments (Sep 2026): offered here so she can file them; they are liabilities, not expenses.
+      const categories=[...defaultCats,...BANK_LIABILITY_CATEGORIES.filter(c=>!defaultCats.includes(c)),...customCats.filter(c=>!defaultCats.includes(c)&&!BANK_LIABILITY_CATEGORIES.includes(c))];
       const addCustomCat=(name)=>{if(!name||categories.includes(name))return;const next=[...customCats,name];addSop({id:'CUSTOM_CATEGORIES',title:'Custom Categories',cat:'Settings',icon:'tag',content:JSON.stringify(next),custom:true});notify('Category added: '+name)};
       const removeCustomCat=(name)=>{const next=customCats.filter(c=>c!==name);addSop({id:'CUSTOM_CATEGORIES',title:'Custom Categories',cat:'Settings',icon:'tag',content:JSON.stringify(next),custom:true});notify('Category removed: '+name)};
       const renameCustomCat=(oldName,newName)=>{if(!newName||categories.includes(newName))return;const next=customCats.map(c=>c===oldName?newName:c);addSop({id:'CUSTOM_CATEGORIES',title:'Custom Categories',cat:'Settings',icon:'tag',content:JSON.stringify(next),custom:true});
@@ -824,7 +857,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
         const ok=await fCtx.confirm('Delete account "'+label+'" and all '+cnt+' of its transactions? This cannot be undone.');
         if(!ok)return;
         // Delete every transaction tied to this account (deleteSop removes from local state + DB)
-        acctTxns.forEach(t=>{deleteSop(t.id)});
+        acctTxns.forEach(t=>{deleteSop(t.id)});_noteDeleted(acctTxns);
         // Strip the metadata entry and remove from filter selection
         const nextMeta={...bankAcctMeta};
         delete nextMeta[acctId];
@@ -873,6 +906,10 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
               notify('Duplicate transaction -- same date, amount, and description already exists. Edit the existing entry instead, or change one of those fields.','error');
               return;
             }
+            // A deleted bank row stays deleted (Sep 2026): the DB trigger refuses it too, so
+            // say why here instead of failing at the database.
+            const _tb=(tombstones||[]).find(x=>(x.fingerprint||bankTxnFingerprint(x))===bankTxnFingerprint(manualForm));
+            if(_tb){notify('A bank transaction like this was deleted on '+(_tb.deletedAt?String(_tb.deletedAt).slice(0,10):'an earlier date')+' -- allow it again on the Review tab first','error');return}
           }
         }
         // Closed-period guard: the DB trigger would reject this anyway -- fail with a
@@ -912,9 +949,9 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
         addSop({id:t.id,title:t.description||'Transaction',cat:'ManualTxn',icon:'dollar',content:JSON.stringify({...t,attachments:next}),custom:true});
         notify('Attachment removed');
       };
-      const deleteTxn=(id)=>{const _t=allTxns.find(x=>x.id===id);if(_t&&_isLockedDate(_t.date)){notify(_lockMsg(_t.date),'error');return}deleteSop(id);notify('Transaction deleted')};
+      const deleteTxn=(id)=>{const _t=allTxns.find(x=>x.id===id);if(_t&&_isLockedDate(_t.date)){notify(_lockMsg(_t.date),'error');return}deleteSop(id);_noteDeleted(_t);notify('Transaction deleted')};
       const editTxn=(t)=>{setManualForm({date:t.date||'',description:t.description||'',category:t.category||'',amount:t.amount||'',type:t.type||'expense',account:t.account||'Operating'});setManualEditing(t.id)};
-      const updateCategory=(txnId,cat)=>{const t=allTxns.find(x=>x.id===txnId);if(!t)return;if(t.billId&&cat!==BILL_PAYMENT_CATEGORY){notify('This bank transaction is matched to a vendor bill payment -- remove the payment on the Bills tab to release it','error');return}if(_isLockedDate(t.date)){notify(_lockMsg(t.date),'error');return}const newType=cat.startsWith('Revenue')?'revenue':cat==='asset'?'asset':cat==='liability'?'liability':'expense';addSop({id:txnId,title:t.description||'Transaction',cat:'ManualTxn',icon:'dollar',content:JSON.stringify({...t,category:cat,type:newType}),custom:true});notify('Categorized: '+cat)};
+      const updateCategory=(txnId,cat)=>{const t=allTxns.find(x=>x.id===txnId);if(!t)return;if(t.billId&&cat!==BILL_PAYMENT_CATEGORY){notify('This bank transaction is matched to a vendor bill payment -- remove the payment on the Bills tab to release it','error');return}if(_isLockedDate(t.date)){notify(_lockMsg(t.date),'error');return}const newType=bankCategoryType(cat,'expense');addSop({id:txnId,title:t.description||'Transaction',cat:'ManualTxn',icon:'dollar',content:JSON.stringify({...t,category:cat,type:newType}),custom:true});notify('Categorized: '+cat)};
       const totalBankIn=filteredBankTxns.filter(t=>t.type==='revenue').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
       const totalBankOut=filteredBankTxns.filter(t=>t.type==='expense').reduce((s,t)=>s+(parseFloat(t.amount)||0),0);
       const uncategorized=filteredBankTxns.filter(t=>!t.category||t.category==='Uncategorized'||!categories.includes(t.category)).length;
@@ -924,7 +961,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
         const ids=[...txnSelected];
         const locked=ids.filter(id=>{const _t=allTxns.find(x=>x.id===id);return _t&&_isLockedDate(_t.date)});
         const ok=ids.filter(id=>!locked.includes(id));
-        ok.forEach(id=>deleteSop(id));
+        ok.forEach(id=>deleteSop(id));_noteDeleted(ok.map(id=>allTxns.find(x=>x.id===id)));
         notify(ok.length+' transaction'+(ok.length!==1?'s':'')+' deleted'+(locked.length?' -- '+locked.length+' in closed periods left untouched':''),locked.length&&!ok.length?'error':undefined);
         setTxnSelected(new Set());
       };
@@ -1222,16 +1259,26 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
         // saw none of the existing rows, and re-imported 66 transactions Maureen had
         // already categorized. If the DB cannot be read in full, the sync ABORTS --
         // it never inserts against a picture of the books it cannot verify.
-        const _freshSopsForDedup=await db.fetchSops().catch(()=>null);
-        if(!_freshSopsForDedup){
+        // Deleted rows are part of that picture (Sep 2026): without them a re-id'd row she
+        // deleted comes straight back (three deposits on 9/27). No tombstones, no import.
+        const [_freshSopsForDedup,_freshTombs]=await Promise.all([db.fetchSops().catch(()=>null),db.fetchTombstones().catch(()=>null)]);
+        if(!_freshSopsForDedup||!_freshTombs){
           const _msg='Sync aborted: could not verify existing transactions against the database. Nothing was imported.';
           setPlaidSyncError(_msg);if(!silent)notify(_msg,'error');
           setPlaidLoading(false);setPlaidSyncing(false);return;
         }
-        const _freshTxnsForDedup=_freshSopsForDedup.filter(x=>x.cat==='ManualTxn').map(x=>{try{return JSON.parse(x.content)}catch{return null}}).filter(Boolean);
-        // Merge with current state so rows added this session but not yet round-tripped count too.
-        const existingPlaidIds=new Set([..._freshTxnsForDedup.filter(mt=>mt.plaidId).map(mt=>mt.plaidId),...manualTxns.filter(mt=>mt.plaidId).map(mt=>mt.plaidId)]);
-        const existingHashes=new Set([..._freshTxnsForDedup.map(mt=>_bankTxnHash(mt)),...manualTxns.map(mt=>_bankTxnHash(mt))]);
+        setTombstones(_freshTombs);
+        // Existing rows keep their ids so a pending -> posted promotion updates the row in
+        // place. Fresh DB rows first, this session's rows on top (edits not yet round-tripped).
+        const _existById=new Map();
+        _freshSopsForDedup.forEach(x=>{if(!x||x.cat!=='ManualTxn')return;try{const c=JSON.parse(x.content);if(c&&typeof c==='object')_existById.set(x.id,{...c,id:x.id})}catch{}});
+        manualTxns.forEach(mt=>_existById.set(mt.id,mt));
+        // Queue and rules: this session's copy when it has one (addSop keeps it current),
+        // else the fresh read -- a partial sops load must not wipe the queue or the rules.
+        const _hasLocal=(id)=>(customSops||[]).some(x=>x&&x.id===id);
+        const _queueNow=_hasLocal(BANK_REVIEW_QUEUE_ID)?_reviewQueue:(()=>{const r=_freshSopsForDedup.find(x=>x&&x.id===BANK_REVIEW_QUEUE_ID);let q=null;try{q=r?JSON.parse(r.content):null}catch{q=null}return q&&typeof q==='object'&&!Array.isArray(q)?q:{}})();
+        const _heldNow=Array.isArray(_queueNow.held)?_queueNow.held:[];
+        const _rulesNow=parseBankRules(_hasLocal(BANK_RULES_ID)?customSops:_freshSopsForDedup);
         const range=rangeOverride||plaidSyncRange;
         const n=new Date();
         // Pad endDate to today + 2 days. Plaid sometimes reports pending or
@@ -1274,31 +1321,15 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
           // Balance Sheet's Cash figure with real bank numbers instead of a proxy.
           if(Array.isArray(data.accounts)&&data.accounts.length>0){try{addSop({id:'BANK_BALANCES_GLOBAL',title:'Bank Balances',cat:'BankBalances',icon:'dollar',content:JSON.stringify({asOf:new Date().toISOString(),accounts:data.accounts.map(a=>({id:a.account_id||'',name:a.name||a.official_name||'',mask:a.mask||'',type:a.type||'',subtype:a.subtype||'',current:a.balances?.current??null,available:a.balances?.available??null}))}),custom:true});}catch(_e){}}
           const txns=data.added||data.transactions||[];
-          let imported=0;let skipped=0;const lateArr=[];
-          txns.forEach(t=>{
-            // Smart dedup: check Plaid transaction ID first
-            if(t.transaction_id&&existingPlaidIds.has(t.transaction_id)){skipped++;return}
-            // Fallback dedup: shared _bankTxnHash so manual rows and Plaid pulls collapse
-            // to the same key when describing the same transaction. The 12-char description
-            // prefix avoids collapsing distinct same-day same-amount transactions (e.g.,
-            // two separate Amazon purchases).
-            const hash=_bankTxnHash({date:t.date,amount:t.amount,description:t.name||t.merchant_name||''});
-            if(existingHashes.has(hash)){skipped++;return}
-            // Closed-period carve-out: the DB lock would reject this insert outright.
-            // Instead of failing the sync, route the transaction to the Late Arrivals
-            // queue for manual handling in an open period (badge on the Banking tab).
-            if(_isLockedDate(t.date)){lateArr.push({date:t.date||'',description:t.name||t.merchant_name||'',amount:String(Math.abs(t.amount).toFixed(2)),type:t.amount>0?'expense':'revenue',account:t.account_id||'Operating',plaidId:t.transaction_id||'',plaidCategory:t.personal_finance_category?.primary||'',queuedAt:new Date().toISOString()});return}
-            // Mark as seen for this sync batch
-            if(t.transaction_id)existingPlaidIds.add(t.transaction_id);
-            existingHashes.add(hash);
-            const id='TXN-'+Date.now()+'-'+Math.random().toString(36).slice(2,6)+'-'+imported;
-            const isDebit=t.amount>0;
-            addSop({id,title:t.name||t.merchant_name||'Bank transaction',cat:'ManualTxn',icon:'dollar',content:JSON.stringify({
-              date:t.date||'',description:t.name||t.merchant_name||'',category:'Uncategorized',
-              amount:String(Math.abs(t.amount).toFixed(2)),type:isDebit?'expense':'revenue',account:t.account_id||'Operating',
-              plaidId:t.transaction_id,plaidCategory:t.personal_finance_category?.primary||t.category?.join(' > ')||''
-            }),custom:true});imported++;
-          });
+          // One plan for the whole batch (planPlaidImport in App.jsx, shared with the app-level
+          // auto sync): pending skipped, pending -> posted promoted in place, known ids and
+          // fingerprints skipped, deleted ones skipped, same account/day/amount with a new memo
+          // HELD for review, closed periods to Late Arrivals, the rest imported by the rules.
+          const plan=planPlaidImport({txns,existing:[..._existById.values()],held:_heldNow,tombstones:_freshTombs,rules:_rulesNow,isLocked:_isLockedDate,now:new Date().toISOString()});
+          plan.additions.forEach(x=>addSop(x));
+          plan.updates.forEach(x=>addSop(x));
+          if(plan.held.length)addSop({id:BANK_REVIEW_QUEUE_ID,title:'Bank Review Queue',cat:'Settings',icon:'shield',content:JSON.stringify({..._queueNow,held:[..._heldNow,...plan.held],keep:Array.isArray(_queueNow.keep)?_queueNow.keep:[]}),custom:true});
+          const lateArr=plan.late;const _pc=plan.counts;
           const syncTime=new Date().toISOString();
           localStorage.setItem('mw_plaid_last_sync',syncTime);setPlaidLastSync(syncTime);
           setPlaidSyncError('');
@@ -1311,7 +1342,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
             const fresh=lateArr.filter(x=>!seenQ.has(x.plaidId||_bankTxnHash(x)));
             if(fresh.length)addSop({id:'LATE_ARRIVALS_GLOBAL',title:'Late Arrivals',cat:'Settings',icon:'clock',content:JSON.stringify([..._lateArrivals,...fresh]),custom:true});
           }
-          if(!silent||imported>0||lateArr.length>0)notify(imported+' new'+(skipped>0?', '+skipped+' skipped (already in system)':'')+(lateArr.length>0?', '+lateArr.length+' routed to Late Arrivals (closed period)':'')+' ('+startDate+' to '+endDate+')');
+          if(!silent||_pc.imported>0||_pc.held>0||_pc.promoted>0||lateArr.length>0)notify(_pc.imported+' new'+(_pc.held>0?', '+_pc.held+' held for review':'')+(_pc.skippedSame>0?', '+_pc.skippedSame+' skipped (already in system)':'')+(_pc.skippedDeleted>0?', '+_pc.skippedDeleted+' skipped (deleted before)':'')+(_pc.promoted>0?', '+_pc.promoted+' posted (pending updated)':'')+(lateArr.length>0?', '+lateArr.length+' routed to Late Arrivals (closed period)':'')+' ('+startDate+' to '+endDate+')');
         }catch(err){
           setPlaidSyncError(err.message||'Network error');
           if(!silent)notify('Sync error: '+err.message,'error');
@@ -1517,7 +1548,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10,marginBottom:12}}>
             <div><label style={{fontSize:11,color:"#a3a3a3",display:"block",marginBottom:3}}>Date</label><input type="date" value={manualForm.date} onChange={e=>setManualForm({...manualForm,date:e.target.value})} style={inputStyle}/></div>
             <div><label style={{fontSize:11,color:"#a3a3a3",display:"block",marginBottom:3}}>Description</label><input value={manualForm.description} onChange={e=>setManualForm({...manualForm,description:e.target.value})} placeholder="e.g. Smith System payment" style={inputStyle}/></div>
-            <div style={{position:"relative"}}><label style={{fontSize:11,color:"#a3a3a3",display:"block",marginBottom:3}}>Category</label><input value={manualForm.category} onChange={e=>{const cat=e.target.value;const newType=cat.startsWith('Revenue')?'revenue':'expense';setManualForm({...manualForm,category:cat,type:newType});e.target.nextElementSibling&&(e.target.nextElementSibling.style.display='block')}} onFocus={e=>{e.target.nextElementSibling&&(e.target.nextElementSibling.style.display='block')}} onBlur={e=>{setTimeout(()=>{if(e.target.nextElementSibling)e.target.nextElementSibling.style.display='none'},150)}} placeholder="Type to search..." style={inputStyle} autoComplete="off"/><div style={{display:"none",position:"absolute",top:"100%",left:0,right:0,maxHeight:220,overflowY:"auto",background:"#111",border:"1px solid #333",borderRadius:6,zIndex:20,boxShadow:"0 8px 20px rgba(0,0,0,0.5)"}}>{categories.filter(c=>!manualForm.category||c.toLowerCase().includes(manualForm.category.toLowerCase())).map(c=><div key={c} onMouseDown={e=>{e.preventDefault();const newType=c.startsWith('Revenue')?'revenue':'expense';setManualForm({...manualForm,category:c,type:newType});e.target.closest('div[style*="position"]').style.display='none'}} style={{padding:"6px 10px",fontSize:11,color:manualForm.category===c?"#14b8a6":"#a3a3a3",cursor:"pointer",borderBottom:"1px solid #1a1a1a"}} onMouseEnter={e=>{e.currentTarget.style.background="#1a1a1a"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>{c}</div>)}</div></div>
+            <div style={{position:"relative"}}><label style={{fontSize:11,color:"#a3a3a3",display:"block",marginBottom:3}}>Category</label><input value={manualForm.category} onChange={e=>{const cat=e.target.value;const newType=bankCategoryType(cat,'expense');setManualForm({...manualForm,category:cat,type:newType});e.target.nextElementSibling&&(e.target.nextElementSibling.style.display='block')}} onFocus={e=>{e.target.nextElementSibling&&(e.target.nextElementSibling.style.display='block')}} onBlur={e=>{setTimeout(()=>{if(e.target.nextElementSibling)e.target.nextElementSibling.style.display='none'},150)}} placeholder="Type to search..." style={inputStyle} autoComplete="off"/><div style={{display:"none",position:"absolute",top:"100%",left:0,right:0,maxHeight:220,overflowY:"auto",background:"#111",border:"1px solid #333",borderRadius:6,zIndex:20,boxShadow:"0 8px 20px rgba(0,0,0,0.5)"}}>{categories.filter(c=>!manualForm.category||c.toLowerCase().includes(manualForm.category.toLowerCase())).map(c=><div key={c} onMouseDown={e=>{e.preventDefault();const newType=c.startsWith('Revenue')?'revenue':'expense';setManualForm({...manualForm,category:c,type:newType});e.target.closest('div[style*="position"]').style.display='none'}} style={{padding:"6px 10px",fontSize:11,color:manualForm.category===c?"#14b8a6":"#a3a3a3",cursor:"pointer",borderBottom:"1px solid #1a1a1a"}} onMouseEnter={e=>{e.currentTarget.style.background="#1a1a1a"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>{c}</div>)}</div></div>
             <div><label style={{fontSize:11,color:"#a3a3a3",display:"block",marginBottom:3}}>Amount</label><input type="number" value={manualForm.amount} onChange={e=>setManualForm({...manualForm,amount:e.target.value})} placeholder="0.00" style={inputStyle}/></div>
             <div><label style={{fontSize:11,color:"#a3a3a3",display:"block",marginBottom:3}}>Type</label><select value={manualForm.type} onChange={e=>setManualForm({...manualForm,type:e.target.value})} style={inputStyle}><option value="expense">Expense (out)</option><option value="revenue">Revenue (in)</option><option value="asset">Asset</option><option value="liability">Liability</option></select></div>
             <div><label style={{fontSize:11,color:"#a3a3a3",display:"block",marginBottom:3}}>Account</label><select value={manualForm.account} onChange={e=>setManualForm({...manualForm,account:e.target.value})} style={inputStyle}>{allAccounts.map(a=><option key={a} value={a}>{a}</option>)}</select></div>
@@ -1702,6 +1733,220 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       </div>})()}
 
 
+    {tab==="review"&&(()=>{
+      // Review (Sep 2026): where the bank feed gets cleaned. Rows a sync held back as possible
+      // copies, same account/day/amount groups already on file (369 extra copies on 9/27),
+      // the deleted-row memory that keeps a sync from bringing a row back, and the rules
+      // that categorize new rows on the way in.
+      const _mono={fontFamily:"'JetBrains Mono',monospace"};
+      const _small={padding:"4px 10px",borderRadius:6,border:"1px solid #333",background:"transparent",color:"#a3a3a3",fontSize:10,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"};
+      const _inp={...inputStyle,padding:"8px 11px",fontSize:12};
+      const _lbl={fontSize:10,color:"#737373",display:"block",marginBottom:4,fontWeight:600,letterSpacing:0.6,textTransform:"uppercase"};
+      const chip=(label,color,cls)=><span className={cls} style={{fontSize:9,padding:"1px 6px",borderRadius:4,background:color+"15",color,fontWeight:700,letterSpacing:0.4,whiteSpace:"nowrap",..._mono}}>{label}</span>;
+      const head=(title,sub,right,count,color)=><div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap",marginBottom:12}}><div style={{minWidth:0,flex:1}}><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:13,fontWeight:800,color:"#f0f0f0",letterSpacing:1.2,..._mono}}>{title}</span>{count!=null?<span style={{fontSize:10,fontWeight:700,padding:"1px 8px",borderRadius:10,background:(color||"#737373")+"18",color:color||"#737373",..._mono}}>{count}</span>:null}</div><div style={{fontSize:11.5,color:"#737373",marginTop:3,maxWidth:680,lineHeight:1.5}}>{sub}</div></div>{right?<div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>{right}</div>:null}</div>;
+      const empty=(title,body)=><div className="rv-empty" style={{padding:"24px 0",textAlign:"center"}}><div style={{fontSize:13,color:"#a3a3a3",marginBottom:4}}>{title}</div><div style={{fontSize:12,color:"#525252",maxWidth:560,margin:"0 auto",lineHeight:1.5}}>{body}</div></div>;
+      const acctName=(id)=>{if(!id)return '--';const m=_bankAcctMetaGlobal[id];return m&&m.nickname?m.nickname:(String(id).length>20?String(id).slice(0,10)+'...':id)};
+      const money=(t)=>(t.type==='revenue'||t.type==='asset'?'+':'-')+fmt(Math.abs(parseFloat(t.amount)||0));
+      const moneyColor=(t)=>t.type==='revenue'||t.type==='asset'?"#34d399":t.type==='liability'?"#a78bfa":"#f87171";
+      const stamp=(ms)=>{if(!ms)return '--';const d=new Date(ms);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')};
+      const srcOf=(t)=>t.source==='late_arrival'?['LATE ARRIVAL',"#fbbf24"]:t.source==='statement'?['STATEMENT',"#a78bfa"]:t.plaidId?['BANK FEED',"#2dd4bf"]:['MANUAL',"#9a9a9a"];
+      const ask=async(m)=>typeof fCtx.confirm==='function'?await fCtx.confirm(m):true;
+      const plural=(n,one,many)=>n+' '+(n===1?one:many);
+      // ---- held for review ----
+      const queue=_reviewQueue;const held=queue.held;
+      const saveQueue=(patch)=>addSop({id:BANK_REVIEW_QUEUE_ID,title:'Bank Review Queue',cat:'Settings',icon:'shield',content:JSON.stringify({...queue,...patch}),custom:true});
+      const heldKey=(h)=>String(h.key||h.plaidId||h.fingerprint||bankTxnFingerprint(h));
+      const rules=parseBankRules(customSops);
+      const addHeld=(h)=>{
+        if(_isLockedDate(h.date)){notify(_lockMsg(h.date),'error');return}
+        const hit=applyBankRules(rules,{description:h.description,type:h.type});
+        const rec={date:h.date||'',description:h.description||'',category:hit?hit.category:'Uncategorized',amount:Math.abs(parseFloat(h.amount)||0).toFixed(2),type:hit?hit.type:(h.type||'expense'),account:h.account||'Operating',plaidId:h.plaidId||undefined,plaidCategory:h.plaidCategory||'',importedAt:new Date().toISOString(),reviewedBy:_glUser};
+        if(hit&&hit.ruleId)rec.ruleId=hit.ruleId;
+        addSop({id:'TXN-'+Date.now()+'-'+Math.random().toString(36).slice(2,6)+'-R',title:rec.description||'Bank transaction',cat:'ManualTxn',icon:'dollar',content:JSON.stringify(rec),custom:true});
+        saveQueue({held:held.filter(x=>heldKey(x)!==heldKey(h))});
+        notify('Added: '+(rec.description||'bank transaction')+' as '+rec.category);
+      };
+      // A dismissed row is remembered like a deleted one, so the next sync skips it.
+      const tombOf=(h)=>({sopId:null,plaidId:h.plaidId||null,fingerprint:h.fingerprint||bankTxnFingerprint(h),acctKey:h.acctKey||bankTxnAcctKey(h)||null,account:h.account||'',date:h.date||'',amount:Math.abs(parseFloat(h.amount)||0).toFixed(2),description:h.description||'',category:'',note:'dismissed from review'});
+      const dismissHeld=async(h)=>{
+        setReviewBusy(true);const r=await db.addTombstone(tombOf(h)).catch(()=>null);setReviewBusy(false);
+        if(!r||!r.ok){notify('Could not record the dismissal -- nothing changed. Try again.','error');return}
+        saveQueue({held:held.filter(x=>heldKey(x)!==heldKey(h))});_reloadTombs();
+        notify('Dismissed: '+(h.description||'bank transaction')+' -- a sync will not bring it back');
+      };
+      const dismissAll=async()=>{
+        if(!held.length)return;
+        const ok=await ask('Dismiss all '+plural(held.length,'held transaction','held transactions')+'? They are remembered as deleted, so a bank sync will not bring them back.');if(!ok)return;
+        setReviewBusy(true);const done=new Set();
+        for(const h of held){const r=await db.addTombstone(tombOf(h)).catch(()=>null);if(r&&r.ok)done.add(heldKey(h))}
+        setReviewBusy(false);
+        if(done.size)saveQueue({held:held.filter(x=>!done.has(heldKey(x)))});_reloadTombs();
+        notify(done.size+' dismissed'+(done.size<held.length?' -- '+(held.length-done.size)+' could not be recorded and are still here':''),done.size<held.length?'error':undefined);
+      };
+      // ---- possible duplicates ----
+      const groups=_reviewDupGroups;
+      const recRows=groups.map(g=>g.rec).filter(Boolean);
+      const extraCopies=groups.reduce((s2,g)=>s2+g.rows.length-1,0);
+      const doubleCounted=_vbMoney(groups.reduce((s2,g)=>s2+(g.rows.length-1)*(parseFloat(g.amount)||0),0));
+      const shownGroups=reviewRecOnly?groups.filter(g=>g.rec):groups;
+      const deleteCopy=(t)=>{if(_isLockedDate(t.date)){notify(_lockMsg(t.date),'error');return}deleteSop(t.id);_noteDeleted(t);notify('Copy deleted: '+(t.description||'bank transaction')+' '+fmt(Math.abs(parseFloat(t.amount)||0)))};
+      const keepAll=(g)=>{saveQueue({keep:Array.from(new Set([...queue.keep,g.key]))});notify('Kept all '+g.rows.length+' -- this group will not be flagged again')};
+      const deleteAllRec=async()=>{
+        const open=recRows.filter(t=>!_isLockedDate(t.date));const locked=recRows.length-open.length;
+        if(!open.length){notify(locked?plural(locked,'recommended copy is','recommended copies are')+' in a closed period -- nothing deleted':'Nothing is recommended for deletion',locked?'error':undefined);return}
+        const total=_vbMoney(open.reduce((s2,t)=>s2+Math.abs(parseFloat(t.amount)||0),0));
+        const ok=await ask('Delete '+plural(open.length,'recommended copy','recommended copies')+' totaling '+fmt(total)+'? The row each group keeps is not touched'+(locked?', and '+locked+' in closed periods are skipped':'')+'. Deleted rows are remembered so a bank sync cannot bring them back.');if(!ok)return;
+        open.forEach(t=>deleteSop(t.id));_noteDeleted(open);
+        notify(plural(open.length,'duplicate copy','duplicate copies')+' deleted ('+fmt(total)+')'+(locked?' -- '+locked+' in closed periods left untouched':''));
+      };
+      // ---- deleted bank transactions ----
+      const tombList=(tombstones||[]).slice().sort((a,b)=>String(b.deletedAt||'').localeCompare(String(a.deletedAt||''))||(Number(b.id)||0)-(Number(a.id)||0));
+      const allowAgain=async(tb)=>{
+        if(tb._local)return;
+        setReviewBusy(true);const r=await db.restoreTombstone(tb.id).catch(()=>null);setReviewBusy(false);
+        if(!r||!r.ok){notify('Could not allow it again -- nothing changed','error');return}
+        setTombstones(prev=>(prev||[]).filter(x=>x.id!==tb.id));_reloadTombs();
+        notify('Allowed again: '+(tb.description||'bank transaction')+' can come back on the next sync');
+      };
+      // ---- category rules ----
+      const saveRules=(next,msg)=>{addSop({id:BANK_RULES_ID,title:'Bank Rules',cat:'Settings',icon:'tag',content:JSON.stringify(next),custom:true});if(msg)notify(msg)};
+      const ruleCats=_bankCategories.filter(c=>c!=='Uncategorized');
+      const draftType=bankCategoryType(ruleDraft.category,'expense');
+      const addRule=()=>{
+        const m=String(ruleDraft.match||'').replace(/\s+/g,' ').trim();
+        if(!m){notify('Type the bank memo text the rule should match','error');return}
+        if(!ruleDraft.category){notify('Pick the category the rule files it under','error');return}
+        let n=rules.length+1;while(rules.some(x=>x.id==='r-'+n))n++;
+        saveRules([...rules,{id:'r-'+n,match:m,mode:ruleDraft.mode==='starts'?'starts':'contains',category:ruleDraft.category,type:draftType,direction:['out','in','any'].includes(ruleDraft.direction)?ruleDraft.direction:'any',enabled:true}],'Rule added: '+m+' -- '+ruleDraft.category);
+        setRuleDraft({match:'',mode:'contains',category:'',direction:'out'});
+      };
+      const toggleRule=(r)=>saveRules(rules.map(x=>x.id===r.id?{...x,enabled:!x.enabled}:x),(r.enabled?'Rule off: ':'Rule on: ')+r.match);
+      const deleteRule=(r)=>saveRules(rules.filter(x=>x.id!==r.id),'Rule deleted: '+r.match);
+      const resetRules=async()=>{const ok=await ask('Replace your rules with the '+BANK_RULE_DEFAULTS.length+' default rules?');if(!ok)return;saveRules(BANK_RULE_DEFAULTS.map(r=>({...r})),'Rules reset to defaults')};
+      // Apply only where nobody has decided yet: Uncategorized or a raw bank label, no bill
+      // match, open period. A row she categorized herself is never rewritten.
+      const ruleChanges=manualTxns.filter(t=>_isRawBankCat(t.category)&&!t.billId&&!_isLockedDate(t.date)).map(t=>({t,hit:applyBankRules(rules,{description:t.description,type:t.type})})).filter(x=>x.hit&&(x.hit.category!==x.t.category||x.hit.type!==x.t.type));
+      const applyRulesNow=async()=>{
+        if(!ruleChanges.length){notify('No uncategorized transactions match a rule');setRuleApplyOpen(false);return}
+        const ok=await ask('Categorize '+plural(ruleChanges.length,'transaction','transactions')+' by your rules? Only Uncategorized rows and raw bank labels change.');if(!ok)return;
+        const recs=ruleChanges.map(({t,hit})=>{const {id,...rest}=t;return {id,title:t.description||'Transaction',cat:'ManualTxn',icon:'dollar',content:JSON.stringify({...rest,category:hit.category,type:hit.type,ruleId:hit.ruleId||undefined}),custom:true}});
+        // One upsert for the batch and one state merge when the app hands us the setter;
+        // otherwise addSop per row (two requests each, but always correct).
+        if(typeof fCtx.setCustomSops==='function'){
+          setReviewBusy(true);const r=await db.saveSops(recs).catch(()=>null);setReviewBusy(false);
+          if(!r||r.ok===false){notify('Could not save the categories -- nothing changed','error');return}
+          const byId=new Map(recs.map(x=>[x.id,x]));fCtx.setCustomSops(prev=>(prev||[]).map(x=>byId.has(x.id)?byId.get(x.id):x));
+        }else recs.forEach(x=>addSop(x));
+        setRuleApplyOpen(false);
+        notify(plural(recs.length,'transaction','transactions')+' categorized by rules');
+      };
+      return <div className="rv-tab" style={{display:"flex",flexDirection:"column",gap:16}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:12}} className="resp-grid-4">
+          {kpi('HELD FOR REVIEW',String(held.length),held.length?'waiting on you':'nothing waiting',held.length?'#fbbf24':'#34d399')}
+          {kpi('DUPLICATE GROUPS',String(groups.length),plural(extraCopies,'extra copy','extra copies'),groups.length?'#f87171':'#34d399')}
+          {kpi('DOUBLE COUNTED',fmt(doubleCounted),'across the extra copies',doubleCounted>0?'#f97316':'#34d399')}
+          {kpi('REMEMBERED DELETIONS',String(tombList.length),'a sync will not bring these back','#a78bfa')}
+        </div>
+
+        <Card style={{padding:20}}><div className="rv-held">
+          {head('HELD FOR REVIEW','A sync held these back: each looks like a copy of a row already on file, or of one you deleted -- same account, day and amount, different bank memo. Add the ones that are real; dismiss the copies.',held.length>1?<Btn v="secondary" className="rv-dismiss-all" style={{fontSize:11,padding:"4px 10px"}} onClick={dismissAll}>Dismiss all</Btn>:null,held.length,"#fbbf24")}
+          {held.length===0?empty('Nothing held for review.','When a sync finds a bank row that looks like a copy of one already on file -- same account, day and amount, but a different memo -- it waits here for you instead of landing twice.'):
+          <div>{held.map(h=>{const k=heldKey(h);return <div key={k} className="rv-held-row" style={{display:"flex",alignItems:"center",gap:12,padding:"10px 4px",borderBottom:"1px solid #161616",flexWrap:"wrap"}}>
+            <span style={{..._mono,fontSize:11,color:"#9a9a9a",width:78,flexShrink:0}}>{h.date||'--'}</span>
+            <div style={{flex:1,minWidth:220}}>
+              <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}><span style={{fontSize:12.5,color:"#e5e5e5",fontWeight:600}}>{h.description||'--'}</span>{h.plaidCategory?chip(String(h.plaidCategory),"#737373"):null}<span style={{fontSize:10.5,color:"#737373"}}>{acctName(h.account)}</span></div>
+              <div className="rv-match" style={{fontSize:11,color:h.matchSource==='deleted'?"#a78bfa":"#fbbf24",marginTop:2}}>{h.matchSource==='deleted'?'A transaction like this was deleted before':'Matches: '+(h.matchDescription||'--')+' ('+(h.matchCategory||'Uncategorized')+')'}</div>
+            </div>
+            <span style={{..._mono,fontSize:13,fontWeight:700,color:moneyColor(h),whiteSpace:"nowrap"}}>{money(h)}</span>
+            <div style={{display:"flex",gap:6}}><button className="rv-add" disabled={reviewBusy} onClick={()=>addHeld(h)} style={{..._small,color:"#2dd4bf",borderColor:"#2dd4bf40",fontWeight:700}}>Add</button><button className="rv-dismiss" disabled={reviewBusy} onClick={()=>dismissHeld(h)} style={_small}>Dismiss</button></div>
+          </div>})}</div>}
+        </div></Card>
+
+        <Card style={{padding:0}}><div className="rv-dups">
+          <div className="rv-bulk" style={{position:"sticky",top:0,zIndex:4,background:"#111111",borderBottom:"1px solid rgba(255,255,255,0.06)",padding:"18px 20px 12px",borderRadius:"14px 14px 0 0"}}>
+            {head('POSSIBLE DUPLICATES','Same account, same day, same amount, more than one row. The copy marked RECOMMENDED DELETE is the one nobody worked on: no bill match, no receipt, still Uncategorized or a raw bank label. Two real charges for the same amount on the same day do happen -- Keep all stops the group from being flagged.',null,groups.length,"#f87171")}
+            <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+              <span className="rv-totals" style={{..._mono,fontSize:12,color:"#c4c4c4"}}>{plural(groups.length,'group','groups')}, {plural(extraCopies,'extra copy','extra copies')}, <span style={{color:doubleCounted>0?"#f87171":"#c4c4c4",fontWeight:700}}>{fmt(doubleCounted)}</span> double counted</span>
+              <span style={{flex:1}}/>
+              <button className="rv-rec-only" onClick={()=>{setReviewRecOnly(!reviewRecOnly);setReviewDupLimit(40)}} style={{..._small,fontSize:11,padding:"5px 12px",color:reviewRecOnly?"#000":"#a3a3a3",background:reviewRecOnly?"#2dd4bf":"transparent",borderColor:reviewRecOnly?"#2dd4bf":"#333",fontWeight:reviewRecOnly?700:400}}>Recommended only</button>
+              <Btn v="danger" className="rv-delete-rec" style={{fontSize:11,padding:"5px 12px",opacity:recRows.length?1:0.5}} onClick={deleteAllRec}>Delete all recommended copies ({recRows.length})</Btn>
+            </div>
+          </div>
+          <div style={{padding:"14px 20px 18px"}}>
+            {groups.length===0?empty('No possible duplicates.','Every bank row is the only one on its account for that day and amount, or you chose to keep the group.'):shownGroups.length===0?empty('No group has a clear copy to delete.','Every row in the remaining groups is categorized or matched. Open a group and delete by hand, or keep all.'):
+            <div>{shownGroups.slice(0,reviewDupLimit).map(g=><div key={g.key} className="rv-group" data-key={g.key} style={{border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,overflow:"hidden",marginBottom:10}}>
+              <div style={{display:"flex",alignItems:"center",gap:12,padding:"9px 14px",background:"#0d0d0d",borderBottom:"1px solid rgba(255,255,255,0.05)",flexWrap:"wrap"}}>
+                <span style={{..._mono,fontSize:12,color:"#c4c4c4",fontWeight:600}}>{g.date}</span>
+                <span style={{..._mono,fontSize:14,color:"#f0f0f0",fontWeight:800}}>{fmt(parseFloat(g.amount)||0)}</span>
+                <span style={{fontSize:11,color:"#9a9a9a"}} title={g.account}>{acctName(g.account)}</span>
+                {chip(g.rows.length+' COPIES',"#f87171")}
+                <span style={{flex:1}}/>
+                <button className="rv-keep" onClick={()=>keepAll(g)} style={_small}>Keep all</button>
+              </div>
+              {g.rows.map(t=>{const isRec=!!g.rec&&g.rec.id===t.id;const raw=_isRawBankCat(t.category);const src=srcOf(t);const att=Array.isArray(t.attachments)?t.attachments.length:0;return <div key={t.id} className={'rv-row'+(isRec?' rv-rec':'')} data-id={t.id} style={{display:"flex",alignItems:"center",gap:12,padding:"9px 14px",borderLeft:"3px solid "+(isRec?"#f87171":"transparent"),background:isRec?"rgba(248,113,113,0.045)":"transparent",borderBottom:"1px solid #161616",flexWrap:"wrap"}}>
+                <div style={{flex:1,minWidth:220}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}><span style={{fontSize:12.5,color:"#e5e5e5",fontWeight:600}}>{t.description||'--'}</span>{chip(src[0],src[1])}{t.billId?chip('BILL',"#2dd4bf","rv-bill"):null}{att?<span className="rv-att" title={plural(att,'attachment','attachments')} style={{display:"inline-flex",alignItems:"center",gap:3,color:"#a78bfa",fontSize:10}}><I n="file" s={10}/>{att}</span>:null}</div>
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginTop:3,fontSize:11,flexWrap:"wrap"}}><span className="rv-cat" style={{color:raw?"#fbbf24":"#c4c4c4",fontWeight:raw?600:400}}>{t.category||'Uncategorized'}{raw&&t.category&&t.category!=='Uncategorized'?' (raw bank label)':''}</span><span style={{color:"#737373",..._mono,fontSize:10}}>{t.type||'expense'}</span><span style={{color:"#525252",..._mono,fontSize:10}}>added {stamp(_txnCreatedMs(t))}</span></div>
+                </div>
+                {isRec?chip('RECOMMENDED DELETE',"#f87171","rv-rec-chip"):null}
+                <button className="rv-del" onClick={()=>deleteCopy(t)} style={{..._small,color:"#f87171",borderColor:"#f8717130"}}>Delete this copy</button>
+              </div>})}
+            </div>)}
+            {shownGroups.length>reviewDupLimit?<div style={{textAlign:"center",paddingTop:4}}><button className="rv-more" onClick={()=>setReviewDupLimit(reviewDupLimit+40)} style={_small}>Show {Math.min(40,shownGroups.length-reviewDupLimit)} more ({shownGroups.length-reviewDupLimit} not shown)</button></div>:null}
+            </div>}
+          </div>
+        </div></Card>
+
+        <Card style={{padding:20}}><div className="rv-tombs">
+          {head('DELETED BANK TRANSACTIONS','Deleted rows are remembered here so a bank sync cannot bring them back. Allow one again only if it was deleted by mistake.',null,tombstones?tombList.length:null,"#a78bfa")}
+          {tombstones===null?empty('Reading the deleted-transaction list...','If this stays empty the list could not be read. Deletions are still remembered at the database.'):tombList.length===0?empty('Nothing deleted yet.','When you delete a bank transaction here or on Banking, it is remembered so the next sync does not bring it back.'):
+          <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:660}}>
+            <thead><tr style={{borderBottom:"1px solid #222"}}>{["Date","Description","Amount","Deleted on","Note",""].map((h,i)=><th key={i} style={{padding:"7px 8px",textAlign:i===2?"right":"left",fontSize:10,color:"#737373",fontWeight:600,textTransform:"uppercase",letterSpacing:0.6}}>{h}</th>)}</tr></thead>
+            <tbody>{tombList.slice(0,200).map(tb=><tr key={tb.id} className="rv-tomb" style={{borderBottom:"1px solid #161616"}}>
+              <td style={{padding:"8px",..._mono,color:"#9a9a9a",whiteSpace:"nowrap"}}>{tb.date||'--'}</td>
+              <td style={{padding:"8px",color:"#d4d4d4"}}>{tb.description||'--'}{tb.account?<span style={{color:"#525252",fontSize:10,marginLeft:8}}>{acctName(tb.account)}</span>:null}</td>
+              <td style={{padding:"8px",textAlign:"right",..._mono,color:"#e5e5e5",whiteSpace:"nowrap"}}>{fmt(Math.abs(parseFloat(tb.amount)||0))}</td>
+              <td style={{padding:"8px",..._mono,color:"#737373",whiteSpace:"nowrap"}}>{tb.deletedAt?String(tb.deletedAt).slice(0,10):'--'}</td>
+              <td style={{padding:"8px",color:"#737373",fontSize:11}}>{tb.note||(tb._local?'saving...':'')}</td>
+              <td style={{padding:"8px",textAlign:"right"}}><button className="rv-allow" disabled={!!tb._local||reviewBusy} onClick={()=>allowAgain(tb)} style={{..._small,color:"#2dd4bf",borderColor:"#2dd4bf40",opacity:tb._local?0.4:1}}>Allow again</button></td>
+            </tr>)}</tbody>
+          </table>{tombList.length>200?<div style={{fontSize:11,color:"#525252",marginTop:8}}>Showing the newest 200 of {tombList.length}.</div>:null}</div>}
+        </div></Card>
+
+        <Card style={{padding:20}}><div className="rv-rules">
+          {head('CATEGORY RULES','New bank rows are filed by the first rule whose text matches the bank memo. Money-out rules never touch deposits, so a CHASE deposit is not filed as a card payment. Rows you categorized yourself are never changed.',<><Btn v="secondary" className="rv-apply" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>setRuleApplyOpen(!ruleApplyOpen)}>Apply rules now</Btn><button className="rv-reset" onClick={resetRules} style={{..._small,fontSize:11,padding:"5px 12px"}}>Reset to defaults</button></>,rules.length,"#2dd4bf")}
+          {ruleApplyOpen?<div className="rv-apply-panel" style={{padding:14,background:"#0a0a0a",border:"1px solid #2dd4bf30",borderRadius:10,marginBottom:14,animation:"fadeUp 0.15s"}}>
+            {ruleChanges.length===0?<div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:12,color:"#a3a3a3",flex:1}}>No Uncategorized row or raw bank label matches a rule right now.</span><Btn v="ghost" onClick={()=>setRuleApplyOpen(false)}>Close</Btn></div>:<>
+              <div style={{fontSize:12,color:"#c4c4c4",marginBottom:8}}>{plural(ruleChanges.length,'transaction','transactions')} would be categorized. Rows you categorized yourself, bill matches and closed periods are left alone.</div>
+              {ruleChanges.slice(0,8).map(({t,hit})=><div key={t.id} className="rv-apply-row" style={{display:"flex",alignItems:"center",gap:10,padding:"4px 0",fontSize:11.5,borderBottom:"1px solid #161616"}}><span style={{..._mono,color:"#737373",width:78}}>{t.date||'--'}</span><span style={{color:"#e5e5e5",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.description||'--'}</span><span style={{color:"#fbbf24"}}>{t.category||'Uncategorized'}</span><span style={{color:"#525252"}}>&gt;&gt;</span><span style={{color:"#2dd4bf"}}>{hit.category}</span></div>)}
+              {ruleChanges.length>8?<div style={{fontSize:11,color:"#525252",padding:"4px 0"}}>and {ruleChanges.length-8} more</div>:null}
+              <div style={{display:"flex",gap:6,justifyContent:"flex-end",marginTop:10}}><Btn className="rv-apply-go" onClick={applyRulesNow} style={{opacity:reviewBusy?0.5:1}}><I n="check" s={13}/> Apply to {plural(ruleChanges.length,'transaction','transactions')}</Btn><Btn v="ghost" onClick={()=>setRuleApplyOpen(false)}>Cancel</Btn></div>
+            </>}
+          </div>:null}
+          {rules.length===0?empty('No rules.','New bank rows land as Uncategorized until you add one. Reset to defaults brings back the check, card and loan rules.'):
+          <div style={{marginBottom:14}}>{rules.map(r=><div key={r.id} className="rv-rule" data-id={r.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 4px",borderBottom:"1px solid #161616",opacity:r.enabled?1:0.5,flexWrap:"wrap"}}>
+            <span style={{fontSize:10.5,color:"#737373",width:74}}>{r.mode==='starts'?'starts with':'contains'}</span>
+            <span style={{..._mono,fontSize:12,color:"#f0f0f0",fontWeight:600,minWidth:120}}>"{r.match}"</span>
+            <span style={{color:"#525252",fontSize:11}}>&gt;&gt;</span>
+            <span style={{fontSize:12,color:"#c4c4c4",flex:1,minWidth:150}}>{r.category}</span>
+            {chip(r.type.toUpperCase(),r.type==='liability'?"#a78bfa":r.type==='revenue'||r.type==='asset'?"#34d399":"#f97316")}
+            <span style={{fontSize:10.5,color:"#737373",width:70}}>{r.direction==='out'?'money out':r.direction==='in'?'money in':'either way'}</span>
+            <button className="rv-rule-toggle" onClick={()=>toggleRule(r)} style={{..._small,color:r.enabled?"#34d399":"#737373",borderColor:r.enabled?"#34d39940":"#333",fontWeight:700,width:42}}>{r.enabled?'On':'Off'}</button>
+            <button className="rv-rule-del" onClick={()=>deleteRule(r)} title="Delete rule" style={{..._small,color:"#f87171",borderColor:"#f8717130",padding:"4px 8px"}}>x</button>
+          </div>)}</div>}
+          <div className="rv-rule-form" style={{padding:14,background:"#0a0a0a",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10}}>
+            <div style={{fontSize:11,fontWeight:700,color:"#2dd4bf",marginBottom:10,letterSpacing:0.5}}>NEW RULE</div>
+            <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 2fr 1fr 1fr auto",gap:10,alignItems:"end"}} className="resp-grid-2">
+              <div><label style={_lbl}>Bank memo text</label><input className="rv-rule-match" value={ruleDraft.match} onChange={e=>setRuleDraft(d=>({...d,match:e.target.value}))} placeholder="AMEX, CK #, PAYMENT TO LOAN..." style={{..._inp,..._mono}}/></div>
+              <div><label style={_lbl}>Match</label><select className="rv-rule-mode" value={ruleDraft.mode} onChange={e=>setRuleDraft(d=>({...d,mode:e.target.value}))} style={{..._inp,cursor:"pointer"}}><option value="contains">contains</option><option value="starts">starts with</option></select></div>
+              <div><label style={_lbl}>Category</label><select className="rv-rule-cat" value={ruleDraft.category} onChange={e=>setRuleDraft(d=>({...d,category:e.target.value}))} style={{..._inp,cursor:"pointer",color:ruleDraft.category?"#e5e5e5":"#737373"}}><option value="">Pick a category...</option>{ruleCats.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+              <div><label style={_lbl}>Direction</label><select className="rv-rule-dir" value={ruleDraft.direction} onChange={e=>setRuleDraft(d=>({...d,direction:e.target.value}))} style={{..._inp,cursor:"pointer"}}><option value="out">money out</option><option value="in">money in</option><option value="any">either way</option></select></div>
+              <div><label style={_lbl}>Type</label><div className="rv-rule-type" style={{..._inp,..._mono,color:draftType==='liability'?"#a78bfa":draftType==='revenue'?"#34d399":"#f97316",background:"transparent",border:"1px dashed rgba(255,255,255,0.08)"}}>{ruleDraft.category?draftType:'--'}</div></div>
+              <Btn className="rv-rule-add" onClick={addRule}><I n="plus" s={13}/> Add rule</Btn>
+            </div>
+          </div>
+        </div></Card>
+      </div>})()}
     {tab==="bills"&&(()=>{
       const _mono={fontFamily:"'JetBrains Mono',monospace"};
       const _lbl={fontSize:10,color:"#737373",display:"block",marginBottom:4,fontWeight:600,letterSpacing:0.6,textTransform:"uppercase"};
