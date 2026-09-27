@@ -21,6 +21,10 @@ async function fetchAll(table, opts) {
   // keep one capped page -- used for very large reference tables that are not paged.
   const pageSize = 1000;
   const single = !!(opts && opts.single);
+  // Order column defaults to id. period_locks has no id (its key is period): ordering it by id
+  // was a 400 on every read, so the client never saw a closed period and, once the Plaid sync
+  // started reading locks before importing (Sep 2026), it aborted on every run.
+  const orderCol = (opts && opts.order) || 'id';
   // A failed page must NEVER produce a silently truncated result. A partial sops
   // list renders every bank transaction as Uncategorized, drops account settings,
   // and lets a Plaid sync re-import rows it cannot see -- all of which happened on
@@ -29,7 +33,7 @@ async function fetchAll(table, opts) {
   const getPage = async (offset) => {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const r = await fetch(URL + '/' + table + '?select=*&order=id&limit=' + pageSize + '&offset=' + offset, { headers: hdrs });
+        const r = await fetch(URL + '/' + table + '?select=*&order=' + orderCol + '&limit=' + pageSize + '&offset=' + offset, { headers: hdrs });
         if (r.ok) { const page = await r.json(); if (Array.isArray(page)) return page; }
       } catch (e) { /* retry once, then fall through to null */ }
       await new Promise(res => setTimeout(res, 400));
@@ -403,7 +407,7 @@ export const db = {
   async fetchAccounts() { const rows = await fetchAll('accounts'); return rows ? rows.map(accountFromDb) : null; },
   async saveAccount(a) { return upsertRow('accounts', accountToDb(a)); },
   async deleteAccount(id) { return deleteRow('accounts', id); },
-  async fetchPeriodLocks() { const rows = await fetchAll('period_locks'); return rows ? rows.map(periodLockFromDb) : null; },
+  async fetchPeriodLocks() { const rows = await fetchAll('period_locks', { order: 'period' }); return rows ? rows.map(periodLockFromDb) : null; },
   async savePeriodLock(p) {
     // period_locks is keyed on "period", not "id" -- needs its own conflict target.
     try {
