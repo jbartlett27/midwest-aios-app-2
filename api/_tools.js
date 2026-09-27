@@ -131,6 +131,50 @@ async function resolveOne(table, ref, label) {
 
 const rid = pfx => pfx + Math.random().toString(36).slice(2, 8);
 
+// ---------- vendor bills (Financials page) ----------
+// A vendor bill is a `sops` row with cat 'VendorBill' whose content is JSON:
+//   {vendorId, vendorName, ref, date (bill date), dueDate, memo, total,
+//    lines:[{category, amount, memo}], payments:[{id, date, amount, method, ref, txnId, txnDescription}], void}
+// The derived math mirrors the app's module-scope helpers in src/App2.jsx EXACTLY:
+//   total   = bill.total if > 0, else sum(lines.amount)
+//   paid    = sum(payments.amount)
+//   balance = max(0, total - paid)
+//   status  = void if void===true; paid if paid >= total-0.005; partial if paid > 0.005; else open
+const billTotal = b => { const t = Number(b && b.total); return isFinite(t) && t > 0 ? r2(t) : r2((Array.isArray(b && b.lines) ? b.lines : []).reduce((s, l) => s + (Number(l && l.amount) || 0), 0)); };
+const billPaidTotal = b => r2((Array.isArray(b && b.payments) ? b.payments : []).reduce((s, p) => s + (Number(p && p.amount) || 0), 0));
+const billBalance = b => Math.max(0, r2(billTotal(b) - billPaidTotal(b)));
+const billStatus = b => { if (b && b.void === true) return 'void'; const t = billTotal(b), p = billPaidTotal(b); if (t <= 0.005) return 'open'; if (p >= t - 0.005) return 'paid'; if (p > 0.005) return 'partial'; return 'open'; };
+const BILL_STATUSES = ['open', 'partial', 'paid', 'all'];
+// Business-day "today" in the company's time zone (Kildeer, IL), as YYYY-MM-DD, so a bill due today is not overdue at 7pm Central.
+const todayChicago = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+const isoDate = v => { const m = /^(\d{4}-\d{2}-\d{2})/.exec(String(v == null ? '' : v)); return m ? m[1] : null; };
+const daysBetween = (fromIso, toIso) => Math.round((Date.parse(toIso + 'T00:00:00Z') - Date.parse(fromIso + 'T00:00:00Z')) / 86400000);
+
+// Load every vendor bill with its derived fields. Malformed content rows are skipped (same as the app's parseVendorBills).
+async function vendorBills() {
+  const rows = await pageAll(() => sb().from('sops').select('id,content,created_at').eq('cat', 'VendorBill').order('id', { ascending: true }));
+  const today = todayChicago();
+  const out = [];
+  for (const row of (rows || [])) {
+    let d = null; try { d = JSON.parse(row.content || '{}'); } catch { continue; }
+    if (!d || typeof d !== 'object' || Array.isArray(d)) continue;
+    const status = billStatus(d), due = isoDate(d.dueDate);
+    const overdue = status !== 'paid' && status !== 'void' && !!due && due < today;
+    out.push({
+      id: row.id, vendor: d.vendorName || null, vendor_id: d.vendorId || null, ref: d.ref || null,
+      bill_date: isoDate(d.date), due_date: due, memo: d.memo || null,
+      // a voided bill is owed nothing, whatever its arithmetic balance
+      total: billTotal(d), paid: billPaidTotal(d), balance: status === 'void' ? 0 : billBalance(d), status, overdue,
+      days_overdue: overdue ? daysBetween(due, today) : 0,
+      lines: (Array.isArray(d.lines) ? d.lines : []).map(l => ({ category: (l && l.category) || 'Uncategorized', amount: r2(l && l.amount), memo: (l && l.memo) || null })),
+      payments: (Array.isArray(d.payments) ? d.payments : []).map(p => ({ id: (p && p.id) || null, date: isoDate(p && p.date), amount: r2(p && p.amount), method: (p && p.method) || null, ref: (p && p.ref) || null, bank_txn_id: (p && p.txnId) || null, bank_txn_description: (p && p.txnDescription) || null }))
+    });
+  }
+  // soonest due first; bills with no due date sort by bill date, then id
+  out.sort((x, y) => String(x.due_date || x.bill_date || '').localeCompare(String(y.due_date || y.bill_date || '')) || String(x.id).localeCompare(String(y.id)));
+  return out;
+}
+
 // ---------- tool implementations ----------
 const impl = {
   async business_summary() {
@@ -313,6 +357,41 @@ const impl = {
     return { total_outstanding: r2(rows.reduce((s, r) => s + r.invoiced_outstanding, 0)), overdue_count: rows.filter(r => r.overdue).length, accounts: rows.slice(0, limit) };
   },
 
+  async list_vendor_bills(a) {
+    const status = String(a.status || 'open').toLowerCase().trim();
+    must(BILL_STATUSES.includes(status), 'status must be one of: ' + BILL_STATUSES.join(', '));
+    const limit = Math.min(Math.max(Number(a.limit) || 50, 1), 200);
+    const vq = String(a.vendor || '').trim().toLowerCase();
+    const from = isoDate(a.date_from), to = isoDate(a.date_to);
+    let bills = await vendorBills();
+    if (status !== 'all') bills = bills.filter(b => b.status === status);
+    if (vq) bills = bills.filter(b => String(b.vendor || '').toLowerCase().includes(vq));
+    if (from) bills = bills.filter(b => b.bill_date && b.bill_date >= from);
+    if (to) bills = bills.filter(b => b.bill_date && b.bill_date <= to);
+    const sum = k => r2(bills.reduce((s, b) => s + b[k], 0));
+    return {
+      returned: Math.min(bills.length, limit), total_matching: bills.length,
+      filters: { status, vendor: vq || null, date_from: from, date_to: to },
+      totals: { total: sum('total'), paid: sum('paid'), balance: sum('balance'), overdue_count: bills.filter(b => b.overdue).length },
+      bills: bills.slice(0, limit)
+    };
+  },
+
+  async accounts_payable(a) {
+    const limit = Math.min(Math.max(Number(a.limit) || 50, 1), 200);
+    const open = (await vendorBills()).filter(b => b.status === 'open' || b.status === 'partial');
+    const byVendor = {};
+    for (const b of open) { const k = b.vendor || 'Unknown'; if (!byVendor[k]) byVendor[k] = { vendor: k, balance: 0, bill_count: 0, overdue_count: 0 }; byVendor[k].balance += b.balance; byVendor[k].bill_count++; if (b.overdue) byVendor[k].overdue_count++; }
+    return {
+      total_open_balance: r2(open.reduce((s, b) => s + b.balance, 0)),
+      open_bill_count: open.length,
+      overdue_count: open.filter(b => b.overdue).length,
+      overdue_balance: r2(open.filter(b => b.overdue).reduce((s, b) => s + b.balance, 0)),
+      by_vendor: Object.values(byVendor).map(v => ({ ...v, balance: r2(v.balance) })).sort((x, y) => y.balance - x.balance),
+      bills: open.slice(0, limit).map(b => ({ id: b.id, vendor: b.vendor, ref: b.ref, bill_date: b.bill_date, due_date: b.due_date, total: b.total, paid: b.paid, balance: b.balance, status: b.status, overdue: b.overdue, days_overdue: b.days_overdue }))
+    };
+  },
+
   // ---------- writes ----------
   async update_job_phase(a) {
     const j = await resolveJob(a.job);
@@ -377,6 +456,8 @@ export const TOOLS = [
   { name: 'list_reps', description: 'Sales reps with commission rate/tier and their totals: job count, revenue, profit, and commission earned (commission is paid on profit, not revenue).', inputSchema: S({}), annotations: READ, run: impl.list_reps },
   { name: 'delivery_report', description: 'Jobs with outstanding deliveries (units ordered but not yet received), sorted by outstanding units, with the specific open line items.', inputSchema: S({ limit: num('Max jobs (default 50, max 200)') }), annotations: READ, run: impl.delivery_report },
   { name: 'accounts_receivable', description: 'Open accounts receivable: unpaid/partial jobs with an invoiced balance, flagged overdue against their payment terms.', inputSchema: S({ limit: num('Max accounts (default 50, max 200)') }), annotations: READ, run: impl.accounts_receivable },
+  { name: 'list_vendor_bills', description: 'Vendor bills entered on the Financials page (VB- ids): each with derived status (open | partial | paid | void), total, paid, balance, overdue flag, category lines, and payments (with the matched bank transaction when one is linked). Filter by status, vendor name (partial match), and bill date range. Sorted soonest-due first. Job cost adjustments (StandaloneBill / VendorCredit) are NOT here; see get_job cost_adjustments.', inputSchema: S({ status: str('open (default) | partial | paid | all (all includes void)'), vendor: str('Filter by vendor name (partial match)'), date_from: str('Bill date from (YYYY-MM-DD, inclusive)'), date_to: str('Bill date to (YYYY-MM-DD, inclusive)'), limit: num('Max bills (default 50, max 200)') }), annotations: READ, run: impl.list_vendor_bills },
+  { name: 'accounts_payable', description: 'Open accounts payable: every open or partially paid vendor bill with its balance and due date, flagged overdue, plus totals and a per-vendor rollup. Voided and fully paid bills are excluded.', inputSchema: S({ limit: num('Max bills (default 50, max 200)') }), annotations: READ, run: impl.accounts_payable },
   { name: 'update_job_phase', description: 'Set a job\u2019s phase (e.g. Quoting, Approved, Ordered, In Progress, Invoiced, Complete). Writes to the live system.', inputSchema: S({ job: str('Job id or name'), phase: str('New phase value') }, ['job', 'phase']), annotations: WRITE, run: impl.update_job_phase },
   { name: 'update_job_payment_status', description: 'Set a job\u2019s payment status to unpaid, partial, or paid. Writes to the live system.', inputSchema: S({ job: str('Job id or name'), status: str('unpaid | partial | paid') }, ['job', 'status']), annotations: WRITE, run: impl.update_job_payment_status },
   { name: 'set_line_item_received', description: 'Record received quantity on a specific line item (delivery progress). Get the line_item_id from get_job or delivery_report. Writes to the live system.', inputSchema: S({ line_item_id: str('The line item id (LI-...)'), qty_received: num('Total units now received (absolute value, not a delta)') }, ['line_item_id', 'qty_received']), annotations: WRITE, run: impl.set_line_item_received },
