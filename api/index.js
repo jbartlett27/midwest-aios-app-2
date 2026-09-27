@@ -30,7 +30,9 @@ function origin(req) {
   const host = req.headers['x-forwarded-host'] || req.headers.host;
   return proto + '://' + host;
 }
-function pathOf(req) { try { return new URL(req.url, 'http://x').pathname; } catch { return req.url || '/'; } }
+// The vercel.json rewrites carry the public path in ?route= (a rewrite may hand the
+// function its destination URL rather than the original), so that wins when present.
+function pathOf(req) { try { const u = new URL(req.url, 'http://x'); const r = u.searchParams.get('route'); if (r) return '/' + r.replace(/^\/+/, ''); return u.pathname; } catch { return req.url || '/'; } }
 function cors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
