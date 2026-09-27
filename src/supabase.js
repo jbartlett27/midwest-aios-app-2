@@ -218,6 +218,29 @@ const sopFromDb = (r) => ({
   content: r.content || '', custom: r.custom !== false,
 });
 
+// ---- BANK TRANSACTION TOMBSTONES (Sep 2026) ----
+// An AFTER DELETE trigger on sops (cat ManualTxn) writes one row per deleted bank
+// transaction, and a BEFORE INSERT trigger refuses a re-import that matches it. That
+// memory is what stops a sync bringing back a row Maureen deleted (Plaid returns it
+// under a new id). restored_at set = allowed again from Financials > Review.
+const tombstoneFromDb = (r) => ({
+  id: r.id, sopId: r.sop_id || '', plaidId: r.plaid_id || null, fingerprint: r.fingerprint || null,
+  acctKey: r.acct_key || null, account: r.account || '', date: r.txn_date || '', amount: r.amount == null ? '' : String(r.amount),
+  description: r.description || '', category: r.category || '', deletedAt: r.deleted_at || null,
+  restoredAt: r.restored_at || null, note: r.note || '',
+});
+// Accepts camel (as fetchTombstones returns) or snake keys.
+const tombstoneToDb = (t) => {
+  const x = t || {};
+  const pick = (...v) => { for (const a of v) { if (a !== undefined && a !== null && a !== '') return a; } return null; };
+  const amt = pick(x.amount);
+  return {
+    sop_id: pick(x.sopId, x.sop_id), plaid_id: pick(x.plaidId, x.plaid_id), fingerprint: pick(x.fingerprint),
+    acct_key: pick(x.acctKey, x.acct_key), account: pick(x.account), txn_date: pick(x.date, x.txn_date, x.txnDate),
+    amount: amt == null ? null : String(amt), description: pick(x.description), category: pick(x.category), note: pick(x.note),
+  };
+};
+
 // ---- GENERAL LEDGER (Phase 1: chart of accounts, period locks, audit) ----
 const accountFromDb = (r) => ({
   id: r.id, number: r.number, name: r.name, type: r.type, subtype: r.subtype || '',
@@ -419,6 +442,24 @@ export const db = {
   // Authoritative sops read used by the Plaid sync dedup guard. Returns null on
   // any failure (fetchAll never returns partials), so the sync can abort safely.
   async fetchSops() { const s = await fetchAll('sops'); return s ? s.map(sopFromDb) : null; },
+  // Live tombstones only (restored_at null). null on any failure, same contract as
+  // fetchSops: the sync aborts rather than import against a memory it could not read.
+  async fetchTombstones() { const rows = await fetchAll('bank_txn_tombstones'); return rows ? rows.filter(r => r && !r.restored_at).map(tombstoneFromDb) : null; },
+  async addTombstone(t) {
+    try {
+      const r = await fetch(URL + '/bank_txn_tombstones', { method: 'POST', headers: { ...hdrs, Prefer: 'return=minimal' }, body: JSON.stringify(tombstoneToDb(t)) });
+      return { ok: r.ok };
+    } catch (e) { console.error('Insert bank_txn_tombstones:', e); return { ok: false }; }
+  },
+  async restoreTombstone(id) {
+    if (id === undefined || id === null || id === '') return { ok: false };
+    try {
+      const r = await fetch(URL + '/bank_txn_tombstones?id=eq.' + encodeURIComponent(id), { method: 'PATCH', headers: { ...hdrs, Prefer: 'return=minimal' }, body: JSON.stringify({ restored_at: new Date().toISOString() }) });
+      return { ok: r.ok };
+    } catch (e) { console.error('Restore bank_txn_tombstones:', e); return { ok: false }; }
+  },
+  // Bulk recategorize: one upsert for the whole list instead of a delete+insert per row.
+  async saveSops(list) { return upsertMany('sops', (Array.isArray(list) ? list : []).map(sopToDb)); },
   async fetchUsers() { return fetchUsers(); },
   async loginUser(u, p) { return loginUser(u, p); },
   async saveUser(user) { return upsertRow('users', user); },
