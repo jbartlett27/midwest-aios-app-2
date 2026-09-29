@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { db } from "./supabase.js";
 import { useUser, useClerk, SignIn, UserButton, useAuth } from "@clerk/clerk-react";
 import{BarChart,Bar as RBar,XAxis,YAxis,Tooltip,ResponsiveContainer,LineChart,Line,PieChart,Pie,Cell}from"recharts";
-import { AnimNum, AnimatedNumber, BANK_LIABILITY_CATEGORIES, BANK_REVIEW_QUEUE_ID, BANK_RULES_ID, BANK_RULE_DEFAULTS, Badge, Bar, Btn, Card, Header, I, applyBankRules, bankCategoryType, bankTxnAcctKey, bankTxnFingerprint, fmt, inputStyle, parseBankRules, parseLocalDate, planPlaidImport, shipKey, statusColor } from "./App.jsx";
+import { AnimNum, AnimatedNumber, BANK_LIABILITY_CATEGORIES, BANK_REVIEW_QUEUE_ID, BANK_RULES_ID, BANK_RULE_DEFAULTS, BANK_STALE_BUNDLE_MSG, Badge, Bar, Btn, Card, Header, I, applyBankRules, bankCategoryType, bankCheckNumber, bankChecksMatch, bankSyncBundleIsCurrent, bankTxnAcctKey, bankTxnFingerprint, fmt, inputStyle, parseBankRules, parseLocalDate, planPlaidImport, shipKey, statusColor } from "./App.jsx";
 // ---------------------------------------------------------------
 // Vendor bills (Sep 2026). A bill entered the way QuickBooks enters one: vendor,
 // bill date, due date, and category lines that must add up to the bill total.
@@ -255,7 +255,12 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   // nobody worked on -- no bill match, no receipt, still Uncategorized or a raw bank label
   // -- newest first. A group where every row is categorized and clean gets no
   // recommendation: two real same-day charges happen and only Maureen can tell.
-  const _reviewDupGroups=(()=>{const keep=new Set(_reviewQueue.keep);const by=new Map();manualTxns.forEach(t=>{if(t.account&&_bankAcctMetaGlobal[t.account]&&_bankAcctMetaGlobal[t.account].excluded)return;const k=bankTxnAcctKey(t);if(!k||keep.has(k))return;if(!by.has(k))by.set(k,[]);by.get(k).push(t)});const out=[];by.forEach((rows,key)=>{if(rows.length<2)return;const sorted=[...rows].sort((a,b)=>_txnCreatedMs(a)-_txnCreatedMs(b)||String(a.id).localeCompare(String(b.id)));const cand=sorted.filter(t=>!t.billId&&!(Array.isArray(t.attachments)&&t.attachments.length)&&_isRawBankCat(t.category));out.push({key,date:sorted[0].date||'',amount:Math.abs(parseFloat(sorted[0].amount)||0).toFixed(2),account:sorted[0].account||'',rows:sorted,rec:cand.length?cand[cand.length-1]:null})});return out.sort((a,b)=>String(b.date).localeCompare(String(a.date))||a.key.localeCompare(b.key))})();
+  // (Sep 29 2026) Rows are also joined when they are the same check -- entered by hand on the
+  // day it was written, imported again when it cleared. Their dates differ, so the day key never
+  // grouped them: four pairs ($27,073.31) were invisible here. A group is every copy of one
+  // transaction, joined on either link. In a check group with a hand entry, the bank-feed copy
+  // is the one to delete even once a rule has categorized it: the hand entry carries the payee.
+  const _reviewDupGroups=(()=>{const keep=new Set(_reviewQueue.keep);const rows=manualTxns.filter(t=>!(t.account&&_bankAcctMetaGlobal[t.account]&&_bankAcctMetaGlobal[t.account].excluded));const par=rows.map((_,i)=>i);const find=(i)=>{while(par[i]!==i){par[i]=par[par[i]];i=par[i]}return i};const join=(a,b)=>{a=find(a);b=find(b);if(a!==b)par[b]=a};const byAk=new Map();const byCk=new Map();rows.forEach((t,i)=>{const k=bankTxnAcctKey(t);if(k){if(byAk.has(k))join(byAk.get(k),i);else byAk.set(k,i)}const n=bankCheckNumber(t.description);if(n){const ck=n+'|'+Math.abs(parseFloat(t.amount)||0).toFixed(2);if(!byCk.has(ck))byCk.set(ck,[]);byCk.get(ck).push(i)}});byCk.forEach(ix=>{for(let a=0;a<ix.length;a++)for(let b=a+1;b<ix.length;b++)if(bankChecksMatch(rows[ix[a]],rows[ix[b]]))join(ix[a],ix[b])});const comp=new Map();rows.forEach((t,i)=>{const r=find(i);if(!comp.has(r))comp.set(r,[]);comp.get(r).push(t)});const out=[];comp.forEach(g=>{if(g.length<2)return;const sorted=[...g].sort((a,b)=>_txnCreatedMs(a)-_txnCreatedMs(b)||String(a.id).localeCompare(String(b.id)));const kind=new Set(sorted.map(t=>t.date||'')).size>1?'check':'same-day';const lead=sorted.find(t=>t.plaidId)||sorted[0];const key=kind==='check'?'ck|'+bankCheckNumber(lead.description)+'|'+Math.abs(parseFloat(lead.amount)||0).toFixed(2)+'|'+(lead.account||''):bankTxnAcctKey(sorted[0]);if(!key||keep.has(key))return;const clean=(t)=>!t.billId&&!(Array.isArray(t.attachments)&&t.attachments.length);let cand=sorted.filter(t=>clean(t)&&_isRawBankCat(t.category));if(!cand.length&&kind==='check'&&sorted.some(t=>!t.plaidId))cand=sorted.filter(t=>clean(t)&&t.plaidId);out.push({key,kind,date:sorted.map(t=>t.date||'').filter(Boolean).sort()[0]||'',amount:Math.abs(parseFloat(lead.amount)||0).toFixed(2),account:lead.account||'',rows:sorted,rec:cand.length?cand[cand.length-1]:null})});return out.sort((a,b)=>String(b.date).localeCompare(String(a.date))||a.key.localeCompare(b.key))})();
   const _reviewCount=_reviewQueue.held.length+_reviewDupGroups.length;
   const _vbToday=()=>{const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
   const _vbPlusDays=(iso,n)=>{const d=parseLocalDate(iso);if(!d)return '';d.setDate(d.getDate()+n);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
@@ -1253,6 +1258,8 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
 
       const handlePlaidSync=async(rangeOverride,silent)=>{
         if(!plaidAccessToken){if(!silent)notify('No access token. Reconnect bank.','error');return}
+        // (Sep 29 2026) A tab still running an older bundle must not sync with its older rules.
+        if(!(await bankSyncBundleIsCurrent())){setPlaidSyncError(BANK_STALE_BUNDLE_MSG);if(!silent)notify(BANK_STALE_BUNDLE_MSG,'error');return}
         setPlaidLoading(true);setPlaidSyncing(true);
         // Dedup sets are built from an AUTHORITATIVE fresh DB read, not React state.
         // On 7/31 a session with a partially-loaded sops list ran the hourly sync,
@@ -1330,12 +1337,16 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
           plan.updates.forEach(x=>addSop(x));
           if(plan.held.length)addSop({id:BANK_REVIEW_QUEUE_ID,title:'Bank Review Queue',cat:'Settings',icon:'shield',content:JSON.stringify({..._queueNow,held:[..._heldNow,...plan.held],keep:Array.isArray(_queueNow.keep)?_queueNow.keep:[]}),custom:true});
           const lateArr=plan.late;const _pc=plan.counts;
+          // (Sep 29 2026) Pending items now wait until the bank posts them, so a quiet feed and a
+          // stuck feed look the same unless the header says what the bank returned.
+          const _visAcct=(a)=>!(a&&_bankAcctMetaGlobal[a]&&_bankAcctMetaGlobal[a].excluded);const _vis=(t)=>!!t&&_visAcct(t.account_id);const _maxD=(arr)=>arr.reduce((m,t)=>(typeof t.date==='string'&&t.date>m)?t.date:m,'');const _vt=txns.filter(_vis);const _visRec=(r)=>{try{return _visAcct(JSON.parse(r.content).account)}catch{return true}};
+          const _lastResult={imported:plan.additions.filter(_visRec).length,held:plan.held.filter(h=>_visAcct(h&&h.account)).length,promoted:_pc.promoted,late:_pc.late,skippedSame:_pc.skippedSame,skippedDeleted:_pc.skippedDeleted,pending:_vt.filter(t=>t.pending===true).length,newestPosted:_maxD(_vt.filter(t=>t.pending!==true)),newestPending:_maxD(_vt.filter(t=>t.pending===true))};
           const syncTime=new Date().toISOString();
           localStorage.setItem('mw_plaid_last_sync',syncTime);setPlaidLastSync(syncTime);
           setPlaidSyncError('');
           // Update sops PLAID_CONN_STATE so other devices know about the latest sync time.
           // Without this, every device would re-sync the same recent window on its own auto-sync.
-          try{const _existRec=(customSops||[]).find(s=>s.id==='PLAID_CONN_STATE');const _existData=_existRec?JSON.parse(_existRec.content||'{}'):{};addSop({id:'PLAID_CONN_STATE',title:'Plaid Connection State',cat:'PlaidConn',icon:'dollar',content:JSON.stringify({status:'connected',accessToken:plaidAccessToken,bankName:plaidBankName||_existData.bankName||'',lastSync:syncTime}),custom:true})}catch{}
+          try{const _existRec=(customSops||[]).find(s=>s.id==='PLAID_CONN_STATE');const _existData=_existRec?JSON.parse(_existRec.content||'{}'):{};addSop({id:'PLAID_CONN_STATE',title:'Plaid Connection State',cat:'PlaidConn',icon:'dollar',content:JSON.stringify({status:'connected',accessToken:plaidAccessToken,bankName:plaidBankName||_existData.bankName||'',lastSync:syncTime,lastResult:_lastResult}),custom:true})}catch{}
           if(lateArr.length){
             // Merge into the queue, dedup by plaidId (or date|amount|desc when no id).
             const seenQ=new Set(_lateArrivals.map(x=>x.plaidId||_bankTxnHash(x)));
@@ -1501,6 +1512,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
                 const rel=diffMin<1?'just now':diffMin<60?diffMin+' min'+(diffMin!==1?'s':'')+' ago':diffMin<1440?Math.floor(diffMin/60)+'h '+(diffMin%60)+'m ago':Math.floor(diffMin/1440)+'d ago';
                 return <span style={{fontSize:10,color:"#525252"}} title={last.toLocaleString()}>Last sync: {rel}</span>;
               })()}
+              {!plaidSyncing&&_plaidConnData.lastResult&&typeof _plaidConnData.lastResult==='object'&&(()=>{const lr=_plaidConnData.lastResult;const md=(d)=>{const m=/^(\d{4})-(\d{2})-(\d{2})/.exec(String(d||''));return m?(+m[2])+'/'+(+m[3]):''};const parts=[(Number(lr.imported)||0)+' new'];if(Number(lr.held))parts.push(lr.held+' held for review');if(Number(lr.pending))parts.push(lr.pending+' pending at the bank');if(md(lr.newestPosted))parts.push('bank posted through '+md(lr.newestPosted));return <span className="bk-sync-summary" style={{fontSize:10,color:"#737373",fontFamily:"'JetBrains Mono',monospace"}} title="What the last sync found. Pending items are added once the bank posts them, so a transaction is never imported twice.">{parts.join(' \u00b7 ')}</span>})()}
               {plaidSyncError&&<span style={{fontSize:10,color:"#f87171",background:"#f8717115",padding:"2px 8px",borderRadius:4}} title={plaidSyncError}>{plaidSyncError.length>40?plaidSyncError.slice(0,40)+'...':plaidSyncError}</span>}
               <Btn v={plaidNeedsReauth?"primary":"secondary"} style={plaidNeedsReauth?{fontSize:11,padding:"4px 10px"}:{fontSize:11,padding:"4px 10px",color:"#a78bfa",border:"1px solid #a78bfa30"}} onClick={handlePlaidUpdate} title="Re-enter your bank password after a reset -- keeps the same connection and history">{plaidLoading?'...':'Update Login'}</Btn>
               <Btn v="secondary" style={{fontSize:11,padding:"4px 10px"}} onClick={()=>handlePlaidSync()}>{plaidLoading?'Syncing...':'Sync Now'}</Btn>
@@ -1855,7 +1867,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
             <span style={{..._mono,fontSize:11,color:"#9a9a9a",width:78,flexShrink:0}}>{h.date||'--'}</span>
             <div style={{flex:1,minWidth:220}}>
               <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}><span style={{fontSize:12.5,color:"#e5e5e5",fontWeight:600}}>{h.description||'--'}</span>{h.plaidCategory?chip(String(h.plaidCategory),"#737373"):null}<span style={{fontSize:10.5,color:"#737373"}}>{acctName(h.account)}</span></div>
-              <div className="rv-match" style={{fontSize:11,color:h.matchSource==='deleted'?"#a78bfa":"#fbbf24",marginTop:2}}>{h.matchSource==='deleted'?'A transaction like this was deleted before':'Matches: '+(h.matchDescription||'--')+' ('+(h.matchCategory||'Uncategorized')+')'}</div>
+              <div className="rv-match" style={{fontSize:11,color:h.matchSource==='deleted'?"#a78bfa":"#fbbf24",marginTop:2}}>{h.matchSource==='deleted'?'A transaction like this was deleted before':h.matchKind==='check'?'Same check as '+(h.matchDescription||'--')+(h.matchDate?' on '+h.matchDate:'')+' ('+(h.matchCategory||'Uncategorized')+')':'Matches: '+(h.matchDescription||'--')+' ('+(h.matchCategory||'Uncategorized')+')'}</div>
             </div>
             <span style={{..._mono,fontSize:13,fontWeight:700,color:moneyColor(h),whiteSpace:"nowrap"}}>{money(h)}</span>
             <div style={{display:"flex",gap:6}}><button className="rv-add" disabled={reviewBusy} onClick={()=>addHeld(h)} style={{..._small,color:"#2dd4bf",borderColor:"#2dd4bf40",fontWeight:700}}>Add</button><button className="rv-dismiss" disabled={reviewBusy} onClick={()=>dismissHeld(h)} style={_small}>Dismiss</button></div>
@@ -1864,7 +1876,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
 
         <Card style={{padding:0}}><div className="rv-dups">
           <div className="rv-bulk" style={{position:"sticky",top:0,zIndex:4,background:"#111111",borderBottom:"1px solid rgba(255,255,255,0.06)",padding:"18px 20px 12px",borderRadius:"14px 14px 0 0"}}>
-            {head('POSSIBLE DUPLICATES','Same account, same day, same amount, more than one row. The copy marked RECOMMENDED DELETE is the one nobody worked on: no bill match, no receipt, still Uncategorized or a raw bank label. Two real charges for the same amount on the same day do happen -- Keep all stops the group from being flagged.',null,groups.length,"#f87171")}
+            {head('POSSIBLE DUPLICATES','Same account, same day, same amount, more than one row -- or the same check number and amount, entered on the day it was written and imported again when it cleared. The copy marked RECOMMENDED DELETE is the one nobody worked on: no bill match, no receipt, still Uncategorized or a raw bank label. Two real charges for the same amount on the same day do happen -- Keep all stops the group from being flagged.',null,groups.length,"#f87171")}
             <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
               <span className="rv-totals" style={{..._mono,fontSize:12,color:"#c4c4c4"}}>{plural(groups.length,'group','groups')}, {plural(extraCopies,'extra copy','extra copies')}, <span style={{color:doubleCounted>0?"#f87171":"#c4c4c4",fontWeight:700}}>{fmt(doubleCounted)}</span> double counted</span>
               <span style={{flex:1}}/>
@@ -1879,14 +1891,14 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
                 <span style={{..._mono,fontSize:12,color:"#c4c4c4",fontWeight:600}}>{g.date}</span>
                 <span style={{..._mono,fontSize:14,color:"#f0f0f0",fontWeight:800}}>{fmt(parseFloat(g.amount)||0)}</span>
                 <span style={{fontSize:11,color:"#9a9a9a"}} title={g.account}>{acctName(g.account)}</span>
-                {chip(g.rows.length+' COPIES',"#f87171")}
+                {chip(g.rows.length+' COPIES',"#f87171")}{g.kind==='check'?chip('SAME CHECK',"#a78bfa","rv-check"):null}
                 <span style={{flex:1}}/>
                 <button className="rv-keep" onClick={()=>keepAll(g)} style={_small}>Keep all</button>
               </div>
               {g.rows.map(t=>{const isRec=!!g.rec&&g.rec.id===t.id;const raw=_isRawBankCat(t.category);const src=srcOf(t);const att=Array.isArray(t.attachments)?t.attachments.length:0;return <div key={t.id} className={'rv-row'+(isRec?' rv-rec':'')} data-id={t.id} style={{display:"flex",alignItems:"center",gap:12,padding:"9px 14px",borderLeft:"3px solid "+(isRec?"#f87171":"transparent"),background:isRec?"rgba(248,113,113,0.045)":"transparent",borderBottom:"1px solid #161616",flexWrap:"wrap"}}>
                 <div style={{flex:1,minWidth:220}}>
                   <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}><span style={{fontSize:12.5,color:"#e5e5e5",fontWeight:600}}>{t.description||'--'}</span>{chip(src[0],src[1])}{t.billId?chip('BILL',"#2dd4bf","rv-bill"):null}{att?<span className="rv-att" title={plural(att,'attachment','attachments')} style={{display:"inline-flex",alignItems:"center",gap:3,color:"#a78bfa",fontSize:10}}><I n="file" s={10}/>{att}</span>:null}</div>
-                  <div style={{display:"flex",alignItems:"center",gap:10,marginTop:3,fontSize:11,flexWrap:"wrap"}}><span className="rv-cat" style={{color:raw?"#fbbf24":"#c4c4c4",fontWeight:raw?600:400}}>{t.category||'Uncategorized'}{raw&&t.category&&t.category!=='Uncategorized'?' (raw bank label)':''}</span><span style={{color:"#737373",..._mono,fontSize:10}}>{t.type||'expense'}</span><span style={{color:"#525252",..._mono,fontSize:10}}>added {stamp(_txnCreatedMs(t))}</span></div>
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginTop:3,fontSize:11,flexWrap:"wrap"}}>{g.kind==='check'?<span className="rv-date" style={{color:"#c4c4c4",..._mono,fontSize:10}}>{t.date||'--'}</span>:null}<span className="rv-cat" style={{color:raw?"#fbbf24":"#c4c4c4",fontWeight:raw?600:400}}>{t.category||'Uncategorized'}{raw&&t.category&&t.category!=='Uncategorized'?' (raw bank label)':''}</span><span style={{color:"#737373",..._mono,fontSize:10}}>{t.type||'expense'}</span><span style={{color:"#525252",..._mono,fontSize:10}}>added {stamp(_txnCreatedMs(t))}</span></div>
                 </div>
                 {isRec?chip('RECOMMENDED DELETE',"#f87171","rv-rec-chip"):null}
                 <button className="rv-del" onClick={()=>deleteCopy(t)} style={{..._small,color:"#f87171",borderColor:"#f8717130"}}>Delete this copy</button>
