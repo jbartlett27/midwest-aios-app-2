@@ -1406,6 +1406,47 @@ function bankCategoryType(category, fallback) {
   if (c === 'liability') return 'liability';
   return fallback || 'expense';
 }
+// (Sep 29 2026) Check numbers. A check entered by hand on the day it is written and the
+// bank-feed row for the same check when it clears a week later have different dates and
+// different memos ("CK # 9378 - Doane Keyes Associates" vs "CK # 9378"), so neither the
+// fingerprint nor the account|date|amount key sees them as one transaction.
+function bankCheckNumber(desc) {
+  const m = /^\s*(?:CK|CHK|CHECK)\s*#?\s*(\d{3,})\b/i.exec(String(desc == null ? '' : desc));
+  return m ? m[1] : '';
+}
+// Same check number, same amount, dates within 120 days (numbers restart with a new
+// checkbook), same bank account. A hand-entered row filed under a generic account
+// ('Operating', blank) counts as any account; two different linked accounts never match.
+function bankChecksMatch(a, b) {
+  const n = bankCheckNumber(a?.description);
+  if (!n || n !== bankCheckNumber(b?.description)) return false;
+  const amt = (x) => Math.abs(parseFloat(x?.amount) || 0).toFixed(2);
+  if (amt(a) === '0.00' || amt(a) !== amt(b)) return false;
+  const linked = (acct) => /^[A-Za-z0-9]{30,}$/.test(String(acct || ''));
+  const xa = String(a?.account || ''), xb = String(b?.account || '');
+  if (xa !== xb && linked(xa) && linked(xb)) return false;
+  const day = (x) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(x?.date || '')); return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) : NaN; };
+  const da = day(a), db = day(b);
+  if (!isFinite(da) || !isFinite(db)) return false;
+  return Math.abs(da - db) <= 120 * 86400000;
+}
+// (Sep 29 2026) A tab left open across a deploy keeps running the old code, and the old sync
+// rules with it, until it reloads: after the 9/27 deploy a stale tab went on writing raw bank
+// labels. Both syncs ask this first. Only a positive "the server now serves a different
+// bundle" stops a sync; when the check itself cannot run, the sync goes ahead.
+const BANK_STALE_BUNDLE_MSG = 'A newer version of the AIOS is live. Refresh this page (Cmd+Shift+R) to keep the bank feed syncing.';
+async function bankSyncBundleIsCurrent() {
+  try {
+    if (typeof document === 'undefined' || typeof fetch !== 'function') return true;
+    const el = document.querySelector('script[src*="/assets/index-"]');
+    const mine = el ? String(el.getAttribute('src') || '').split('/').pop() : '';
+    if (!mine) return true;
+    const r = await fetch('/?bundle=' + Date.now(), { cache: 'no-store' });
+    if (!r || !r.ok) return true;
+    const m = /\/assets\/(index-[A-Za-z0-9_-]+\.js)/.exec(await r.text());
+    return !m || m[1] === mine;
+  } catch { return true; }
+}
 // Rules live in one sops row so every device and both syncs read the same list. An
 // explicit empty array means "no rules" (she turned them all off); a missing or
 // unreadable row falls back to the defaults. Rules without a category or a match are
@@ -1475,13 +1516,14 @@ function planPlaidImport(input) {
     const isLocked = typeof inp.isLocked === 'function' ? (d) => { try { return !!inp.isLocked(d); } catch { return false; } } : () => false;
     const newId = (n) => (typeof inp.idPrefix === 'string' && inp.idPrefix ? inp.idPrefix : 'TXN-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6) + '-') + n;
     const seenIds = new Set(); const seenFps = new Set(); const heldKeys = new Set();
-    const byPlaidId = new Map(); const acctRows = new Map();
+    const byPlaidId = new Map(); const acctRows = new Map(); const checkRows = new Map();
     const tombIds = new Set(); const tombFps = new Set(); const tombAcct = new Map();
     existing.forEach(row => {
       const ids = [row.plaidId, ...(Array.isArray(row.priorPlaidIds) ? row.priorPlaidIds : [])].filter(Boolean);
       ids.forEach(pid => { seenIds.add(pid); if (!byPlaidId.has(pid)) byPlaidId.set(pid, row); });
       seenFps.add(bankTxnFingerprint(row));
       const ak = bankTxnAcctKey(row); if (ak && !acctRows.has(ak)) acctRows.set(ak, row);
+      const ckn = bankCheckNumber(row.description); if (ckn) { if (!checkRows.has(ckn)) checkRows.set(ckn, []); checkRows.get(ckn).push(row); }
     });
     heldIn.forEach(h => {
       if (h.plaidId) { seenIds.add(h.plaidId); heldKeys.add(h.plaidId); }
@@ -1531,13 +1573,19 @@ function planPlaidImport(input) {
         if (seenFps.has(fp)) { counts.skippedSame++; continue; }
         if (tombFps.has(fp)) { counts.skippedDeleted++; continue; }
         const rowMatch = acctKey ? acctRows.get(acctKey) : null;
-        const tombMatch = acctKey && !rowMatch ? tombAcct.get(acctKey) : null;
-        if (rowMatch || tombMatch) {
+        // (Sep 29 2026) The same check entered by hand on the day it was written: different
+        // date and memo, same check number and amount. Four such pairs were still double
+        // counting $27,073.31 on 9/29 because neither key above sees them.
+        const ckNum = rowMatch ? '' : bankCheckNumber(description);
+        const ckMatch = ckNum ? ((checkRows.get(ckNum) || []).find(r => bankChecksMatch(r, { description, amount, account, date })) || null) : null;
+        const liveMatch = rowMatch || ckMatch;
+        const tombMatch = acctKey && !liveMatch ? tombAcct.get(acctKey) : null;
+        if (liveMatch || tombMatch) {
           if ((pid && heldKeys.has(pid)) || heldKeys.has(fp)) { counts.skippedSame++; continue; }
-          const m = rowMatch || tombMatch;
+          const m = liveMatch || tombMatch;
           result.held.push({ key: pid || fp, plaidId: pid, date, description, amount, type, account, plaidCategory, acctKey, fingerprint: fp,
-            matchId: rowMatch ? (rowMatch.id || null) : null, matchDescription: String(m.description || ''), matchCategory: String(m.category || ''),
-            matchSource: rowMatch ? 'existing' : 'deleted', heldAt: now });
+            matchId: liveMatch ? (liveMatch.id || null) : null, matchDescription: String(m.description || ''), matchCategory: String(m.category || ''),
+            matchSource: liveMatch ? 'existing' : 'deleted', matchKind: ckMatch ? 'check' : 'same-day', matchDate: String(m.date || m.txn_date || ''), heldAt: now });
           counts.held++;
           if (pid) { seenIds.add(pid); heldKeys.add(pid); }
           seenFps.add(fp); heldKeys.add(fp);
@@ -1886,6 +1934,11 @@ function MidwestAIOSInner() {
             if (overlapStr < startDate) startDate = overlapStr;
           } catch {}
         }
+        if (!(await bankSyncBundleIsCurrent())) {
+          try { localStorage.setItem("mw_plaid_sync_error", BANK_STALE_BUNDLE_MSG); } catch {}
+          return;
+        }
+        if (cancelled) return;
         const r = await fetch("/api/plaid-transactions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -6612,5 +6665,5 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
 }
 
 
-export { AnimNum, AnimatedNumber, BANK_LIABILITY_CATEGORIES, BANK_REVIEW_QUEUE_ID, BANK_RULES_ID, BANK_RULE_DEFAULTS, Badge, Bar, Btn, CUSTOMER_TYPES, Card, Check, CheckMinus, DEFAULT_SOPS, Dashboard, DocumentsPage, Header, I, LINK_KINDS, LinkChips, LinkPicker, LinkedItemsPanel, applyBankRules, bankCategoryType, bankTxnAcctKey, bankTxnFingerprint, customerTypeOptions, fmt, fmtN, getLinks, getProspectList, getRoles, inputStyle, isSalesRep, isoDay, openLink, parseBankRules, parseLocalDate, pct, planPlaidImport, resolveLinkNames, shipKey, statusColor };
+export { AnimNum, AnimatedNumber, BANK_LIABILITY_CATEGORIES, BANK_REVIEW_QUEUE_ID, BANK_RULES_ID, BANK_RULE_DEFAULTS, BANK_STALE_BUNDLE_MSG, Badge, Bar, Btn, CUSTOMER_TYPES, Card, Check, CheckMinus, DEFAULT_SOPS, Dashboard, DocumentsPage, Header, I, LINK_KINDS, LinkChips, LinkPicker, LinkedItemsPanel, applyBankRules, bankCategoryType, bankCheckNumber, bankChecksMatch, bankSyncBundleIsCurrent, bankTxnAcctKey, bankTxnFingerprint, customerTypeOptions, fmt, fmtN, getLinks, getProspectList, getRoles, inputStyle, isSalesRep, isoDay, openLink, parseBankRules, parseLocalDate, pct, planPlaidImport, resolveLinkNames, shipKey, statusColor };
 export default function MidwestAIOS(){return <ErrorBoundary><MidwestAIOSInner/></ErrorBoundary>}
