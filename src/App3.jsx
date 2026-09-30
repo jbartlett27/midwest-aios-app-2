@@ -280,11 +280,13 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
     if(lines.length===0){notify('Add at least one category line','error');return}
     const bad=lines.find(l=>!l.category||!_finCategories.includes(l.category));
     if(bad){notify('Every line needs a category from the Financials list','error');return}
-    if(lines.some(l=>l.amount<=0)){notify('Every line needs an amount above zero','error');return}
+    // (Sep 30 2026) A statement credit is a negative line, as Maureen enters it in QuickBooks;
+    // it reduces that category on the P&L. Only a zero line is refused.
+    if(lines.some(l=>!l.amount)){notify('Every line needs an amount. Enter a credit as a negative amount, like -25.00','error');return}
     const linesTotal=billLinesTotal(lines);
     const totalRaw=String(billForm.total||'').replace(/[$,\s]/g,'');
     const total=totalRaw===''?linesTotal:_vbMoney(totalRaw);
-    if(!(total>0)){notify('Enter the bill total','error');return}
+    if(!(total>0)){notify(totalRaw===''&&linesTotal<0?'The lines net to '+fmt(linesTotal)+'. A bill has to total more than zero, so the credits cannot be larger than the charges.':'Enter the bill total','error');return}
     if(Math.abs(total-linesTotal)>0.005){notify('The category lines add up to '+fmt(linesTotal)+', not '+fmt(total)+' -- fix a line or the total before saving','error');return}
     const existing=billForm.id?vendorBillsAll.find(b=>b.id===billForm.id):null;
     if(existing&&billPaidTotal(existing)>total+0.005){notify('This bill already has '+fmt(billPaidTotal(existing))+' paid against it; the total cannot go below that','error');return}
@@ -2011,13 +2013,13 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
               <thead><tr style={{borderBottom:"1px solid #222"}}>{["Category","Amount","Memo",""].map((h,i)=><th key={i} style={{padding:"6px 6px",textAlign:i===1?"right":"left",fontSize:10,color:"#737373",fontWeight:600,textTransform:"uppercase",letterSpacing:0.6}}>{h}</th>)}</tr></thead>
               <tbody>{billForm.lines.map((l,i)=><tr key={i} className="vb-line" style={{borderBottom:"1px solid #161616"}}>
                 <td style={{padding:"5px 6px",width:"38%"}}><select value={l.category} onChange={e=>setLine(i,{category:e.target.value})} style={{..._inp,color:l.category?"#e5e5e5":"#737373",cursor:"pointer"}}><option value="">Pick a category...</option>{lineCats.map(c=><option key={c} value={c}>{c}</option>)}</select></td>
-                <td style={{padding:"5px 6px",width:140}}><input type="number" min="0" step="0.01" value={l.amount} onChange={e=>setLine(i,{amount:e.target.value})} placeholder="0.00" style={{..._inp,..._mono,textAlign:"right"}}/></td>
+                <td style={{padding:"5px 6px",width:140}}><input type="number" step="0.01" value={l.amount} onChange={e=>setLine(i,{amount:e.target.value})} placeholder="0.00" style={{..._inp,..._mono,textAlign:"right"}}/></td>
                 <td style={{padding:"5px 6px"}}><input value={l.memo} onChange={e=>setLine(i,{memo:e.target.value})} placeholder="optional" style={_inp}/></td>
                 <td style={{padding:"5px 6px",width:36,textAlign:"right"}}>{billForm.lines.length>1&&<button onClick={()=>setBillForm(f=>({...f,lines:f.lines.filter((x,k)=>k!==i)}))} title="Remove line" style={{..._small,color:"#f87171",borderColor:"#f8717130",padding:"4px 8px"}}>x</button>}</td>
               </tr>)}</tbody>
             </table></div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",marginTop:8}}>
-              <button className="vb-add-line" onClick={()=>setBillForm(f=>({...f,lines:[...f.lines,{category:'',amount:'',memo:''}]}))} style={{..._small,color:"#2dd4bf",borderColor:"#2dd4bf40"}}>+ Add line</button>
+              <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><button className="vb-add-line" onClick={()=>setBillForm(f=>({...f,lines:[...f.lines,{category:'',amount:'',memo:''}]}))} style={{..._small,color:"#2dd4bf",borderColor:"#2dd4bf40"}}>+ Add line</button><span className="vb-credit-hint" style={{fontSize:11,color:"#737373"}}>A credit on the statement is a negative line, like -25.00</span></div>
               <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
                 <div style={{fontSize:11,color:"#a3a3a3"}}>Lines <span style={{..._mono,color:"#e5e5e5",fontWeight:700}}>{fmt(formLinesTotal)}</span></div>
                 <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:11,color:"#a3a3a3"}}>Bill total</span><input value={billForm.total} onChange={e=>setBillForm(f=>({...f,total:e.target.value}))} placeholder={fmt(formLinesTotal)} style={{..._inp,..._mono,width:120,textAlign:"right"}}/></div>
@@ -2049,7 +2051,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:18}} className="resp-grid-2">
                   <div>
                     <div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:0.6,textTransform:"uppercase",marginBottom:6}}>Category lines</div>
-                    {(b.lines||[]).map((l,i)=><div key={i} className="vb-detail-line" style={{display:"flex",justifyContent:"space-between",gap:10,padding:"4px 0",fontSize:12,borderBottom:"1px solid #161616"}}><span style={{color:"#c4c4c4"}}>{l.category}{l.memo?<span style={{color:"#737373",marginLeft:8,fontSize:11}}>{l.memo}</span>:null}</span><span style={{..._mono,color:"#e5e5e5"}}>{fmt(l.amount)}</span></div>)}
+                    {(b.lines||[]).map((l,i)=><div key={i} className="vb-detail-line" style={{display:"flex",justifyContent:"space-between",gap:10,padding:"4px 0",fontSize:12,borderBottom:"1px solid #161616"}}><span style={{color:"#c4c4c4"}}>{l.category}{l.memo?<span style={{color:"#737373",marginLeft:8,fontSize:11}}>{l.memo}</span>:null}</span><span style={{..._mono,color:Number(l.amount)<0?"#34d399":"#e5e5e5"}}>{fmt(l.amount)}</span></div>)}
                     <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:12}}><span style={{color:"#737373"}}>Bill total</span><span style={{..._mono,color:"#e5e5e5",fontWeight:700}}>{fmt(total)}</span></div>
                     {b.memo?<div style={{fontSize:11,color:"#737373",marginTop:4}}>{b.memo}</div>:null}
                   </div>
