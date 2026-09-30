@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { db } from "./supabase.js";
 import { useUser, useClerk, SignIn, UserButton, useAuth } from "@clerk/clerk-react";
 import{BarChart,Bar as RBar,XAxis,YAxis,Tooltip,ResponsiveContainer,LineChart,Line,PieChart,Pie,Cell}from"recharts";
-import { AnimNum, AnimatedNumber, Badge, Bar, Btn, CUSTOMER_TYPES, Card, Check, CheckMinus, DEFAULT_SOPS, Dashboard, DocumentsPage, Header, I, LINK_KINDS, LinkChips, LinkPicker, LinkedItemsPanel, customerTypeOptions, fmt, fmtN, getLinks, getProspectList, getRoles, inputStyle, isSalesRep, isoDay, openLink, parseLocalDate, pct, resolveLinkNames, shipKey, statusColor } from "./App.jsx";
+import { AnimNum, AnimatedNumber, Badge, Bar, Btn, CUSTOMER_TYPES, Card, Check, CheckMinus, DEFAULT_SOPS, Dashboard, DocumentsPage, Header, I, LINK_KINDS, LinkChips, LinkPicker, LinkedItemsPanel, commissionEarned, commissionEarnedDate, commissionQuarterLabel, commissionQuarterOf, customerTypeOptions, fmt, fmtN, getLinks, getProspectList, getRoles, inputStyle, isSalesRep, isoDay, openLink, parseLocalDate, pct, resolveLinkNames, shipKey, statusColor } from "./App.jsx";
 import { FinancialsPage, parseVendorBills, billStatus, billTotal, billPaidTotal, billBalance } from "./App3.jsx";
 // ===============================================================
 // COMMISSIONS -- Editable Reps + PDF Export
@@ -12,6 +12,12 @@ function CommissionsPage({jobs,reps,customers,updateRep,addRep,deleteRep,getJobF
   const [editForm,setEditForm]=useState({});
   const [addingRep,setAddingRep]=useState(false);
   const [newRepForm,setNewRepForm]=useState({name:"",email:"",territory:"",commissionRate:0.05,tier:"Associate"});
+  // (Sep 30 2026) Reps are paid by quarter on commission EARNED in that quarter: the customer
+  // has paid in full and the job is closed out, dated by whichever came last.
+  const _cNow=new Date();const _cToday=isoDay(_cNow.getFullYear(),_cNow.getMonth(),_cNow.getDate());
+  const [commPeriod,setCommPeriod]=useState(()=>commissionQuarterOf(_cToday)||"all");
+  const _isQ=commPeriod!=="all";const _qL=(_isQ&&commissionQuarterLabel(commPeriod))||{short:"",range:""};
+  const _commQuarters=(()=>{const set=new Set();const cur=commissionQuarterOf(_cToday);if(cur)set.add(cur);jobs.forEach(j=>{const q=commissionQuarterOf(commissionEarnedDate(j));if(q)set.add(q)});if(_isQ)set.add(commPeriod);return [...set].sort().reverse()})();
 
 
   // Doc statuses: read from jobs[].docStatuses + DOC_STATUSES_GLOBAL SOP record + localStorage fallback.
@@ -38,6 +44,7 @@ function CommissionsPage({jobs,reps,customers,updateRep,addRep,deleteRep,getJobF
 
 
   return <div style={{animation:"fadeUp 0.4s"}}><Header title="Commission Engine" sub="Editable reps, customizable rates -- auto-calculated on every job" action={<Btn onClick={()=>setAddingRep(true)}><I n="plus" s={14}/> Add Sales Rep</Btn>}/>
+    <Card style={{marginBottom:14,padding:"12px 14px"}}><div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}><span style={{fontSize:12,color:"#9a9a9a"}}>Statement period</span><select className="comm-period" value={commPeriod} onChange={e=>setCommPeriod(e.target.value)} style={{...inputStyle,width:"auto",minWidth:190,padding:"8px 12px"}}>{_commQuarters.map(q=>{const l=commissionQuarterLabel(q);return l?<option key={q} value={q}>{l.short+" ("+l.range+")"}</option>:null})}<option value="all">All time</option></select><span style={{fontSize:11,color:"#737373",flex:"1 1 260px"}}>A commission is earned once the customer has paid in full and the job is closed out (phase Complete). It counts in the quarter of whichever came last.</span></div></Card>
 
 
     {addingRep&&<Card style={{marginBottom:20,border:"1px solid #05966930"}}><div style={{fontSize:14,fontWeight:700,marginBottom:12,color:"#34d399"}}>Add New Sales Rep</div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12,marginBottom:12}}>{[["name","Name"],["email","Email"],["territory","Territory"],["tier","Tier"]].map(([k,l])=><div key={k}><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>{l}</label>{k==="tier"?<select value={newRepForm[k]} onChange={e=>setNewRepForm({...newRepForm,[k]:e.target.value})} style={inputStyle}>{["Associate","Mid-Level","Senior"].map(t=><option key={t}>{t}</option>)}</select>:<input value={newRepForm[k]} onChange={e=>setNewRepForm({...newRepForm,[k]:e.target.value})} style={inputStyle}/>}</div>)}<div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Commission Rate (%)</label><input type="number" step="0.5" value={(newRepForm.commissionRate*100)} onChange={e=>setNewRepForm({...newRepForm,commissionRate:parseFloat(e.target.value)/100||0})} style={inputStyle}/></div></div><div style={{display:"flex",gap:8}}><Btn onClick={handleAddRep}>Add Rep</Btn><Btn v="secondary" onClick={()=>setAddingRep(false)}>Cancel</Btn></div></Card>}
@@ -48,10 +55,14 @@ function CommissionsPage({jobs,reps,customers,updateRep,addRep,deleteRep,getJobF
       const totalRev=rj.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
       const totalProfit=rj.reduce((s,j)=>{const f=getJobFinancials(j.id);return s+Math.max(0,(f.totalRevenue||0)-(f.totalCost||0))},0);
       const comm=rj.reduce((s,j)=>s+_commissionFor(j.id,rep.commissionRate||0),0);
-      const paidRev=rj.filter(j=>j.paymentStatus==="paid").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
-      const paidComm=rj.filter(j=>j.paymentStatus==="paid").reduce((s,j)=>s+_commissionFor(j.id,rep.commissionRate||0),0);
-      const unpaidComm=comm-paidComm;
-      const docNum=stableNum('COMM-',rep.id,'stmt');
+      const earnedJobs=rj.filter(commissionEarned);
+      const periodJobs=_isQ?earnedJobs.filter(j=>commissionQuarterOf(commissionEarnedDate(j))===commPeriod):earnedJobs;
+      const paidRev=earnedJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
+      const paidComm=periodJobs.reduce((s,j)=>s+_commissionFor(j.id,rep.commissionRate||0),0);
+      const unpaidComm=comm-earnedJobs.reduce((s,j)=>s+_commissionFor(j.id,rep.commissionRate||0),0);
+      const awaitingClose=_isQ?rj.filter(j=>j.paymentStatus==="paid"&&j.phase!=="Complete"):[];
+      const undated=_isQ?earnedJobs.filter(j=>!commissionEarnedDate(j)):[];
+      const docNum=_isQ?stableNum('COMM-',rep.id,commPeriod.replace('-','')):stableNum('COMM-',rep.id,'stmt');
       const isEd=editingRep===rep.id;
       return <Card key={rep.id} style={{marginBottom:10,padding:14,border:isEd?"1px solid #2dd4bf44":(unpaidComm>0?"1px solid #d9770625":"1px solid #222222")}}>
         {isEd?<div style={{overflow:"hidden"}}>
@@ -79,23 +90,25 @@ function CommissionsPage({jobs,reps,customers,updateRep,addRep,deleteRep,getJobF
               <button onClick={()=>startEdit(rep)} style={{background:"none",border:"none",cursor:"pointer",color:"#a3a3a3",padding:2,marginLeft:"auto"}} title="Edit rep"><I n="edit" s={14}/></button>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(80px,1fr))",gap:6,fontSize:12}}>
-              <div style={{padding:"6px 10px",background:"#111111",borderRadius:6,textAlign:"center"}}><div style={{fontSize:12,color:"#a3a3a3"}}>Jobs</div><div style={{fontWeight:700,color:"#e5e5e5",fontFamily:"'JetBrains Mono',monospace"}}>{rj.length}</div></div>
+              <div style={{padding:"6px 10px",background:"#111111",borderRadius:6,textAlign:"center"}}><div style={{fontSize:12,color:"#a3a3a3"}}>{_isQ?"Jobs earned":"Jobs"}</div><div style={{fontWeight:700,color:"#e5e5e5",fontFamily:"'JetBrains Mono',monospace"}}>{_isQ?periodJobs.length:rj.length}</div></div>
               <div style={{padding:"6px 10px",background:"#111111",borderRadius:6,textAlign:"center"}}><div style={{fontSize:12,color:"#a3a3a3"}}>Pipeline</div><div style={{fontWeight:700,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalRev)}</div></div>
-              <div style={{padding:"6px 10px",background:"#05966910",borderRadius:6,textAlign:"center"}}><div style={{fontSize:12,color:"#34d399"}}>Earned</div><div style={{fontWeight:700,color:"#34d399",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(paidComm)}</div></div>
+              <div style={{padding:"6px 10px",background:"#05966910",borderRadius:6,textAlign:"center"}}><div className="comm-earned-label" style={{fontSize:12,color:"#34d399"}}>{_isQ?"Earned "+_qL.short:"Earned"}</div><div style={{fontWeight:700,color:"#34d399",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(paidComm)}</div></div>
               <div style={{padding:"6px 10px",background:"#d9770610",borderRadius:6,textAlign:"center"}}><div style={{fontSize:12,color:"#fbbf24"}}>Pending</div><div style={{fontWeight:700,color:"#fbbf24",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(unpaidComm)}</div></div>
               <div style={{padding:"6px 10px",background:"#2dd4bf10",borderRadius:6,textAlign:"center"}}><div style={{fontSize:12,color:"#2dd4bf"}}>Total Comm.</div><div style={{fontWeight:700,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(comm)}</div></div>
             </div>
           </div>
           <div style={{display:"flex",flexDirection:"column",gap:6,marginLeft:0,marginTop:8,minWidth:180}}>
             <Btn onClick={()=>{
-              const items=rj.map(j=>{const f=getJobFinancials(j.id);const isPaid=j.paymentStatus==="paid";return{description:j.name+' -- '+(customers.find(c=>c.id===j.customer)?.name||'')+' -- '+(isPaid?'PAID':'PENDING'),displayQty:1,displayPrice:_commissionFor(j.id,rep.commissionRate||0)}});
-              if(onGenerateStatement){onGenerateStatement({type:"commission",data:{rep,items,total:comm,docNum},job:{id:'ALL',name:rep.name+' Commission Statement',notes:'Period: '+new Date().toLocaleDateString()+'\nEarned (paid jobs): '+fmt(paidComm)+'\nPending (unpaid jobs): '+fmt(unpaidComm)+'\nTotal commission: '+fmt(comm)}});setPage("documents")}
+              const _stJobs=_isQ?periodJobs:rj;
+              const items=_stJobs.map(j=>{const f=getJobFinancials(j.id);const isEarned=commissionEarned(j);return{description:j.name+' -- '+(customers.find(c=>c.id===j.customer)?.name||'')+' -- '+(isEarned?'EARNED':'PENDING'),displayQty:1,displayPrice:_commissionFor(j.id,rep.commissionRate||0),profit:Math.max(0,(f.totalRevenue||0)-(f.totalCost||0)),earned:isEarned,statusLabel:isEarned?(_isQ?'Paid '+(j.endDate||'--')+(j.closedDate?'\nClosed '+j.closedDate:''):'EARNED'):'PENDING',jobId:j.id}});
+              if(onGenerateStatement){onGenerateStatement({type:"commission",data:{rep,items,total:_isQ?paidComm:comm,docNum,period:_isQ?{key:commPeriod,label:_qL.short,range:_qL.range}:null,jobIds:_stJobs.map(j=>j.id)},job:{id:'ALL',name:rep.name+' Commission Statement'+(_isQ?' '+_qL.short:''),notes:_isQ?'Period: '+_qL.short+' ('+_qL.range+')\nEarned in '+_qL.short+': '+fmt(paidComm)+' on '+periodJobs.length+' job'+(periodJobs.length!==1?'s':''):'Period: All time\nEarned (paid and closed out): '+fmt(paidComm)+'\nPending (not yet earned): '+fmt(unpaidComm)+'\nTotal commission: '+fmt(comm)}});setPage("documents")}
             }}><I n="file" s={14}/> Generate Statement</Btn>
             {rj.length>0&&<div style={{display:"flex",gap:4}}>{["drafted","sent","approved"].map(s=><button key={s} onClick={()=>setCommDocStatus(docNum,s)} style={{padding:"4px 10px",borderRadius:6,flex:1,textAlign:"center",border:"1px solid "+(docStatuses[docNum]===s?"#2dd4bf":"#444"),background:docStatuses[docNum]===s?"#2dd4bf15":"transparent",color:docStatuses[docNum]===s?"#2dd4bf":"#c4c4c4",fontSize:12,fontFamily:"inherit",cursor:"pointer"}}>{s}</button>)}</div>}
           </div>
         </div>
         {rj.length>0&&<div style={{marginTop:10}}><Bar value={paidRev} max={totalRev||1} color="#34d399" height={3}/></div>}
-        {rj.length>0&&<div style={{marginTop:8,fontSize:12,color:"#a3a3a3"}}><strong>Jobs:</strong> {rj.map(j=>{const isPaid=j.paymentStatus==="paid";return <span key={j.id} style={{marginRight:8}}><span style={{color:isPaid?"#34d399":"#fbbf24"}}>{isPaid?"*":"o"}</span> {j.name} ({fmt(_commissionFor(j.id,rep.commissionRate||0))})</span>})}</div>}
+        {_isQ&&<div className="comm-q-jobs" style={{marginTop:8,fontSize:12,color:"#a3a3a3"}}>{periodJobs.length>0?<><strong>Earned in {_qL.short}:</strong> {periodJobs.map(j=><span key={j.id} className="comm-q-job" style={{marginRight:10,display:"inline-block"}}><span style={{color:"#34d399"}}>*</span> {j.name} <span style={{color:"#737373"}}>(paid {j.endDate||"--"}{j.closedDate?", closed "+j.closedDate:""})</span> <span style={{fontFamily:"'JetBrains Mono',monospace",color:"#c4c4c4"}}>{fmt(_commissionFor(j.id,rep.commissionRate||0))}</span></span>)}</>:<span>Nothing earned in {_qL.short}.</span>}{awaitingClose.length>0&&<div className="comm-await" style={{marginTop:6,color:"#fbbf24"}}>Paid, waiting to be closed out ({awaitingClose.length}): {awaitingClose.map(j=>j.name).join(", ")}</div>}{undated.length>0&&<div className="comm-undated" style={{marginTop:6,color:"#f87171"}}>Closed out and marked paid, but no paid date (End Date) on the job, so it is not in any quarter ({undated.length}): {undated.map(j=>j.name).join(", ")}</div>}</div>}
+        {!_isQ&&rj.length>0&&<div style={{marginTop:8,fontSize:12,color:"#a3a3a3"}}><strong>Jobs:</strong> {rj.map(j=>{const isPaid=commissionEarned(j);return <span key={j.id} style={{marginRight:8}}><span style={{color:isPaid?"#34d399":"#fbbf24"}}>{isPaid?"*":"o"}</span> {j.name} ({fmt(_commissionFor(j.id,rep.commissionRate||0))})</span>})}</div>}
         </>}
       </Card>;
     })}
@@ -271,7 +284,7 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
       const costTotal=rJobs.reduce((s,j)=>s+getJobFinancials(j.id).totalCost,0);
       const margin=rv>0?(1-costTotal/rv)*100:0;
       const pRev=rJobs.filter(j=>j.paymentStatus==="paid").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
-      const comm=rJobs.reduce((s,j)=>s+_commissionFor(j.id,r.commissionRate||0),0);const earnedComm=rJobs.filter(j=>j.paymentStatus==="paid").reduce((s,j)=>s+_commissionFor(j.id,r.commissionRate||0),0);
+      const comm=rJobs.reduce((s,j)=>s+_commissionFor(j.id,r.commissionRate||0),0);const earnedComm=rJobs.filter(commissionEarned).reduce((s,j)=>s+_commissionFor(j.id,r.commissionRate||0),0);
       const custBreak={};rJobs.forEach(j=>{const c=customers.find(c=>c.id===j.customer);if(c)custBreak[c.name]=(custBreak[c.name]||0)+getJobFinancials(j.id).totalRevenue});
       const topCusts=Object.entries(custBreak).sort((a,b)=>b[1]-a[1]).slice(0,5);
       const activities=rJobs.flatMap(j=>(j.auditTrail||[]).map(a=>({...a,jobName:(jobNum?.(j.id)||"")+" "+j.name}))).sort((a,b)=>new Date(b.time)-new Date(a.time)).slice(0,15);
