@@ -1288,7 +1288,7 @@ function NotesPage({customSops,addSop,deleteSop,jobs,reps,customers,vendors,noti
 }
 
 
-function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJobItems,_commissionFor,_bankTxnHash,brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory,updateJob,addJob,updateLineItem,addLineItem,deleteLineItem,updateRep,addRep,addCustomer,updateCustomer,addVendor,updateVendor,notify,setPage,deleteJob,pendingBrainFile,setPendingBrainFile,pendingBrainEmail,setPendingBrainEmail,currentUser}){
+function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJobItems,_commissionFor,_bankTxnHash,brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory,updateJob,addJob,updateLineItem,addLineItem,deleteLineItem,updateRep,addRep,addCustomer,updateCustomer,addVendor,updateVendor,notify,setPage,deleteJob,pendingBrainFile,setPendingBrainFile,pendingBrainEmail,setPendingBrainEmail,currentUser,lineItemShipTos}){
   // Sales-role scoping: the Brain must only know what the logged-in user is allowed
   // to see. jobs arrives pre-filtered (visibleJobs), but line items arrive
   // unfiltered -- without this filter a sales login could ask the Brain about other
@@ -1553,8 +1553,8 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     {name:"update_vendor_credit",description:"Update an existing vendor credit or standalone bill record. Match by sop_id (VC-xxx or SB-xxx) or by vendor + job + approximate amount. Fields: amount, ref_number, memo, credit_date, paid status.",input_schema:{type:"object",properties:{sop_id:{type:"string",description:"The credit/bill SOP id (VC-xxxxxx or SB-xxxxxx)"},vendor_name:{type:"string",description:"Vendor name for disambiguation when sop_id is unknown"},job_id:{type:"string",description:"Job for disambiguation"},updates:{type:"object",properties:{amount:{type:"number"},ref_number:{type:"string"},memo:{type:"string"},credit_date:{type:"string"},paid:{type:"boolean"},pay_date:{type:"string"},check_num:{type:"string"}}}},required:["updates"]}},
     {name:"delete_vendor_credit",description:"Delete a vendor credit or standalone bill record. Permanent. Match by sop_id, or by vendor + job + amount. The underlying job/PO/line items are untouched.",input_schema:{type:"object",properties:{sop_id:{type:"string",description:"The credit/bill SOP id"},vendor_name:{type:"string"},job_id:{type:"string"},amount:{type:"number",description:"Used with vendor+job to disambiguate"}}}},
     {name:"list_vendor_credits",description:"List vendor credits and standalone bills with filters. Returns a markdown table. Use when user says 'show me all open credits', 'list Marco credits', 'what credits do we have on the Sandburg job'.",input_schema:{type:"object",properties:{vendor_name:{type:"string"},job_id:{type:"string"},kind:{type:"string",description:"'credit' | 'standalone_bill' | 'all' (default all)"},applied_status:{type:"string",description:"'applied' to show only credits applied to a specific bill, 'unapplied' for unapplied, 'all' for both (default all)"},limit:{type:"number"}}}},
-    {name:"apply_credit_to_bill",description:"Explicitly link a vendor credit to a specific bill. The credit will be shown on the bill detail view and counted against that bill's owed amount. Use when user says 'apply the Marco credit to BILL-XXXX'.",input_schema:{type:"object",properties:{credit_sop_id:{type:"string",description:"The VC-xxxxxx SOP id of the credit"},bill_doc_num:{type:"string",description:"The bill to link the credit to"}},required:["credit_sop_id","bill_doc_num"]}},
-    {name:"find_unmatched_credits",description:"Find vendor credits that have NOT been applied to a specific bill. Useful when reviewing what credits are still available to apply, or auditing unallocated credits at month-end. Returns a markdown table sorted by amount desc.",input_schema:{type:"object",properties:{vendor_name:{type:"string",description:"Optional vendor name filter"},job_id:{type:"string",description:"Optional job filter"}}}},
+    {name:"apply_credit_to_bill",description:"Reserve an open vendor credit for one of the same vendor's bills. Reserving does not pay anything by itself: when that bill is paid in Documents >> Vendor Bills (tick the bill, then Print Batch Check or Mark Paid, or the bill's Pay button) the Apply Credits window opens with this credit already ticked, the check is written for the bill less the credit, and the credit prints on the check stub next to the invoice. Any open credit can also just be ticked in that window at payment time without reserving it first. Use when user says 'apply the Marco credit to BILL-XXXX'.",input_schema:{type:"object",properties:{credit_sop_id:{type:"string",description:"The VC-xxxxxx SOP id of the credit"},bill_doc_num:{type:"string",description:"The bill to link the credit to"}},required:["credit_sop_id","bill_doc_num"]}},
+    {name:"find_unmatched_credits",description:"Find open vendor credits: credits with an amount still left to apply (not used up, not void) that are not reserved for a bill. Useful when reviewing what credits are still available to apply at payment time, or auditing unallocated credits at month-end. Returns a markdown table with the amount left on each, sorted by amount left desc.",input_schema:{type:"object",properties:{vendor_name:{type:"string",description:"Optional vendor name filter"},job_id:{type:"string",description:"Optional job filter"}}}},
     // ==============================================================
     // PURCHASE ORDERS (6 tools, May 21 2026)
     // ==============================================================
@@ -2585,11 +2585,17 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
           const amt = Number(d.amount);
           if (!isFinite(amt) || amt <= 0) return;
           const v2 = (vendors||[]).find(vv => vv.id === d.vendorId) || null;
-          const _stdPaid = d.paid===true;
+          // (Oct 1 2026) A vendor credit used across payments keeps its full amount (job
+          // cost) and tracks appliedAmount; what is open is the amount left.
+          const _isCred = s.cat === 'VendorCredit';
+          const _credUsed = _isCred ? Math.max(0, Number(d.appliedAmount)||0) : 0;
+          const _credLeft = _isCred ? Math.max(0, Math.round((amt - _credUsed) * 100) / 100) : 0;
+          const _stdPaid = d.paid===true || (_isCred && _credLeft <= 0.005);
+          const _open = _isCred && !_stdPaid ? _credLeft : amt;
           allBills.push({
             job: job2, vendor: v2, vendorId: d.vendorId||'unknown',
             vendorName: d.vendorName || (v2?v2.name:'Unknown'),
-            items: [], cost: amt, orderValue: amt,
+            items: [], cost: _open, orderValue: amt,
             poDocNum: d.refNumber||'', billDocNum: s.id,
             poDate: d.creditDate||'', dueDate: d.creditDate||'',
             daysUntil: 0, paid: _stdPaid, voided: d.void===true,
@@ -2599,13 +2605,14 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
             // amount or zero. Surface the same shape for Brain consumer uniformity.
             payments: _stdPaid ? [{date: d.payDate||'', amount: amt, checkNum: d.checkNum||'', memo: d.memo||'', method:'standalone'}] : [],
             totalPaid: _stdPaid ? amt : 0,
-            balance: _stdPaid ? 0 : amt,
+            balance: _stdPaid ? 0 : _open,
             isPartiallyPaid: false,
             status: d.void===true?'void':(_stdPaid?'paid':'unpaid'),
             _isDeleted: false,
             _isStandalone: true, _standaloneKind: s.cat, _sopId: s.id,
             _fileUrl: d.fileUrl||'', _fileName: d.fileName||'',
-            _appliedToBill: d.appliedToBill||''
+            _appliedToBill: d.appliedToBill||'',
+            _creditOriginal: _isCred ? amt : undefined, _creditApplied: _credUsed
           });
         });
         return allBills;
@@ -3085,9 +3092,10 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         records.sort((a,b) => (b.d.amount||0) - (a.d.amount||0));
         const limit = Math.min(input.limit||25, records.length);
         let msg = '**'+records.length+' '+(kind==='all'?'credits & standalone bills':kind)+' matching**\n\n';
-        msg += '| # | ID | Kind | Vendor | Job | Amount | Date | Ref | Applied to | Paid |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n';
+        msg += '| # | ID | Kind | Vendor | Job | Amount | Left | Date | Ref | Applied to | Paid |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n';
+        const _left = (x) => x.sop.cat !== 'VendorCredit' ? '--' : '$' + Math.max(0, (Number(x.d.amount)||0) - Math.max(0, Number(x.d.appliedAmount)||0)).toFixed(2);
         records.slice(0,limit).forEach((x,i) => {
-          msg += '| '+(i+1)+' | '+x.sop.id+' | '+(x.sop.cat==='VendorCredit'?'credit':'bill')+' | '+(x.d.vendorName||'--')+' | '+(x.d.jobName||'--')+' | $'+Number(x.d.amount||0).toFixed(2)+' | '+(x.d.creditDate||'--')+' | '+(x.d.refNumber||'--')+' | '+(x.d.appliedToBill||'--')+' | '+(x.d.paid?'yes':'no')+' |\n';
+          msg += '| '+(i+1)+' | '+x.sop.id+' | '+(x.sop.cat==='VendorCredit'?'credit':'bill')+' | '+(x.d.vendorName||'--')+' | '+(x.d.jobName||'--')+' | $'+Number(x.d.amount||0).toFixed(2)+' | '+_left(x)+' | '+(x.d.creditDate||'--')+' | '+(x.d.refNumber||'--')+' | '+(x.d.appliedToBill||'--')+' | '+(x.d.paid?'yes':'no')+' |\n';
         });
         if (records.length > limit) msg += '\n... and '+(records.length-limit)+' more.';
         return {success: true, message: msg};
@@ -3099,21 +3107,28 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         if (!bill) return {error: 'Bill not found: '+input.bill_doc_num};
         if (bill._isDeleted) return {error: 'Cannot apply credit to a deleted bill. Restore the bill first.'};
         let d = {}; try { d = JSON.parse(sop.content||'{}'); } catch {}
+        const _left = Math.max(0, Math.round(((Number(d.amount)||0) - Math.max(0, Number(d.appliedAmount)||0)) * 100) / 100);
+        if (d.void === true) return {error: 'Credit '+sop.id+' is void.'};
+        if (d.paid === true || _left <= 0.005) return {error: 'Credit '+sop.id+' is already used up.'};
+        if (bill._standaloneKind === 'VendorCredit') return {error: bill.billDocNum+' is a credit, not a bill.'};
+        if (bill.paid) return {error: 'Bill '+bill.billDocNum+' is already paid.'};
+        if (d.vendorId && bill.vendorId && d.vendorId !== bill.vendorId) return {error: 'Credit '+sop.id+' is from '+(d.vendorName||'another vendor')+' but bill '+bill.billDocNum+' is from '+bill.vendorName+'. A credit can only go against the same vendor\'s bills.'};
         d.appliedToBill = bill.billDocNum;
         d.appliedDate = new Date().toISOString().split('T')[0];
         addSop({...sop, content: JSON.stringify(d)});
-        return {success: true, message: 'Applied credit '+sop.id+' ($'+Number(d.amount||0).toFixed(2)+') to bill '+bill.billDocNum+' ('+bill.vendorName+')'};
+        return {success: true, message: 'Reserved credit '+sop.id+' ($'+_left.toFixed(2)+' left) for bill '+bill.billDocNum+' ('+bill.vendorName+'). Nothing is paid yet. When that bill is paid in Documents >> Vendor Bills (Print Batch Check, Mark Paid, or its Pay button), the Apply Credits window opens with this credit ticked, the payment is the bill less the credit, and the credit prints on the check stub.'};
       }
       if (toolName === 'find_unmatched_credits') {
         let records = (customSops||[]).filter(s => s.cat === 'VendorCredit').map(s => { let d = {}; try { d = JSON.parse(s.content||'{}'); } catch {} return {sop:s, d}; });
-        records = records.filter(x => !x.d.appliedToBill);
+        const _leftOf = (x) => Math.max(0, Math.round(((Number(x.d.amount)||0) - Math.max(0, Number(x.d.appliedAmount)||0)) * 100) / 100);
+        records = records.filter(x => !x.d.appliedToBill && x.d.paid !== true && x.d.void !== true && _leftOf(x) > 0.005);
         if (input.vendor_name) { const q = input.vendor_name.toLowerCase(); records = records.filter(x => (x.d.vendorName||'').toLowerCase().includes(q)); }
         if (input.job_id) { const job = findJob(input.job_id); if (job) records = records.filter(x => x.d.jobId === job.id); }
-        records.sort((a,b) => (b.d.amount||0) - (a.d.amount||0));
-        const total = records.reduce((s,x) => s + Number(x.d.amount||0), 0);
+        records.sort((a,b) => _leftOf(b) - _leftOf(a));
+        const total = records.reduce((s,x) => s + _leftOf(x), 0);
         let msg = '**'+records.length+' unapplied vendor credit'+(records.length===1?'':'s')+'**\n\nTotal unapplied: $'+total.toFixed(2)+'\n\n';
-        msg += '| # | ID | Vendor | Job | Amount | Date | Ref |\n| --- | --- | --- | --- | --- | --- | --- |\n';
-        records.forEach((x,i) => { msg += '| '+(i+1)+' | '+x.sop.id+' | '+(x.d.vendorName||'--')+' | '+(x.d.jobName||'--')+' | $'+Number(x.d.amount||0).toFixed(2)+' | '+(x.d.creditDate||'--')+' | '+(x.d.refNumber||'--')+' |\n'; });
+        msg += '| # | ID | Vendor | Job | Amount | Left | Date | Ref |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n';
+        records.forEach((x,i) => { msg += '| '+(i+1)+' | '+x.sop.id+' | '+(x.d.vendorName||'--')+' | '+(x.d.jobName||'--')+' | $'+Number(x.d.amount||0).toFixed(2)+' | $'+_leftOf(x).toFixed(2)+' | '+(x.d.creditDate||'--')+' | '+(x.d.refNumber||'--')+' |\n'; });
         return {success: true, message: msg};
       }
 
