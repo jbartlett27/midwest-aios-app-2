@@ -4345,6 +4345,12 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
   // shipment's invoice + check reconciles against the bank statement individually.
   // Reported by Maureen Jun 9 2026 (WB Mfg Mannheim Student Chairs split shipment).
   const [billPayInvInput,setBillPayInvInput]=useState('');
+  // (Oct 1 2026) Pay bills with vendor credits. Maureen pays bills the QuickBooks way: pick
+  // the bills, apply the vendor's open credits, and the credits print on the check stub next
+  // to the invoices. creditPay is the open Apply Credits window: action ('check' prints a
+  // check, 'paid' records the bills paid), keys (billDocNum of each bill being paid) and
+  // picks ({creditSopId: {on, amt}} = which credits she ticked and how much of each to use).
+  const [creditPay,setCreditPay]=useState(null);
   // Vendor Credit / Standalone Bill modal: lets the user attach a credit or a
   // standalone bill (one not derived from a PO) to a project. Stored in
   // customSops with cat 'VendorCredit' or 'StandaloneBill'. Both flow through
@@ -4895,15 +4901,23 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           const daysUntil3 = Math.ceil((dueDate3.getTime() - Date.now()) / 86400000);
           let dueStr3 = '';
           try { dueStr3 = dueDate3.toISOString().split('T')[0]; } catch { dueStr3 = ''; }
-          const paid3 = d.paid === true;
+          // (Oct 1 2026) A vendor credit can be spread over several payments. appliedAmount
+          // is the running total used so far; amount stays the full credit, because job cost
+          // (getJobFinancials) is reduced by the whole credit. What is left to apply is
+          // amount - appliedAmount, and the credit is used up once nothing is left.
+          const isCred3 = s.cat === 'VendorCredit';
+          const credUsed3 = isCred3 ? Math.max(0, Number(d.appliedAmount) || 0) : 0;
+          const credLeft3 = isCred3 ? Math.max(0, Math.round((amtNum - credUsed3) * 100) / 100) : 0;
+          const paid3 = d.paid === true || (isCred3 && credLeft3 <= 0.005);
           const void3 = d.void === true;
+          const open3 = isCred3 && !paid3 ? credLeft3 : amtNum;
           allBills.push({
             job: job2,
             vendor: v2,
             vendorId: d.vendorId || 'unknown',
             vendorName: d.vendorName || (v2 ? v2.name : 'Unknown'),
             items: [],
-            cost: amtNum,
+            cost: open3,
             orderValue: amtNum,
             poDocNum: d.refNumber || '',
             billDocNum: s.id, // SOP id doubles as the bill row id
@@ -4919,13 +4933,16 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
             memo: d.memo || '',
             checkPrinted: '',
             isCredit: s.cat === 'VendorCredit',
-            creditAmount: s.cat === 'VendorCredit' ? amtNum : 0,
+            creditAmount: isCred3 ? open3 : 0,
+            _creditOriginal: isCred3 ? amtNum : undefined,
+            _creditUsed: credUsed3,
+            _appliedToBill: isCred3 ? (d.appliedToBill || '') : '',
             // Standalone bills don't track multi-payment history (they're flat single
             // amounts). Surface the same shape as PO-derived bills for downstream
             // uniformity: balance is full amount if unpaid, zero if paid.
             payments: paid3 ? [{date: d.payDate||'', amount: amtNum, checkNum: d.checkNum||'', memo: d.memo||'', method:'standalone'}] : [],
             totalPaid: paid3 ? amtNum : 0,
-            balance: paid3 ? 0 : amtNum,
+            balance: paid3 ? 0 : open3,
             isPartiallyPaid: false,
             _standalone: true,
             entered: true,
@@ -4937,8 +4954,10 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
         });
       } catch {}
       allBills.sort((a,b)=>a.daysUntil-b.daysUntil);
-      const overdueBills=allBills.filter(b=>b.daysUntil<0&&!b.paid&&!b.voided&&!b._isDeleted&&b.entered);
-      const dueSoonBills=allBills.filter(b=>b.daysUntil>=0&&b.daysUntil<=14&&!b.paid&&!b.voided&&!b._isDeleted);
+      // Vendor credits are never overdue or due soon: a credit is money the vendor owes
+      // Midwest, so it has no due date (Maureen, Oct 1 2026: credits showed as overdue).
+      const overdueBills=allBills.filter(b=>b.daysUntil<0&&!b.paid&&!b.voided&&!b._isDeleted&&b.entered&&!b.isCredit);
+      const dueSoonBills=allBills.filter(b=>b.daysUntil>=0&&b.daysUntil<=14&&!b.paid&&!b.voided&&!b._isDeleted&&!b.isCredit);
       const unpaidBills=allBills.filter(b=>!b.paid&&!b.voided&&!b._isDeleted);
       // Rows actually rendered. vendorFilterActive re-checks that the filtered vendor still
       // has bills, so a stale filter can never blank the table -- it falls back to "all".
@@ -4955,90 +4974,76 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
       const overdueAmt=overdueBills.reduce((s,b)=>s+(typeof b.balance==='number'?b.balance:b.cost),0);
       const toggleSelect=(idx)=>{const next=new Set(billSelected);if(next.has(idx))next.delete(idx);else next.add(idx);setBillSelected(next)};
       const selectAll=()=>{if(billSelected.size===unpaidBills.length)setBillSelected(new Set());else setBillSelected(new Set(unpaidBills.map((_,i)=>i)))};
-      // Auto-apply unapplied vendor credits when paying a batch of bills. Maureen's
-      // workflow: she selects 2 DKA invoices, clicks Print Batch Check, expects the
-      // standalone DKA credit to deduct from the check total automatically. This
-      // helper finds credits that match each selected bill's (vendor + job) and are
-      // not yet consumed, then plans how much of each credit applies to which bill.
+      // (Oct 1 2026) Vendor credits applied when bills are paid. Maureen pays the way
+      // QuickBooks does: pick the bills, apply the vendor's open credits, and the check is
+      // written for the difference with the credits listed on the stub. picks is what she
+      // chose in the Apply Credits window, {creditSopId: most to use from that credit}. Only
+      // picked credits are used (nothing is applied that she did not choose; until now a
+      // batch check silently used every open credit the vendor had), only for the same
+      // vendor, and never more than is left on the credit or owed on the bills. A credit
+      // reserved for a bill (Brain apply_credit_to_bill) goes to that bill first; then
+      // credits from the same job; then the vendor's credits on other jobs, smallest first
+      // inside each pass so a large credit is not spent on a small bill.
       // Returns:
-      //   - plan: array of {bill, payAmt, creditsApplied:[{sopId,vendorName,refNumber,amount,creditedAmt}]}
-      //   - creditConsumes: array of {sopId, amount, memo} for credits that should be
-      //     marked paid (consumed) and how much of each was used. If a credit is only
-      //     partially used, the consumed amount is recorded in the memo but the SOP
-      //     is still marked paid (we don't currently split credits across multiple uses).
-      //     Future enhancement: support partial-credit splitting if Maureen requests.
-      //   - totalCredit: sum of credits applied across all bills (for UI display)
-      const _planCreditApplication = (selectedNonCreditBills) => {
-        const plan = [];
-        // Gather all unconsumed credits from allBills (standalone vendor credits with
-        // isCredit:true, paid:false). Keyed by vendor+job for quick lookup.
-        const availableCredits = allBills.filter(b => b.isCredit && !b.paid && !b.voided && !b._isDeleted);
-        // Mutable working copy: each credit has a remaining amount we can apply.
-        const creditPool = availableCredits.map(c => ({
-          sopId: c._sopId,
-          vendorId: c.vendorId,
-          vendorName: c.vendorName,
-          jobId: c.job?.id,
-          refNumber: c.poDocNum || c.vendorInvNum || '',
-          remaining: typeof c.creditAmount === 'number' ? c.creditAmount : c.cost,
-          originalAmount: typeof c.creditAmount === 'number' ? c.creditAmount : c.cost
-        }));
-        for (const bill of selectedNonCreditBills) {
-          if (bill.isCredit) { plan.push({bill, payAmt: 0, creditsApplied: []}); continue; }
-          let owe = typeof bill.balance === 'number' ? bill.balance : bill.cost;
-          const creditsApplied = [];
-          // A vendor credit is a balance on the VENDOR account, not on one job.
-          // Prefer a credit raised on the same job first, because that keeps job
-          // costing exact; then fall back to any other open credit from the same
-          // vendor. Without the fallback, a vendor account with credits and bills
-          // spread across several jobs (Doane Keyes, ~14 bills on one check) could
-          // never be settled in a single batch. Smallest credits first inside each
-          // pass so a large credit is not spent on a small bill.
-          const _sameVendor = c => c.remaining > 0.005 && c.vendorId === bill.vendorId;
-          const _smallestFirst = (a,b) => a.remaining - b.remaining;
-          const matching = creditPool.filter(c => _sameVendor(c) && c.jobId === bill.job?.id).sort(_smallestFirst)
-            .concat(creditPool.filter(c => _sameVendor(c) && c.jobId !== bill.job?.id).sort(_smallestFirst));
-          for (const c of matching) {
-            if (owe <= 0.005) break;
-            // Re-check: a credit can be drained earlier in this same loop now that
-            // the list is built up front across two passes.
-            if (c.remaining <= 0.005) continue;
-            const use = Math.min(c.remaining, owe);
-            c.remaining -= use;
-            owe -= use;
-            creditsApplied.push({
-              sopId: c.sopId,
+      //   - plan: [{bill, payAmt, creditsApplied:[{sopId,vendorName,refNumber,creditDate,originalAmount,availableBefore,creditedAmt}]}]
+      //   - creditConsumes: [{sopId, usedAmt, billRefs, billKeys}], one per credit used
+      //   - totalCredit: total applied across all the bills
+      const _cents = (n) => Math.round((Number(n) || 0) * 100) / 100;
+      const _planCreditApplication = (selectedNonCreditBills, picks) => {
+        const want = picks || {};
+        const bills = selectedNonCreditBills.filter(b => b && !b.isCredit);
+        const creditPool = allBills
+          .filter(c => c.isCredit && c._sopId && !c.paid && !c.voided && !c._isDeleted)
+          .map(c => {
+            const avail = _cents(Math.max(0, typeof c.creditAmount === 'number' ? c.creditAmount : c.cost));
+            const ask = Number(want[c._sopId]);
+            return {
+              sopId: c._sopId,
+              vendorId: c.vendorId,
               vendorName: c.vendorName,
-              refNumber: c.refNumber,
-              originalAmount: c.originalAmount,
-              creditedAmt: use
-            });
-          }
-          plan.push({bill, payAmt: Math.max(0, owe), creditsApplied});
-        }
-        // Build consume list: any credit whose remaining dropped below original is
-        // consumed. We mark it paid with a memo listing what bills consumed it.
-        const consumedBySop = new Map();
-        plan.forEach(p => {
-          p.creditsApplied.forEach(ca => {
-            if (!consumedBySop.has(ca.sopId)) consumedBySop.set(ca.sopId, {sopId: ca.sopId, usedAmt: 0, billRefs: []});
-            const rec = consumedBySop.get(ca.sopId);
-            rec.usedAmt += ca.creditedAmt;
-            rec.billRefs.push(p.bill.vendorInvNum || p.bill.poDocNum || ('bill '+p.bill.billDocNum));
-          });
+              jobId: c.job?.id,
+              refNumber: c.poDocNum || c.vendorInvNum || '',
+              creditDate: c.poDate || '',
+              originalAmount: typeof c._creditOriginal === 'number' ? c._creditOriginal : avail,
+              availableBefore: avail,
+              reservedFor: c._appliedToBill || '',
+              remaining: isFinite(ask) && ask > 0 ? Math.min(avail, _cents(ask)) : 0
+            };
+          })
+          .filter(c => c.remaining > 0.005);
+        const owed = new Map(bills.map(b => [b, _cents(Math.max(0, typeof b.balance === 'number' ? b.balance : b.cost))]));
+        const applied = new Map(bills.map(b => [b, []]));
+        const use = (bill, c) => {
+          const owe = owed.get(bill);
+          if (owe <= 0.005 || c.remaining <= 0.005) return;
+          const amt = _cents(Math.min(c.remaining, owe));
+          if (amt <= 0.005) return;
+          c.remaining = _cents(c.remaining - amt);
+          owed.set(bill, _cents(owe - amt));
+          applied.get(bill).push({sopId: c.sopId, vendorName: c.vendorName, refNumber: c.refNumber, creditDate: c.creditDate, originalAmount: c.originalAmount, availableBefore: c.availableBefore, creditedAmt: amt});
+        };
+        // Pass 1: a credit reserved for one of these bills goes to that bill.
+        bills.forEach(bill => creditPool.filter(c => c.vendorId === bill.vendorId && c.reservedFor === bill.billDocNum).forEach(c => use(bill, c)));
+        // Pass 2: the same job first, then the vendor's other jobs.
+        const _smallestFirst = (a,b) => a.remaining - b.remaining;
+        bills.forEach(bill => {
+          const ok = c => c.vendorId === bill.vendorId && c.remaining > 0.005;
+          creditPool.filter(c => ok(c) && c.jobId === bill.job?.id).sort(_smallestFirst)
+            .concat(creditPool.filter(c => ok(c) && c.jobId !== bill.job?.id).sort(_smallestFirst))
+            .forEach(c => use(bill, c));
         });
-        const creditConsumes = Array.from(consumedBySop.values()).map(c => {
-          const pool = creditPool.find(cp => cp.sopId === c.sopId);
-          const fullyUsed = pool && pool.remaining < 0.005;
-          return {
-            sopId: c.sopId,
-            usedAmt: c.usedAmt,
-            remaining: pool ? pool.remaining : 0,
-            fullyUsed,
-            memo: 'Applied to '+c.billRefs.join(', ')+(fullyUsed?'':' (partial: '+fmt(c.usedAmt)+' of '+fmt(pool.originalAmount)+')')
-          };
-        });
-        const totalCredit = plan.reduce((s,p) => s + p.creditsApplied.reduce((s2,ca) => s2+ca.creditedAmt, 0), 0);
+        const plan = bills.map(bill => ({bill, payAmt: Math.max(0, owed.get(bill)), creditsApplied: applied.get(bill)}));
+        const bySop = new Map();
+        plan.forEach(p => p.creditsApplied.forEach(ca => {
+          if (!bySop.has(ca.sopId)) bySop.set(ca.sopId, {sopId: ca.sopId, usedAmt: 0, billRefs: [], billKeys: []});
+          const rec = bySop.get(ca.sopId);
+          rec.usedAmt = _cents(rec.usedAmt + ca.creditedAmt);
+          const ref = p.bill.vendorInvNum || p.bill.poDocNum || ('bill ' + p.bill.billDocNum);
+          if (!rec.billRefs.includes(ref)) rec.billRefs.push(ref);
+          if (!rec.billKeys.includes(p.bill.billDocNum)) rec.billKeys.push(p.bill.billDocNum);
+        }));
+        const creditConsumes = Array.from(bySop.values());
+        const totalCredit = _cents(plan.reduce((s,p) => s + p.creditsApplied.reduce((s2,ca) => s2 + ca.creditedAmt, 0), 0));
         return {plan, creditConsumes, totalCredit};
       };
       // Settle a STANDALONE vendor bill that was included in a batch check. These
@@ -5056,52 +5061,68 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           paid: true,
           payDate: todayIso,
           checkNum: checkNo || d.checkNum || '',
-          memo: (d.memo ? d.memo + ' | ' : '') + label + creditNote
+          memo: (d.memo ? d.memo + ' | ' : '') + label + creditNote,
+          ...(creditTotal > 0.005 ? {creditApplied: Math.round(creditTotal * 100) / 100} : {})
         }), custom: true});
       };
-      // Mark a credit SOP as consumed. If fully used, set paid:true so it disappears
-      // from the unpaid list. If partially used (rare in current data shape), reduce
-      // the stored creditAmount and leave paid:false so the remainder stays available.
-      const _consumeCreditSops = (creditConsumes, today) => {
+      // Record what was used from each credit. amount is never changed: it is the credit's
+      // full value and keeps reducing the job's cost. appliedAmount grows, each use is logged
+      // in applications (date, amount, bills, check number), and the credit is marked used
+      // (paid) once nothing is left. Until Oct 2026 a partly used credit had its amount
+      // lowered instead, which also shrank the credit counted against the job.
+      const _consumeCreditSops = (creditConsumes, today, checkNo) => {
         creditConsumes.forEach(cc => {
           const sop = (customSops || []).find(s => s.id === cc.sopId);
           if (!sop) return;
           let d = {}; try { d = JSON.parse(sop.content || '{}'); } catch { return; }
-          let updated;
-          if (cc.fullyUsed) {
-            updated = {...d, paid: true, payDate: today, memo: (d.memo ? d.memo + ' | ' : '') + cc.memo};
-          } else {
-            // Partial use: reduce the remaining credit amount and add a note. Stays unpaid.
-            updated = {...d, amount: Number((cc.remaining).toFixed(2)), memo: (d.memo ? d.memo + ' | ' : '') + cc.memo};
-          }
+          const full = Number(d.amount) || 0;
+          const usedSoFar = _cents(Math.max(0, Number(d.appliedAmount) || 0) + cc.usedAmt);
+          const left = _cents(full - usedSoFar);
+          const done = left <= 0.005;
+          const note = 'Applied ' + fmt(cc.usedAmt) + ' to ' + cc.billRefs.join(', ') + (checkNo ? ' on check #' + checkNo : '') + ' ' + today + (done ? '' : ', ' + fmt(left) + ' left');
+          const updated = {...d,
+            appliedAmount: usedSoFar,
+            applications: [...(Array.isArray(d.applications) ? d.applications : []), {date: today, amount: cc.usedAmt, bills: cc.billRefs, checkNum: checkNo || ''}],
+            memo: (d.memo ? d.memo + ' | ' : '') + note};
+          if (done) { updated.paid = true; updated.payDate = today; }
+          // A reservation is fulfilled once the credit is applied to that bill.
+          if (d.appliedToBill && cc.billKeys.includes(d.appliedToBill)) { delete updated.appliedToBill; delete updated.appliedDate; }
           addSop({id: sop.id, title: sop.title, cat: sop.cat, icon: sop.icon, content: JSON.stringify(updated), custom: true});
         });
       };
-      const markSelectedPaid=()=>{
-        const today=new Date().toISOString().split('T')[0];
-        // Plan credit auto-application across all selected non-credit bills BEFORE
-        // writing any payments. This ensures we don't double-apply a credit if two
-        // bills could each claim the same one.
-        const selectedNonCredits = [];
-        const selectedStandalones = [];
-        unpaidBills.forEach((bill,i)=>{
-          if(!billSelected.has(i))return;
-          if(bill._standalone && !bill.isCredit) selectedStandalones.push(bill);
-          else if(!bill.isCredit) selectedNonCredits.push(bill);
-        });
-        const {plan, creditConsumes, totalCredit} = _planCreditApplication(selectedNonCredits);
-        // Apply the plan to each PO-derived bill: residual payAmt becomes the payment.
+      // Today on the office's clock (a payment recorded at 8pm is dated today, not tomorrow).
+      const _localIso = () => { const n = new Date(); return n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0') + '-' + String(n.getDate()).padStart(2, '0'); };
+      // Bills that can be paid out of a selection: not credits, not paid, voided or deleted.
+      const _billsToPay = (bills) => (bills || []).filter(b => b && !b.isCredit && !b.paid && !b.voided && !b._isDeleted);
+      // The open credits that can go against these bills: the same vendors' credits with
+      // something left on them.
+      const _openCreditsFor = (bills) => {
+        const vids = new Set((bills || []).map(b => b.vendorId));
+        return allBills.filter(c => c.isCredit && c._sopId && !c.paid && !c.voided && !c._isDeleted && vids.has(c.vendorId) && (typeof c.creditAmount === 'number' ? c.creditAmount : c.cost) > 0.005);
+      };
+      // Mark Paid (no check printed). Credits picked in the Apply Credits window settle part
+      // or all of each bill; PO bills get a credit line per credit plus the cash balance on
+      // their Payment Trail, standalone bills are marked paid with the credit noted.
+      const _markBillsPaid = (bills, picks) => {
+        const today = _localIso();
+        const {plan, creditConsumes, totalCredit} = _planCreditApplication(bills, picks);
         plan.forEach(p => {
           const {bill, payAmt, creditsApplied} = p;
+          if (bill._standalone) {
+            if (creditsApplied.length) { _settleStandaloneBill(bill, {todayIso: today, checkNo: '', label: 'Marked paid', creditsApplied}); return; }
+            const sop = (customSops || []).find(s => s.id === bill._sopId);
+            if (!sop) return;
+            let d = {}; try { d = JSON.parse(sop.content || '{}'); } catch {}
+            addSop({id: sop.id, title: sop.title, cat: sop.cat, icon: sop.icon, content: JSON.stringify({...d, paid: true, payDate: today}), custom: true});
+            return;
+          }
           const existing = typeof docStatuses[bill.billDocNum]==='object' ? docStatuses[bill.billDocNum] : {};
           const prevPayments = _getBillPayments(existing, bill.cost);
           const newEntries = [];
-          // Record each credit application as its own payment entry so the Payment
-          // Trail clearly shows what credits were applied to settle the bill.
+          // Each credit is its own Payment Trail entry so the trail shows what settled the bill.
           creditsApplied.forEach(ca => {
             newEntries.push({date: today, amount: ca.creditedAmt, checkNum: '', memo: 'Credit '+(ca.refNumber?'#'+ca.refNumber+' ':'')+'from '+ca.vendorName, method: 'credit'});
           });
-          // Then the cash payment for whatever's still owed.
           if (payAmt > 0.005) {
             newEntries.push({date: today, amount: payAmt, checkNum: '', memo: 'Batch payment', method: 'batch'});
           }
@@ -5110,22 +5131,48 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           const fullyPaid = total >= bill.cost - 0.005;
           setDocStatus(bill.billDocNum,{...existing, payments: newPayments, paid: fullyPaid, payDate: today, vendorInvNum: bill.vendorInvNum, checkNum: existing.checkNum||'', memo: 'Batch payment', status: fullyPaid?'paid':'partial'});
         });
-        // Mark applied credits as consumed.
-        _consumeCreditSops(creditConsumes, today);
-        // Standalone non-credit bills (e.g. standalone vendor bills): flat-paid pathway.
-        // Credit auto-application doesn't apply to standalone bills today since they
-        // don't have a payments[] history -- they're flat paid/unpaid records.
-        selectedStandalones.forEach(bill => {
-          const sop=(customSops||[]).find(s=>s.id===bill._sopId);
-          if(!sop)return;
-          let d={};try{d=JSON.parse(sop.content||'{}')}catch{}
-          const updated={...d,paid:true,payDate:today};
-          addSop({id:sop.id,title:sop.title,cat:sop.cat,icon:sop.icon,content:JSON.stringify(updated),custom:true});
-        });
+        _consumeCreditSops(creditConsumes, today, '');
+        const n = plan.length;
         const creditMsg = totalCredit > 0 ? ' (with '+fmt(totalCredit)+' in credits applied)' : '';
-        notify(billSelected.size+' bill'+(billSelected.size!==1?'s':'')+' marked as paid'+creditMsg);
+        notify(n+' bill'+(n!==1?'s':'')+' marked as paid'+creditMsg);
         setBillSelected(new Set());
       };
+      // Every way of paying bills here (Print Batch Check, Mark Paid, a standalone bill's Pay
+      // button) starts here. When the vendor has open credits the Apply Credits window opens
+      // so Maureen chooses which to use; with no open credits nothing changes from before.
+      // Ticked to start with: a credit reserved for one of these bills, and the vendor's
+      // credits from the same job (unless reserved for some other bill). Credits from other
+      // jobs are listed but left for her to tick.
+      const _startBillPayment = (action, picked) => {
+        const bills = _billsToPay(picked);
+        if (bills.length === 0) { notify(action === 'check' ? 'Select at least one non-credit bill to print a check' : 'Select at least one bill to mark paid', 'error'); return; }
+        const credits = _openCreditsFor(bills);
+        if (credits.length === 0) { if (action === 'check') _printBatchCheckFor(bills, {}); else _markBillsPaid(bills, {}); return; }
+        const keys = bills.map(b => b.billDocNum);
+        const jobIds = new Set(bills.map(b => b.job?.id || ''));
+        const picks = {};
+        credits.forEach(c => {
+          const avail = typeof c.creditAmount === 'number' ? c.creditAmount : c.cost;
+          const reservedHere = !!c._appliedToBill && keys.includes(c._appliedToBill);
+          const reservedElsewhere = !!c._appliedToBill && !reservedHere;
+          picks[c._sopId] = {on: reservedHere || (!reservedElsewhere && jobIds.has(c.job?.id || '')), amt: avail.toFixed(2)};
+        });
+        setCreditPay({action, keys, picks});
+      };
+      // The amounts to use from each ticked credit, capped at what is left on it.
+      const _creditPayAmounts = (cp, credits) => {
+        const out = {};
+        credits.forEach(c => {
+          const p = cp && cp.picks ? cp.picks[c._sopId] : null;
+          if (!p || !p.on) return;
+          const n = Number(p.amt);
+          if (!isFinite(n) || n <= 0) return;
+          const avail = typeof c.creditAmount === 'number' ? c.creditAmount : c.cost;
+          out[c._sopId] = Math.min(avail, _cents(n));
+        });
+        return out;
+      };
+      const markSelectedPaid=()=>_startBillPayment('paid',Array.from(billSelected).map(i=>unpaidBills[i]));
       // Clicking a vendor chip does two things: narrows the table to that vendor AND
       // pre-selects that vendor's open bills, so a batch check is one more click.
       // Clicking the active chip again, or "All Vendors", clears the filter and selection.
@@ -5166,6 +5213,8 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
         if(adjustMode==='credit' && isNoProject){notify('Credits must be attached to a project','error');return}
         if(!adjustForm.jobId){notify('Attach to a project (or pick "No project" for standalone expenses)','error');return}
         if(!isFinite(amt)||amt<=0){notify('Enter an amount greater than 0','error');return}
+        // A credit that has already been applied to bills cannot be cut below what was used.
+        if(adjustMode==='credit'&&adjustEdit){const _pr=(customSops||[]).find(s=>s.id===adjustEdit);let _pd={};try{_pd=JSON.parse(_pr?.content||'{}')}catch{}const _used=Math.max(0,Number(_pd.appliedAmount)||0);if(_used>amt+0.005){notify(fmt(_used)+' of this credit has already been applied to bills, so the amount cannot be less than that','error');return}}
         const v=vendors.find(vv=>vv.id===adjustForm.vendorId);
         const j=isNoProject ? null : jobs.find(jj=>jj.id===adjustForm.jobId);
         if(!v){notify('Vendor not found','error');return}
@@ -5180,7 +5229,7 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
         // Preserve createdAt and any void state if editing
         if(adjustEdit){
           const prior=(customSops||[]).find(s=>s.id===adjustEdit);
-          if(prior){try{const pd=JSON.parse(prior.content||'{}');if(pd.createdAt)data.createdAt=pd.createdAt;if(pd.void===true){data.void=true;if(pd.voidDate)data.voidDate=pd.voidDate;if(pd.voidMemo)data.voidMemo=pd.voidMemo;}}catch{}}
+          if(prior){try{const pd=JSON.parse(prior.content||'{}');if(pd.createdAt)data.createdAt=pd.createdAt;['appliedAmount','applications','appliedToBill','appliedDate','creditApplied'].forEach(k=>{if(pd[k]!==undefined)data[k]=pd[k]});if(adjustMode==='credit'&&Number(pd.appliedAmount)>0){data.paid=Math.round((amt-Number(pd.appliedAmount))*100)/100<=0.005;data.payDate=data.paid?(pd.payDate||data.payDate||''):'';}if(pd.void===true){data.void=true;if(pd.voidDate)data.voidDate=pd.voidDate;if(pd.voidMemo)data.voidMemo=pd.voidMemo;}}catch{}}
         }
         const cat=adjustMode==='credit'?'VendorCredit':'StandaloneBill';
         const projLabel = isNoProject ? '(No Project)' : (j?j.name:'');
@@ -5221,20 +5270,15 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
         }
         closeAdjustModal();
       };
-      const printBatchCheck=()=>{
-        const selectedBills=Array.from(billSelected).map(i=>unpaidBills[i]).filter(Boolean);
-        if(selectedBills.length===0)return;
-        // Separate credits from non-credit bills. Maureen may or may not have checked
-        // the credit row itself; either way we auto-apply available credits for the
-        // same vendor + same job to the non-credit bills she selected. If she also
-        // checked the credit row, it'll be consumed by the auto-apply path and won't
-        // double-count.
-        const selectedNonCredits = selectedBills.filter(b => !b.isCredit);
+      const printBatchCheck=()=>_startBillPayment('check',Array.from(billSelected).map(i=>unpaidBills[i]));
+      // Prints one check for these bills less the credits picked in the Apply Credits
+      // window (picks, see _planCreditApplication), then records the payment.
+      const _printBatchCheckFor=(selectedNonCredits, picks)=>{
         if (selectedNonCredits.length === 0) {
           notify('Select at least one non-credit bill to print a check','error');
           return;
         }
-        const {plan, creditConsumes, totalCredit} = _planCreditApplication(selectedNonCredits);
+        const {plan, creditConsumes, totalCredit} = _planCreditApplication(selectedNonCredits, picks);
         // totalCost: sum of residual amounts AFTER credit application. This is what
         // gets written on the check. If credits fully cover the bills, totalCost will
         // be 0 -- in that case we don't print a check (no check needed) and just
@@ -5242,7 +5286,7 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
         const totalCost = plan.reduce((s,p) => s + p.payAmt, 0);
         const today=new Date();const mm=String(today.getMonth()+1).padStart(2,'0');const dd=String(today.getDate()).padStart(2,'0');const yyyy=today.getFullYear();
         const dateStr=mm+'/'+dd+'/'+yyyy;
-        const todayIso = today.toISOString().split('T')[0];
+        const todayIso = yyyy+'-'+mm+'-'+dd;
         if (totalCost <= 0.005) {
           // Credits cover everything. Settle the bills with credit-only payments,
           // consume the credits, no check printed. Notify Maureen so she knows
@@ -5289,24 +5333,25 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
         const amtFmt=totalCost.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
         const micrCheckNum=String(checkNo).padStart(6,'0');
         const micrFontStr='C'+micrCheckNum+'C   A071926155A   C01597962C';
-        // Build stub rows for all included bills + applied credits. Each bill shows
-        // its original balance, then any applied credits as negative lines under it,
-        // then the residual payment. This makes the credit-application math obvious
-        // to Maureen and to anyone reconciling the check against the bank statement.
-        const stubRows = plan.map(p => {
+        // Check stub, laid out like a QuickBooks bill payment stub: a line per bill with the
+        // amount being settled on it, then a line per vendor credit applied, shown negative,
+        // so the Payment column adds up to the check amount and the vendor sees exactly which
+        // invoices were paid and which credits were deducted.
+        const _esc=(v)=>String(v==null?'':v).replace(/[&<>"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
+        const _money=(n)=>(Number(n)||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+        const _mdy=(iso)=>{const p=String(iso||'').slice(0,10).split('-');return p.length===3&&p[0].length===4?p[1]+'/'+p[2]+'/'+p[0]:(iso||dateStr)};
+        const stubCredits=new Map();
+        let stubRows = plan.map(p => {
           const b = p.bill;
-          const bDate=b.payDate||b.poDate||dateStr;
-          const ref=b.vendorInvNum||b.poDocNum||'';
-          const origBal=typeof b.balance==='number'?b.balance:b.cost;
-          const origFmt=origBal.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-          const payFmt=p.payAmt.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-          let row = '<tr><td>'+bDate+'</td><td>Bill</td><td>'+ref+'</td><td class="amt">'+origFmt+'</td><td class="amt">'+origFmt+'</td><td class="amt">'+payFmt+'</td></tr>';
-          p.creditsApplied.forEach(ca => {
-            const cFmt = ca.creditedAmt.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-            row += '<tr><td>'+dateStr+'</td><td>Credit</td><td>'+(ca.refNumber||'')+'</td><td class="amt">--</td><td class="amt">--</td><td class="amt" style="color:#c0392b">-'+cFmt+'</td></tr>';
-          });
-          return row;
+          const ref=_esc(b.vendorInvNum||b.poDocNum||'');
+          const orig=typeof b.cost==='number'?b.cost:0;
+          const bal=typeof b.balance==='number'?b.balance:b.cost;
+          const credited=p.creditsApplied.reduce((s,ca)=>s+ca.creditedAmt,0);
+          p.creditsApplied.forEach(ca=>{const r=stubCredits.get(ca.sopId)||{...ca,used:0};r.used=_cents(r.used+ca.creditedAmt);stubCredits.set(ca.sopId,r)});
+          return '<tr><td>'+_esc(_mdy(b.payDate||b.poDate))+'</td><td>Bill</td><td>'+ref+'</td><td class="amt">'+_money(orig)+'</td><td class="amt">'+_money(bal)+'</td><td class="amt">'+_money(_cents(p.payAmt+credited))+'</td></tr>';
         }).join('');
+        stubCredits.forEach(c=>{stubRows+='<tr class="stub-credit"><td>'+_esc(_mdy(c.creditDate))+'</td><td>Credit</td><td>'+_esc(c.refNumber||'Vendor credit')+'</td><td class="amt">-'+_money(c.originalAmount)+'</td><td class="amt">-'+_money(c.availableBefore)+'</td><td class="amt">-'+_money(c.used)+'</td></tr>'});
+        const stubCount=plan.length+' bill'+(plan.length===1?'':'s')+(stubCredits.size?', '+stubCredits.size+' credit'+(stubCredits.size===1?'':'s'):'');
         const fontB64=(() => { try { const m=document.querySelector('style'); return ''; } catch(e) { return ''; }})();
         const html=`<!DOCTYPE html><html><head><title>Batch Check ${checkNo}</title><style>
 @font-face{font-family:'MICR';src:url(data:font/truetype;base64,AAEAAAAKAIAAAwAgT1MvMhrDB94AAACsAAAATmNtYXBVqb7oAAAA/AAAA6ZnbHlmVzPUWAAABKQAADVAaGVhZODmvhYAADnkAAAANmhoZWEdMxCSAAA6HAAAACRobXR4ugQhhAAAOkAAAABcbG9jYYSUk8YAADqcAAAAMG1heHAAHADwAAA6zAAAACBuYW1lCAdeTwAAOuwAAAHQcG9zdAADAAAAADy8AAAAIAAACBYBkAAFAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgsGAAUDAgICBAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAIPACB38AAAiBB38AAAAAAAAAAgABAAAAAAAUAAMAAQAAARoAAAEGAAABAAAAAAAAAAEDAAAAAgAAAAAAAAAAAAAAAAAAAAEAAAMAAAAAAAAAAAAAAAAAAAAEBQYHCAkKCwwNAAAAAAAAAA4REhUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADxATFAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQCjAAAACIAIAAEAAIA/wFTAWEBeAGSAsYC3CAUIBogHiAiICYgMCA6ISIiGf//AAAAIAFSAWABeAGSAsYC3CATIBggHCAgICYgMCA5ISIiGf//AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQAiAeAB4gHkAeQB5AHkAeQB5gHqAe4B8gHyAfIB9AH0AfQAAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEAAUABgAHAAgACQAKAAsADAANAAAAAAAAAAAAAAAAAAAADgARABIAFQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA8AEAATABQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIAAgABB38HfwAvAI8AAAEAAAEAAAEAAAEAAAEAAAEAAAEAAAEAAAEAAAEAAAEAAAEAAAEAAAEAAAEAAAEAAAEAAAAAAAAAAAEAAAEAAAEAAAAAAAAAAAEAAAAAAAAAAAEAAAEAAAEAAAAAAAAAAAEAAAAAAAAAAAEAAAEAAAEAAAAAAAAAAAEAAAAAAAAAAAEAAAEAAAEAAAAAAAAAAAPB/53/RP+q/6v/Zv++/7//mP/b/9z/2QAAAAAAJwAkACUAaABBAEIAmgBVAFYAvABjAGMAuwBWAFUAmgBCAEEAaAAlACQAJwAAAAD/2f/c/9z/l/+//77/Zv+r/6r/Rf+dABMAJwAnACUAJgAkACQAIwARAEQAewA0ADMAVAAdAAf/+//v/+X/4v/h/+j/8AAAAAAAEAAYAB8AHgAbABEABf/5/+P/rf/M/8z/hf+8/+//3f/c/9z/2v/b/9n/2f/t/+z/2f/Z/9v/2v/c/9z/3f/v/7z/hP/N/8z/rf/j//gABQASABsAHwAfABgAEAAAAAD/8P/o/+H/4f/l/+7/+wAIAB0AUwA0ADQAegBFABEAIwAkACQAJgAlACcAJwABAAAAKAAkACQAaABCAEEAmgBVAFYAvABjAGMAvABVAFYAmgBBAEEAaQAkACUAJwAAAAD/2f/b/9z/l/+//7//Zv+q/6v/RP+d/53/RP+q/6v/Zv+//77/mP/c/9z/2AGQAAD/8P/n/+H/4v/l/+7/+wAHAB0AUwA0ADMAewBFABEAIwAkACUAJQAmACcAJgAUABQAJwAmACYAJQAlACQAIgASAEQAewA0ADMAVAAcAAj/+//u/+X/4f/i/+f/8QAAAAAADwAZAB4AHwAbABIABf/4/+T/rP/N/8z/hf+8/+7/3v/c/9v/2//a/9r/2f/s/+z/2v/Z/9r/2//b/9z/3f/v/7v/hv/M/83/rP/j//kABQASABsAHgAfABkAEAACASoAAAbRB1EANABrAAABAQEAAQABAAABAAABAQEAAAEAAAEAAAEAAAEBAQABAAABAAABAAABAQEAAAEAAAEAAAEAAAEAAAEAAAEAAAEAAAEBAQAAAQAAAQAAAQAAAQEBAAABAAABAAABAAABAQEAAAEAAQAAAQAAAQECvAE5ATgAOAAuAC8AJAAOABYACAAHAAkAAAAAAAAAAP/0//X/9v/l//D/7v/V/+j/6P/L/+P+4P7h/8T/zv/n/9X/7//0/+n/9//4//UAAAAAAAAAAAANAAkACQAZAA0AEAAiABQAEwAuAAb/0f+z/+D/4P/L/+j/5v/V//H/8P/vAAAAAAAAAAAADwAOAA4ALAAcABgAOwAiACIAUgAvATwBOwAxAFMAIwAjAD4AGgAcAC8AEQAQABQAAAABAAIAAP/x//L/5P/I/+v/xf/e/9//uv/g/qAAqgAAAAAAAAATABMAKQAQACYAEwAUACgAEwIXAhYAGwAyABYAFQAmAA4AEAAYAAcABwAIAAAAAAAAAAD/7//4/+T/7P/y/9v/7//v/+P/+P3D/cL/+f/h/+7/7v/b//T/8f/n//f/9//1/1YAAAATAA8AEAApABYAGABAACEAIQBBABgCRwJHABIAOgAgACEARAAdABcAKgAPAA8AEgAAAAAAAAAA//L/8//z/9n/6P/m/7//4P/f/7//5P3L/cv/2P+1/97/vf/G/+r/1f/w//D/7AAAAAAAAQOqAAAGzQdSAIYAAAEBAQAAAQAAAQAAAQAAAQEBAAABAAEAAAEAAQEBAAABAAEAAQABAQEAAAEAAAEAAAEAAAEBAQAAAQAAAQAAAQABAQEBAQAAAQAAAQAAAQABAQEAAAEAAAEAAAEAAAEBAQAAAQAAAQAAAQAAAQEBAAABAAABAAEAAAEBAQEBAAABAAABAAABAAUdAAAAAAAAAAYABgAFAA8ACAAIABYACwALABYACQBxAHEACQAQAAgAEAARAAQABwACAAQAAAAAAAAAAP/9//z/+v/2//T/8v/x//T+t/64//z/9P/6//v/8v/7//v/+P/8//3//AAAAAAAAAAAAAQAAwADAAkABAAEAA4ABwAPAAwACQAIAAoACQADAA0ABwAGAA8ABQAEAAoAAwAGAAAAAAAAAAD//P/8//3/9//7//v/8v/5//n/9P/9/+//7v/7//L/+f/6//L/+//7//f//f/9//wAAAAAAAAAAAAEAAMAAwAKAAUACQAMAAYADwAIADcANwA3ADYABgAPAAYABwAOAAUABgAIAAMABwcH/lD+T//0/+f/9P/1/+r/+P/4//L/+//8//oAAAAAAAAAAP////3/+f/p//v/9v/7//X/8/66/rr/+f/x//r/8//2//T/+f/5AAAAAAAAAAAAAwADAAMACAAGAAQADgAHAAYADgAFAUkBSQAGAA8ABgAHAA0ABAAFAAoAAwAHAAAAAAAAAAAAAAAAAAUAAwADAAoABQAFAAwABgAMAAkBSAFIAAcADQAGAAYADAAEAAUACQADAAMABAAAAAAAAAAAAAQAAwADAAkABQAFAA4ABgAHAA4ABgA6ADoACgAPAAYABgAMAAUACQAHAAMABAAAAAAAAAAAAAAAAP/8//3//f/4//v/+v/z//r/8gAAAQOqABkGzgdsAIYAAAEBAQABAAEAAAEAAAEBAQAAAQABAAABAAABAQEAAQABAAABAAABAQEAAAEAAAEAAQAAAQEBAAABAAABAAABAAABAQEAAQAAAQAAAQABAQEAAAEAAAEAAAEAAQEBAAABAAEAAAEAAAEBAQAAAQABAAABAAABAQEAAQAAAQAAAQABAAEAAQABAAP4AUMBQwAPAA0ADgALAA0ADAABAAH//wAAAAAAAAAA//v//f/5//X/+//0//r/+v/y//j/LP8r/+j/6f/p/+7/9//x//r/+//6AAAAAAAAAAAABQAEAAUADQAHABAAGQAMABYACQDaANoADwAcAAoACwAOAAAAAP/1//b/9v/j/+7+vv69//P/8f/5//L/+v/7//b//f/5AAD//wAAAAAABAAEAAMACwAFAAYADgAHAA8ACgDVANYADAAXAAwAGAARAAgADAAEAAUABQAAAAAAAAAA//v//P/3/+3/+v/t//X/9v/o//X/J/8o//f/8f/5//L/+v/6//f//P/5AAAAAAAHAAgADAALAA4AEAdsAAAAAAAA//r/+f/1//P/6//5//n/+P///k7+Tv/8//L/+v/y//b/+//2//3//P/8AAAAAAAAAAD/9v/2/+3/9//s//T/9f/p//X/Kf8q//b/6f/1//b/6v/4/+3/9f/7//kAAAAAAAAAAP/x//X/9P/i//D/8P/g//T/9P/wAAAAAAAAAAAACAADAAoABQAGAA4ABwAPAAwBrwGvAAcAEQAHAAgADQAFAAYACgACAAcAAAAAAAAAAAAHAAUACwAUAAgAFQAKAAsAGAAMANMA0gALABcADAAWABUABwAPAAUABgAIAAAAAAAAAAAABwADAAoABgAFAA8ABwAQAA8AEAASABEADAAMAAYABgAAAQLVABgGygdtAI8AAAEBAQAAAQABAAABAAEBAQAAAQABAAABAAABAQEAAAEAAQABAAABAQEAAAEAAQAAAQAAAQEBAAABAAABAAABAAABAQEAAAEAAAEAAAEAAAEBAQAAAQABAAEAAQEBAAABAAABAAABAAABAQEAAAEAAQAAAQAAAQEBAAABAAABAAABAAABAQEAAAEAAAEAAAEAAAMgAUYBRgAGAA4ABwAOAAwABgAKAAMABwAA//8AAAAAAAQAAwAHAA0ABgAQAAgACQATAAsAHgAeAAQACwAEAAoABwAHAAQAAgADAAAAAAAAAAD//f/+//r/+f/5//D/+P/4//L/+/5T/lP/9f/m//T/9f/uAAAAAAASAA0ADAAaAAgA2gDbAAQAFgAMAA0AGQAHAAkADQAFAAUABQAAAAAAAAAA//r/+//2/+7/8P/q/+r/5v8p/yn/6v/g//f/9//4AAAAAQAOAAoACwAdAA8A1gDXAA4AGAALABYAEgAJAA4ABAAFAAUAAAABAAIAAP/7//z//P/z//j/9f/m//T/8//n//b/Kf8p//X/5v/1//T/8AAAAAAAEAAMAAsAGgdtAAAAAAAA//3//f/6//X/+//0//r/8//z/n7+fv/3/+r/9//r/+7/+P/x//z/+//5AAAAAP//AAD//P/9//r/9v/3//P/+v/0//v+gf6B//r/9P/6//P/9//4//T//P/7//sAAAAAAAAAAAAKAAoACgAhABcAGgAiAAkACQAHAAAAAAABAAAABgAFAAUADwAJAAgAFQALAAoAFgAKANcA1wAMABgACwAZABIAEgAKAAsAAAAAAAAAAAAVAA4ADgAdAAkAEQAgAAsACwAOAAAAAAAAAAAABgAFAAkAEgAJABcACwAMABsADQDPANAADgAYAAoACgATAAkADAASAAYABQAFAAAAAAAAAAAACgAKAAoAIQAXABcAIQAKAAsACQABAf4AGQbPB20AewAAAQABAAABAAABAAABAQEAAAEAAQAAAQABAQEAAAEAAAEAAAEAAQEBAAABAAABAAABAAABAQEAAQABAAABAAEBAQABAAEAAAEAAAEBAQABAAABAAEAAQEBAAABAAABAAABAAEBAQABAAABAAABAAEBAQAAAQABAAABAAABAQMrAAwADgAGAA4ABgAFAAoABAAEAAQAAAAAAAAAAAAFAAUACgAUAAgAFQALABYAFQB0AHUACQAXAAsACwAWAAgACQANAAQACQAAAAAAAAAAAAMAAwACAAkABQAEAA4ABgAHAA0ABQB1AHYACgAMAA0ACwAGAAoAAgAIAAD//wAAAAD/+v/6//b/+//y//r/+f/x//n/kv+S//L/8P/5//L/+v/1//n/+QAAAAAAAAAA//n//P/7//H/+P/3/+z/9f/r/+v+uv66//P/8P/4//H/+f/8//n//f/6//4AAAAAAAAABAACAAYADAAHABAABwAHAA0ABABwB20AAP/5//3/9//6//v/8v/6//n/8f/5/ef95//1/+f/9P/n/+z/9//y//z/9gAAAAAAAAAAAAUAAwAEAA0ABwAJABUACgAXABQAEQAQAAcADQAGAAYADAAEAAUABgACAAIAAgAAAAAAAAAA//r/+f/1//v/8//6//L/9P65/rr/9P/y//P/9f/6//X//P/8//wAAAAAAAAAAAAHAAMACgAFAAsADwAOAAoAcQBxAAoAFgALAAwAFAAJAAgADgAEAAkAAAABAAAAAAAHAAQACwAIAAQACwAFAA0ADQKAAn8ACwAUAAkAEgAMAAYADAADAAQABQAAAAAAAQLRABcGzQdtAH8AAAEAAAEAAAEAAAEAAAEBAQAAAQAAAQABAAABAQEAAQABAAABAAABAQEAAQAAAQAAAQAAAQEBAAABAAABAAEAAQEBAAABAAABAAABAAABAQEAAAEAAAEAAQAAAQEBAAABAAABAAABAAEBAQAAAQABAAABAAEBAQAAAQABAAABAAEBBnoADgAeAAsADAAPAAAAAf/u//T/9P/j//f+wv7D//b/6P/1//X/6//3/+v/9f/7//kAAAABAAAAAAAJAAkAEAAJABUACwAMABoADgE/AUAADQAOAAcADgAFAAYACQACAAQAAwAAAAAAAAAA//z//f/9//j//P/0//D/8f/y/lL+Uv/z/+T/9P/1//EAAAAA//8ABgAGACMAJAFAAT8ACwAYAAsACwAWAAkAEQAKAAUABgAAAAAAAAAA//r/+v/7/+//9//3/+z/9v/r/+7+vv6+//r/8f/5//H/8//7//b//f/5AAAAAAAAAAEABQADAAYADAAEAA0ABgAPABABqwdsAAD/9//1//b/3//q/+n/3//2//b/9QAAAAAAAQAA//r/+//7//L/9//u/+j/9f/o//X/LP8s/+3/6v/q/+7/9v/u//r/+f/4AAAAAAAAAAD/+f/9//X/+//6//P/+v/5//L/+f5Q/k//+P/w//v/+f/1//v/8v/4//kAAAAAAAAAAAAPAAsADAAeABAAEwAhAAsADAAOAAAAAAAAAAAABgAFAAYADgAJAA8AFgAKABgADADbANoACQAWAAsACwAWAAkACAAOAAUACQAAAAAAAAAAAAUAAwAHAAwABQAOAAYADwANAbEBsAAHAA4ABwANAAwABAAJAAQABwADAAAAAgH9ABgGzAdtAG0AjQAAAQAAAQAAAQAAAQABAQEAAAEAAAEAAAEAAAEBAQAAAQAAAQABAAEBAQABAAABAAABAAABAQEAAAEAAQABAAABAQEAAAEAAAEBAQAAAQAAAQAAAQAAAQEBAAABAAABAAEAAAEBAQAAAQABAAEAAQEBAQEAAAEAAAEBAQAAAQAAAQEBAAABAAABAQEAAAEAAATSAAcAEgAHAAkADgAGAAUACQADAAYAAAAAAAAAAP/x//T/9P/h//D/7v/h//T/9P/xAAAAAP//AAD/+v/8//v/8f/3/+3/6v/n/+r/mv+Z/+j/6f/0/+v/9//3//D/+//6//oAAAABAAAAAAAFAAQACQAQABIAGAAMABoADgGqAaoADQAdAAsACwAPAAAAAAAAAAD/+//+//3/9v/7//r/8//5//r/8f/5/en95//6//D/+f/5//H/+v/2//r//f/9AAAAAP//AAAABQADAAcACwAMAA8ADwAMAUP/lwE8ATwAGgAuABAAEQAVAAAAAAAAAAD/6//v//D/0v/m/sT+xP/m/9L/7//w/+wAAAAAAAAAAAAUABAAEQAuB20AAP/7//z//P/0//n/+v/z//r/8v/z/17/Xv/v/+P/9f/2//QAAAAAAAYACAAIACAAGQA1ADQACgAYAAsADAAYAAkAEgALAAsAAAAAAAAAAP/2//v/8v/3//f/6f/1//T/5//1/r/+wP/2/+v/9f/q/+7/7P/1//r/+QAAAAAAAAAA//H/9f/1/+X/8/68/rv/+v/x//n/+f/y//r/+v/2//3//P/8AAAAAAAAAAAABQAEAAMACwAGAAsADQAHAA0ABwNZA1oABwAQAAYADgAMAAwABwAHAAAAAflWAAAAAAAAABYAEgASADIAHABhAGEAHAAyABIAEgAVAAAAAAAAAAD/6//u/+7/zv/k/5//n//k/87/7v/u/+oAAQLYABcG1AdtAIUAAAEAAAEAAAEAAAEAAAEBAQAAAQABAAABAAABAQEBAQAAAQABAAABAAABAQEAAAEAAAEAAAEAAAEBAQAAAQAAAQAAAQAAAQEBAAABAAABAAABAAEBAQAAAQAAAQAAAQABAQEAAQABAAABAAABAQEAAAEAAAEAAAEAAAEBAQAAAQAAAQABAAEBBngACgATAAgACAAPAAYABwAJAAMAAwAEAAAAAP//AAD//wAA//7/+//+//j/+//8//f/+/+z/7P/s/+z//j/8f/5//L/9v/8//f//v/+//wAAAABAAAAAP/x//T/9P/h/+//8P/g//T/8//xAAAAAAAAAAAABAACAAQACAAFAAUADAAFAAYADAAEAI0AjAAHABMACQAJABEABQACAAQAAAACAAAAAAAAAAD/+//8//z/8f/4//f/6v/0/+f/6P8u/y//7P/p/+n/7//3//D/+//7//sAAAAAAAAAAP/z//X/9f/j/+//6v/d//X/9P/0AAAAAAABAAAABAAEAAQACwAGAA0ADwAPABEBowdtAAD//P/9//z/9v/7//r/8v/6//n/8P/5/pz+nP/8//T/+v/z//b/+//2//3//P/5//7/3P/d/9z/3P/9//f/+//2//X/+v/z//r/+v/z//r+pP6k/+r/4f/3//b/9wAAAAAAEAALAAsAHQAOAZsBmwAHAA0ABgAHAA0ABQAFAAsABAAEAAcAAgA/AD4AAwAIAAUABQAQAAwAAwAKAAQACgAMALkAuQALABcADAAMABYACQAKABIABQANAAAAAAAAAAD/9f/2/+//9v/o//X/8//m//X/lv+X//H/4//1//T/8v////8AEgANAA0AHQAKANMA0gAPABYABwAIAAwABwAMAAYABwAAAAAAAwEhABkG0wd5AB8APwCqAAABAQEAAAEAAAEBAQAAAQAAAQEBAAABAAABAQEAAAEAAAEBAQAAAQAAAQEBAAABAAABAQEAAAEAAAEBAQAAAQAAAQEBAAEAAQAAAQABAQEAAAEAAAEAAAEAAQEBAAABAAABAAABAAABAQEAAQAAAQAAAQAAAQEBAAABAAABAAABAAABAQEAAAEAAAEAAQABAQEBAQAAAQAAAQABAAABAQEBAQAAAQAAAQAAAQADHQDcAN0AFwAqAA8ADwASAAAAAAAAAAD/7v/x//H/1v/p/yP/JP/o/9f/8f/x/+0AAAAAAAAAAAATAA8ADwApAB4A1gDXABgALAAQABEAEwAAAAAAAAAA/+3/7//w/9T/6P8p/yr/5//V/+//8P/tAAAAAAAAAAAAEwAQABEAK/4XAAAAAAAAAAcABQALAAcAEAAIABEADwAdAB0ABQAOAAYABwAPAAYABgAKAAQACAAAAAAAAAAAAAUABAAEAAoABgAFABAABgAHAAwAAgGqAaoADwARAAgAEgAHAAwADAADAAIAAQAAAAAAAAAAAAUAAwADAAsABQAFAAwABwAIABAACAAZABoACAAPAAYABgAMAAYACwAFAAYAAP//AAAAAAAAAAD/+//9//z/9v/6//P/8f/4//D/+P7C/sL+w/7C//f/7v/3//f/8P/5//n/9f/8//gEKQAAAAAAAAASABAAEAArABkA1ADUABkAKwAQABAAEwAAAAAAAAAA/+3/8P/w/9X/5/8s/yz/5//V//D/8P/u/KsAAAAAAAAAEwAPABAAKwAYAOAA3wAYACsAEAAPABMAAAAAAAAAAP/t//H/8f/U/+j/If8g/+j/1f/w//H/7f+mAYsBiwAMAAsACgAIAAUACgADAAYAAAAAAAAAAAAGAAMABAALAAYABgAMAAYADQAKAX4BfwAJABMACAAIABAABQAGAAsAAwAEAAQAAAAAAAEAAP/2//v/9P/4//X/6f/3//f/8v/8/ob+h//5//H/+v/5//T/+//8//j//P/9//sAAAAAAAAAAP/7//z//f/2//z/9v/y//H/8/8m/yX/Vf9V//j/7//4//j/8P/5//H/+f/8//sAAAAAAAAAAAAAAAAABgAEAAQADAAHAAcAEAAIABIAAAICAAAZBtMHbwBLAH8AAAEBAQABAAEAAAEAAAEBAQAAAQAAAQABAAEBAQAAAQAAAQABAAEBAQABAAABAAABAAABAQEAAAEAAQAAAQAAAQEBAAABAAABAAABAAABAQEAAAEAAAEAAQAAAQEBAAABAAABAAABAAABAQEAAQAAAQAAAQAAAQEBAAEAAAEAAQAAAloCDgIPABMAEAAQAA0ABgALAAMAAwAFAAAAAAAAAAD//f/9//3/+P/7//T/7f/u/+z/lv+X//r/8f/5//r/8f/7//X/+f/6AAAAAAAAAAD/9v/8//L/+P/3/+r/9f/0/+f/9P7B/sH/9//s//j/7//z//v/9//+//3//AAAAAAAAAAAAAUABAADAAsABwAGAA4ABwAIABEA2wE5ATkADQAbAAsADAAVAAkAEgAKAAUABgAAAAAAAAAA//r/+//8//H/9//3/+v/9P/1/+X/8/7H/sf/6P/r//X/7f/3//b/7f/6//r/+QAAAAAAAAAAAAoABQAPAAkAEwAWAAwAGgdvAAAAAAAA//n/+f/z//r/8f/4//n/7v/2/K78rv/4//H/+f/5//L/+//y//j/9wAAAAAAAAAAAAQABAAEAAsABQAKAA0ADAAMAUMBQgAZABgACwAVAAgACgARAAUABQAHAAAAAAAAAAAABAAEAAcADwAFAA8ACAAIABAABwGnAacACgATAAgACAAPAAYABgAJAAIAAwAE/KwAAAAAAAAABgAFAAUADwAJABIAGAAMABoADgDOAMwADgAbAAwADAAVAAkACQAPAAUABQAFAAAAAAAAAAD/+P/8//X/+f/3/+n/8//z/+L/8P80/zL/5v/n//T/6v/3/+3/9v/8//kAAwEqABcGwwdmACsAWACGAAABAAEAAQABAAEBAQABAAEAAQAAAQEBAAEAAQABAAEBAQAAAQABAAABAAABAQEAAAEAAQABAAEBAQAAAQABAAABAAABAQEAAAEAAQABAAEBAQABAAEAAQABAQEAAAEAAAEAAQABAQEAAAEAAQAAAQAAAQEBAAABAAEAAQABAQEAAQABAAEAAQEBdv/x//L/8v/1//X/+//6AAAAAAAAAAAABgAGAAoACgAPAAcADwAHAGoAawAPAA8ADgAKAAsABgAGAAAAAAAAAAD/+//9//n/8//7//T/+v/6//P/+f+VAun/+P/v//n/8f/1//T/+v/6AAAAAAAAAAAABAADAAYACwAGAA0ABwAHABEACADUANQACAAQAAgADwALAAwABgAGAAAAAAAAAAD/+v/5//X/9v/w//D/8P8s/yz/+P/v//n/+f/z//r/9P/6//oAAAAAAAAAAAAEAAMABgALAAYADQAHAAcAEQAIANQA1AAIABAACAAPAAsADAAGAAYAAAAAAAAAAP/6//r/9P/1//H/8f/v/ywBWwAAAAYABQALAAsADQAPAA8CHAIbAA4ADwAPAAoACgAGAAMABAAAAAAAAAAA//n/+//1//X/8v/x//L95f3k//f/7//5//H/9f/8//n//v////0AAAAA/rwAAAADAAMABwAKAAwADwAPABAA1QDVAAgAEAAHAA8ACwAGAAkAAwADAAQAAAAAAAAAAP/8//3/+f/1//X/8f/x//D/K/8r//D/8P/x//X/9v/5//oAAAAABQIAAAADAAMAAwAJAAYADAAOAA8AEQDUANUACAARAAcADwALAAYACQACAAQAAwAAAAAAAAAA//3//P/6//X/9f/x//D/8P8r/yz/7//x//L/9P/0//r/+gAAAAAAAAMBKgAXBsMHZgArAFgAhgAAAQABAAEAAQABAQEAAQABAAEAAAEBAQABAAEAAQABAQEAAAEAAQAAAQAAAQEBAAABAAEAAQABAQEAAAEAAQAAAQAAAQEBAAABAAEAAQABAQEAAQABAAEAAQEBAAABAAABAAEAAQEBAAABAAEAAAEAAAEBAQAAAQABAAEAAQEBAAEAAQABAAEBAXb/8f/y//L/9f/1//v/+gAAAAAAAAAAAAYABgAKAAoADwAHAA8ABwBqAGsADwAPAA4ACgALAAYABgAAAAAAAAAA//v//f/5//P/+//0//r/+v/z//n/lQLp//j/7//5//H/9f/0//r/+gAAAAAAAAAAAAQAAwAGAAsABgANAAcABwARAAgA1ADUAAgAEAAIAA8ACwAMAAYABgAAAAAAAAAA//r/+f/1//b/8P/w//D/LP8s//j/7//5//n/8//6//T/+v/6AAAAAAAAAAAABAADAAYACwAGAA0ABwAHABEACADUANQACAAQAAgADwALAAwABgAGAAAAAAAAAAD/+v/6//T/9f/x//H/7/8sAVsAAAAGAAUACwALAA0ADwAPAhwCGwAOAA8ADwAKAAoABgADAAQAAAAAAAAAAP/5//v/9f/1//L/8f/y/eX95P/3/+//+f/x//X//P/5//7////9AAAAAP68AAAAAwADAAcACgAMAA8ADwAQANUA1QAIABAABwAPAAsABgAJAAMAAwAEAAAAAAAAAAD//P/9//n/9f/1//H/8f/w/yv/K//w//D/8f/1//b/+f/6AAAAAAUCAAAAAwADAAMACQAGAAwADgAPABEA1ADVAAgAEQAHAA8ACwAGAAkAAgAEAAMAAAAAAAAAAP/9//z/+v/1//X/8f/w//D/K/8s/+//8f/y//T/9P/6//oAAAAAAAADASkAFwbFB2sAHwA/AF0AAAEAAAEAAAEBAQAAAQAAAQEBAAABAAABAQEAAAEAAAEBAQAAAQAAAQEBAAABAAABAQEAAAEAAAEBAQAAAQAAAQEBAQAAAQAAAQEBAAABAAABAQAAAQAAAQEBAAABAAABfv/v/+D/9f/0//MAAAAAAAAAAAANAAwACwAgABEAZwBmABIAHwALAAwADQAAAAAAAAAA//P/9P/1/+H/7v+aA77/7//g//X/9P/zAAAAAAAAAAAADQAMAAsAIAARAGcAZgASAB8ACwAMAA0AAAAAAAAAAP/z//T/9f/h/+7/mv3tAAEAEQAeAAwACwAOAAAAAAAAAAD/8v/1//X/4f/v////7//h//X/9f/yAAAAAAAAAAAADgALAAsAHwAXAAAADQAMAAwAHwASAT4BPgASACAADAALAA4AAAAAAAAAAP/y//X/9P/g/+7+wv7C/+7/4f/0//T/8wAAAAAEKgAAAA4ADAALACAAEgE+AT4AEgAgAAsADAAOAAAAAAAAAAD/8v/0//X/4P/u/sL+wv/u/+D/9f/0//IAAAAAAUsAAAAA//D/8v/z/9v/6/6Z/pj/7P/b//L/8//wAAAAAAAAABAADQANACYAFAFoAWcAFQAlAA0ADQARAAMBKQAXBsUHawAfAD8AXQAAAQAAAQAAAQEBAAABAAABAQEAAAEAAAEBAQAAAQAAAQEBAAABAAABAQEAAAEAAAEBAQAAAQAAAQEBAAABAAABAQEBAAABAAABAQEAAAEAAAEBAAABAAABAQEAAAEAAAF+/+//4P/1//T/8wAAAAAAAAAAAA0ADAALACAAEQBnAGYAEgAfAAsADAANAAAAAAAAAAD/8//0//X/4f/u/5oDvv/v/+D/9f/0//MAAAAAAAAAAAANAAwACwAgABEAZwBmABIAHwALAAwADQAAAAAAAAAA//P/9P/1/+H/7v+a/e0AAQARAB4ADAALAA4AAAAAAAAAAP/y//X/9f/h/+/////v/+H/9f/1//IAAAAAAAAAAAAOAAsACwAfABcAAAANAAwADAAfABIBPgE+ABIAIAAMAAsADgAAAAAAAAAA//L/9f/0/+D/7v7C/sL/7v/h//T/9P/zAAAAAAQqAAAADgAMAAsAIAASAT4BPgASACAACwAMAA4AAAAAAAAAAP/y//T/9f/g/+7+wv7C/+7/4P/1//T/8gAAAAABSwAAAAD/8P/y//P/2//r/pn+mP/s/9v/8v/z//AAAAAAAAAAEAANAA0AJgAUAWgBZwAVACUADQANABEAAwErAVwGzAcDAC4ASgBmAAABAAABAAABAAEAAAEBAQAAAQABAAEAAQEBAAABAAEAAQABAQEAAQABAAABAAABAQEAAAEAAAEBAQAAAQAAAQAAAQAAAQEBAAABAAABAAABAAABAQEAAAEAAAEAAAEAAAEBAQAAAQAABNL/+P/w//n/+f/z//v/9f/6//3//AAAAAAAAAAAAAQAAwAGAAsACgAPAA8AEADVANUACAAPAAcAEAAKAAoABwAHAAAAAAAAAAD/+f/7//T/+//y//n/+f/x//j/K/2E/+7/4v/0//X/8wAAAAAAAAAAAA0ACwAMAB4AEgARAB8ACwALAA4AAAAAAAAAAP/y//X/9f/h/kP/7v/i//X/9P/zAAAAAAAAAAAADQAMAAsAHgASABIAHgALAAwADQAAAAAAAAAA//P/9P/1/+ID4QAAAAMAAgACAAkABQAJAA4ABgAOAAgBSQFJAAgADgAGAA0ACgAKAAYABQAAAAAAAAAA//3//f/6//f/9//y//L/8v63/rf/8f/z//P/9v/7//f//v/+//0AAAAA/XsAAAAMAAsACgAcABACHAIbABAAHAAKAAsADAAAAAD/9P/1//b/5P/w/eX95P/w/+T/9v/1//QAAAAAAAwACwAKABwAEAIcAhsAEAAcAAoACwAMAAAAAP/0//X/9v/k//D95f3k//D/5P/2//X/9AAAAwErAVwGzAcDAC4ASgBmAAABAAABAAABAAEAAAEBAQAAAQABAAEAAQEBAAABAAEAAQABAQEAAQABAAABAAABAQEAAAEAAAEBAQAAAQAAAQAAAQAAAQEBAAABAAABAAABAAABAQEAAAEAAAEAAAEAAAEBAQAAAQAABNL/+P/w//n/+f/z//v/9f/6//3//AAAAAAAAAAAAAQAAwAGAAsACgAPAA8AEADVANUACAAPAAcAEAAKAAoABwAHAAAAAAAAAAD/+f/7//T/+//y//n/+f/x//j/K/2E/+7/4v/0//X/8wAAAAAAAAAAAA0ACwAMAB4AEgARAB8ACwALAA4AAAAAAAAAAP/y//X/9f/h/kP/7v/i//X/9P/zAAAAAAAAAAAADQAMAAsAHgASABIAHgALAAwADQAAAAAAAAAA//P/9P/1/+ID4QAAAAMAAgACAAkABQAJAA4ABgAOAAgBSQFJAAgADgAGAA0ACgAKAAYABQAAAAAAAAAA//3//f/6//f/9//y//L/8v63/rf/8f/z//P/9v/7//f//v/+//0AAAAA/XsAAAAMAAsACgAcABACHAIbABAAHAAKAAsADAAAAAD/9P/1//b/5P/w/eX95P/w/+T/9v/1//QAAAAAAAwACwAKABwAEAIcAhsAEAAcAAoACwAMAAAAAP/0//X/9v/k//D95f3k//D/5P/2//X/9AAAAwEqAjEGwAVUAC8AYACLAAABAAEAAAEAAAEAAQEBAAABAAEAAQAAAQEBAAABAAEAAAEAAAEBAQAAAQABAAEAAQEBAAEAAAEAAAEAAQEBAAABAAEAAAEAAAEBAQAAAQABAAABAAABAQEAAAEAAQABAAEBAQABAAABAAABAAEBAQAAAQABAAEAAAEAAQAAAQABAAABAQEAAQABAAEAAAF+/+//8P/5//L/+//6//f//f/5AAAAAAAAAAAABAADAAcACwALAA8ACAAQAAkAZQBmAAkAEQAHAA4ADAAGAAkAAwAEAAMAAAAAAAAAAP/8//3/+v/0//X/8f/w/+//mgIR/+//8P/5//P/+v/7//b//f/6AAAAAAAAAAAAAwADAAcACwAFAA4ABwAIABEACABmAGYACAARAAcADwAMAAUACgADAAMABAAAAAAAAAAA//z//f/6//T/9P/x//D/8P+aAhH/7//w//n/8v/7//r/9v/9//oAAAAAAAAAAAADAAIABAAKAAwAEAAJABIACgASAA8ABwAPAAUADAAGAAMABAAAAAAAAAAA//z//P/5//X/7f/3/+wCMQAAAAUAAwAIAAQABQAMAAUADQAPAUwBSwAHAA8ABQANAAkACgAFAAMAAwAAAAAAAAAA//3//f/7//b//P/0//r/+v/y//n+tf60//j/8v/6//T/9v/3//r/+wAAAAAAAAAAAAUAAwAIAAQABQAMAAUADQAPAUwBSwAHAA8ABQANAAkABQAIAAIAAwADAAAAAAAAAAD//f/9//v/9v/8//T/+v/6//L/+f61/rT/+P/y//r/9P/2//f/+v/7AAAAAAAAAAAABwADAAoABgAGAA8ACAAQABMBNwE4AAgAEAAHAA4ADAAQAAgABAAFAAAAAP/4//3/9v/6//T/8P/4/+7/9/7I/sn/8v/z//P/9f/u//b/+//6AAMBKgIxBsAFVAAvAGAAiwAAAQABAAABAAABAAEBAQAAAQABAAEAAAEBAQAAAQABAAABAAABAQEAAAEAAQABAAEBAQABAAABAAABAAEBAQAAAQABAAABAAABAQEAAAEAAQAAAQAAAQEBAAABAAEAAQABAQEAAQAAAQAAAQABAQEAAAEAAQABAAABAAEAAAEAAQAAAQEBAAEAAQABAAABfv/v//D/+f/y//v/+v/3//3/+QAAAAAAAAAAAAQAAwAHAAsACwAPAAgAEAAJAGUAZgAJABEABwAOAAwABgAJAAMABAADAAAAAAAAAAD//P/9//r/9P/1//H/8P/v/5oCEf/v//D/+f/z//r/+//2//3/+gAAAAAAAAAAAAMAAwAHAAsABQAOAAcACAARAAgAZgBmAAgAEQAHAA8ADAAFAAoAAwADAAQAAAAAAAAAAP/8//3/+v/0//T/8f/w//D/mgIR/+//8P/5//L/+//6//b//f/6AAAAAAAAAAAAAwACAAQACgAMABAACQASAAoAEgAPAAcADwAFAAwABgADAAQAAAAAAAAAAP/8//z/+f/1/+3/9//sAjEAAAAFAAMACAAEAAUADAAFAA0ADwFMAUsABwAPAAUADQAJAAoABQADAAMAAAAAAAAAAP/9//3/+//2//z/9P/6//r/8v/5/rX+tP/4//L/+v/0//b/9//6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) format('truetype');font-weight:normal;font-style:normal}
@@ -5355,18 +5400,18 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
   <div class="payto-row"><div class="payto-label">PAY TO THE<br>ORDER OF</div><div class="payto-name">${vendorName}</div><div class="amount-dollars">$ **${amtFmt}</div></div>
   <div class="words-row">${amtWords}${'*'.repeat(Math.max(0,80-amtWords.length))} DOLLARS</div>
   <div class="vendor-addr">${vendorAddrHtml}</div>
-  <div class="memo-sig-row"><div class="memo-row"><span class="memo-label">MEMO</span><span class="memo-val">Batch -- ${selectedNonCredits.length} bill${selectedNonCredits.length===1?'':'s'}</span></div><div class="sig-line">MP</div></div>
+  <div class="memo-sig-row"><div class="memo-row"><span class="memo-label">MEMO</span><span class="memo-val">Batch -- ${stubCount}</span></div><div class="sig-line">MP</div></div>
   <div style="text-align:center;margin-top:38px;position:relative;z-index:1"><div style="font-family:'MICR',monospace;font-size:14pt;letter-spacing:3px;color:#111">${micrFontStr}</div></div>
 </div>
 <div class="stub-section">
   <div class="stub-header"><div><div class="stub-company">MIDWEST EDUCATIONAL FURNISHINGS, INC</div><div class="stub-date-vendor">${dateStr}&nbsp;&nbsp;&nbsp;&nbsp;${vendorName}</div></div><div class="stub-checkno">${checkNo}</div></div>
-  <table class="stub-table"><thead><tr><th>Date</th><th>Type</th><th>Reference</th><th class="amt">Original Amount</th><th class="amt">Balance Due</th><th class="amt">Payment</th></tr></thead><tbody>${stubRows}<tr class="stub-total-row"><td colspan="3">${selectedNonCredits.length} bill${selectedNonCredits.length===1?'':'s'}</td><td></td><td>Check Amount</td><td class="amt">${amtFmt}</td></tr></tbody></table>
+  <table class="stub-table"><thead><tr><th>Date</th><th>Type</th><th>Reference</th><th class="amt">Original Amount</th><th class="amt">Balance Due</th><th class="amt">Payment</th></tr></thead><tbody>${stubRows}<tr class="stub-total-row"><td colspan="3">${stubCount}</td><td></td><td>Check Amount</td><td class="amt">${amtFmt}</td></tr></tbody></table>
   <div class="stub-footer"><div class="stub-bank">Cornerstone Bank Ch</div><div class="stub-amount">${amtFmt}</div></div>
 </div>
 <div class="stub-section" style="border-bottom:none">
   <div class="payment-record">PAYMENT RECORD</div>
   <div class="stub-header"><div><div class="stub-company">MIDWEST EDUCATIONAL FURNISHINGS, INC</div><div class="stub-date-vendor">${dateStr}&nbsp;&nbsp;&nbsp;&nbsp;${vendorName}</div></div><div class="stub-checkno">${checkNo}</div></div>
-  <table class="stub-table"><thead><tr><th>Date</th><th>Type</th><th>Reference</th><th class="amt">Original Amount</th><th class="amt">Balance Due</th><th class="amt">Payment</th></tr></thead><tbody>${stubRows}<tr class="stub-total-row"><td colspan="3">${selectedNonCredits.length} bill${selectedNonCredits.length===1?'':'s'}</td><td></td><td>Check Amount</td><td class="amt">${amtFmt}</td></tr></tbody></table>
+  <table class="stub-table"><thead><tr><th>Date</th><th>Type</th><th>Reference</th><th class="amt">Original Amount</th><th class="amt">Balance Due</th><th class="amt">Payment</th></tr></thead><tbody>${stubRows}<tr class="stub-total-row"><td colspan="3">${stubCount}</td><td></td><td>Check Amount</td><td class="amt">${amtFmt}</td></tr></tbody></table>
   <div class="stub-footer"><div class="stub-bank">Cornerstone Bank Ch</div><div class="stub-amount">${amtFmt}</div></div>
 </div>
 </body></html>`;
@@ -5396,7 +5441,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
           setDocStatus(bill.billDocNum,{...existing, payments: newPayments, paid: fullyPaid, checkNum: checkNo, checkPrinted: new Date().toISOString(), payDate: todayIso, vendorInvNum: bill.vendorInvNum, memo: existing.memo||'Batch check #'+checkNo, status: fullyPaid?'paid':'partial'});
         });
         // Mark applied credits as consumed.
-        _consumeCreditSops(creditConsumes, todayIso);
+        _consumeCreditSops(creditConsumes, todayIso, checkNo);
         const creditMsg = totalCredit > 0 ? ' (with '+fmt(totalCredit)+' in credits applied)' : '';
         notify('Batch Check #'+checkNo+' printed for '+vendorName+' -- '+fmt(totalCost)+' ('+selectedNonCredits.length+' bill'+(selectedNonCredits.length===1?'':'s')+')'+creditMsg);
         setBillSelected(new Set());
@@ -6048,7 +6093,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
           <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>TOTAL OWED</div><div style={{fontSize:22,fontWeight:800,color:"#f97316",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(totalOwed)}</div><div style={{fontSize:11,color:"#a3a3a3",marginTop:4}}>{unpaidBills.length} open bill{unpaidBills.length!==1?'s':''}</div></Card>
           <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>OVERDUE</div><div style={{fontSize:22,fontWeight:800,color:overdueAmt>0?"#f87171":"#34d399",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(overdueAmt)}</div><div style={{fontSize:11,color:"#a3a3a3",marginTop:4}}>{overdueBills.length} bill{overdueBills.length!==1?'s':''}</div></Card>
           <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>DUE IN 14 DAYS</div><div style={{fontSize:22,fontWeight:800,color:dueSoonBills.length>0?"#fbbf24":"#34d399",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(dueSoonBills.reduce((s,b)=>s+b.cost,0))}</div><div style={{fontSize:11,color:"#a3a3a3",marginTop:4}}>{dueSoonBills.length} bill{dueSoonBills.length!==1?'s':''}</div></Card>
-          <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>PAID</div><div style={{fontSize:22,fontWeight:800,color:"#34d399",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(allBills.filter(b=>b.paid&&!b._isDeleted).reduce((s,b)=>s+b.cost,0))}</div><div style={{fontSize:11,color:"#a3a3a3",marginTop:4}}>{allBills.filter(b=>b.paid&&!b._isDeleted).length} bill{allBills.filter(b=>b.paid&&!b._isDeleted).length!==1?'s':''}</div></Card>
+          <Card style={{padding:14,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:4}}>PAID</div><div style={{fontSize:22,fontWeight:800,color:"#34d399",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(allBills.filter(b=>b.paid&&!b._isDeleted&&!b.isCredit).reduce((s,b)=>s+b.cost,0))}</div><div style={{fontSize:11,color:"#a3a3a3",marginTop:4}}>{allBills.filter(b=>b.paid&&!b._isDeleted&&!b.isCredit).length} bill{allBills.filter(b=>b.paid&&!b._isDeleted&&!b.isCredit).length!==1?'s':''}</div></Card>
         </div>
         {/* Group-by buttons */}
         <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12,flexWrap:"wrap"}}>
@@ -6059,23 +6104,23 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
           </div>
           {vendorFilterActive&&<span style={{fontSize:11,color:"#a78bfa",fontWeight:600,fontFamily:"'JetBrains Mono',monospace",whiteSpace:"nowrap"}}>Showing {visibleBills.length} of {allBills.length} bills &gt;&gt; {filteredOpen.length} open &gt;&gt; {fmt(filteredOpenAmt)}</span>}
         </div>
-        {billSelected.size>0&&<div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12,padding:"10px 14px",background:"#f9731610",border:"1px solid #f9731625",borderRadius:8,flexWrap:"wrap"}}><span style={{fontSize:13,color:"#f97316",fontWeight:600}}>{billSelected.size} bill{billSelected.size!==1?'s':''} selected</span><span style={{fontSize:13,color:"#a3a3a3"}}>({fmt(Array.from(billSelected).reduce((s,i)=>{const b=unpaidBills[i];return s+(b?(typeof b.balance==='number'?b.balance:b.cost):0)},0))})</span><Btn onClick={printBatchCheck} style={{fontSize:12,padding:"4px 12px",background:"#14b8a6",color:"#000"}}><I n="file" s={12}/> Print Batch Check</Btn><Btn onClick={markSelectedPaid} style={{fontSize:12,padding:"4px 12px",background:"#34d399",color:"#000"}}>Mark Paid</Btn><button onClick={()=>setBillSelected(new Set())} style={{background:"none",border:"none",color:"#737373",cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>Clear</button></div>}
+        {billSelected.size>0&&<div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12,padding:"10px 14px",background:"#f9731610",border:"1px solid #f9731625",borderRadius:8,flexWrap:"wrap"}}>{(()=>{const _sel=_billsToPay(Array.from(billSelected).map(i=>unpaidBills[i]));const _oc=_openCreditsFor(_sel);return <><span style={{fontSize:13,color:"#f97316",fontWeight:600}}>{_sel.length} bill{_sel.length!==1?'s':''} selected</span><span style={{fontSize:13,color:"#a3a3a3"}}>({fmt(_sel.reduce((s,b)=>s+(typeof b.balance==='number'?b.balance:b.cost),0))})</span>{_oc.length>0&&<span className="vb-open-credits" style={{fontSize:12,color:"#34d399",fontWeight:600}}>{_oc.length} open credit{_oc.length!==1?'s':''} ({fmt(_oc.reduce((s,c)=>s+(typeof c.creditAmount==='number'?c.creditAmount:c.cost),0))}) can be applied</span>}</>})()}<Btn onClick={printBatchCheck} style={{fontSize:12,padding:"4px 12px",background:"#14b8a6",color:"#000"}}><I n="file" s={12}/> Print Batch Check</Btn><Btn onClick={markSelectedPaid} style={{fontSize:12,padding:"4px 12px",background:"#34d399",color:"#000"}}>Mark Paid</Btn><button onClick={()=>setBillSelected(new Set())} style={{background:"none",border:"none",color:"#737373",cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>Clear</button></div>}
         {allBills.length===0?<Card style={{padding:40,textAlign:"center"}}><div style={{fontSize:14,color:"#525252"}}>No vendor bills yet. Bills appear after POs are drafted or sent.</div></Card>:
         <Card style={{padding:0,overflow:"hidden"}}>
           <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:900}}>
             <thead><tr style={{background:"#111111",borderBottom:"2px solid #222"}}>{["","Payee","Ref / PO #","Vendor Inv #","Job","Due Date","Status","Open Balance",""].map((h,i)=><th key={i} style={{padding:"10px 8px",textAlign:i>=7?"right":i===0?"center":"left",fontWeight:600,color:"#a3a3a3",fontSize:11,textTransform:"uppercase",letterSpacing:0.8,whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
             <tbody>{visibleBills.map((bill,idx)=>{
-              const isOverdue=bill.daysUntil<0&&!bill.paid&&bill.entered;
-              const isDueSoon=bill.daysUntil>=0&&bill.daysUntil<=14&&!bill.paid;
+              const isOverdue=bill.daysUntil<0&&!bill.paid&&bill.entered&&!bill.isCredit;
+              const isDueSoon=bill.daysUntil>=0&&bill.daysUntil<=14&&!bill.paid&&!bill.isCredit;
               const unpaidIdx=unpaidBills.indexOf(bill);
               return <tr key={idx} style={{borderBottom:"1px solid #111",background:bill._isDeleted?"#f8717108":bill.voided?"#52525208":bill.paid?"#34d39905":isOverdue?"#f8717108":billSelected.has(unpaidIdx)?"#f9731610":"transparent",transition:"background 0.15s",cursor:"pointer",opacity:bill._isDeleted?0.55:bill.voided?0.5:1}} onClick={()=>{if(bill._standalone){openAdjustModal(bill._standaloneKind==='VendorCredit'?'credit':'bill',bill);return}setBillInvNum(bill.vendorInvNum);setBillCheckNum(bill.checkNum);setBillPayDate(bill.payDate);setBillMemo(bill.memo);setBillPayAmount(String(bill.balance||bill.cost));setBillPayInputDate(new Date().toISOString().split('T')[0]);setBillPayCheckInput('');setBillPayInvInput('');setBillPayMemoInput('');setBillDetail(bill)}} onMouseEnter={e=>{if(!bill.paid&&!bill.voided&&!bill._isDeleted&&!billSelected.has(unpaidIdx))e.currentTarget.style.background=isOverdue?"#f8717112":"#111"}} onMouseLeave={e=>{e.currentTarget.style.background=bill._isDeleted?"#f8717108":bill.voided?"#52525208":bill.paid?"#34d39905":isOverdue?"#f8717108":billSelected.has(unpaidIdx)?"#f9731610":"transparent"}}>
                 <td style={{padding:"10px 8px",textAlign:"center",width:36}} onClick={e=>e.stopPropagation()}>{!bill.paid&&!bill._isDeleted&&!bill.isCredit&&<input type="checkbox" title={bill._standalone?"Standalone vendor bill -- can be paid on a batch check":"Select for batch payment"} checked={billSelected.has(unpaidIdx)} onChange={()=>toggleSelect(unpaidIdx)} style={{accentColor:"#2dd4bf",width:16,height:16,cursor:"pointer"}}/>}{bill.paid&&<I n="check" s={14} color="#34d399"/>}{!bill.paid&&bill._standalone&&!bill._isDeleted&&<span style={{fontSize:10,color:bill.isCredit?"#34d399":"#f97316",fontWeight:700,letterSpacing:0.5}}>{bill.isCredit?"CR":"ADJ"}</span>}{bill._isDeleted&&<I n="close" s={14} color="#f87171"/>}</td>
-                <td style={{padding:"10px 8px"}}><div style={{fontWeight:600,color:"#e5e5e5",display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>{bill.vendorName}{bill.isCredit&&<span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:"#34d39920",color:"#34d399",fontWeight:700,letterSpacing:0.5}}>CREDIT {(()=>{const ca=typeof bill.creditAmount==='number'?bill.creditAmount:bill.cost;return ca<bill.cost-0.005?fmt(ca):'FULL'})()}</span>}</div><div style={{fontSize:11,color:"#737373"}}>{bill.itemCount} item{bill.itemCount!==1?'s':''}</div></td>
+                <td style={{padding:"10px 8px"}}><div style={{fontWeight:600,color:"#e5e5e5",display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>{bill.vendorName}{bill.isCredit&&<span style={{fontSize:9,padding:"2px 6px",borderRadius:4,background:"#34d39920",color:"#34d399",fontWeight:700,letterSpacing:0.5}}>CREDIT</span>}</div><div style={{fontSize:11,color:"#737373"}}>{bill.itemCount} item{bill.itemCount!==1?'s':''}</div></td>
                 <td style={{padding:"10px 8px"}}><span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:11,color:"#a78bfa",cursor:"pointer",textDecoration:"underline",textUnderlineOffset:2}} onClick={e=>{e.stopPropagation();const pos2=genPOs?genPOs(bill.job):[];const thisPO2=pos2.find(p=>p.docNum===bill.poDocNum);if(thisPO2){setPreviewDoc({type:"po",data:thisPO2,job:bill.job});setTab("preview")}}}>{bill.poDocNum}</span></td>
                 <td style={{padding:"10px 8px",fontFamily:"'JetBrains Mono',monospace",fontSize:11,color:bill.vendorInvNum?"#f97316":"#333"}}>{bill.vendorInvNum||'--'}{bill._standalone&&bill._fileUrl&&<a href={bill._fileUrl} target="_blank" rel="noopener noreferrer" onClick={e=>e.stopPropagation()} title={bill._fileName||'View attached file'} style={{marginLeft:8,display:"inline-flex",alignItems:"center",gap:3,padding:"1px 6px",background:"#a78bfa10",border:"1px solid #a78bfa25",borderRadius:4,color:"#a78bfa",textDecoration:"none",fontSize:10,fontWeight:600,fontFamily:"inherit"}}><I n="file" s={10} color="#a78bfa"/> File</a>}</td>
                 <td style={{padding:"10px 8px"}}><div style={{color:bill.job?.id?"#c4c4c4":"#737373",fontSize:12,fontStyle:bill.job?.id?"normal":"italic"}}>{bill.job?.name||'(No Project)'}</div></td>
-                <td style={{padding:"10px 8px",whiteSpace:"nowrap"}}>{bill.paid?<span style={{color:"#34d399",fontWeight:600}}>Paid{bill.payDate?' '+bill.payDate:''}</span>:isOverdue?<div><div style={{color:"#f87171",fontWeight:600}}>Overdue</div><div style={{fontSize:10,color:"#f87171"}}>{Math.abs(bill.daysUntil)} day{Math.abs(bill.daysUntil)!==1?'s':''} ago</div></div>:isDueSoon?<div><div style={{color:"#fbbf24",fontWeight:500}}>Due soon</div><div style={{fontSize:10,color:"#fbbf24"}}>Due in {bill.daysUntil} day{bill.daysUntil!==1?'s':''}</div></div>:bill.daysUntil<0?<div><div style={{color:"#a3a3a3"}}>Not entered</div><div style={{fontSize:10,color:"#737373"}}>{bill.dueDate||'--'}</div></div>:<div><div style={{color:"#a3a3a3"}}>Due later</div><div style={{fontSize:10,color:"#737373"}}>Due in {bill.daysUntil} day{bill.daysUntil!==1?'s':''}</div></div>}</td>
-                <td style={{padding:"10px 8px"}} onClick={e=>e.stopPropagation()}>{bill._isDeleted?<div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}><Badge label="deleted" color="#f87171"/><button onClick={()=>{if(confirm('Restore this bill? It will reappear in the active Vendor Bills list with its prior data intact (status, payment info, invoice attachment, etc).')){const existing=typeof docStatuses[bill.billDocNum]==='object'?docStatuses[bill.billDocNum]:{};const{deleted:_d,...rest}=existing;setDocStatus(bill.billDocNum,rest);notify('Bill restored: '+bill.vendorName)}}} style={{padding:"3px 8px",borderRadius:5,border:"1px solid #34d39940",background:"transparent",color:"#34d399",fontSize:10,cursor:"pointer",fontFamily:"inherit",fontWeight:600}} title="Restore this bill keeping its prior payment data, invoice attachment, and notes">Restore</button><button onClick={()=>{if(confirm('Reset and restore this bill as a FRESH unpaid bill?\\n\\nThis wipes ALL prior bill data:\\n - paid status, payment date, check number\\n - invoice attachment and vendor invoice number\\n - any memo or notes\\n - any date overrides\\n\\nUse this when the prior bill data was wrong (e.g. wrong invoice attached, paid status was a mistake). The PO and line items are untouched. This cannot be undone.')){setDocStatus(bill.billDocNum,{});const dateKey=bill.billDocNum+'__date';const dueKey=bill.billDocNum+'__due';if(docStatuses[dateKey]!==undefined)setDocStatus(dateKey,'');if(docStatuses[dueKey]!==undefined)setDocStatus(dueKey,'');notify('Bill reset to fresh unpaid: '+bill.vendorName)}}} style={{padding:"3px 8px",borderRadius:5,border:"1px solid #fbbf2440",background:"transparent",color:"#fbbf24",fontSize:10,cursor:"pointer",fontFamily:"inherit",fontWeight:600}} title="Reset to a fresh unpaid bill -- wipes all prior bill data (paid status, attachments, memo, etc). Use when prior bill data was wrong.">Reset &amp; Restore</button></div>:(()=>{const bd=typeof docStatuses[bill.billDocNum]==='object'?docStatuses[bill.billDocNum]:{};const st=bd.status||(bill.voided?'void':bill.paid?'paid':(bd.checkPrinted||bd.checkNum||bill.checkNum)?'check_sent':'unpaid');const nextStatus={unpaid:'check_sent',check_sent:'paid',paid:'unpaid',void:'unpaid'};return <button onClick={()=>{const ns=nextStatus[st]||'unpaid';
+                <td style={{padding:"10px 8px",whiteSpace:"nowrap"}}>{bill.paid?<span style={{color:"#34d399",fontWeight:600}}>{bill.isCredit?'Used':'Paid'}{bill.payDate?' '+bill.payDate:''}</span>:bill.isCredit?<div className="vb-credit-open"><div style={{color:"#34d399",fontWeight:600}}>Credit open</div><div style={{fontSize:10,color:"#737373"}}>{bill.poDate?'Dated '+bill.poDate:'Apply when paying'}</div></div>:isOverdue?<div><div style={{color:"#f87171",fontWeight:600}}>Overdue</div><div style={{fontSize:10,color:"#f87171"}}>{Math.abs(bill.daysUntil)} day{Math.abs(bill.daysUntil)!==1?'s':''} ago</div></div>:isDueSoon?<div><div style={{color:"#fbbf24",fontWeight:500}}>Due soon</div><div style={{fontSize:10,color:"#fbbf24"}}>Due in {bill.daysUntil} day{bill.daysUntil!==1?'s':''}</div></div>:bill.daysUntil<0?<div><div style={{color:"#a3a3a3"}}>Not entered</div><div style={{fontSize:10,color:"#737373"}}>{bill.dueDate||'--'}</div></div>:<div><div style={{color:"#a3a3a3"}}>Due later</div><div style={{fontSize:10,color:"#737373"}}>Due in {bill.daysUntil} day{bill.daysUntil!==1?'s':''}</div></div>}</td>
+                <td style={{padding:"10px 8px"}} onClick={e=>e.stopPropagation()}>{bill._isDeleted?<div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}><Badge label="deleted" color="#f87171"/><button onClick={()=>{if(confirm('Restore this bill? It will reappear in the active Vendor Bills list with its prior data intact (status, payment info, invoice attachment, etc).')){const existing=typeof docStatuses[bill.billDocNum]==='object'?docStatuses[bill.billDocNum]:{};const{deleted:_d,...rest}=existing;setDocStatus(bill.billDocNum,rest);notify('Bill restored: '+bill.vendorName)}}} style={{padding:"3px 8px",borderRadius:5,border:"1px solid #34d39940",background:"transparent",color:"#34d399",fontSize:10,cursor:"pointer",fontFamily:"inherit",fontWeight:600}} title="Restore this bill keeping its prior payment data, invoice attachment, and notes">Restore</button><button onClick={()=>{if(confirm('Reset and restore this bill as a FRESH unpaid bill?\\n\\nThis wipes ALL prior bill data:\\n - paid status, payment date, check number\\n - invoice attachment and vendor invoice number\\n - any memo or notes\\n - any date overrides\\n\\nUse this when the prior bill data was wrong (e.g. wrong invoice attached, paid status was a mistake). The PO and line items are untouched. This cannot be undone.')){setDocStatus(bill.billDocNum,{});const dateKey=bill.billDocNum+'__date';const dueKey=bill.billDocNum+'__due';if(docStatuses[dateKey]!==undefined)setDocStatus(dateKey,'');if(docStatuses[dueKey]!==undefined)setDocStatus(dueKey,'');notify('Bill reset to fresh unpaid: '+bill.vendorName)}}} style={{padding:"3px 8px",borderRadius:5,border:"1px solid #fbbf2440",background:"transparent",color:"#fbbf24",fontSize:10,cursor:"pointer",fontFamily:"inherit",fontWeight:600}} title="Reset to a fresh unpaid bill -- wipes all prior bill data (paid status, attachments, memo, etc). Use when prior bill data was wrong.">Reset &amp; Restore</button></div>:(bill.isCredit&&bill._standalone)?<Badge label={bill.voided?"void":bill.paid?"used":"open credit"} color={bill.voided?"#525252":"#34d399"}/>:(()=>{const bd=typeof docStatuses[bill.billDocNum]==='object'?docStatuses[bill.billDocNum]:{};const st=bd.status||(bill.voided?'void':bill.paid?'paid':(bd.checkPrinted||bd.checkNum||bill.checkNum)?'check_sent':'unpaid');const nextStatus={unpaid:'check_sent',check_sent:'paid',paid:'unpaid',void:'unpaid'};return <button onClick={()=>{const ns=nextStatus[st]||'unpaid';
                   // If cycling TO unpaid AND the bill has payments, the new 'unpaid'
                   // status will be overridden on next render because paid is computed
                   // from sum(payments) >= cost. Must clear payments to actually unpay.
@@ -6090,13 +6135,88 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
                     }
                   }
                   setDocStatus(bill.billDocNum,{...bd,status:ns,paid:ns==='paid'});notify(bill.vendorName+' >> '+ns.replace('_',' '))}} style={{background:"none",border:"none",cursor:"pointer",padding:0}} title="Click to cycle status">{st==='void'?<Badge label="void" color="#525252"/>:st==='paid'?<Badge label="paid" color="#34d399"/>:st==='check_sent'?<Badge label="check sent" color="#f97316"/>:(bill.daysUntil<0&&bill.entered)?<Badge label="overdue" color="#f87171"/>:<StatusBadge docNum={bill.poDocNum}/>}</button>})()}</td>
-                <td style={{padding:"10px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",fontWeight:700,color:bill.paid?"#34d399":bill.isPartiallyPaid?"#fbbf24":isOverdue?"#f87171":"#f0f0f0"}}>{(()=>{if(bill.paid)return <span style={{textDecoration:"line-through",opacity:0.5}}>{fmt(bill.cost)}</span>;if(bill.isCredit){const ca=typeof bill.creditAmount==='number'?bill.creditAmount:bill.cost;const remaining=bill.cost-ca;const isPartial=ca<bill.cost-0.005;return <div><div style={{color:"#34d399",fontSize:12}}>{isPartial?fmt(remaining):"-"+fmt(ca)}</div><div style={{fontSize:9,color:"#34d399",fontWeight:600,marginTop:2,letterSpacing:0.5}}>{isPartial?'CREDIT '+fmt(ca):'FULL CREDIT'}</div></div>}if(bill.isPartiallyPaid){const pc=(bill.payments||[]).length;return <div><div>{fmt(bill.balance)}</div><div style={{fontSize:9,color:"#a3a3a3",fontWeight:500,marginTop:2,letterSpacing:0.3}}>of {fmt(bill.cost)} ({pc} pmt{pc!==1?'s':''})</div></div>}return fmt(bill.cost)})()}</td>
-                <td style={{padding:"10px 8px",textAlign:"right"}} onClick={e=>e.stopPropagation()}>{!bill.paid&&!bill.voided&&!bill.isCredit&&!bill._isDeleted&&<button onClick={()=>{if(bill._standalone){const sop=(customSops||[]).find(s=>s.id===bill._sopId);if(!sop){notify('Record not found','error');return}let d={};try{d=JSON.parse(sop.content||'{}')}catch{}const today=new Date().toISOString().split('T')[0];const updated={...d,paid:true,payDate:today};addSop({id:sop.id,title:sop.title,cat:sop.cat,icon:sop.icon,content:JSON.stringify(updated),custom:true});notify('Bill marked paid: '+(d.vendorName||'vendor'));return}setBillInvNum(bill.vendorInvNum);setBillCheckNum(bill.checkNum);setBillPayDate(new Date().toISOString().split('T')[0]);setBillMemo(bill.memo);setBillPayAmount(String(bill.balance||bill.cost));setBillPayInputDate(new Date().toISOString().split('T')[0]);setBillPayCheckInput('');setBillPayInvInput('');setBillPayMemoInput('');setBillDetail(bill)}} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #34d39930",background:"transparent",color:"#34d399",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s",whiteSpace:"nowrap"}} onMouseEnter={e=>{e.currentTarget.style.background="#34d39915"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>{bill.isPartiallyPaid?'Pay Balance':'Pay'}</button>}</td>
+                <td style={{padding:"10px 8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",fontWeight:700,color:bill.paid?"#34d399":bill.isPartiallyPaid?"#fbbf24":isOverdue?"#f87171":"#f0f0f0"}}>{(()=>{if(bill.paid)return <span style={{textDecoration:"line-through",opacity:0.5}}>{fmt(bill.cost)}</span>;if(bill.isCredit){const ca=typeof bill.creditAmount==='number'?bill.creditAmount:bill.cost;const orig=typeof bill._creditOriginal==='number'?bill._creditOriginal:ca;return <div className="vb-credit-amt"><div style={{color:"#34d399",fontSize:12}}>{"-"+fmt(ca)}</div><div style={{fontSize:9,color:"#34d399",fontWeight:600,marginTop:2,letterSpacing:0.5}}>{orig>ca+0.005?'LEFT OF '+fmt(orig):'CREDIT'}</div></div>}if(bill.isPartiallyPaid){const pc=(bill.payments||[]).length;return <div><div>{fmt(bill.balance)}</div><div style={{fontSize:9,color:"#a3a3a3",fontWeight:500,marginTop:2,letterSpacing:0.3}}>of {fmt(bill.cost)} ({pc} pmt{pc!==1?'s':''})</div></div>}return fmt(bill.cost)})()}</td>
+                <td style={{padding:"10px 8px",textAlign:"right"}} onClick={e=>e.stopPropagation()}>{!bill.paid&&!bill.voided&&!bill.isCredit&&!bill._isDeleted&&<button onClick={()=>{if(bill._standalone){_startBillPayment('paid',[bill]);return}setBillInvNum(bill.vendorInvNum);setBillCheckNum(bill.checkNum);setBillPayDate(new Date().toISOString().split('T')[0]);setBillMemo(bill.memo);setBillPayAmount(String(bill.balance||bill.cost));setBillPayInputDate(new Date().toISOString().split('T')[0]);setBillPayCheckInput('');setBillPayInvInput('');setBillPayMemoInput('');setBillDetail(bill)}} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #34d39930",background:"transparent",color:"#34d399",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s",whiteSpace:"nowrap"}} onMouseEnter={e=>{e.currentTarget.style.background="#34d39915"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>{bill.isPartiallyPaid?'Pay Balance':'Pay'}</button>}</td>
               </tr>})}
               <tr style={{borderTop:"2px solid #222",background:"#0a0a0a"}}><td colSpan={7} style={{padding:"10px 8px",fontWeight:700,color:"#f0f0f0"}}>TOTAL OUTSTANDING{vendorFilterActive&&<span style={{color:"#a78bfa",fontWeight:600}}> &gt;&gt; {billVendorFilter}</span>}</td><td style={{padding:"10px 8px",textAlign:"right",fontWeight:800,fontFamily:"'JetBrains Mono',monospace",color:"#f97316",fontSize:14}}>{fmt(vendorFilterActive?filteredOpenAmt:totalOwed)}</td><td/></tr>
             </tbody>
           </table></div>
         </Card>}
+        {/* (Oct 1 2026) Apply Credits window. Opens from Print Batch Check, Mark Paid, or a
+            standalone bill's Pay button when the vendor has open credits. Lists the bills
+            being paid and the vendor's open credits; Maureen ticks the credits to use and
+            how much of each, sees the check amount, then prints the check or records the
+            bills paid. Credits she does not tick stay open. */}
+        {creditPay&&(()=>{
+          const cpBills=_billsToPay(allBills.filter(b=>creditPay.keys.includes(b.billDocNum)));
+          const cpCredits=_openCreditsFor(cpBills);
+          const amounts=_creditPayAmounts(creditPay,cpCredits);
+          const {plan,totalCredit}=_planCreditApplication(cpBills,amounts);
+          const billsTotal=_cents(cpBills.reduce((s,b)=>s+(typeof b.balance==='number'?b.balance:b.cost),0));
+          const checkAmt=_cents(plan.reduce((s,p)=>s+p.payAmt,0));
+          const usedBy={};plan.forEach(p=>p.creditsApplied.forEach(ca=>{usedBy[ca.sopId]=_cents((usedBy[ca.sopId]||0)+ca.creditedAmt)}));
+          const ticked=Object.keys(amounts);
+          const unused=_cents(ticked.reduce((s,id)=>s+amounts[id]-(usedBy[id]||0),0));
+          const setPick=(id,patch)=>setCreditPay(cp=>cp?{...cp,picks:{...cp.picks,[id]:{...(cp.picks[id]||{on:false,amt:''}),...patch}}}:cp);
+          const setAll=(on)=>setCreditPay(cp=>{if(!cp)return cp;const next={...cp.picks};cpCredits.forEach(c=>{const avail=typeof c.creditAmount==='number'?c.creditAmount:c.cost;next[c._sopId]={on,amt:(next[c._sopId]&&next[c._sopId].amt)||avail.toFixed(2)}});return {...cp,picks:next}});
+          const close=()=>setCreditPay(null);
+          const go=(action)=>{setCreditPay(null);if(cpBills.length===0)return;if(action==='check')_printBatchCheckFor(cpBills,amounts);else _markBillsPaid(cpBills,amounts)};
+          const vendorLabel=[...new Set(cpBills.map(b=>b.vendorName))].join(', ');
+          const th={padding:"6px 8px",textAlign:"left",fontSize:10,color:"#737373",fontWeight:700,letterSpacing:1,textTransform:"uppercase",borderBottom:"1px solid #222"};
+          const td={padding:"7px 8px",fontSize:12,color:"#e5e5e5",borderBottom:"1px solid #1a1a1a"};
+          const mono={fontFamily:"'JetBrains Mono',monospace"};
+          return <div onClick={close} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.75)",zIndex:99998,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+            <div className="vb-pay-credits" onClick={e=>e.stopPropagation()} style={{background:"#111111",border:"1px solid #34d39940",borderRadius:12,padding:24,maxWidth:760,width:"100%",maxHeight:"90vh",overflowY:"auto"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
+                <div>
+                  <div style={{fontSize:11,color:"#34d399",fontWeight:700,letterSpacing:1.5,textTransform:"uppercase"}}>Pay Bills &gt;&gt; Apply Credits</div>
+                  <div style={{fontSize:15,color:"#f0f0f0",fontWeight:600,marginTop:4}}>{vendorLabel||'Vendor'}</div>
+                  <div style={{fontSize:12,color:"#a3a3a3",marginTop:2}}>Tick the credits to use on this payment. They print on the check stub with the invoices. Credits you leave unticked stay open.</div>
+                </div>
+                <button onClick={close} style={{background:"none",border:"none",color:"#737373",fontSize:22,cursor:"pointer",fontFamily:"inherit",padding:0,lineHeight:1}}>&times;</button>
+              </div>
+              {cpBills.length===0?<div style={{fontSize:13,color:"#a3a3a3",padding:"12px 0"}}>These bills are no longer open.</div>:<>
+              <div style={{fontSize:11,color:"#a3a3a3",fontWeight:700,letterSpacing:1,marginBottom:6}}>BILLS</div>
+              <div style={{overflowX:"auto",marginBottom:16}}><table style={{width:"100%",borderCollapse:"collapse"}}>
+                <thead><tr><th style={th}>Bill</th><th style={th}>Job</th><th style={{...th,textAlign:"right"}}>Open balance</th><th style={{...th,textAlign:"right"}}>Credit applied</th><th style={{...th,textAlign:"right"}}>Payment</th></tr></thead>
+                <tbody>{plan.map(p=>{const b=p.bill;const cr=_cents(p.creditsApplied.reduce((s,ca)=>s+ca.creditedAmt,0));return <tr key={b.billDocNum} className="vb-pay-bill">
+                  <td style={{...td,...mono}}>{b.vendorInvNum||b.poDocNum||b.billDocNum}</td>
+                  <td style={{...td,color:"#c4c4c4"}}>{b.job?.name||'(No Project)'}</td>
+                  <td style={{...td,...mono,textAlign:"right"}}>{fmt(typeof b.balance==='number'?b.balance:b.cost)}</td>
+                  <td style={{...td,...mono,textAlign:"right",color:cr>0?"#34d399":"#525252"}}>{cr>0?'-'+fmt(cr):'--'}</td>
+                  <td style={{...td,...mono,textAlign:"right",fontWeight:700}}>{fmt(p.payAmt)}</td>
+                </tr>})}</tbody>
+              </table></div>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6,gap:8,flexWrap:"wrap"}}>
+                <div style={{fontSize:11,color:"#a3a3a3",fontWeight:700,letterSpacing:1}}>OPEN CREDITS FROM THIS VENDOR</div>
+                <div style={{display:"flex",gap:8}}><button className="vb-pay-all" onClick={()=>setAll(true)} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #34d39940",background:"transparent",color:"#34d399",fontSize:11,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>Apply all credits</button><button className="vb-pay-none" onClick={()=>setAll(false)} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #333",background:"transparent",color:"#a3a3a3",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Clear credits</button></div>
+              </div>
+              <div style={{overflowX:"auto",marginBottom:14}}><table style={{width:"100%",borderCollapse:"collapse"}}>
+                <thead><tr><th style={th}></th><th style={th}>Credit</th><th style={th}>Date</th><th style={th}>Job</th><th style={{...th,textAlign:"right"}}>Available</th><th style={{...th,textAlign:"right"}}>Use</th></tr></thead>
+                <tbody>{cpCredits.map(c=>{const p=creditPay.picks[c._sopId]||{on:false,amt:''};const avail=typeof c.creditAmount==='number'?c.creditAmount:c.cost;const used=usedBy[c._sopId]||0;const reservedHere=!!c._appliedToBill&&creditPay.keys.includes(c._appliedToBill);return <tr key={c._sopId} className="vb-pay-credit" style={{background:p.on?"#34d39908":"transparent"}}>
+                  <td style={{...td,width:30}}><input type="checkbox" checked={!!p.on} onChange={e=>setPick(c._sopId,{on:e.target.checked})} style={{accentColor:"#34d399",width:16,height:16,cursor:"pointer"}}/></td>
+                  <td style={td}><div style={{...mono,color:"#34d399"}}>{c.poDocNum||c.vendorInvNum||c._sopId}</div>{reservedHere&&<div className="vb-pay-reserved" style={{fontSize:10,color:"#a78bfa",fontWeight:600}}>Reserved for this bill</div>}{c.memo&&<div style={{fontSize:10,color:"#737373",maxWidth:260,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}} title={c.memo}>{c.memo}</div>}</td>
+                  <td style={{...td,...mono,fontSize:11,color:"#a3a3a3"}}>{c.poDate||'--'}</td>
+                  <td style={{...td,color:"#c4c4c4"}}>{c.job?.name||'(No Project)'}</td>
+                  <td style={{...td,...mono,textAlign:"right",color:"#34d399"}}>{fmt(avail)}</td>
+                  <td style={{...td,textAlign:"right"}}><input type="number" step="0.01" value={p.amt} disabled={!p.on} onChange={e=>setPick(c._sopId,{amt:e.target.value})} style={{...inputStyle,width:110,textAlign:"right",...mono,opacity:p.on?1:0.4}}/>{p.on&&used>0.005&&used<_cents(Math.min(avail,Number(p.amt)||0))-0.005&&<div style={{fontSize:10,color:"#fbbf24",marginTop:2}}>{fmt(used)} needed</div>}</td>
+                </tr>})}</tbody>
+              </table></div>
+              <div className="vb-pay-summary" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10,marginBottom:12}}>
+                <div style={{background:"#0a0a0a",border:"1px solid #222",borderRadius:8,padding:"10px 12px"}}><div style={{fontSize:10,color:"#737373",fontWeight:700,letterSpacing:1}}>BILLS</div><div className="vb-pay-bills-total" style={{...mono,fontSize:16,fontWeight:700,color:"#f0f0f0"}}>{fmt(billsTotal)}</div></div>
+                <div style={{background:"#0a0a0a",border:"1px solid #34d39930",borderRadius:8,padding:"10px 12px"}}><div style={{fontSize:10,color:"#737373",fontWeight:700,letterSpacing:1}}>CREDITS APPLIED</div><div className="vb-pay-credit-total" style={{...mono,fontSize:16,fontWeight:700,color:"#34d399"}}>{totalCredit>0?'-'+fmt(totalCredit):fmt(0)}</div></div>
+                <div style={{background:"#0a0a0a",border:"1px solid #14b8a640",borderRadius:8,padding:"10px 12px"}}><div style={{fontSize:10,color:"#737373",fontWeight:700,letterSpacing:1}}>{creditPay.action==='check'?'CHECK AMOUNT':'AMOUNT PAID'}</div><div className="vb-pay-check-amt" style={{...mono,fontSize:16,fontWeight:800,color:"#14b8a6"}}>{fmt(checkAmt)}</div></div>
+              </div>
+              {unused>0.005&&<div className="vb-pay-unused" style={{fontSize:12,color:"#fbbf24",marginBottom:12}}>The bills only need {fmt(totalCredit)} of the credits ticked. The other {fmt(unused)} stays open for a later payment.</div>}
+              {checkAmt<=0.005&&<div style={{fontSize:12,color:"#34d399",marginBottom:12}}>The credits cover these bills in full, so no check is needed.</div>}
+              </>}
+              <div style={{display:"flex",justifyContent:"flex-end",gap:8,flexWrap:"wrap"}}>
+                <Btn v="ghost" onClick={close} style={{fontSize:12,padding:"6px 14px"}}>Cancel</Btn>
+                {cpBills.length>0&&<Btn className="vb-pay-mark" onClick={()=>go('paid')} style={{fontSize:12,padding:"6px 14px",background:creditPay.action==='paid'?"#34d399":"transparent",color:creditPay.action==='paid'?"#000":"#34d399",border:"1px solid #34d39960"}}>Record as Paid</Btn>}
+                {cpBills.length>0&&<Btn className="vb-pay-print" onClick={()=>go('check')} style={{fontSize:12,padding:"6px 14px",background:creditPay.action==='check'?"#14b8a6":"transparent",color:creditPay.action==='check'?"#000":"#14b8a6",border:"1px solid #14b8a660"}}>{checkAmt<=0.005?'Settle with Credits':'Print Check'}</Btn>}
+              </div>
+            </div>
+          </div>})()}
         {/* Standalone Vendor Credit / Vendor Bill creation+edit modal. Only mounts
             on the bills tab. Writes a customSops record with cat 'VendorCredit'
             or 'StandaloneBill' which feeds both this table and getJobFinancials. */}
@@ -6146,6 +6266,11 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
                 <label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4,fontWeight:600}}>Memo / Notes</label>
                 <textarea value={adjustForm.memo} onChange={e=>setAdjustForm(p=>({...p,memo:e.target.value}))} placeholder={adjustMode==='credit'?"e.g. Damaged stool credit -- 7 units":"Reason for the bill"} rows={3} style={{...inputStyle,width:"100%",resize:"vertical",minHeight:60,fontFamily:"inherit"}}/>
               </div>
+              {adjustMode==='credit'&&adjustEdit&&(()=>{const _s=(customSops||[]).find(x=>x.id===adjustEdit);let _d={};try{_d=JSON.parse(_s?.content||'{}')}catch{}const _used=Math.max(0,Number(_d.appliedAmount)||0);const _apps=Array.isArray(_d.applications)?_d.applications:[];if(_used<=0.005&&!_d.appliedToBill)return null;const _full=Number(_d.amount)||0;const _left=Math.max(0,Math.round((_full-_used)*100)/100);return <div className="vc-usage" style={{background:"#0a0a0a",borderRadius:10,padding:"12px 14px",border:"1px solid #34d39930"}}>
+                <div style={{fontSize:12,color:"#34d399",fontWeight:600}}>{_used>0.005?('Applied '+fmt(_used)+' of '+fmt(_full)+' >> '+(_left>0.005?fmt(_left)+' left to apply':'fully used')):'Not applied to a payment yet'}</div>
+                {_d.appliedToBill&&<div style={{fontSize:11,color:"#a3a3a3",marginTop:4}}>{'Reserved for bill '+_d.appliedToBill+'. It is ticked for you when you pay that bill.'}</div>}
+                {_apps.map((a,i)=><div key={i} style={{fontSize:11,color:"#a3a3a3",marginTop:4,fontFamily:"'JetBrains Mono',monospace"}}>{(a.date||'')+' >> '+fmt(Number(a.amount)||0)+' to '+(Array.isArray(a.bills)?a.bills.join(', '):'')+(a.checkNum?' on check #'+a.checkNum:'')}</div>)}
+              </div>})()}
               {adjustMode==='bill'&&<div style={{background:"#0a0a0a",borderRadius:10,padding:"12px 14px",border:"1px solid "+(adjustForm.paid?"#34d39930":"rgba(255,255,255,0.06)")}}>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:adjustForm.paid||adjustForm.payDate||adjustForm.checkNum?10:0}}>
                   <span style={{fontSize:12,color:"#a3a3a3",fontWeight:600}}>Payment</span>
