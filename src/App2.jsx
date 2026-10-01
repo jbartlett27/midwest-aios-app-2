@@ -138,6 +138,9 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
   // Period filter -- same windows as the Command Center (Month / Quarter / YTD /
   // All Time), so salespeople can see their monthly, quarterly, and yearly numbers.
   const [spPeriod,setSpPeriod]=useState('all');
+  // (Oct 1 2026) The Quarter view picks which quarter and which year (it was the current quarter only).
+  const [spQ,setSpQ]=useState(()=>Math.floor(new Date().getMonth()/3)+1);
+  const [spYear,setSpYear]=useState(()=>new Date().getFullYear());
 
 
   // Sales-role users can never enter Overview mode -- coerce 'overview' to their own rep id
@@ -146,8 +149,9 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
   const isOverview=effectiveActiveRep==="overview";
   const rep=reps.find(r=>r.id===effectiveActiveRep)||reps.filter(isSalesRep)[0]||reps[0];
   const _spNow=new Date();
-  const _spInPeriod=(j)=>{if(spPeriod==='all')return true;const d=new Date(jobReportDate?jobReportDate(j):j.createdDate);if(isNaN(d.getTime()))return true;if(spPeriod==='month'){const back=new Date(_spNow);back.setDate(back.getDate()-30);return d>=back;}if(spPeriod==='quarter')return Math.floor(d.getMonth()/3)===Math.floor(_spNow.getMonth()/3)&&d.getFullYear()===_spNow.getFullYear();if(spPeriod==='ytd')return d.getFullYear()===_spNow.getFullYear();return true;};
+  const _spInPeriod=(j)=>{if(spPeriod==='all')return true;const d=parseLocalDate(jobReportDate?jobReportDate(j):j.createdDate);if(!d)return true;if(spPeriod==='month'){const back=new Date(_spNow);back.setDate(back.getDate()-30);return d>=back;}if(spPeriod==='quarter')return Math.floor(d.getMonth()/3)+1===spQ&&d.getFullYear()===spYear;if(spPeriod==='ytd')return d.getFullYear()===_spNow.getFullYear();return true;};
   const spJobs=jobs.filter(_spInPeriod);
+  const _spYears=(()=>{const set=new Set([_spNow.getFullYear(),spYear]);jobs.forEach(j=>{const d=parseLocalDate(jobReportDate?jobReportDate(j):j.createdDate);if(d)set.add(d.getFullYear())});return [...set].sort((a,b)=>b-a)})();
   const rj=isOverview?spJobs:spJobs.filter(j=>j.salesRep===effectiveActiveRep);
   const totalRev=rj.reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
   const paidRev=rj.filter(j=>j.paymentStatus==="paid").reduce((s,j)=>s+getJobFinancials(j.id).totalRevenue,0);
@@ -195,6 +199,7 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
 
     {/* Period filter -- scopes the hero KPIs, pipeline, and Team directory */}
     <div style={{display:"flex",gap:3,background:"#111",padding:3,borderRadius:8,marginBottom:16,width:"fit-content"}}>{[["all","All Time"],["ytd","YTD"],["quarter","Quarter"],["month","30 Days"]].map(([v,l])=><button key={v} onClick={()=>setSpPeriod(v)} style={{padding:"5px 12px",borderRadius:6,border:"none",cursor:"pointer",background:spPeriod===v?"#2dd4bf":"transparent",color:spPeriod===v?"#000":"#525252",fontSize:11,fontWeight:spPeriod===v?600:400,fontFamily:"inherit",transition:"all 0.15s"}}>{l}</button>)}</div>
+    {spPeriod==='quarter'&&<div className="sp-quarter-pick" style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginTop:-8,marginBottom:16}}><div style={{display:"flex",gap:3,background:"#111",padding:3,borderRadius:8}}>{[1,2,3,4].map(q=><button key={q} className="sp-q" onClick={()=>setSpQ(q)} style={{padding:"5px 12px",borderRadius:6,border:"none",cursor:"pointer",background:spQ===q?"#a78bfa":"transparent",color:spQ===q?"#000":"#737373",fontSize:11,fontWeight:spQ===q?600:400,fontFamily:"'JetBrains Mono',monospace"}}>Q{q}</button>)}</div><select className="sp-year" value={spYear} onChange={e=>setSpYear(parseInt(e.target.value,10)||_spNow.getFullYear())} style={{...inputStyle,width:"auto",padding:"6px 10px",fontSize:12,fontFamily:"'JetBrains Mono',monospace"}}>{_spYears.map(y=><option key={y} value={y}>{y}</option>)}</select><span className="sp-q-range" style={{fontSize:11,color:"#737373"}}>{(commissionQuarterLabel(spYear+'-Q'+spQ)||{range:''}).range}</span></div>}
 
     {/* Hero stats */}
     <Card style={{marginBottom:20,background:"linear-gradient(135deg,rgba(45,212,191,0.03),rgba(167,139,250,0.03))",border:"1px solid rgba(45,212,191,0.08)"}}>
