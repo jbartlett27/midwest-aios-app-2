@@ -41,6 +41,8 @@ const billLinkedByTxn=(bills)=>{const m={};(Array.isArray(bills)?bills:[]).forEa
 // matches money going OUT.
 const rankBankMatches=(txns,bill,wantAmount,linkedMap,query)=>{const q=String(query||'').trim().toLowerCase();const vendor=String((bill&&bill.vendorName)||'').toLowerCase();const vWords=vendor.split(/[^a-z0-9]+/).filter(w=>w.length>2);const want=_vbMoney(wantAmount);const due=parseLocalDate(bill&&bill.dueDate)||parseLocalDate(bill&&bill.date);const bd=parseLocalDate(bill&&bill.date);const out=[];(Array.isArray(txns)?txns:[]).forEach(t=>{if(!t||t.type!=='expense')return;const amt=_vbMoney(t.amount);if(amt<=0)return;const remaining=_vbMoney(amt-((linkedMap&&linkedMap[t.id])||0));if(remaining<=0.005)return;const desc=String(t.description||'').toLowerCase();if(q&&!desc.includes(q)&&!String(t.date||'').includes(q)&&!String(amt).includes(q))return;let score=0;const exact=want>0&&(Math.abs(remaining-want)<0.005||Math.abs(amt-want)<0.005);if(exact)score+=100;const td=parseLocalDate(t.date);if(td){const ref=due||bd;if(ref){const days=Math.abs(Math.round((td-ref)/86400000));score+=Math.max(0,30-Math.min(30,days))}if(bd&&td<bd)score-=15}const dWords=desc.split(/[^a-z0-9]+/).filter(w=>w.length>2);if(vWords.some(w=>desc.includes(w))||vWords.some(w=>dWords.some(d=>d.slice(0,3)===w.slice(0,3))))score+=50;out.push({t,remaining,score,exact})});return out.sort((a,b)=>b.score-a.score||String(b.t.date||'').localeCompare(String(a.t.date||'')))};
 
+// The office's calendar date for a Date, as YYYY-MM-DD (never toISOString, which is UTC).
+const _finIso=(d)=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,getJobItems,_commissionFor,_bankTxnHash,notify,triggerPrint,dateFilter,jobNum,customSops,addSop,deleteSop,...fCtx}){
   const [tab,setTab]=useState("overview");
   // ---- GENERAL LEDGER (Phase 1): chart of accounts + period close state ----
@@ -84,8 +86,8 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   const _lateArrivals=(()=>{const r=(customSops||[]).find(s2=>s2.id==='LATE_ARRIVALS_GLOBAL');if(!r)return[];try{const a=JSON.parse(r.content);return Array.isArray(a)?a:[]}catch{return[]}})();
   const now=new Date();
   const [period,setPeriod]=useState("ytd");
-  const [dateFrom,setDateFrom]=useState(()=>{const d=new Date(now.getFullYear(),0,1);return d.toISOString().split("T")[0]});
-  const [dateTo,setDateTo]=useState(()=>now.toISOString().split("T")[0]);
+  const [dateFrom,setDateFrom]=useState(()=>_finIso(new Date(now.getFullYear(),0,1)));
+  const [dateTo,setDateTo]=useState(()=>_finIso(now));
   // Banking / manual transaction state
   const [manualForm,setManualForm]=useState({date:'',description:'',category:'',amount:'',type:'expense',account:'Operating'});
   const [manualEditing,setManualEditing]=useState(null);
@@ -172,6 +174,9 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   // the same state, so what prints is exactly what is expanded on screen.
   const [pnlOpen,setPnlOpen]=useState({});
   const [bsOpen,setBsOpen]=useState({});
+  // QuickBooks book balance being set on a Balance Sheet line: {key,label,amount,asOf,memo}, or
+  // {isNew:true,kind:'asset'|'liability'|'equity',name,amount,asOf,memo} for a line typed in.
+  const [bsEdit,setBsEdit]=useState(null);
   const _togglePnl=(k)=>setPnlOpen(prev=>({...prev,[k]:!prev[k]}));
   const _toggleBs=(k)=>setBsOpen(prev=>({...prev,[k]:!prev[k]}));
   const [stmtUploading,setStmtUploading]=useState(false);
@@ -180,7 +185,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
 
 
   // Period presets
-  const setPeriodPreset=(p)=>{setPeriod(p);const n=new Date();const y=n.getFullYear();const m=n.getMonth();if(p==="month"){const s=new Date(y,m,1);setDateFrom(s.toISOString().split("T")[0]);setDateTo(n.toISOString().split("T")[0])}else if(p==="quarter"){const qm=Math.floor(m/3)*3;setDateFrom(new Date(y,qm,1).toISOString().split("T")[0]);setDateTo(n.toISOString().split("T")[0])}else if(p==="ytd"){setDateFrom(new Date(y,0,1).toISOString().split("T")[0]);setDateTo(n.toISOString().split("T")[0])}else if(p==="year"){setDateFrom(new Date(y-1,m,n.getDate()).toISOString().split("T")[0]);setDateTo(n.toISOString().split("T")[0])}else if(p==="all"){setDateFrom("2020-01-01");setDateTo(n.toISOString().split("T")[0])}};
+  const setPeriodPreset=(p)=>{setPeriod(p);const n=new Date();const y=n.getFullYear();const m=n.getMonth();if(p==="month"){const s=new Date(y,m,1);setDateFrom(_finIso(s));setDateTo(_finIso(n))}else if(p==="quarter"){const qm=Math.floor(m/3)*3;setDateFrom(_finIso(new Date(y,qm,1)));setDateTo(_finIso(n))}else if(p==="ytd"){setDateFrom(_finIso(new Date(y,0,1)));setDateTo(_finIso(n))}else if(p==="year"){setDateFrom(_finIso(new Date(y-1,m,n.getDate())));setDateTo(_finIso(n))}else if(p==="all"){setDateFrom("2020-01-01");setDateTo(_finIso(n))}};
 
 
   // Filter jobs by date range
@@ -510,10 +515,72 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   const arJobsList=filteredJobs.filter(j=>j.paymentStatus!=="paid"&&_jobInvoiced(j,getJobFinancials(j.id))).map(j=>({job:j,amount:getJobFinancials(j.id).totalRevenue,customer:customers.find(c=>c.id===j.customer)?.name||''})).sort((a,b)=>b.amount-a.amount);
   const invItemsList=filteredItems.filter(i=>(i.qtyOrdered||0)>(i.qtyReceived||0)).map(i=>({item:i,value:(i.unitCost||0)*((i.qtyOrdered||0)-(i.qtyReceived||0)),jobName:(jobs.find(j=>j.id===i.jobId)||{}).name||'',jobId:i.jobId})).filter(x=>x.value>0.005).sort((a,b)=>b.value-a.value);
   const commByRep=reps.filter(r=>!r.id.includes("SEED_FLAG")&&(r.commissionRate||0)>0).map(r=>({name:r.name,amount:filteredJobs.filter(j=>j.salesRep===r.id).reduce((s2,j)=>s2+_commissionFor(j.id,r.commissionRate),0)})).filter(x=>x.amount>0.005).sort((a,b)=>b.amount-a.amount);
-  const assetTxnsList=filteredManualTxns.filter(t=>t.type==='asset'||t.category==='asset');
-  const liabTxnsList=filteredManualTxns.filter(t=>t.type==='liability'||t.category==='liability');
+  // ---- Balance Sheet (Oct 5 2026) ----
+  // Maureen is tying the AIOS Balance Sheet out to QuickBooks. One model feeds the screen and
+  // the PDF so they can never disagree.
+  //  - It is a statement AS OF the To date: balance-sheet entries (asset, liability, equity)
+  //    count from the start of the books through the To date, not only inside the period, the
+  //    way QuickBooks reports it (a truck bought last year is still owned this month).
+  //  - Entries are grouped by their category, which is the account, the way QuickBooks lists
+  //    accounts, and may be negative (Accumulated Depreciation, Distributions). Equity entries
+  //    (Capital Stock, Distributions, prior-year Retained Earnings) sit under Equity with Net
+  //    Income, which is the P&L's net income for the period and is never typed over.
+  //  - Any other line can carry a QuickBooks book balance as of a date (sops BS_BOOK_BALANCES,
+  //    {lines:{key:{amount,asOf,memo,setAt,setBy}}}; key 'cash'|'ar'|'inventory'|'ap'|
+  //    'commissions' or '<asset|liability|equity>:<account>'). While the To date is on or after
+  //    that date the line shows the book balance, and the figure the AIOS works out (live bank
+  //    cash, undelivered items, accrued commissions, the sum of entries) stays underneath for
+  //    reference. A book balance can also add a QuickBooks account the AIOS has no entries for.
+  //    Bank transactions never have to be deleted to make the sheet tie out.
+  const BS_BOOK_ID='BS_BOOK_BALANCES';
+  const _bsIsDate=(v)=>_vbIsDate(v)&&_finIso(parseLocalDate(v))===v;
+  const _bsDate=(iso)=>{const d=parseLocalDate(iso);return d?d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):String(iso||'')};
+  const _bsBookRaw=(()=>{const r=(customSops||[]).find(s2=>s2.id===BS_BOOK_ID);let d=null;try{d=r?JSON.parse(r.content||'{}'):null}catch{d=null}const l=d&&typeof d==='object'?d.lines:null;return l&&typeof l==='object'&&!Array.isArray(l)?l:{}})();
+  const _bsBookOf=(key)=>{const v=_bsBookRaw[key];if(!v||typeof v!=='object')return null;const amt=Number(v.amount);if(!isFinite(amt)||!_bsIsDate(v.asOf))return null;const d=parseLocalDate(v.asOf);return {amount:_vbMoney(amt),asOf:v.asOf,memo:String(v.memo||''),setBy:String(v.setBy||''),applies:!!d&&d<=toD}};
+  const _bsKind=(t)=>t.type==='asset'||t.category==='asset'?'asset':t.type==='liability'||t.category==='liability'?'liability':t.type==='equity'?'equity':'';
+  const _bsEntries=manualTxns.filter(t=>{if(!_bsKind(t))return false;if(t.account&&_bankAcctMetaGlobal[t.account]&&_bankAcctMetaGlobal[t.account].excluded)return false;if(_acctFilterActiveGlobal&&!_selectedAcctIdsGlobal.includes(t.account))return false;if(!t.date)return true;const d=parseLocalDate(t.date)||new Date(t.date);return !isNaN(d.getTime())&&d<=toD});
+  const _BS_OTHER={asset:'Other Assets',liability:'Other Liabilities',equity:'Other Equity'};
+  const _bsAccounts=(kind)=>{const m={};_bsEntries.filter(t=>_bsKind(t)===kind).forEach(t=>{const c=String(t.category||'').trim();const n=!c||c===kind||c==='Uncategorized'?_BS_OTHER[kind]:c;if(!m[n])m[n]={name:n,txns:[],sum:0};m[n].txns.push(t);m[n].sum+=parseFloat(t.amount)||0});Object.keys(_bsBookRaw).forEach(k=>{if(k.indexOf(kind+':')!==0)return;const n=k.slice(kind.length+1);const b=_bsBookOf(k);if(n&&b&&b.applies&&!m[n])m[n]={name:n,txns:[],sum:0}});return Object.values(m).sort((a,b)=>a.name.localeCompare(b.name)).map(g=>{const key=kind+':'+g.name;const book=_bsBookOf(key);const computed=_vbMoney(g.sum);return {key,label:g.name,kind,computed,book,value:book&&book.applies?book.amount:computed,txns:g.txns.slice().sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')))}})};
+  const _bsSys=(key,label,computed)=>{const book=_bsBookOf(key);const c=_vbMoney(computed);return {key,label,computed:c,book,value:book&&book.applies?book.amount:c}};
+  const bsModel=(()=>{
+    const cash=_bsSys('cash','Cash & Cash Equivalents',liveBankCash!==null?Math.max(0,liveBankCash):Math.max(0,paidRev-totalAP));
+    const ar=_bsSys('ar','Accounts Receivable',totalAR);
+    const inv=_bsSys('inventory','Inventory (In Transit)',filteredItems.reduce((s2,i)=>s2+(i.unitCost||0)*Math.max(0,i.qtyOrdered-i.qtyReceived),0));
+    const ap=_bsSys('ap','Accounts Payable',totalAP);
+    const comm=_bsSys('commissions','Commissions Payable',totalComm);
+    const assetAccts=_bsAccounts('asset'),liabAccts=_bsAccounts('liability'),equityAccts=_bsAccounts('equity');
+    const sum=(a)=>_vbMoney(a.reduce((s2,l)=>s2+l.value,0));
+    const totalCurrentAssets=sum([cash,ar,inv]),totalOtherAssets=sum(assetAccts),totalAssets=_vbMoney(totalCurrentAssets+totalOtherAssets);
+    const totalCurrentLiab=sum([ap,comm]),totalOtherLiab=sum(liabAccts),totalLiab=_vbMoney(totalCurrentLiab+totalOtherLiab);
+    const ni=_vbMoney(netIncome),totalEquity=_vbMoney(sum(equityAccts)+ni),totalLiabEquity=_vbMoney(totalLiab+totalEquity);
+    return {cash,ar,inv,ap,comm,assetAccts,liabAccts,equityAccts,totalCurrentAssets,totalOtherAssets,totalAssets,totalCurrentLiab,totalOtherLiab,totalLiab,netIncome:ni,totalEquity,totalLiabEquity,isBalanced:Math.abs(totalAssets-totalLiabEquity)<0.01,bookCount:[cash,ar,inv,ap,comm,...assetAccts,...liabAccts,...equityAccts].filter(l=>l.book&&l.book.applies).length};
+  })();
+  const _bsBookWrite=(lines)=>addSop({id:BS_BOOK_ID,title:'Balance Sheet book balances',cat:'Settings',icon:'file',content:JSON.stringify({lines,updatedAt:new Date().toISOString(),updatedBy:_glUser}),custom:true});
+  const _bsBookSave=()=>{
+    const e=bsEdit;if(!e)return;
+    const raw=String(e.amount==null?'':e.amount).replace(/[$,\s]/g,'');const amt=Number(raw);
+    if(raw===''||!isFinite(amt)){notify('Enter the QuickBooks balance, like 145200.54 or -25000','error');return}
+    if(!_bsIsDate(e.asOf)){notify('Enter the date the QuickBooks balance is as of','error');return}
+    let key=e.key,label=e.label;
+    if(e.isNew){const n=String(e.name||'').trim().replace(/\s+/g,' ').slice(0,80);if(!n){notify('Enter the account name as it reads in QuickBooks','error');return}key=e.kind+':'+n;label=n}
+    if(!key){setBsEdit(null);return}
+    const prev=_bsBookRaw[key];
+    if(prev&&_vbIsDate(prev.asOf)&&_isLockedDate(prev.asOf)){notify(_lockMsg(prev.asOf),'error');return}
+    if(_isLockedDate(e.asOf)){notify(_lockMsg(e.asOf),'error');return}
+    _bsBookWrite({..._bsBookRaw,[key]:{amount:_vbMoney(amt),asOf:e.asOf,memo:String(e.memo||'').trim().slice(0,200),setAt:new Date().toISOString(),setBy:_glUser}});
+    setBsEdit(null);
+    notify('QuickBooks book balance saved: '+label+' '+fmt(_vbMoney(amt))+' as of '+_bsDate(e.asOf));
+  };
+  const _bsBookClear=async(key,label)=>{
+    const prev=_bsBookRaw[key];if(!prev)return;
+    if(_vbIsDate(prev.asOf)&&_isLockedDate(prev.asOf)){notify(_lockMsg(prev.asOf),'error');return}
+    const ok=typeof fCtx.confirm==='function'?await fCtx.confirm('Remove the QuickBooks book balance on '+label+'? The line goes back to the figure the AIOS works out.'):true;
+    if(!ok)return;
+    const next={..._bsBookRaw};delete next[key];_bsBookWrite(next);setBsEdit(null);
+    notify('QuickBooks book balance removed: '+label);
+  };
   const _allPnlKeys=()=>{const o={rev_jobs:true,cogs_jobs:true,opex_comm:true};pnlRevCats.forEach(c=>o['revc_'+c.name]=true);pnlExpCats.forEach(c=>o['expc_'+c.name]=true);return o;};
-  const _allBsKeys=()=>({bs_cash:true,bs_ar:true,bs_inv:true,bs_assets:true,bs_ap:true,bs_comm:true,bs_liab:true});
+  const _allBsKeys=()=>{const o={bs_cash:true,bs_ar:true,bs_inv:true,bs_ap:true,bs_comm:true};[...bsModel.assetAccts,...bsModel.liabAccts,...bsModel.equityAccts].forEach(l=>{o['bsa_'+l.key]=true});return o;};
   const _periodLabel=new Date(dateFrom+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' \u2013 '+new Date(dateTo+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
 
 
@@ -563,42 +630,39 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       filteredJobs.forEach(j=>{const f=getJobFinancials(j.id);const profit=f.totalRevenue-f.totalCost;html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 0">'+j.name+'</td><td style="text-align:right;padding:6px">$'+f.totalRevenue.toFixed(2)+'</td><td style="text-align:right;padding:6px">$'+f.totalCost.toFixed(2)+'</td><td style="text-align:right;padding:6px;color:'+(profit>=0?"#059669":"#dc2626")+'">$'+profit.toFixed(2)+'</td><td style="text-align:right;padding:6px;font-weight:600;color:'+(f.margin>=30?"#059669":f.margin>=20?"#d97706":"#dc2626")+'">'+f.margin.toFixed(1)+'%</td></tr>'});
       html+='<tr style="border-top:2px solid #222;font-weight:700"><td style="padding:8px 0">TOTAL</td><td style="text-align:right;padding:8px">$'+totalRev.toFixed(2)+'</td><td style="text-align:right;padding:8px">$'+totalCost.toFixed(2)+'</td><td style="text-align:right;padding:8px;color:'+(grossProfit>=0?"#059669":"#dc2626")+'">$'+grossProfit.toFixed(2)+'</td><td style="text-align:right;padding:8px">'+grossMargin.toFixed(1)+'%</td></tr></tbody></table>';
     } else if(type==="balance"){
-      // Same figures as the on-screen Balance Sheet tab (manual assets/liabilities
-      // included, same cash formula) and the same collapse state: expanded lines
-      // print their underlying detail, collapsed lines print as single rows.
-      const inventory=filteredItems.reduce((s,i)=>s+(i.unitCost||0)*Math.max(0,i.qtyOrdered-i.qtyReceived),0);
-      const bsCash=liveBankCash!==null?Math.max(0,liveBankCash):Math.max(0,paidRev-totalAP);
-      const bsTotalAssets=bsCash+totalAR+inventory+manualAssets;
-      const bsTotalLiab=totalAP+totalComm+manualLiabilities;
-      const bsRetained=totalRev-totalCost-totalComm;
-      const _pdfBsDet=(label,sub,amt)=>'<tr style="border-bottom:1px solid #f2f2f2"><td style="padding:4px 12px 4px 30px;color:#777;font-size:12px">'+label+(sub?' <span style="color:#bbb;font-size:11px">'+sub+'</span>':'')+'</td><td style="text-align:right;padding:4px 0;color:#777;font-size:12px">$'+amt.toFixed(2)+'</td></tr>';
-      html+='<div style="font-size:22px;font-weight:300;color:#888;margin-bottom:20px">Balance Sheet</div><div style="font-size:12px;color:#888;margin-bottom:20px">As of: '+today+'</div>';
+      // Same model as the on-screen Balance Sheet (bsModel) and the same collapse state:
+      // expanded lines print their detail, collapsed lines print as single rows. A line on a
+      // QuickBooks book balance says so, with the AIOS figure beside it.
+      const M=bsModel;
+      const _pm=(n)=>{const v=Number(n)||0;return (v<0?'-$':'$')+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})};
+      const _pe=(v)=>String(v==null?'':v).replace(/[&<>"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[ch]));
+      const _pdfBsDet=(label,sub,amt)=>'<tr style="border-bottom:1px solid #f2f2f2"><td style="padding:4px 12px 4px 30px;color:#777;font-size:12px">'+_pe(label)+(sub?' <span style="color:#bbb;font-size:11px">'+_pe(sub)+'</span>':'')+'</td><td style="text-align:right;padding:4px 0;color:#777;font-size:12px">'+_pm(amt)+'</td></tr>';
+      const _pdfLine=(line,openKey,details)=>{const b=line.book&&line.book.applies?line.book:null;let h='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 12px;color:#555">'+_pe(line.label)+(b?' <span style="color:#999;font-size:11px">QuickBooks book balance as of '+_pe(_bsDate(b.asOf))+' (AIOS figure '+_pm(line.computed)+')</span>':'')+'</td><td style="text-align:right;padding:6px 0">'+_pm(line.value)+'</td></tr>';if(bsOpen[openKey])details.forEach(d=>{h+=_pdfBsDet(d[0],d[1],d[2])});return h};
+      const _pdfAccts=(lines)=>lines.map(l=>_pdfLine(l,'bsa_'+l.key,l.txns.map(t=>[t.description||'Entry',t.date||'',parseFloat(t.amount)||0]))).join('');
+      const _pdfSub=(t)=>'<tr style="border-bottom:2px solid #ddd"><td colspan="2" style="padding:8px 0;font-weight:600;font-size:13px;color:#555">'+t+'</td></tr>';
+      const _pdfTot=(t,v)=>'<tr style="border-top:2px solid #222;font-weight:700"><td style="padding:8px 0">'+t+'</td><td style="text-align:right;padding:8px 0">'+_pm(v)+'</td></tr>';
+      html+='<div style="font-size:22px;font-weight:300;color:#888;margin-bottom:20px">Balance Sheet</div><div style="font-size:12px;color:#888;margin-bottom:20px">As of: '+_pe(_bsDate(dateTo))+'</div>';
       html+='<table style="width:100%;border-collapse:collapse;font-size:13px"><tbody>';
       html+='<tr style="border-bottom:2px solid #222;background:#f9f9f9"><td colspan="2" style="padding:10px 0;font-weight:700;font-size:15px">ASSETS</td></tr>';
-      html+='<tr style="border-bottom:2px solid #ddd"><td colspan="2" style="padding:8px 0;font-weight:600;font-size:13px;color:#555">Current Assets</td></tr>';
-      html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 12px;color:#555">Cash & Cash Equivalents</td><td style="text-align:right;padding:6px 0">$'+bsCash.toFixed(2)+'</td></tr>';
-      if(bsOpen['bs_cash']&&liveBankAccounts.length>0)liveBankAccounts.forEach((a,ai)=>{html+=_pdfBsDet((a.name||'Account')+(a.mask?' ***'+a.mask:''),a.subtype||'',Number(a.current)||0)});
-      html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 12px;color:#555">Accounts Receivable</td><td style="text-align:right;padding:6px 0">$'+totalAR.toFixed(2)+'</td></tr>';
-      if(bsOpen['bs_ar'])arJobsList.forEach(x=>{html+=_pdfBsDet(x.job.name,x.customer,x.amount)});
-      html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 12px;color:#555">Inventory (In Transit)</td><td style="text-align:right;padding:6px 0">$'+inventory.toFixed(2)+'</td></tr>';
-      if(bsOpen['bs_inv'])invItemsList.slice(0,40).forEach(x=>{html+=_pdfBsDet(x.item.description||'Item',x.jobName,x.value)});
-      if(manualAssets>0){html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 12px;color:#555">Other Assets (Manual)</td><td style="text-align:right;padding:6px 0">$'+manualAssets.toFixed(2)+'</td></tr>';
-        if(bsOpen['bs_assets'])assetTxnsList.forEach(t=>{html+=_pdfBsDet(t.description||'Asset entry',t.date||'',parseFloat(t.amount)||0)});}
-      html+='<tr style="border-top:2px solid #222;font-weight:700"><td style="padding:8px 0">TOTAL ASSETS</td><td style="text-align:right;padding:8px 0">$'+bsTotalAssets.toFixed(2)+'</td></tr>';
+      html+=_pdfSub('Current Assets');
+      html+=_pdfLine(M.cash,'bs_cash',liveBankAccounts.map(a=>[(a.name||'Account')+(a.mask?' ***'+a.mask:''),a.subtype||'',Number(a.current)||0]));
+      html+=_pdfLine(M.ar,'bs_ar',arJobsList.map(x=>[x.job.name,x.customer,x.amount]));
+      html+=_pdfLine(M.inv,'bs_inv',invItemsList.slice(0,40).map(x=>[x.item.description||'Item',x.jobName,x.value]));
+      if(M.assetAccts.length){html+=_pdfSub('Other Assets')+_pdfAccts(M.assetAccts)}
+      html+=_pdfTot('TOTAL ASSETS',M.totalAssets);
       html+='<tr><td colspan="2" style="padding:8px 0"></td></tr>';
       html+='<tr style="border-bottom:2px solid #222;background:#f9f9f9"><td colspan="2" style="padding:10px 0;font-weight:700;font-size:15px">LIABILITIES</td></tr>';
-      html+='<tr style="border-bottom:2px solid #ddd"><td colspan="2" style="padding:8px 0;font-weight:600;font-size:13px;color:#555">Current Liabilities</td></tr>';
-      html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 12px;color:#555">Accounts Payable</td><td style="text-align:right;padding:6px 0">$'+totalAP.toFixed(2)+'</td></tr>';
-      if(bsOpen['bs_ap'])apVendorList.forEach(v2=>{html+=_pdfBsDet(v2.name,v2.items+' bills',v2.total)});
-      html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 12px;color:#555">Commissions Payable</td><td style="text-align:right;padding:6px 0">$'+totalComm.toFixed(2)+'</td></tr>';
-      if(bsOpen['bs_comm'])commByRep.forEach(r2=>{html+=_pdfBsDet(r2.name,'',r2.amount)});
-      if(manualLiabilities>0){html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 12px;color:#555">Other Liabilities (Manual)</td><td style="text-align:right;padding:6px 0">$'+manualLiabilities.toFixed(2)+'</td></tr>';
-        if(bsOpen['bs_liab'])liabTxnsList.forEach(t=>{html+=_pdfBsDet(t.description||'Liability entry',t.date||'',parseFloat(t.amount)||0)});}
-      html+='<tr style="border-top:2px solid #222;font-weight:700"><td style="padding:8px 0">TOTAL LIABILITIES</td><td style="text-align:right;padding:8px 0">$'+bsTotalLiab.toFixed(2)+'</td></tr>';
+      html+=_pdfSub('Current Liabilities');
+      html+=_pdfLine(M.ap,'bs_ap',apVendorList.map(v2=>[v2.name,v2.items+' bills',v2.total]));
+      html+=_pdfLine(M.comm,'bs_comm',commByRep.map(r2=>[r2.name,'',r2.amount]));
+      if(M.liabAccts.length){html+=_pdfSub('Other Liabilities')+_pdfAccts(M.liabAccts)}
+      html+=_pdfTot('TOTAL LIABILITIES',M.totalLiab);
       html+='<tr><td colspan="2" style="padding:8px 0"></td></tr>';
       html+='<tr style="border-bottom:2px solid #222;background:#f0fdf4"><td colspan="2" style="padding:10px 0;font-weight:700;font-size:15px">EQUITY</td></tr>';
-      html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 12px;color:#555">Retained Earnings</td><td style="text-align:right;padding:6px 0;color:'+(bsRetained>=0?"#059669":"#dc2626")+'">$'+bsRetained.toFixed(2)+'</td></tr>';
-      html+='<tr style="border-top:3px double #222;font-weight:700;font-size:15px"><td style="padding:12px 0">TOTAL LIABILITIES & EQUITY</td><td style="text-align:right;padding:12px 0">$'+(bsTotalLiab+bsRetained).toFixed(2)+'</td></tr>';
+      html+=_pdfAccts(M.equityAccts);
+      html+='<tr style="border-bottom:1px solid #eee"><td style="padding:6px 12px;color:#555">Net Income</td><td style="text-align:right;padding:6px 0;color:'+(M.netIncome>=0?"#059669":"#dc2626")+'">'+_pm(M.netIncome)+'</td></tr>';
+      html+=_pdfTot('TOTAL EQUITY',M.totalEquity);
+      html+='<tr style="border-top:3px double #222;font-weight:700;font-size:15px"><td style="padding:12px 0">TOTAL LIABILITIES & EQUITY</td><td style="text-align:right;padding:12px 0">'+_pm(M.totalLiabEquity)+'</td></tr>';
       html+='</tbody></table>';
     }
     html+='</div>';
@@ -622,6 +686,26 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   </div>};
   const _drillChild=(key2,label,sub,value,color,onClick)=><div key={key2} onClick={onClick} style={{padding:"6px 14px 6px 18px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,borderBottom:"1px solid rgba(255,255,255,0.03)",cursor:onClick?"pointer":"default",transition:"background 0.18s"}} onMouseEnter={e=>{if(onClick)e.currentTarget.style.background="rgba(255,255,255,0.03)"}} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><span style={{fontSize:12,color:"#b8b8b8",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontFamily:"'Satoshi',sans-serif"}}>{onClick&&<span style={{color:(color||"#2dd4bf")+"66",marginRight:7,fontSize:9}}>{'\u2197'}</span>}{label}{sub?<span style={{fontSize:9.5,color:"#7a7a7a",marginLeft:8,fontFamily:"'JetBrains Mono',monospace"}}>{sub}</span>:null}</span><span style={{fontSize:12,color:"#d4d4d4",fontFamily:"'JetBrains Mono',monospace",flexShrink:0}}>{fmt(value)}</span></div>;
   const _txnJump=(t)=>{if(t&&t._billId){setBillOpen(t._billId);setBillsFilter('all');setBillsSearch('');setBillForm(null);setTab('bills');return}setBankSearch(t.description||'');setBankCatFilter('all');setTab('banking')};
+  // A Balance Sheet line that can carry a QuickBooks book balance (see bsModel). Same arguments
+  // as _drillRow plus the model line; the label and value shown come from the line.
+  const _bsEditor=(color)=>{const e=bsEdit;if(!e)return null;const c=color||'#2dd4bf';const inp={...inputStyle,padding:"7px 10px",fontSize:12};const lb={fontSize:10,color:"#8a8a8a",display:"flex",flexDirection:"column",gap:4,fontWeight:600,letterSpacing:0.5};return <div key={'bse_'+(e.key||e.kind)} className="bs-book-edit" onClick={ev=>ev.stopPropagation()} style={{padding:"10px 14px 12px 18px",display:"flex",gap:10,flexWrap:"wrap",alignItems:"flex-end",borderBottom:"1px solid rgba(255,255,255,0.05)",background:c+"0a"}}>
+    {e.isNew&&<label style={lb}>ACCOUNT, AS IN QUICKBOOKS<input className="bs-book-name" value={e.name||''} onChange={ev=>{const v=ev.target.value;setBsEdit(p=>p?{...p,name:v}:p)}} placeholder={e.kind==='equity'?'e.g. Capital Stock':e.kind==='liability'?'e.g. Simple IRA Payable':'e.g. Accumulated Depreciation'} style={{...inp,width:220}}/></label>}
+    <label style={lb}>QUICKBOOKS BALANCE<input className="bs-book-amt" inputMode="decimal" value={e.amount||''} onChange={ev=>{const v=ev.target.value;setBsEdit(p=>p?{...p,amount:v}:p)}} placeholder="e.g. -25000.00" style={{...inp,width:150,fontFamily:"'JetBrains Mono',monospace"}}/></label>
+    <label style={lb}>AS OF<input className="bs-book-asof" type="date" value={e.asOf||''} onChange={ev=>{const v=ev.target.value;setBsEdit(p=>p?{...p,asOf:v}:p)}} style={{...inp,width:150}}/></label>
+    <label style={{...lb,flex:1,minWidth:160}}>MEMO (OPTIONAL)<input className="bs-book-memo" value={e.memo||''} onChange={ev=>{const v=ev.target.value;setBsEdit(p=>p?{...p,memo:v}:p)}} placeholder="e.g. per QuickBooks balance sheet" style={inp}/></label>
+    <Btn className="bs-book-save" onClick={_bsBookSave} style={{fontSize:12,padding:"7px 14px"}}>Save</Btn>
+    <Btn v="ghost" className="bs-book-cancel" onClick={()=>setBsEdit(null)} style={{fontSize:12}}>Cancel</Btn>
+    <div style={{flexBasis:"100%",fontSize:10.5,color:"#7a7a7a",lineHeight:1.5}}>{e.isNew?'Adds a QuickBooks account the AIOS has no entries for. ':'While the To date is on or after this date the line shows this balance. '}Negative amounts are fine (Accumulated Depreciation, Distributions).</div>
+  </div>};
+  const _bsBookRow=(line,color)=>{const b=line.book;if(bsEdit&&!bsEdit.isNew&&bsEdit.key===line.key)return _bsEditor(color);const btn={padding:"3px 10px",borderRadius:6,border:"1px solid "+(color||"#2dd4bf")+"40",background:"transparent",color:color||"#2dd4bf",fontSize:10.5,cursor:"pointer",fontFamily:"inherit",fontWeight:600,whiteSpace:"nowrap"};return <div key={'bk_'+line.key} className="bs-book" style={{padding:"7px 14px 7px 18px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",borderBottom:"1px solid rgba(255,255,255,0.03)",background:"rgba(255,255,255,0.015)"}}>
+    <span className="bs-book-text" style={{fontSize:11.5,color:b?"#d4d4d4":"#7a7a7a",flex:1,minWidth:180,fontFamily:"'Satoshi',sans-serif"}}>{b?('QuickBooks book balance '+fmt(b.amount)+(b.applies?' as of '+_bsDate(b.asOf):' from '+_bsDate(b.asOf)+', after the To date, so not used here')+(b.memo?' -- '+b.memo:'')):'No QuickBooks book balance on this line'}</span>
+    {_glIsAdmin&&<button className="bs-book-set" onClick={ev=>{ev.stopPropagation();setBsEdit({key:line.key,label:line.label,amount:b?String(b.amount):'',asOf:b?b.asOf:dateTo,memo:b?b.memo:''})}} style={btn}>{b?'Edit':'Set book balance'}</button>}
+    {_glIsAdmin&&b&&<button className="bs-book-clear" onClick={ev=>{ev.stopPropagation();_bsBookClear(line.key,line.label)}} style={{...btn,borderColor:"#333",color:"#9a9a9a"}}>Clear</button>}
+  </div>};
+  const _bsLine=(line,key,label,sub,value,color,openMap,toggle,children,pctBase)=>{const b=line.book;const applied=!!(b&&b.applies);return _drillRow(key,line.label,applied?'QuickBooks book balance '+_bsDate(b.asOf):sub,line.value,color,openMap,toggle,<>{_bsBookRow(line,color)}{applied&&_drillChild(key+'_aios','AIOS figure, not used while the book balance applies',sub||'',line.computed,color,null)}{children}</>,pctBase)};
+  const _bsAcctRows=(lines,color,pctBase)=>lines.map(l=>_bsLine(l,'bsa_'+l.key,l.label,l.txns.length?l.txns.length+' entr'+(l.txns.length!==1?'ies':'y'):'QuickBooks line',l.value,color,bsOpen,_toggleBs,l.txns.map(t=>_drillChild('bst_'+t.id,t.description||'Entry',t.date||'',parseFloat(t.amount)||0,color,()=>_txnJump(t))),pctBase));
+  const _bsAddLine=(kind,color)=>!_glIsAdmin?null:(bsEdit&&bsEdit.isNew&&bsEdit.kind===kind)?_bsEditor(color):<div style={{padding:"8px 14px"}}><button className={'bs-add-'+kind} onClick={()=>setBsEdit({isNew:true,kind,name:'',amount:'',asOf:dateTo,memo:''})} style={{padding:"4px 12px",borderRadius:6,border:"1px dashed "+color+"55",background:"transparent",color,fontSize:11,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>+ Add a QuickBooks line</button></div>;
+  const _bsSubhead=(t)=><div style={{padding:"16px 14px 4px 14px"}}><span style={{fontSize:9.5,fontWeight:600,color:"#8a8a8a",letterSpacing:2,textTransform:"uppercase",fontFamily:"'Satoshi',sans-serif"}}>{t}</span></div>;
   const kpi=(label,value,sub,color)=><Card style={{padding:16,textAlign:"center"}} hover><div style={{fontSize:10,color:"#737373",fontWeight:600,letterSpacing:2,marginBottom:6}}>{label}</div><div style={{fontSize:"clamp(18px,4vw,28px)",fontWeight:800,color:color||"#f0f0f0",fontFamily:"'JetBrains Mono',monospace",lineHeight:1}}><AnimNum value={value}/></div>{sub&&<div style={{fontSize:12,color:"#a3a3a3",marginTop:6}}>{sub}</div>}</Card>;
 
 
@@ -724,17 +808,13 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
 
 
     {tab==="balance"&&(()=>{
-      // Balance Sheet calculations
-      const inventory=filteredItems.reduce((s,i)=>s+(i.unitCost||0)*Math.max(0,i.qtyOrdered-i.qtyReceived),0);
-      const bsCash=liveBankCash!==null?Math.max(0,liveBankCash):Math.max(0,paidRev-totalAP);
-      const bsTotalCurrentAssets=bsCash+totalAR+inventory+manualAssets;
-      const bsTotalAssets=bsTotalCurrentAssets;
-      const bsTotalCurrentLiab=totalAP+totalComm+manualLiabilities;
-      const bsTotalLiab=bsTotalCurrentLiab;
-      const bsRetained=totalRev-totalCost-totalComm;
-      const bsEquity=bsRetained;
-      const bsTotalLiabEquity=bsTotalLiab+bsEquity;
-      const isBalanced=Math.abs(bsTotalAssets-bsTotalLiabEquity)<0.01;
+      // Balance Sheet figures come from bsModel (above), which the PDF export prints too.
+      const M=bsModel;
+      const inventory=M.inv.value,bsCash=M.cash.value;
+      const bsTotalCurrentAssets=M.totalCurrentAssets,bsTotalAssets=M.totalAssets;
+      const bsTotalCurrentLiab=M.totalCurrentLiab,bsTotalLiab=M.totalLiab;
+      const bsRetained=M.netIncome,bsEquity=M.totalEquity;
+      const bsTotalLiabEquity=M.totalLiabEquity,isBalanced=M.isBalanced;
 
 
       const bsLine=(label,value,indent,bold,color,border)=><div style={{display:"flex",justifyContent:"space-between",padding:(bold?"10px":"6px")+" "+(indent?"16px":"0"),borderBottom:border?"2px solid #222":"1px solid #111",background:bold&&border?"#0a0a0a":"transparent"}}><span style={{fontSize:bold?14:13,fontWeight:bold?700:400,color:bold?"#f0f0f0":"#a3a3a3"}}>{label}</span><span style={{fontSize:bold?15:13,fontWeight:bold?800:500,color:color||"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>{typeof value==='number'?fmt(value):value}</span></div>;
@@ -751,7 +831,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
 
         <Card style={{padding:24,background:"#000000",border:"1px solid rgba(255,255,255,0.05)"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22,flexWrap:"wrap",gap:8}}>
-            <div><div style={{fontSize:18,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>Balance Sheet</div><div style={{fontSize:12,color:"#737373",marginTop:2}}>As of {new Date(dateTo).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</div></div>
+            <div><div style={{fontSize:18,fontWeight:800,color:"#f0f0f0",fontFamily:"'JetBrains Mono',monospace"}}>Balance Sheet</div><div className="bs-asof" style={{fontSize:12,color:"#737373",marginTop:2}}>As of {(parseLocalDate(dateTo)||new Date()).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</div><div className="bs-book-note" style={{fontSize:11,color:"#7a7a7a",marginTop:4}}>{M.bookCount>0?M.bookCount+' line'+(M.bookCount!==1?'s':'')+' on a QuickBooks book balance. ':''}Open any line to set its QuickBooks book balance.</div></div>
             <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
               <div style={{display:"flex",borderRadius:10,overflow:"hidden",border:"1px solid rgba(255,255,255,0.07)",background:"rgba(17,17,17,0.55)",backdropFilter:"blur(12px) saturate(180%)",WebkitBackdropFilter:"blur(12px) saturate(180%)"}}>
                 <button onClick={()=>setBsOpen(_allBsKeys())} style={{padding:"6px 12px",border:"none",background:"transparent",color:"#737373",fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.color="#2dd4bf"}} onMouseLeave={e=>{e.currentTarget.style.color="#737373"}}>Expand All</button>
@@ -765,22 +845,22 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
           <div style={{marginBottom:30}}>
             <div style={{display:"flex",alignItems:"center",gap:10,padding:"0 0 10px 0",borderBottom:"1px solid rgba(45,212,191,0.25)"}}><span style={{color:"#2dd4bf",display:"flex"}}><I n="chart" s={13}/></span><span style={{fontSize:11,fontWeight:700,color:"#2dd4bf",letterSpacing:3,fontFamily:"'Satoshi',sans-serif"}}>ASSETS</span></div>
             <div style={{padding:"12px 14px 4px 14px"}}><span style={{fontSize:9.5,fontWeight:600,color:"#8a8a8a",letterSpacing:2,textTransform:"uppercase",fontFamily:"'Satoshi',sans-serif"}}>Current Assets</span></div>
-            {_drillRow('bs_cash','Cash & Cash Equivalents',liveBankAccounts.length>0?liveBankAccounts.length+' bank account'+(liveBankAccounts.length!==1?'s':'')+' (live)':'estimated (no bank sync)',bsCash,'#34d399',bsOpen,_toggleBs,
+            {_bsLine(M.cash,'bs_cash','Cash & Cash Equivalents',liveBankAccounts.length>0?liveBankAccounts.length+' bank account'+(liveBankAccounts.length!==1?'s':'')+' (live)':'estimated (no bank sync)',bsCash,'#34d399',bsOpen,_toggleBs,
               liveBankAccounts.length>0?liveBankAccounts.map((a,ai)=>_drillChild('cash_'+ai,(a.name||'Account')+(a.mask?' ***'+a.mask:''),a.subtype||'',Number(a.current)||0,'#34d399',()=>setTab('banking'))):[_drillChild('cash_est','Estimated from collected revenue minus payables','connect the bank feed for live balances',bsCash,'#34d399',()=>setTab('banking'))],bsTotalAssets
             )}
-            {_drillRow('bs_ar','Accounts Receivable',arJobsList.length+' invoiced unpaid job'+(arJobsList.length!==1?'s':''),totalAR,'#2dd4bf',bsOpen,_toggleBs,
+            {_bsLine(M.ar,'bs_ar','Accounts Receivable',arJobsList.length+' invoiced unpaid job'+(arJobsList.length!==1?'s':''),totalAR,'#2dd4bf',bsOpen,_toggleBs,
               arJobsList.map(x=>_drillChild('ar_'+x.job.id,x.job.name,x.customer,x.amount,'#2dd4bf',()=>{fCtx.setSelectedJob(x.job.id);fCtx.setPage('jobs')})),bsTotalAssets
             )}
-            {_drillRow('bs_inv','Inventory (In Transit)',invItemsList.length+' undelivered item'+(invItemsList.length!==1?'s':''),inventory,'#a78bfa',bsOpen,_toggleBs,
+            {_bsLine(M.inv,'bs_inv','Inventory (In Transit)',invItemsList.length+' undelivered item'+(invItemsList.length!==1?'s':''),inventory,'#a78bfa',bsOpen,_toggleBs,
               <>
                 {invItemsList.slice(0,40).map(x=>_drillChild('inv_'+x.item.id,x.item.description||'Item',x.jobName,x.value,'#a78bfa',()=>{fCtx.setSelectedJob(x.jobId);fCtx.setPage('jobs')}))}
                 {invItemsList.length>40&&_drillChild('inv_more','... and '+(invItemsList.length-40)+' more items','',invItemsList.slice(40).reduce((s2,x)=>s2+x.value,0),'#a78bfa',null)}
               </>,bsTotalAssets
             )}
-            {manualAssets>0&&_drillRow('bs_assets','Other Assets (Manual)',assetTxnsList.length+' entr'+(assetTxnsList.length!==1?'ies':'y'),manualAssets,'#8b5cf6',bsOpen,_toggleBs,
-              assetTxnsList.map(t=>_drillChild('as_'+t.id,t.description||'Asset entry',t.date||'',parseFloat(t.amount)||0,'#8b5cf6',()=>_txnJump(t))),bsTotalAssets
-            )}
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"11px 14px",borderTop:"1px solid rgba(255,255,255,0.07)"}}><span style={{fontSize:13,fontWeight:600,color:"#d4d4d4",fontFamily:"'Satoshi',sans-serif"}}>Total Current Assets</span><span style={{fontSize:14,fontWeight:700,color:"#f5f5f5",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsTotalCurrentAssets)}</span></div>
+            {(M.assetAccts.length>0||_glIsAdmin)&&_bsSubhead('Other Assets')}
+            {_bsAcctRows(M.assetAccts,'#8b5cf6',bsTotalAssets)}
+            {_bsAddLine('asset','#8b5cf6')}
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 14px",borderTop:"1px solid rgba(255,255,255,0.10)",borderBottom:"3px double rgba(255,255,255,0.16)"}}><span style={{fontSize:12,fontWeight:800,color:"#ffffff",letterSpacing:2.5,fontFamily:"'Satoshi',sans-serif"}}>TOTAL ASSETS</span><span style={{fontSize:16,fontWeight:800,color:"#2dd4bf",fontFamily:"'JetBrains Mono',monospace",letterSpacing:-0.3}}>{fmt(bsTotalAssets)}</span></div>
           </div>
 
@@ -788,23 +868,25 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
           <div style={{marginBottom:30}}>
             <div style={{display:"flex",alignItems:"center",gap:10,padding:"0 0 10px 0",borderBottom:"1px solid rgba(249,115,22,0.25)"}}><span style={{color:"#f97316",display:"flex"}}><I n="receipt" s={13}/></span><span style={{fontSize:11,fontWeight:700,color:"#f97316",letterSpacing:3,fontFamily:"'Satoshi',sans-serif"}}>LIABILITIES</span></div>
             <div style={{padding:"12px 14px 4px 14px"}}><span style={{fontSize:9.5,fontWeight:600,color:"#8a8a8a",letterSpacing:2,textTransform:"uppercase",fontFamily:"'Satoshi',sans-serif"}}>Current Liabilities</span></div>
-            {_drillRow('bs_ap','Accounts Payable',apVendorList.length+' vendor'+(apVendorList.length!==1?'s':'')+' owed',totalAP,'#f97316',bsOpen,_toggleBs,
+            {_bsLine(M.ap,'bs_ap','Accounts Payable',apVendorList.length+' vendor'+(apVendorList.length!==1?'s':'')+' owed',totalAP,'#f97316',bsOpen,_toggleBs,
               apVendorList.map(v2=>_drillChild('ap_'+v2.name,v2.name,v2.items+' bill'+(v2.items!==1?'s':''),v2.total,'#f97316',()=>setTab('ap'))),bsTotalCurrentLiab
             )}
-            {_drillRow('bs_comm','Commissions Payable',commByRep.length+' rep'+(commByRep.length!==1?'s':''),totalComm,'#fbbf24',bsOpen,_toggleBs,
+            {_bsLine(M.comm,'bs_comm','Commissions Payable',commByRep.length+' rep'+(commByRep.length!==1?'s':''),totalComm,'#fbbf24',bsOpen,_toggleBs,
               commByRep.map(r2=>_drillChild('bc_'+r2.name,r2.name,'',r2.amount,'#fbbf24',null)),bsTotalCurrentLiab
             )}
-            {manualLiabilities>0&&_drillRow('bs_liab','Other Liabilities (Manual)',liabTxnsList.length+' entr'+(liabTxnsList.length!==1?'ies':'y'),manualLiabilities,'#f97316',bsOpen,_toggleBs,
-              liabTxnsList.map(t=>_drillChild('li_'+t.id,t.description||'Liability entry',t.date||'',parseFloat(t.amount)||0,'#f97316',()=>_txnJump(t))),bsTotalCurrentLiab
-            )}
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"11px 14px",borderTop:"1px solid rgba(255,255,255,0.07)"}}><span style={{fontSize:13,fontWeight:600,color:"#d4d4d4",fontFamily:"'Satoshi',sans-serif"}}>Total Current Liabilities</span><span style={{fontSize:14,fontWeight:700,color:"#f5f5f5",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsTotalCurrentLiab)}</span></div>
+            {(M.liabAccts.length>0||_glIsAdmin)&&_bsSubhead('Other Liabilities')}
+            {_bsAcctRows(M.liabAccts,'#f97316',bsTotalLiab)}
+            {_bsAddLine('liability','#f97316')}
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 14px",borderTop:"1px solid rgba(255,255,255,0.10)",borderBottom:"3px double rgba(255,255,255,0.16)"}}><span style={{fontSize:12,fontWeight:800,color:"#ffffff",letterSpacing:2.5,fontFamily:"'Satoshi',sans-serif"}}>TOTAL LIABILITIES</span><span style={{fontSize:16,fontWeight:800,color:"#f97316",fontFamily:"'JetBrains Mono',monospace",letterSpacing:-0.3}}>{fmt(bsTotalLiab)}</span></div>
           </div>
 
 
           <div style={{marginBottom:30}}>
             <div style={{display:"flex",alignItems:"center",gap:10,padding:"0 0 10px 0",borderBottom:"1px solid "+(bsEquity>=0?"rgba(52,211,153,0.25)":"rgba(248,113,113,0.25)")}}><span style={{color:bsEquity>=0?"#34d399":"#f87171",display:"flex"}}><I n="shield" s={13}/></span><span style={{fontSize:11,fontWeight:700,color:bsEquity>=0?"#34d399":"#f87171",letterSpacing:3,fontFamily:"'Satoshi',sans-serif"}}>EQUITY</span></div>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"11px 14px",borderBottom:"1px solid rgba(255,255,255,0.05)"}}><span style={{fontSize:13.5,color:"#f5f5f5",fontWeight:600,fontFamily:"'Satoshi',sans-serif"}}>Retained Earnings</span><span style={{fontSize:13.5,fontWeight:700,color:bsRetained>=0?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsRetained)}</span></div>
+            {_bsAcctRows(M.equityAccts,'#34d399',null)}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"11px 14px",borderBottom:"1px solid rgba(255,255,255,0.05)"}}><span style={{fontSize:13.5,color:"#f5f5f5",fontWeight:600,fontFamily:"'Satoshi',sans-serif"}}>Net Income<span style={{fontSize:10,color:"#7a7a7a",fontWeight:500,marginLeft:8}}>this period's P&amp;L</span></span><span style={{fontSize:13.5,fontWeight:700,color:bsRetained>=0?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace"}}>{fmt(bsRetained)}</span></div>
+            {_bsAddLine('equity','#34d399')}
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 14px",borderTop:"1px solid rgba(255,255,255,0.10)",borderBottom:"3px double rgba(255,255,255,0.16)"}}><span style={{fontSize:12,fontWeight:800,color:"#ffffff",letterSpacing:2.5,fontFamily:"'Satoshi',sans-serif"}}>TOTAL EQUITY</span><span style={{fontSize:16,fontWeight:800,color:bsEquity>=0?"#34d399":"#f87171",fontFamily:"'JetBrains Mono',monospace",letterSpacing:-0.3}}>{fmt(bsEquity)}</span></div>
           </div>
 
@@ -818,10 +900,10 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
 
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}} className="resp-grid-2">
           <Card style={{padding:16}}><div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:14,fontFamily:"'JetBrains Mono',monospace"}}>Asset Breakdown</div>
-            {[{label:"Cash",value:bsCash,color:"#34d399"},{label:"Receivables",value:totalAR,color:"#2dd4bf"},{label:"Inventory",value:inventory,color:"#a78bfa"}].map(a=><div key={a.label} style={{marginBottom:10}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}><span style={{fontSize:13,color:"#e5e5e5"}}>{a.label}</span><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:13,fontWeight:700,color:a.color,fontFamily:"'JetBrains Mono',monospace"}}>{fmt(a.value)}</span><span style={{fontSize:11,color:"#737373"}}>{bsTotalAssets>0?(a.value/bsTotalAssets*100).toFixed(0):0}%</span></div></div><Bar value={a.value} max={bsTotalAssets||1} color={a.color} height={5}/></div>)}
+            {[{label:"Cash",value:bsCash,color:"#34d399"},{label:"Receivables",value:M.ar.value,color:"#2dd4bf"},{label:"Inventory",value:inventory,color:"#a78bfa"}].map(a=><div key={a.label} style={{marginBottom:10}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}><span style={{fontSize:13,color:"#e5e5e5"}}>{a.label}</span><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:13,fontWeight:700,color:a.color,fontFamily:"'JetBrains Mono',monospace"}}>{fmt(a.value)}</span><span style={{fontSize:11,color:"#737373"}}>{bsTotalAssets>0?(a.value/bsTotalAssets*100).toFixed(0):0}%</span></div></div><Bar value={a.value} max={bsTotalAssets||1} color={a.color} height={5}/></div>)}
           </Card>
           <Card style={{padding:16}}><div style={{fontSize:15,fontWeight:800,color:"#f0f0f0",marginBottom:14,fontFamily:"'JetBrains Mono',monospace"}}>Liabilities & Equity</div>
-            {[{label:"Accounts Payable",value:totalAP,color:"#f97316"},{label:"Commissions",value:totalComm,color:"#fbbf24"},{label:"Retained Earnings",value:Math.max(0,bsRetained),color:"#34d399"}].map(a=><div key={a.label} style={{marginBottom:10}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}><span style={{fontSize:13,color:"#e5e5e5"}}>{a.label}</span><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:13,fontWeight:700,color:a.color,fontFamily:"'JetBrains Mono',monospace"}}>{fmt(a.value)}</span><span style={{fontSize:11,color:"#737373"}}>{bsTotalLiabEquity>0?(a.value/bsTotalLiabEquity*100).toFixed(0):0}%</span></div></div><Bar value={a.value} max={bsTotalLiabEquity||1} color={a.color} height={5}/></div>)}
+            {[{label:"Accounts Payable",value:M.ap.value,color:"#f97316"},{label:"Commissions",value:M.comm.value,color:"#fbbf24"},{label:"Net Income",value:Math.max(0,bsRetained),color:"#34d399"}].map(a=><div key={a.label} style={{marginBottom:10}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}><span style={{fontSize:13,color:"#e5e5e5"}}>{a.label}</span><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:13,fontWeight:700,color:a.color,fontFamily:"'JetBrains Mono',monospace"}}>{fmt(a.value)}</span><span style={{fontSize:11,color:"#737373"}}>{bsTotalLiabEquity>0?(a.value/bsTotalLiabEquity*100).toFixed(0):0}%</span></div></div><Bar value={a.value} max={bsTotalLiabEquity||1} color={a.color} height={5}/></div>)}
           </Card>
         </div>
       </div>})()}
@@ -1562,9 +1644,9 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:10,marginBottom:12}}>
             <div><label style={{fontSize:11,color:"#a3a3a3",display:"block",marginBottom:3}}>Date</label><input type="date" value={manualForm.date} onChange={e=>setManualForm({...manualForm,date:e.target.value})} style={inputStyle}/></div>
             <div><label style={{fontSize:11,color:"#a3a3a3",display:"block",marginBottom:3}}>Description</label><input value={manualForm.description} onChange={e=>setManualForm({...manualForm,description:e.target.value})} placeholder="e.g. Smith System payment" style={inputStyle}/></div>
-            <div style={{position:"relative"}}><label style={{fontSize:11,color:"#a3a3a3",display:"block",marginBottom:3}}>Category</label><input value={manualForm.category} onChange={e=>{const cat=e.target.value;const newType=bankCategoryType(cat,'expense');setManualForm({...manualForm,category:cat,type:newType});e.target.nextElementSibling&&(e.target.nextElementSibling.style.display='block')}} onFocus={e=>{e.target.nextElementSibling&&(e.target.nextElementSibling.style.display='block')}} onBlur={e=>{setTimeout(()=>{if(e.target.nextElementSibling)e.target.nextElementSibling.style.display='none'},150)}} placeholder="Type to search..." style={inputStyle} autoComplete="off"/><div style={{display:"none",position:"absolute",top:"100%",left:0,right:0,maxHeight:220,overflowY:"auto",background:"#111",border:"1px solid #333",borderRadius:6,zIndex:20,boxShadow:"0 8px 20px rgba(0,0,0,0.5)"}}>{categories.filter(c=>!manualForm.category||c.toLowerCase().includes(manualForm.category.toLowerCase())).map(c=><div key={c} onMouseDown={e=>{e.preventDefault();const newType=c.startsWith('Revenue')?'revenue':'expense';setManualForm({...manualForm,category:c,type:newType});e.target.closest('div[style*="position"]').style.display='none'}} style={{padding:"6px 10px",fontSize:11,color:manualForm.category===c?"#14b8a6":"#a3a3a3",cursor:"pointer",borderBottom:"1px solid #1a1a1a"}} onMouseEnter={e=>{e.currentTarget.style.background="#1a1a1a"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>{c}</div>)}</div></div>
+            <div style={{position:"relative"}}><label style={{fontSize:11,color:"#a3a3a3",display:"block",marginBottom:3}}>Category</label><input value={manualForm.category} onChange={e=>{const cat=e.target.value;const newType=bankCategoryType(cat,['asset','liability','equity'].includes(manualForm.type)?manualForm.type:'expense');setManualForm({...manualForm,category:cat,type:newType});e.target.nextElementSibling&&(e.target.nextElementSibling.style.display='block')}} onFocus={e=>{e.target.nextElementSibling&&(e.target.nextElementSibling.style.display='block')}} onBlur={e=>{setTimeout(()=>{if(e.target.nextElementSibling)e.target.nextElementSibling.style.display='none'},150)}} placeholder="Type to search..." style={inputStyle} autoComplete="off"/><div style={{display:"none",position:"absolute",top:"100%",left:0,right:0,maxHeight:220,overflowY:"auto",background:"#111",border:"1px solid #333",borderRadius:6,zIndex:20,boxShadow:"0 8px 20px rgba(0,0,0,0.5)"}}>{categories.filter(c=>!manualForm.category||c.toLowerCase().includes(manualForm.category.toLowerCase())).map(c=><div key={c} onMouseDown={e=>{e.preventDefault();const newType=c.startsWith('Revenue')?'revenue':['asset','liability','equity'].includes(manualForm.type)?manualForm.type:'expense';setManualForm({...manualForm,category:c,type:newType});e.target.closest('div[style*="position"]').style.display='none'}} style={{padding:"6px 10px",fontSize:11,color:manualForm.category===c?"#14b8a6":"#a3a3a3",cursor:"pointer",borderBottom:"1px solid #1a1a1a"}} onMouseEnter={e=>{e.currentTarget.style.background="#1a1a1a"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>{c}</div>)}</div></div>
             <div><label style={{fontSize:11,color:"#a3a3a3",display:"block",marginBottom:3}}>Amount</label><input type="number" value={manualForm.amount} onChange={e=>setManualForm({...manualForm,amount:e.target.value})} placeholder="0.00" style={inputStyle}/></div>
-            <div><label style={{fontSize:11,color:"#a3a3a3",display:"block",marginBottom:3}}>Type</label><select value={manualForm.type} onChange={e=>setManualForm({...manualForm,type:e.target.value})} style={inputStyle}><option value="expense">Expense (out)</option><option value="revenue">Revenue (in)</option><option value="asset">Asset</option><option value="liability">Liability</option></select></div>
+            <div><label style={{fontSize:11,color:"#a3a3a3",display:"block",marginBottom:3}}>Type</label><select value={manualForm.type} onChange={e=>setManualForm({...manualForm,type:e.target.value})} style={inputStyle}><option value="expense">Expense (out)</option><option value="revenue">Revenue (in)</option><option value="asset">Asset</option><option value="liability">Liability</option><option value="equity">Equity</option></select></div>
             <div><label style={{fontSize:11,color:"#a3a3a3",display:"block",marginBottom:3}}>Account</label><select value={manualForm.account} onChange={e=>setManualForm({...manualForm,account:e.target.value})} style={inputStyle}>{allAccounts.map(a=><option key={a} value={a}>{a}</option>)}</select></div>
           </div>
           <div style={{display:"flex",gap:8}}><Btn onClick={saveTxn}>{manualEditing?'Update':'Add Transaction'}</Btn>{manualEditing&&<Btn v="secondary" onClick={()=>{setManualForm({date:'',description:'',category:'',amount:'',type:'expense',account:'Operating'});setManualEditing(null)}}>Cancel</Btn>}</div>
@@ -1703,7 +1785,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
               <td style={{padding:"8px",color:"#e5e5e5",fontWeight:500}}>{t.description||'--'}{t.plaidId&&<span style={{fontSize:9,color:"#525252",marginLeft:4}}>bank</span>}{t.billId&&<span className="vb-badge" onClick={e=>{e.stopPropagation();setBillOpen(t.billId);setBillsFilter('all');setBillsSearch('');setTab('bills')}} title="Matched to a vendor bill payment -- click to open the bill" style={{fontSize:9,color:"#2dd4bf",marginLeft:6,padding:"1px 6px",borderRadius:4,background:"#2dd4bf15",fontWeight:700,letterSpacing:0.4,cursor:"pointer"}}>BILL</span>}</td>
               <td style={{padding:"8px"}}><select value={t.category||''} onChange={e=>updateCategory(t.id,e.target.value)} style={{background:"#111",border:"1px solid #222",color:(!t.category||t.category==='Uncategorized'||!categories.includes(t.category))?"#fbbf24":"#a3a3a3",borderRadius:6,padding:"3px 6px",fontSize:11,fontFamily:"inherit",cursor:"pointer"}}><option value="">Uncategorized</option>{categories.map(c=><option key={c} value={c}>{c}</option>)}</select></td>
               <td style={{padding:"8px",color:"#737373",fontSize:11}} title={t.account||''}>{acctDisplayName(t.account)}</td>
-              <td style={{padding:"8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,color:t.type==='revenue'?"#34d399":"#f87171"}}>{t.type==='revenue'?'+':'-'}{fmt(parseFloat(t.amount)||0)}</td>
+              <td style={{padding:"8px",textAlign:"right",fontFamily:"'JetBrains Mono',monospace",fontWeight:600,color:t.type==='revenue'?"#34d399":"#f87171"}}>{(parseFloat(t.amount)||0)<0?fmt(parseFloat(t.amount)||0):(t.type==='revenue'?'+':'-')+fmt(parseFloat(t.amount)||0)}</td>
               <td style={{padding:"8px",textAlign:"right"}}><div style={{display:"flex",gap:4,justifyContent:"flex-end"}}><button onClick={()=>setAttachTxn(attachTxn===t.id?null:t.id)} style={{padding:"3px 8px",borderRadius:5,border:"1px solid "+((t.attachments&&t.attachments.length)||attachTxn===t.id?"#a78bfa40":"#333"),background:attachTxn===t.id?"#a78bfa10":"transparent",color:(t.attachments&&t.attachments.length)||attachTxn===t.id?"#a78bfa":"#a3a3a3",fontSize:10,cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:4}}><I n="file" s={10}/>{t.attachments&&t.attachments.length?t.attachments.length:''}</button><button onClick={()=>{if(isEditing){setManualEditing(null)}else{editTxn(t)}}} style={{padding:"3px 8px",borderRadius:5,border:"1px solid "+(isEditing?"#14b8a640":"#333"),background:isEditing?"#14b8a610":"transparent",color:isEditing?"#14b8a6":"#a3a3a3",fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>{isEditing?'Close':'Edit'}</button><button onClick={()=>deleteTxn(t.id)} style={{padding:"3px 8px",borderRadius:5,border:"1px solid #f8717130",background:"transparent",color:"#f87171",fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>Del</button></div></td>
             </tr>
             {isEditing&&<tr style={{borderBottom:"1px solid #111"}}><td colSpan={7} style={{padding:0}}>
@@ -1713,7 +1795,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
                   <div><label style={{fontSize:10,color:"#737373",display:"block",marginBottom:3}}>Description</label><input value={manualForm.description} onChange={e=>setManualForm(f=>({...f,description:e.target.value}))} style={inputStyle}/></div>
                   <div style={{position:"relative"}}><label style={{fontSize:10,color:"#737373",display:"block",marginBottom:3}}>Category</label><input value={manualForm.category} onChange={e=>{setManualForm(f=>({...f,category:e.target.value}));e.target.nextElementSibling&&(e.target.nextElementSibling.style.display='block')}} onFocus={e=>{e.target.nextElementSibling&&(e.target.nextElementSibling.style.display='block')}} onBlur={e=>{setTimeout(()=>{if(e.target.nextElementSibling)e.target.nextElementSibling.style.display='none'},150)}} placeholder="Type to search..." style={inputStyle} autoComplete="off"/><div style={{display:"none",position:"absolute",top:"100%",left:0,right:0,maxHeight:200,overflowY:"auto",background:"#111",border:"1px solid #333",borderRadius:6,zIndex:20,boxShadow:"0 8px 20px rgba(0,0,0,0.5)"}}>{categories.filter(c=>!manualForm.category||c.toLowerCase().includes(manualForm.category.toLowerCase())).map(c=><div key={c} onMouseDown={e=>{e.preventDefault();setManualForm(f=>({...f,category:c}));e.target.closest('div[style*="position: absolute"]').style.display='none'}} style={{padding:"6px 10px",fontSize:11,color:manualForm.category===c?"#14b8a6":"#a3a3a3",cursor:"pointer",borderBottom:"1px solid #1a1a1a"}} onMouseEnter={e=>{e.currentTarget.style.background="#1a1a1a"}} onMouseLeave={e=>{e.currentTarget.style.background="transparent"}}>{c}</div>)}</div></div>
                   <div><label style={{fontSize:10,color:"#737373",display:"block",marginBottom:3}}>Amount</label><input type="number" value={manualForm.amount} onChange={e=>setManualForm(f=>({...f,amount:e.target.value}))} style={inputStyle}/></div>
-                  <div><label style={{fontSize:10,color:"#737373",display:"block",marginBottom:3}}>Type</label><select value={manualForm.type} onChange={e=>setManualForm(f=>({...f,type:e.target.value}))} style={inputStyle}><option value="expense">Expense (out)</option><option value="revenue">Revenue (in)</option></select></div>
+                  <div><label style={{fontSize:10,color:"#737373",display:"block",marginBottom:3}}>Type</label><select value={manualForm.type} onChange={e=>setManualForm(f=>({...f,type:e.target.value}))} style={inputStyle}><option value="expense">Expense (out)</option><option value="revenue">Revenue (in)</option><option value="asset">Asset</option><option value="liability">Liability</option><option value="equity">Equity</option></select></div>
                   <div><label style={{fontSize:10,color:"#737373",display:"block",marginBottom:3}}>Account</label><select value={manualForm.account} onChange={e=>setManualForm(f=>({...f,account:e.target.value}))} style={inputStyle}>{allAccounts.map(a=><option key={a} value={a}>{a}</option>)}</select></div>
                 </div>
                 <div style={{display:"flex",gap:8}}><Btn onClick={saveTxn} style={{fontSize:11,padding:"5px 14px"}}>Update</Btn><Btn v="secondary" onClick={()=>setManualEditing(null)} style={{fontSize:11,padding:"5px 14px"}}>Cancel</Btn></div>
@@ -1760,7 +1842,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
       const head=(title,sub,right,count,color)=><div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap",marginBottom:12}}><div style={{minWidth:0,flex:1}}><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:13,fontWeight:800,color:"#f0f0f0",letterSpacing:1.2,..._mono}}>{title}</span>{count!=null?<span style={{fontSize:10,fontWeight:700,padding:"1px 8px",borderRadius:10,background:(color||"#737373")+"18",color:color||"#737373",..._mono}}>{count}</span>:null}</div><div style={{fontSize:11.5,color:"#737373",marginTop:3,maxWidth:680,lineHeight:1.5}}>{sub}</div></div>{right?<div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>{right}</div>:null}</div>;
       const empty=(title,body)=><div className="rv-empty" style={{padding:"24px 0",textAlign:"center"}}><div style={{fontSize:13,color:"#a3a3a3",marginBottom:4}}>{title}</div><div style={{fontSize:12,color:"#525252",maxWidth:560,margin:"0 auto",lineHeight:1.5}}>{body}</div></div>;
       const acctName=(id)=>{if(!id)return '--';const m=_bankAcctMetaGlobal[id];return m&&m.nickname?m.nickname:(String(id).length>20?String(id).slice(0,10)+'...':id)};
-      const money=(t)=>(t.type==='revenue'||t.type==='asset'?'+':'-')+fmt(Math.abs(parseFloat(t.amount)||0));
+      const money=(t)=>(parseFloat(t.amount)||0)<0?fmt(parseFloat(t.amount)||0):(t.type==='revenue'||t.type==='asset'?'+':'-')+fmt(Math.abs(parseFloat(t.amount)||0));
       const moneyColor=(t)=>t.type==='revenue'||t.type==='asset'?"#34d399":t.type==='liability'?"#a78bfa":"#f87171";
       const stamp=(ms)=>{if(!ms)return '--';const d=new Date(ms);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')};
       const srcOf=(t)=>t.source==='late_arrival'?['LATE ARRIVAL',"#fbbf24"]:t.source==='statement'?['STATEMENT',"#a78bfa"]:t.plaidId?['BANK FEED',"#2dd4bf"]:['MANUAL',"#9a9a9a"];
