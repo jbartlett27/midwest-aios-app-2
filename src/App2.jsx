@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { db } from "./supabase.js";
 import { useUser, useClerk, SignIn, UserButton, useAuth } from "@clerk/clerk-react";
 import{BarChart,Bar as RBar,XAxis,YAxis,Tooltip,ResponsiveContainer,LineChart,Line,PieChart,Pie,Cell}from"recharts";
-import { AnimNum, AnimatedNumber, Badge, Bar, Btn, CUSTOMER_TYPES, Card, Check, CheckMinus, DEFAULT_SOPS, Dashboard, DocumentsPage, Header, I, LINK_KINDS, LinkChips, LinkPicker, LinkedItemsPanel, commissionEarned, commissionEarnedDate, commissionQuarterLabel, commissionQuarterOf, customerTypeOptions, fmt, fmtN, getLinks, getProspectList, getRoles, inputStyle, isSalesRep, isoDay, openLink, parseLocalDate, pct, resolveLinkNames, shipKey, statusColor } from "./App.jsx";
+import { AnimNum, AnimatedNumber, Badge, Bar, Btn, CUSTOMER_TYPES, Card, Check, CheckMinus, DEFAULT_SOPS, Dashboard, DocumentsPage, Header, I, LINK_KINDS, LinkChips, LinkPicker, LinkedItemsPanel, bankCategoryType, bankTxnFingerprint, commissionEarned, commissionEarnedDate, commissionQuarterLabel, commissionQuarterOf, customerTypeOptions, fmt, fmtN, getLinks, getProspectList, getRoles, inputStyle, isSalesRep, isoDay, openLink, parseLocalDate, pct, resolveLinkNames, shipKey, statusColor } from "./App.jsx";
 import { FinancialsPage, parseVendorBills, billStatus, billTotal, billPaidTotal, billBalance } from "./App3.jsx";
 // ===============================================================
 // COMMISSIONS -- Editable Reps + PDF Export
@@ -1288,7 +1288,7 @@ function NotesPage({customSops,addSop,deleteSop,jobs,reps,customers,vendors,noti
 }
 
 
-function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJobItems,_commissionFor,_bankTxnHash,brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory,updateJob,addJob,updateLineItem,addLineItem,deleteLineItem,updateRep,addRep,addCustomer,updateCustomer,addVendor,updateVendor,notify,setPage,deleteJob,pendingBrainFile,setPendingBrainFile,pendingBrainEmail,setPendingBrainEmail,currentUser,lineItemShipTos}){
+function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJobItems,_commissionFor,_bankTxnHash,brainQuery,setBrainQuery,customSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory,updateJob,addJob,updateLineItem,addLineItem,deleteLineItem,updateRep,addRep,addCustomer,updateCustomer,addVendor,updateVendor,notify,setPage,deleteJob,pendingBrainFile,setPendingBrainFile,pendingBrainEmail,setPendingBrainEmail,currentUser,lineItemShipTos,jobReportDate,userRole}){
   // Sales-role scoping: the Brain must only know what the logged-in user is allowed
   // to see. jobs arrives pre-filtered (visibleJobs), but line items arrive
   // unfiltered -- without this filter a sales login could ask the Brain about other
@@ -1352,10 +1352,14 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     if (brainMemory.length === 0) return "";
     return brainMemory.map(m => { try { const d = JSON.parse(m.content); return "## " + m.title + " (updated: " + (d.updatedAt || "unknown") + ")\n" + d.text; } catch { return "## " + m.title + "\n" + m.content; } }).join("\n\n");
   };
-  const suggestedQueries=["Show me the Hopewell Valley job details","What is our total pipeline revenue?","Which vendor do we spend the most with?","Run a health check on the business","Draft a follow-up email for pending quotes","What anomalies should I know about?","List all jobs with deliveries pending","What are our margins by vendor?","Summarize our commission obligations","Which jobs are past due?","Compare our top 5 jobs by revenue","What is our cash position outlook?"];
+  const suggestedQueries=["What were Q3 gross profit dollars by sales rep?",...((userRole||(currentUser&&currentUser.role)||"admin")==="admin"?["Show me the P&L for last quarter","Which Balance Sheet lines have no QuickBooks book balance yet?"]:[]),"Show me the Hopewell Valley job details","What is our total pipeline revenue?","Which vendor do we spend the most with?","Run a health check on the business","Draft a follow-up email for pending quotes","What anomalies should I know about?","List all jobs with deliveries pending","What are our margins by vendor?","Summarize our commission obligations","Which jobs are past due?","Compare our top 5 jobs by revenue","What is our cash position outlook?"];
   const chatRef=useRef(null);
   const [animatingIdx,setAnimatingIdx]=useState(-1);
   const [pendingActions,setPendingActions]=useState([]);
+  // Agent loop state (Oct 6 2026): the conversation waiting on Confirm, and the latest
+  // executeTool/buildContext so a step after a write reads the fresh records.
+  const brainAgentRef=useRef(null);
+  const brainLiveRef=useRef({});
   // Streaming state for the typewriter effect on Brain responses.
   // isStreaming: true while text deltas are arriving for the most recent assistant
   // message. Used to render a blinking cursor next to the live message.
@@ -1472,14 +1476,126 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
   const findJob=(ref)=>{if(!ref)return null;const r=ref.toLowerCase();return jobs.find(j=>j.id.toLowerCase()===r)||jobs.find(j=>j.name.toLowerCase().includes(r))||jobs.find(j=>{const words=r.split(/\s+/).filter(w=>w.length>3);return words.length>0&&words.every(w=>j.name.toLowerCase().includes(w))})};
   const findVendor=(ref)=>{if(!ref)return null;const r=ref.toLowerCase();return vendors.find(v=>v.id===ref)||vendors.find(v=>v.name.toLowerCase().includes(r))};
   const findCustomer=(ref)=>{if(!ref)return null;const r=ref.toLowerCase();return customers.find(c=>c.id===ref)||customers.find(c=>c.name.toLowerCase().includes(r))};
+  // ==============================================================
+  // REPORTS, BOOKKEEPING AND THE QUICKBOOKS TIE-OUT (Oct 6 2026)
+  // Maureen reconciles the AIOS to QuickBooks and asks the Brain for rep results by quarter.
+  // These read the same records with the same rules as the pages: account exclusions and the
+  // account filter (Financials), the P&L exclusions, period locks, QuickBooks book balances,
+  // job report dates (Sales Portal, Financials) and the commission-earned rule (Commissions),
+  // so what the Brain says matches what she sees.
+  // ==============================================================
+  const _bkRole=userRole||(currentUser&&currentUser.role)||'admin';
+  const _bkAdminErr=()=>_bkRole==='admin'?null:{error:'Only an admin can use the Financials tools.'};
+  const _bkIso=(d)=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  const _bkIsDate=(v)=>{const x=String(v==null?'':v);if(!/^\d{4}-\d{2}-\d{2}$/.test(x))return false;const d=parseLocalDate(x);return !!d&&_bkIso(d)===x};
+  const _bkMoney=(n)=>{const v=Number(n);return isFinite(v)?Math.round(v*100)/100:0};
+  const _bkAmt=(v)=>{if(typeof v==='number')return isFinite(v)?_bkMoney(v):NaN;let x=String(v==null?'':v).replace(/[$,\s]/g,'');if(x==='')return NaN;const neg=/^\(.*\)$/.test(x);if(neg)x=x.slice(1,-1);if(!/^[-+]?(\d+\.?\d*|\.\d+)$/.test(x))return NaN;const n=Number(x);return isFinite(n)?_bkMoney(neg?-n:n):NaN};
+  const _bkUsd=(n)=>{const v=_bkMoney(n);return (v<0?'-$':'$')+Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})};
+  const _bkCell=(v)=>String(v==null?'':v).replace(/[\r\n]+/g,' ').replace(/\|/g,'/').trim()||'--';
+  const _bkSopJson=(id,fb)=>{const r=(customSops||[]).find(x=>x&&x.id===id);if(!r)return fb;try{const v=JSON.parse(r.content);return v==null?fb:v}catch{return fb}};
+  const _bkTxns=()=>(customSops||[]).filter(x=>x&&x.cat==='ManualTxn').map(x=>{try{const d=JSON.parse(x.content);return d&&typeof d==='object'&&!Array.isArray(d)?{id:x.id,...d}:null}catch{return null}}).filter(Boolean);
+  const _bkMeta=()=>{const m=_bkSopJson('BANK_ACCOUNT_META',{});return m&&typeof m==='object'&&!Array.isArray(m)?m:{}};
+  const _bkBalAccts=()=>{const d=_bkSopJson('BANK_BALANCES_GLOBAL',{});return d&&Array.isArray(d.accounts)?d.accounts.filter(a=>a&&typeof a==='object'):[]};
+  // The Financials account view: excluded accounts never count; when accounts are picked in the
+  // account filter, only those count.
+  const _bkView=(txns)=>{const meta=_bkMeta();const all=Array.from(new Set(txns.map(t=>t.account).filter(Boolean)));const raw=Array.isArray(meta._filterSelection)?meta._filterSelection:[];const sel=raw.filter(id=>all.includes(id)&&!(meta[id]&&meta[id].excluded));return {meta,all,sel,active:sel.length>0}};
+  const _bkInView=(t,v)=>!(t.account&&v.meta[t.account]&&v.meta[t.account].excluded)&&!(v.active&&!v.sel.includes(t.account));
+  const _bkAcctName=(id,meta)=>{if(!id)return '--';const m=(meta||_bkMeta())[id];const b=_bkBalAccts().find(a=>a.id===id);const base=m&&m.nickname?String(m.nickname):b?String(b.name||'').trim():(String(id).length>20?String(id).slice(0,12)+'...':String(id));return base+(b&&b.mask?' ***'+b.mask:'')};
+  // Which account an entry goes on: the one named (nickname, last four digits, bank name or id),
+  // else the account the Financials pages are filtered to, else the busiest one in the books.
+  const _bkResolveAcct=(ref,txns)=>{
+    const v=_bkView(txns);const bal=_bkBalAccts();
+    const known=Array.from(new Set([...v.all,...bal.map(a=>a.id),...Object.keys(v.meta).filter(k=>k&&k.charAt(0)!=='_')])).filter(Boolean);
+    const r=String(ref==null?'':ref).trim();
+    if(!r){if(v.sel.length)return {id:v.sel[0]};const cnt={};txns.forEach(t=>{if(t.account&&!(v.meta[t.account]&&v.meta[t.account].excluded))cnt[t.account]=(cnt[t.account]||0)+1});const top=Object.entries(cnt).sort((a,b)=>b[1]-a[1])[0];return {id:top?top[0]:'Operating'}}
+    if(known.includes(r))return {id:r};
+    const lr=r.toLowerCase();const one=(arr)=>arr.length===1?arr[0]:null;
+    const nick=one(known.filter(id=>v.meta[id]&&String(v.meta[id].nickname||'').trim().toLowerCase()===lr));if(nick)return {id:nick};
+    const mm=/(\d{4})\s*$/.exec(r);if(mm){const byMask=one(bal.filter(a=>String(a.mask||'')===mm[1]));if(byMask)return {id:byMask.id}}
+    const byName=one(bal.filter(a=>String(a.name||'').trim().toLowerCase()===lr));if(byName)return {id:byName.id};
+    const legacy=v.all.find(a=>String(a).toLowerCase()===lr);if(legacy)return {id:legacy};
+    return {error:'No account called "'+r+'". The accounts are: '+known.map(id=>_bkAcctName(id,v.meta)).join(', ')+'.'};
+  };
+  // A period from tool input: from/to, quarter (1-4) with year, month (YYYY-MM), year, or period
+  // ytd (default), quarter (this quarter), month (this month), all.
+  const _bkPeriod=(inp)=>{
+    const i=inp&&typeof inp==='object'?inp:{};const now=new Date();const y0=now.getFullYear();
+    const yn=Number(i.year);const yr=(isFinite(yn)&&yn>=2000&&yn<=2100)?Math.floor(yn):y0;
+    const mk=(f,t,label)=>{const a=parseLocalDate(f),b=parseLocalDate(t);return {from:f,to:t,label,fromD:a,toD:new Date(b.getFullYear(),b.getMonth(),b.getDate(),23,59,59)}};
+    if(i.from||i.to){if(!_bkIsDate(i.from)||!_bkIsDate(i.to))return {error:'Give the period as two dates, from and to, like 2026-07-01 and 2026-09-30.'};if(i.from>i.to)return {error:'The from date is after the to date.'};return mk(i.from,i.to,i.from+' to '+i.to)}
+    const qn=Number(i.quarter);
+    if(qn>=1&&qn<=4&&Math.floor(qn)===qn){const lab=commissionQuarterLabel(yr+'-Q'+qn);return mk(_bkIso(new Date(yr,(qn-1)*3,1)),_bkIso(new Date(yr,qn*3,0)),'Q'+qn+' '+yr+(lab?' ('+lab.range+')':''))}
+    const mo=/^(\d{4})-(\d{2})$/.exec(String(i.month||''));
+    if(mo){const yy=+mo[1],mn=+mo[2];if(mn<1||mn>12||yy<2000||yy>2100)return {error:'Give the month as YYYY-MM, like 2026-09.'};return mk(_bkIso(new Date(yy,mn-1,1)),_bkIso(new Date(yy,mn,0)),new Date(yy,mn-1,1).toLocaleDateString('en-US',{month:'long',year:'numeric'}))}
+    const p=String(i.period||'').toLowerCase();
+    if(p==='quarter')return _bkPeriod({quarter:Math.floor(now.getMonth()/3)+1,year:yr});
+    if(p==='month')return _bkPeriod({month:_bkIso(now).slice(0,7)});
+    if(p==='all')return mk('2000-01-01',_bkIso(now),'All time');
+    if(p==='year'||(i.year&&p!=='ytd'))return mk(yr+'-01-01',yr+'-12-31',String(yr));
+    return mk(y0+'-01-01',_bkIso(now),'Year to date '+y0);
+  };
+  const _bkJobDate=(j)=>parseLocalDate(jobReportDate?jobReportDate(j):(j&&j.createdDate));
+  const _bkIn=(d,P)=>!!d&&d>=P.fromD&&d<=P.toD;
+  const _bkMatchRep=(ref)=>{const r=String(ref||'').trim().toLowerCase();const list=(reps||[]).filter(x=>x&&!String(x.id||'').includes('SEED_FLAG'));const ex=list.filter(x=>String(x.name||'').toLowerCase()===r||String(x.id||'').toLowerCase()===r);if(ex.length===1)return {rep:ex[0]};const inc=list.filter(x=>String(x.name||'').toLowerCase().includes(r));if(inc.length===1)return {rep:inc[0]};return {error:(inc.length?'More than one rep matches "'+ref+'": ':'No rep called "'+ref+'". Reps: ')+(inc.length?inc:list).map(x=>x.name).join(', ')+'.'}};
+  const _bkRepName=(id)=>{const r=(reps||[]).find(x=>x.id===id);return r?r.name:(id||'No rep')};
+  // P&L for a period, added up the way Financials >> P&L does: jobs by report date, manual revenue
+  // and expense entries (never bank-feed or statement rows, transfers, owner moves, bill payments
+  // or balance-sheet entries), vendor bill lines by bill date, commissions on the period's jobs.
+  const _BK_OFF_PL=new Set(['Transfer','Owner Draw','Owner Investment','Bill Payment']);
+  const _bkOnPL=(t)=>!t.plaidId&&!t.billId&&t.source!=='statement'&&!_BK_OFF_PL.has(t.category)&&t.type!=='asset'&&t.type!=='liability'&&t.category!=='asset'&&t.category!=='liability';
+  const _bkPL=(P)=>{
+    const txns=_bkTxns();const v=_bkView(txns);
+    const rows=txns.filter(t=>{if(!_bkInView(t,v))return false;if(!t.date)return true;const d=parseLocalDate(t.date)||new Date(t.date);return d>=P.fromD&&d<=P.toD}).filter(_bkOnPL);
+    const pj=(jobs||[]).filter(j=>_bkIn(_bkJobDate(j),P));
+    let jobRev=0,jobCost=0;pj.forEach(j=>{const f=getJobFinancials(j.id)||{};jobRev+=f.totalRevenue||0;jobCost+=f.totalCost||0});
+    const rev={},exp={},bill={};
+    const lab=(c,w)=>c&&c!=='Uncategorized'?c:'Uncategorized '+w;
+    rows.forEach(t=>{const a=parseFloat(t.amount)||0;if(t.type==='revenue'){const c=lab(t.category,'Revenue');rev[c]=(rev[c]||0)+a}else if(t.type==='expense'){const c=lab(t.category,'Expenses');exp[c]=(exp[c]||0)+a}});
+    const bills=parseVendorBills(customSops).filter(b=>b.void!==true&&_bkIn(parseLocalDate(b&&b.date),P));
+    bills.forEach(b=>(Array.isArray(b.lines)?b.lines:[]).forEach(l=>{const c=lab(l&&l.category,'Expenses');bill[c]=(bill[c]||0)+_bkMoney(l&&l.amount)}));
+    const sum=(o)=>Object.values(o).reduce((a,x)=>a+x,0);
+    const manualRev=sum(rev),manualExp=sum(exp),billExp=_bkMoney(sum(bill));
+    const comm=(reps||[]).filter(r=>!String(r.id||'').includes('SEED_FLAG')).reduce((a,r)=>{const rate=r.commissionRate||0;if(!rate)return a;return a+pj.filter(j=>j.salesRep===r.id).reduce((a2,j)=>a2+_commissionFor(j.id,rate),0)},0);
+    const totalRev=jobRev+manualRev,totalCost=jobCost+manualExp+billExp;
+    return {pj,jobRev,jobCost,rev,exp,bill,manualRev,manualExp,billExp,totalRev,totalCost,gross:totalRev-totalCost,comm,net:totalRev-totalCost-comm,view:v.active?v.sel.map(id=>_bkAcctName(id,v.meta)).join(', '):'all accounts except the excluded ones'};
+  };
+  // QuickBooks book balances (Financials >> Balance Sheet): sops BS_BOOK_BALANCES,
+  // {lines:{key:{amount,asOf,memo,setAt,setBy}}}, key cash|ar|inventory|ap|commissions or
+  // '<asset|liability|equity>:<account>'. A line uses its book balance once the sheet's date is
+  // on or after the book balance date. Accounts sum their entries through that date.
+  const _BK_BOOK_ID='BS_BOOK_BALANCES';
+  const _BK_SYS={cash:'Cash & Cash Equivalents',ar:'Accounts Receivable',inventory:'Inventory (In Transit)',ap:'Accounts Payable',commissions:'Commissions Payable'};
+  const _bkBookRaw=()=>{const d=_bkSopJson(_BK_BOOK_ID,null);const l=d&&typeof d==='object'?d.lines:null;return l&&typeof l==='object'&&!Array.isArray(l)?l:{}};
+  const _bkBookOf=(raw,key,asOfD)=>{const x=raw[key];if(!x||typeof x!=='object')return null;const a=Number(x.amount);if(!isFinite(a)||!_bkIsDate(x.asOf))return null;return {amount:_bkMoney(a),asOf:x.asOf,memo:String(x.memo||''),applies:parseLocalDate(x.asOf)<=asOfD}};
+  const _bkKind=(t)=>t.type==='asset'||t.category==='asset'?'asset':t.type==='liability'||t.category==='liability'?'liability':t.type==='equity'?'equity':'';
+  const _BK_OTHER={asset:'Other Assets',liability:'Other Liabilities',equity:'Other Equity'};
+  const _bkBSAccounts=(asOfD)=>{
+    const txns=_bkTxns();const v=_bkView(txns);const raw=_bkBookRaw();
+    const ents=txns.filter(t=>{if(!_bkKind(t)||!_bkInView(t,v))return false;if(!t.date)return true;const d=parseLocalDate(t.date)||new Date(t.date);return !isNaN(d.getTime())&&d<=asOfD});
+    const out=[];
+    ['asset','liability','equity'].forEach(kind=>{const m={};ents.filter(t=>_bkKind(t)===kind).forEach(t=>{const c=String(t.category||'').trim();const n=!c||c===kind||c==='Uncategorized'?_BK_OTHER[kind]:c;if(!m[n])m[n]={sum:0,count:0};m[n].sum+=parseFloat(t.amount)||0;m[n].count++});Object.keys(raw).forEach(k=>{if(k.indexOf(kind+':')!==0)return;const n=k.slice(kind.length+1);const b=_bkBookOf(raw,k,asOfD);if(n&&b&&b.applies&&!m[n])m[n]={sum:0,count:0}});Object.keys(m).sort((a,b)=>a.localeCompare(b)).forEach(n=>{const key=kind+':'+n;const book=_bkBookOf(raw,key,asOfD);const computed=_bkMoney(m[n].sum);out.push({key,kind,name:n,count:m[n].count,computed,book,value:book&&book.applies?book.amount:computed})})});
+    return out;
+  };
+  const _bkLiveCash=()=>{const r=(customSops||[]).find(x=>x&&x.id==='BANK_BALANCES_GLOBAL');if(!r)return null;try{const d=JSON.parse(r.content||'{}');if(!Array.isArray(d.accounts)||d.accounts.length===0)return null;const meta=_bkMeta();return d.accounts.filter(a=>(a.type||'')==='depository'&&!(a.id&&meta[a.id]&&meta[a.id].excluded)).reduce((a2,a)=>a2+(Number(a.current)||0),0)}catch{return null}};
 
 
   const brainTools=[
+    // ==============================================================
+    // REPORTS AND BOOKKEEPING (Oct 6 2026). Read tools run at once and come back to you.
+    // ==============================================================
+    {name:"sales_report",description:"Sales, cost, gross profit, margin and commission by sales rep for a period: a calendar quarter (Q1 Jan-Mar, Q2 Apr-Jun, Q3 Jul-Sep, Q4 Oct-Dec), a month, a year, year to date or a date range. Two views: sales in the period, dated by the job report date (the Sales Portal and Financials rule), and commission earned in the period (paid in full and closed out, the Commissions page rule). ALWAYS use this for questions like 'what were the 3rd quarter gross profit dollars for Jim Harris', 'what did each rep sell in Q2', 'on how much sales was the 37.8% margin', 'commission earned last quarter'. Runs immediately and the result comes back to you.",input_schema:{type:"object",properties:{quarter:{type:"number",description:"1 to 4"},year:{type:"number",description:"Defaults to this year"},month:{type:"string",description:"YYYY-MM"},from:{type:"string",description:"YYYY-MM-DD, with to"},to:{type:"string",description:"YYYY-MM-DD, with from"},period:{type:"string",enum:["quarter","month","ytd","year","all"],description:"When no quarter, month or dates are given: this quarter, this month, year to date (default), the whole year, all time"},rep:{type:"string",description:"Optional rep name; also lists that rep's jobs"},basis:{type:"string",enum:["both","sales","earned"],description:"Which view; default both"},list_jobs:{type:"boolean",description:"List every job in the period"}}}},
+    {name:"profit_and_loss",description:"Profit & Loss for a period with the same figures as Financials >> P&L: job sales and job costs by job report date, manual revenue and expense entries by category, vendor bill lines by category, commissions, gross profit and net income. Counts the accounts the Financials pages count. Admin only. Runs immediately and the result comes back to you.",input_schema:{type:"object",properties:{quarter:{type:"number"},year:{type:"number"},month:{type:"string",description:"YYYY-MM"},from:{type:"string",description:"YYYY-MM-DD"},to:{type:"string",description:"YYYY-MM-DD"},period:{type:"string",enum:["quarter","month","ytd","year","all"]}}}},
+    {name:"list_transactions",description:"Find bank-feed and manual transactions on the Financials page, with their ids. Filter by period, account, category, type, words in the description, amount range or source. Use it before update_transactions or delete_transactions, and to check what is already entered before adding. Admin only. Runs immediately and the result comes back to you.",input_schema:{type:"object",properties:{from:{type:"string"},to:{type:"string"},quarter:{type:"number"},year:{type:"number"},month:{type:"string"},period:{type:"string",enum:["quarter","month","ytd","year","all"]},account:{type:"string",description:"Account nickname or last four digits, or 'all' for every account including excluded ones. Default: the accounts the Financials pages count."},category:{type:"string",description:"Category contains"},type:{type:"string",enum:["expense","revenue","asset","liability","equity"]},search:{type:"string",description:"Words in the description, or a transaction id"},min_amount:{type:"number"},max_amount:{type:"number"},source:{type:"string",enum:["all","bank","manual","brain"],description:"bank = bank feed and uploaded statements; manual = typed entries; brain = entries the Brain added"},sort:{type:"string",enum:["date","amount"]},limit:{type:"number",description:"Rows to show, up to 300 (default 50)"}}}},
+    {name:"add_transactions",description:"Enter one or many transactions on the Financials page in ONE action with one confirmation, e.g. every line of a QuickBooks payroll report or journal entry, or balance-sheet entries. Types: expense, revenue, asset, liability, equity. Amounts may be negative (a credit, Accumulated Depreciation, Distributions). Entries go on the account the Financials pages count unless an account is named. Exact repeats of an entry already in the books are skipped; rows in a closed period are refused. Admin only.",input_schema:{type:"object",properties:{account:{type:"string",description:"Optional account for every row (nickname or last four digits)"},transactions:{type:"array",items:{type:"object",properties:{date:{type:"string",description:"YYYY-MM-DD"},description:{type:"string"},category:{type:"string"},amount:{type:"number"},type:{type:"string",enum:["expense","revenue","asset","liability","equity"]},account:{type:"string"}},required:["date","description","amount"]}}},required:["transactions"]}},
+    {name:"update_transactions",description:"Change the category, type, account, date, amount or description of transactions by id (ids from list_transactions). Bank-feed rows keep the bank's date, amount, description and account; only their category and type can change. Rows paid against a vendor bill and rows in a closed period are refused. Admin only.",input_schema:{type:"object",properties:{ids:{type:"array",items:{type:"string"}},updates:{type:"object",properties:{category:{type:"string"},type:{type:"string",enum:["expense","revenue","asset","liability","equity"]},account:{type:"string"},date:{type:"string"},amount:{type:"number"},description:{type:"string"}}}},required:["ids","updates"]}},
+    {name:"delete_transactions",description:"Delete transactions by id (ids from list_transactions), e.g. entries added twice. A deleted bank-feed row is remembered so the feed does not bring it back. Never use this to make a total match QuickBooks; use set_book_balances. Admin only.",input_schema:{type:"object",properties:{ids:{type:"array",items:{type:"string"}}},required:["ids"]}},
+    {name:"balance_sheet_lines",description:"Balance Sheet lines as of a date, for tying out to QuickBooks: every asset, liability and equity account with the AIOS figure (its entries through that date), the QuickBooks book balance if one is set, and the figure the sheet uses; the book balances on cash, receivables, inventory, payables and commissions (with live bank cash); and net income for the year to that date. Admin only. Runs immediately and the result comes back to you.",input_schema:{type:"object",properties:{as_of:{type:"string",description:"YYYY-MM-DD, default today"}}}},
+    {name:"set_book_balances",description:"Set or clear QuickBooks book balances on Balance Sheet lines, several at once. A line is cash, accounts receivable, inventory, accounts payable, commissions payable, or an account by name with kind asset, liability or equity (a new name adds a QuickBooks line, e.g. Capital Stock, Retained Earnings). From its as-of date on, the line shows the QuickBooks figure and the AIOS figure stays underneath. Amounts may be negative. Use this, never deletions, when an account holds loan advances and payments instead of a balance. Admin only.",input_schema:{type:"object",properties:{lines:{type:"array",items:{type:"object",properties:{line:{type:"string",description:"cash, accounts receivable, inventory, accounts payable, commissions payable, or the account name"},kind:{type:"string",enum:["asset","liability","equity"],description:"For account lines"},amount:{type:"number"},as_of:{type:"string",description:"YYYY-MM-DD"},memo:{type:"string"},clear:{type:"boolean",description:"true removes the book balance"}},required:["line"]}}},required:["lines"]}},
     {name:"update_job",description:"Update a job's phase, payment status, notes, due date, or other fields.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name keywords"},updates:{type:"object",properties:{phase:{type:"string"},paymentStatus:{type:"string"},notes:{type:"string"},dueDate:{type:"string"},paymentTerms:{type:"string"},shipTo:{type:"string"},poNumber:{type:"string"}}}},required:["job_id","updates"]}},
     {name:"create_job",description:"Create a new job record.",input_schema:{type:"object",properties:{name:{type:"string"},customer_name:{type:"string",description:"Customer name to link"},sales_rep_name:{type:"string",description:"Rep name to link"},phase:{type:"string"},notes:{type:"string"}},required:["name"]}},
-    {name:"update_line_item",description:"Update a line item by ID or by job + description match. Can update price, cost, qty, description, color, model number, received qty, and more. Use when user says 'change the price on the desks to $300' or 'update the chair qty to 25'.",input_schema:{type:"object",properties:{item_id:{type:"string",description:"Line item ID (if known)"},job_id:{type:"string",description:"Job ID or name (used with item_description to find the item)"},item_description:{type:"string",description:"Keywords to match the line item (e.g. 'desk', 'apex chair', 'table dolly')"},updates:{type:"object",properties:{qtyOrdered:{type:"number"},qtyReceived:{type:"number"},unitPrice:{type:"number"},unitCost:{type:"number"},listPrice:{type:"number"},description:{type:"string"},color:{type:"string"},modelNumber:{type:"string"},manufacturer:{type:"string"},shippingPerUnit:{type:"number"},installPerUnit:{type:"number"},deliveryDate:{type:"string"}}}},required:["updates"]}},
+    {name:"update_line_item",description:"Update a line item by ID or by job + description match. Can update price, cost, qty, description, color, model number, received qty, and more. Use when user says 'change the price on the desks to $300' or 'update the chair qty to 25'. A worksheet tag (S4, C12, L13) often covers several rows, one per ship-to: to change a tag, pass job_id and tag and EVERY row with that tag is updated (e.g. 'update JOB-2026-925 the 28 S4 to new net pricing of $908.98' is tag S4, updates.unitCost 908.98). Net price or net pricing is the dealer cost, unitCost.",input_schema:{type:"object",properties:{item_id:{type:"string",description:"Line item ID (if known)"},tag:{type:"string",description:"Worksheet tag; with job_id, every row carrying this tag is updated"},model_number:{type:"string",description:"Optional, with tag: only rows whose model number contains this"},job_id:{type:"string",description:"Job ID or name (used with item_description to find the item)"},item_description:{type:"string",description:"Keywords to match the line item (e.g. 'desk', 'apex chair', 'table dolly')"},updates:{type:"object",properties:{qtyOrdered:{type:"number"},qtyReceived:{type:"number"},unitPrice:{type:"number"},unitCost:{type:"number"},listPrice:{type:"number"},description:{type:"string"},color:{type:"string"},modelNumber:{type:"string"},manufacturer:{type:"string"},shippingPerUnit:{type:"number"},installPerUnit:{type:"number"},deliveryDate:{type:"string"}}}},required:["updates"]}},
     {name:"get_job_details",description:"Get full details of a job including ALL line items formatted as a table. Use when user says 'show me the Hopewell job', 'pull up job details', 'what line items are on this job', 'show me the line items'. Returns job info and a markdown table of all line items with prices, quantities, and status.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name keywords"}},required:["job_id"]}},
-    {name:"bulk_edit_line_items",description:"Update multiple line items on a job at once. Use when user says 'change all prices by 10%', 'mark everything as received', 'update shipping on all items'. Can filter by description keywords and apply the same update to all matches.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name"},filter_description:{type:"string",description:"Optional keywords to filter which items to update (e.g. 'chair', 'KI'). Leave empty to update ALL items."},updates:{type:"object",properties:{qtyReceived:{type:"number"},unitPrice:{type:"number"},unitCost:{type:"number"},shippingPerUnit:{type:"number"},installPerUnit:{type:"number"},price_multiply:{type:"number",description:"Multiply current unitPrice by this factor (e.g. 1.10 for +10%)"},cost_multiply:{type:"number",description:"Multiply current unitCost by this factor"}}}},required:["job_id","updates"]}},
+    {name:"bulk_edit_line_items",description:"Update multiple line items on a job at once. Use when user says 'change all prices by 10%', 'mark everything as received', 'update shipping on all items'. Can filter by description keywords and apply the same update to all matches.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name"},filter_description:{type:"string",description:"Optional keywords to filter which items to update (e.g. 'chair', 'KI'). Leave empty to update ALL items."},filter_tag:{type:"string",description:"Optional worksheet tag (S4, C12): only rows carrying exactly this tag"},updates:{type:"object",properties:{qtyReceived:{type:"number"},unitPrice:{type:"number"},unitCost:{type:"number"},shippingPerUnit:{type:"number"},installPerUnit:{type:"number"},price_multiply:{type:"number",description:"Multiply current unitPrice by this factor (e.g. 1.10 for +10%)"},cost_multiply:{type:"number",description:"Multiply current unitCost by this factor"}}}},required:["job_id","updates"]}},
     {name:"log_delivery",description:"Log a specific quantity received for a line item on a job. Use when user says 'log 25 desks received' or 'received 10 chairs on job X'. Finds the item by description keywords.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name"},item_description:{type:"string",description:"Keywords to match the line item description (e.g. 'desk', 'chair', 'table')"},quantity:{type:"number",description:"Number of units received"}},required:["job_id","item_description","quantity"]}},
     {name:"bulk_update_jobs",description:"Update multiple jobs at once based on a filter. Use for 'mark all Quoting jobs as Ordered' or 'set all delivered jobs to paid'.",input_schema:{type:"object",properties:{filter:{type:"object",description:"Filter criteria",properties:{phase:{type:"string",description:"Match jobs in this phase"},paymentStatus:{type:"string",description:"Match jobs with this payment status"},all_delivered:{type:"boolean",description:"Match jobs where all items are received"}}},updates:{type:"object",properties:{phase:{type:"string"},paymentStatus:{type:"string"},notes:{type:"string"}}}},required:["filter","updates"]}},
     {name:"create_task",description:"Create a new task/to-do.",input_schema:{type:"object",properties:{text:{type:"string"},assignees:{type:"array",items:{type:"string"}},due:{type:"string"},priority:{type:"string"},status:{type:"string"},job_id:{type:"string"}},required:["text"]}},
@@ -1515,7 +1631,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     {name:"calculate_financials",description:"Calculate detailed financial breakdown for a job or across all jobs. Returns revenue, cost, margin, shipping total, install total, commission, and per-vendor breakdown. Use for 'what's the margin on Hopewell', 'break down costs by vendor', 'what's our total commission exposure'.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name. Use 'all' for entire business."},include_vendor_breakdown:{type:"boolean",description:"Include per-vendor cost breakdown"}},required:["job_id"]}},
     {name:"schedule_followup",description:"Create a follow-up task tied to a job with a specific due date. Use when user says 'remind me to follow up on the Lincoln quote next Tuesday', 'schedule a check-in with Naperville in 2 weeks'.",input_schema:{type:"object",properties:{job_id:{type:"string",description:"Job ID or name"},text:{type:"string",description:"What to follow up on"},due_date:{type:"string",description:"Due date (YYYY-MM-DD or relative like 'next Tuesday', '2 weeks')"},assignee:{type:"string",description:"Who to assign to"}},required:["text","due_date"]}},
     {name:"export_data",description:"Export job line items, vendor list, customer list, or financial summary as a formatted table the user can copy. Use when user says 'export the Hopewell items', 'give me a vendor list I can copy', 'export all jobs as a table'.",input_schema:{type:"object",properties:{type:{type:"string",description:"job_items, jobs_list, vendors, customers, reps, financials"},job_id:{type:"string",description:"For job_items: which job"},format:{type:"string",description:"table (markdown) or csv"}},required:["type"]}},
-    {name:"create_transaction",description:"Create a banking transaction (expense or revenue) on the Financials page. Use when user says 'add an expense for $500 rent', 'log a payment of $1200 from customer', 'record a $300 office supply purchase', 'add a deposit of $5000'.",input_schema:{type:"object",properties:{description:{type:"string",description:"What the transaction is for"},amount:{type:"number",description:"Dollar amount (positive number)"},type:{type:"string",description:"expense or revenue",enum:["expense","revenue"]},category:{type:"string",description:"Category like Operating - Rent, COGS - Vendor Payments, Revenue - Product Sales, etc."},date:{type:"string",description:"Date in YYYY-MM-DD format. Defaults to today."},account:{type:"string",description:"Account name like Operating, Savings, Credit Card, Payroll. Defaults to Operating."}},required:["description","amount"]}},
+    {name:"create_transaction",description:"Create ONE transaction on the Financials page. Use when user says 'add an expense for $500 rent', 'log a payment of $1200 from customer', 'record a $300 office supply purchase', 'add a deposit of $5000'. For more than one, use add_transactions.",input_schema:{type:"object",properties:{description:{type:"string",description:"What the transaction is for"},amount:{type:"number",description:"Dollar amount (balance-sheet entries may be negative)"},type:{type:"string",description:"expense, revenue, asset, liability or equity",enum:["expense","revenue","asset","liability","equity"]},category:{type:"string",description:"Category like Operating - Rent, COGS - Vendor Payments, Revenue - Product Sales, etc."},date:{type:"string",description:"Date in YYYY-MM-DD format. Defaults to today."},account:{type:"string",description:"Account nickname or last four digits. Defaults to the account the Financials pages count."}},required:["description","amount"]}},
     {name:"categorize_transaction",description:"Change the category on an existing banking transaction. Use when user says 'categorize the Chesapeake payment as insurance', 'change the United Airlines charge to travel', 'mark that $500 as rent'.",input_schema:{type:"object",properties:{transaction_description:{type:"string",description:"Description keywords to find the transaction"},category:{type:"string",description:"New category to assign"},date:{type:"string",description:"Date to narrow search if needed"}},required:["transaction_description","category"]}},
     {name:"get_banking_summary",description:"Get a summary of banking transactions -- totals by category, recent transactions, account balances, cash flow. Use when user says 'what did we spend this month', 'show me our expenses by category', 'what is our cash position', 'banking summary', 'how much have we spent on rent'.",input_schema:{type:"object",properties:{period:{type:"string",description:"month, quarter, ytd, year, all. Defaults to ytd."},category_filter:{type:"string",description:"Optional: filter to a specific category"}},required:[]}},
     {name:"get_payables_summary",description:"Get accounts payable / vendor bills summary -- what is owed, what is overdue, upcoming payments. Use when user says 'what do we owe vendors', 'show overdue bills', 'AP aging', 'what bills are due this week'.",input_schema:{type:"object",properties:{},required:[]}},
@@ -1580,6 +1696,207 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
   // Execute a tool call locally
   const executeTool=async(toolName,input)=>{
     try{
+      if(toolName==="sales_report"){
+        const P=_bkPeriod(input);if(P.error)return{error:P.error};
+        let repF=null;if(input&&input.rep){const m=_bkMatchRep(input.rep);if(m.error)return{error:m.error};repF=m.rep}
+        const basis=['sales','earned','both'].includes(String(input&&input.basis||'').toLowerCase())?String(input.basis).toLowerCase():'both';
+        const rateOf=(id)=>{const r=(reps||[]).find(x=>x.id===id);return (r&&r.commissionRate)||0};
+        const inScope=(j)=>!repF||j.salesRep===repF.id;
+        const custName=(j)=>{const c=(customers||[]).find(x=>x.id===j.customer);return c?c.name:''};
+        const pct=(rv,c)=>rv>0?((rv-c)/rv*100).toFixed(1)+'%':'--';
+        let msg='## Sales report: '+P.label+(repF?' -- '+repF.name:'')+'\n';
+        if(basis!=='earned'){
+          const pj=(jobs||[]).filter(j=>inScope(j)&&_bkIn(_bkJobDate(j),P));
+          const by={};pj.forEach(j=>{const k=j.salesRep||'';if(!by[k])by[k]={jobs:0,rev:0,cost:0,comm:0};const f=getJobFinancials(j.id)||{};by[k].jobs++;by[k].rev+=f.totalRevenue||0;by[k].cost+=f.totalCost||0;by[k].comm+=_commissionFor(j.id,rateOf(j.salesRep))});
+          msg+='\n### Sales in the period\nJobs dated in the period by their report date (invoice date, else last delivery, else due date, else created), as on the Sales Portal and Financials.\n\n| Rep | Jobs | Sales | Cost | Gross profit | Margin | Commission on these jobs |\n| --- | --- | --- | --- | --- | --- | --- |\n';
+          const keys=Object.keys(by).sort((a,b)=>by[b].rev-by[a].rev);const tot={jobs:0,rev:0,cost:0,comm:0};
+          keys.forEach(k=>{const x=by[k];tot.jobs+=x.jobs;tot.rev+=x.rev;tot.cost+=x.cost;tot.comm+=x.comm;msg+='| '+_bkCell(_bkRepName(k))+' | '+x.jobs+' | '+_bkUsd(x.rev)+' | '+_bkUsd(x.cost)+' | '+_bkUsd(x.rev-x.cost)+' | '+pct(x.rev,x.cost)+' | '+_bkUsd(x.comm)+' |\n'});
+          if(!keys.length)msg+='| No jobs dated in this period | 0 | $0.00 | $0.00 | $0.00 | -- | $0.00 |\n';
+          else if(keys.length>1)msg+='| Total | '+tot.jobs+' | '+_bkUsd(tot.rev)+' | '+_bkUsd(tot.cost)+' | '+_bkUsd(tot.rev-tot.cost)+' | '+pct(tot.rev,tot.cost)+' | '+_bkUsd(tot.comm)+' |\n';
+          if((repF||(input&&input.list_jobs))&&pj.length){
+            msg+='\n| Job | Customer | Date | Sales | Cost | Gross profit | Margin | Paid / phase |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n';
+            pj.slice().sort((a,b)=>_bkJobDate(a)-_bkJobDate(b)).slice(0,80).forEach(j=>{const f=getJobFinancials(j.id)||{};const rv=f.totalRevenue||0,c=f.totalCost||0;msg+='| '+_bkCell(j.name)+' ('+j.id+') | '+_bkCell(custName(j))+' | '+_bkIso(_bkJobDate(j))+' | '+_bkUsd(rv)+' | '+_bkUsd(c)+' | '+_bkUsd(rv-c)+' | '+pct(rv,c)+' | '+_bkCell((j.paymentStatus||'unpaid')+' / '+(j.phase||''))+' |\n'});
+            if(pj.length>80)msg+='\n'+(pj.length-80)+' more jobs not listed.\n';
+          }
+        }
+        if(basis!=='sales'){
+          const ej=(jobs||[]).filter(j=>inScope(j)&&commissionEarned(j)&&_bkIn(parseLocalDate(commissionEarnedDate(j)),P));
+          const by={};ej.forEach(j=>{const k=j.salesRep||'';if(!by[k])by[k]={jobs:0,rev:0,profit:0,comm:0};const f=getJobFinancials(j.id)||{};by[k].jobs++;by[k].rev+=f.totalRevenue||0;by[k].profit+=Math.max(0,(f.totalRevenue||0)-(f.totalCost||0));by[k].comm+=_commissionFor(j.id,rateOf(j.salesRep))});
+          msg+='\n### Commission earned in the period\nJobs paid in full AND closed out, dated by whichever came last, as on the Commissions page.\n\n| Rep | Jobs earned | Sales | Profit | Commission earned |\n| --- | --- | --- | --- | --- |\n';
+          const keys=Object.keys(by).sort((a,b)=>by[b].comm-by[a].comm);
+          keys.forEach(k=>{const x=by[k];msg+='| '+_bkCell(_bkRepName(k))+' | '+x.jobs+' | '+_bkUsd(x.rev)+' | '+_bkUsd(x.profit)+' | '+_bkUsd(x.comm)+' |\n'});
+          if(!keys.length)msg+='| No commission earned in this period | 0 | $0.00 | $0.00 | $0.00 |\n';
+          const undated=(jobs||[]).filter(j=>inScope(j)&&commissionEarned(j)&&!commissionEarnedDate(j)).length;
+          if(undated)msg+='\n'+undated+' job'+(undated!==1?'s are':' is')+' paid and closed out but '+(undated!==1?'have':'has')+' no paid date, so '+(undated!==1?'they fall':'it falls')+' in no period until one is added.\n';
+        }
+        return{success:true,message:msg};
+      }
+      if(toolName==="profit_and_loss"){
+        const ae=_bkAdminErr();if(ae)return ae;
+        const P=_bkPeriod(input);if(P.error)return{error:P.error};
+        const R=_bkPL(P);
+        const ord=(o)=>Object.entries(o).filter(([,v])=>Math.abs(v)>=0.005).sort((a,b)=>Math.abs(b[1])-Math.abs(a[1]));
+        let msg='## Profit & Loss: '+P.label+'\nThe same figures as Financials >> P&L with From '+P.from+' and To '+P.to+'. Accounts counted: '+R.view+'. Bank-feed rows, transfers, bill payments and balance-sheet entries stay off the P&L, as on the page.\n\n| Line | Amount |\n| --- | --- |\n';
+        msg+='| Job sales ('+R.pj.length+' job'+(R.pj.length!==1?'s':'')+') | '+_bkUsd(R.jobRev)+' |\n';
+        ord(R.rev).forEach(([c,v])=>{msg+='| Revenue: '+_bkCell(c)+' | '+_bkUsd(v)+' |\n'});
+        msg+='| Total revenue | '+_bkUsd(R.totalRev)+' |\n| Job costs | '+_bkUsd(R.jobCost)+' |\n';
+        const ex={};Object.entries(R.exp).forEach(([c,v])=>{ex[c]=(ex[c]||0)+v});Object.entries(R.bill).forEach(([c,v])=>{ex[c]=(ex[c]||0)+v});
+        ord(ex).forEach(([c,v])=>{msg+='| Expense: '+_bkCell(c)+(R.bill[c]&&Math.abs(R.bill[c])>=0.005?' (incl. '+_bkUsd(R.bill[c])+' from vendor bills)':'')+' | '+_bkUsd(v)+' |\n'});
+        msg+='| Total costs and expenses | '+_bkUsd(R.totalCost)+' |\n| Gross profit | '+_bkUsd(R.gross)+' |\n| Commissions | '+_bkUsd(R.comm)+' |\n| Net income | '+_bkUsd(R.net)+' |\n';
+        return{success:true,message:msg};
+      }
+      if(toolName==="list_transactions"){
+        const ae=_bkAdminErr();if(ae)return ae;
+        const i=input||{};const hasP=!!(i.from||i.to||i.quarter||i.month||i.year||i.period);
+        const P=_bkPeriod(hasP?i:{period:'all'});if(P.error)return{error:P.error};
+        const txns=_bkTxns();const v=_bkView(txns);
+        const aRef=String(i.account||'').trim();const allA=aRef.toLowerCase()==='all';let acctId=null;
+        if(aRef&&!allA){const a=_bkResolveAcct(aRef,txns);if(a.error)return{error:a.error};acctId=a.id}
+        const q=String(i.search||'').toLowerCase().trim(),cat=String(i.category||'').toLowerCase().trim(),typ=String(i.type||'').toLowerCase().trim(),src=String(i.source||'all').toLowerCase();
+        const minA=_bkAmt(i.min_amount),maxA=_bkAmt(i.max_amount);
+        const srcOf=(t)=>t.plaidId?'bank feed':t.source==='statement'?'statement':'manual';
+        const rows=txns.filter(t=>{
+          if(acctId){if(t.account!==acctId)return false}else if(!allA&&!_bkInView(t,v))return false;
+          if(t.date){const d=parseLocalDate(t.date);if(!d||d<P.fromD||d>P.toD)return false}else if(hasP)return false;
+          if(typ&&String(t.type||'expense').toLowerCase()!==typ)return false;
+          if(cat&&!String(t.category||'Uncategorized').toLowerCase().includes(cat))return false;
+          if(q&&!(String(t.description||'').toLowerCase().includes(q)||String(t.category||'').toLowerCase().includes(q)||String(t.id).toLowerCase()===q))return false;
+          const a=Math.abs(parseFloat(t.amount)||0);if(isFinite(minA)&&a<Math.abs(minA)-0.0001)return false;if(isFinite(maxA)&&a>Math.abs(maxA)+0.0001)return false;
+          if(src==='bank'&&srcOf(t)==='manual')return false;if(src==='manual'&&srcOf(t)!=='manual')return false;if(src==='brain'&&t.addedVia!=='brain')return false;
+          return true});
+        if(String(i.sort||'')==='amount')rows.sort((a,b)=>Math.abs(parseFloat(b.amount)||0)-Math.abs(parseFloat(a.amount)||0));else rows.sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+        const lim=Math.max(1,Math.min(300,Math.floor(Number(i.limit)||50)));
+        const byT={};rows.forEach(t=>{const k=t.type||'expense';byT[k]=(byT[k]||0)+(parseFloat(t.amount)||0)});
+        let msg='## Transactions: '+P.label+' -- '+rows.length+' found\n'+(acctId?'Account: '+_bkAcctName(acctId,v.meta):allA?'Every account, including excluded ones':'Accounts the Financials pages count: '+(v.active?v.sel.map(id=>_bkAcctName(id,v.meta)).join(', '):'all except excluded'))+'. Totals: '+(Object.keys(byT).map(k=>k+' '+_bkUsd(byT[k])).join(', ')||'none')+'\n\n';
+        if(rows.length){msg+='| ID | Date | Description | Category | Type | Account | Amount | Source |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n';rows.slice(0,lim).forEach(t=>{msg+='| '+t.id+' | '+(t.date||'--')+' | '+_bkCell(String(t.description||'').slice(0,70))+' | '+_bkCell(t.category||'Uncategorized')+' | '+(t.type||'expense')+' | '+_bkCell(_bkAcctName(t.account,v.meta))+' | '+_bkUsd(parseFloat(t.amount)||0)+' | '+srcOf(t)+(t.billId?', paid a bill':'')+' |\n'});if(rows.length>lim)msg+='\n'+(rows.length-lim)+' more not shown. Narrow the search or raise the limit (up to 300).\n'}
+        return{success:true,message:msg};
+      }
+      if(toolName==="add_transactions"){
+        const ae=_bkAdminErr();if(ae)return ae;
+        const list=Array.isArray(input&&input.transactions)?input.transactions:[];
+        if(!list.length)return{error:'No transactions to add.'};
+        if(list.length>300)return{error:'That is '+list.length+' transactions. Add up to 300 at a time.'};
+        const txns=_bkTxns();const v=_bkView(txns);
+        const defA=_bkResolveAcct(input.account,txns);if(defA.error)return{error:defA.error};
+        let tombs=null;try{tombs=await db.fetchTombstones()}catch{tombs=null}
+        const deadFp=new Set((Array.isArray(tombs)?tombs:[]).filter(x=>x&&!x.restoredAt).map(x=>x.fingerprint||bankTxnFingerprint(x)));
+        const exactKey=(t)=>[t.account||'',t.date||'',_bkMoney(parseFloat(t.amount)||0).toFixed(2),String(t.description||'').trim().toLowerCase(),String(t.category||'').trim().toLowerCase(),t.type||'expense'].join('|');
+        const have=new Set(txns.map(exactKey));const looks=new Map();txns.forEach(t=>looks.set(bankTxnFingerprint(t),t));
+        const TYPES=['expense','revenue','asset','liability','equity'];const ok=[],skipped=[],flags=[];
+        list.forEach((r,ix)=>{
+          const n=ix+1;const x=r&&typeof r==='object'?r:{};
+          const date=String(x.date||'').trim();const desc=String(x.description||'').trim().replace(/\s+/g,' ').slice(0,200);
+          const category=String(x.category||'').trim().slice(0,80)||'Uncategorized';
+          let type=String(x.type||'').toLowerCase().trim();if(!type)type=/^revenue/i.test(category)?'revenue':'expense';
+          const amt=_bkAmt(x.amount);
+          if(!_bkIsDate(date))return skipped.push('row '+n+': "'+date+'" is not a real date (YYYY-MM-DD)');
+          if(!desc)return skipped.push('row '+n+': no description');
+          if(!TYPES.includes(type))return skipped.push('row '+n+': type must be expense, revenue, asset, liability or equity');
+          if(!isFinite(amt)||amt===0)return skipped.push('row '+n+': amount "'+x.amount+'" is not a number other than zero');
+          const lk=_brainLockCheck(date);if(lk)return skipped.push('row '+n+': '+lk);
+          let acct=defA.id;if(x.account){const a=_bkResolveAcct(x.account,txns);if(a.error)return skipped.push('row '+n+': '+a.error);acct=a.id}
+          const rec={date,description:desc,category,amount:String(amt),type,account:acct};
+          const ek=exactKey(rec);if(have.has(ek))return skipped.push('row '+n+': already in the books ('+date+' '+_bkUsd(amt)+' '+desc.slice(0,40)+')');
+          const fp=bankTxnFingerprint(rec);if(deadFp.has(fp))return skipped.push('row '+n+': matches a deleted bank transaction ('+date+' '+_bkUsd(amt)+'); allow it again on Financials >> Review first');
+          const near=looks.get(fp);if(near)flags.push('row '+n+' ('+date+' '+_bkUsd(amt)+' '+desc.slice(0,40)+') and '+near.id+' "'+String(near.description||'').slice(0,40)+'"');
+          have.add(ek);looks.set(fp,{...rec,id:'row '+n});ok.push(rec);
+        });
+        if(!ok.length)return{error:'Nothing was added. '+skipped.slice(0,12).join('; ')+(skipped.length>12?'; and '+(skipped.length-12)+' more':'')};
+        const stamp=Date.now();const by=(currentUser&&(currentUser.name||currentUser.email))||'Brain';const at=new Date().toISOString();
+        ok.forEach((rec,k)=>{addSop({id:'TXN-'+stamp+'-'+Math.random().toString(36).slice(2,6)+'-b'+k,title:rec.description,cat:'ManualTxn',icon:'dollar',content:JSON.stringify({...rec,addedVia:'brain',addedBy:by,addedAt:at}),custom:true})});
+        const byT={};ok.forEach(r2=>{byT[r2.type]=(byT[r2.type]||0)+Number(r2.amount)});
+        const accts=Array.from(new Set(ok.map(r2=>r2.account)));
+        const off=(a)=>v.meta[a]&&v.meta[a].excluded?' (an excluded account, so these stay off the P&L and Balance Sheet)':(v.active&&!v.sel.includes(a))?' (not in the Financials account filter, so these stay off the P&L and Balance Sheet until it is picked there)':'';
+        let msg='Added '+ok.length+' transaction'+(ok.length!==1?'s':'')+' ('+Object.keys(byT).map(k=>k+' '+_bkUsd(byT[k])).join(', ')+') on '+accts.map(a=>_bkAcctName(a,v.meta)+off(a)).join(', ')+'.';
+        if(skipped.length)msg+=' Skipped '+skipped.length+': '+skipped.slice(0,15).join('; ')+(skipped.length>15?'; and '+(skipped.length-15)+' more':'')+'.';
+        if(flags.length)msg+=' Worth a look, same date, amount and first words: '+flags.slice(0,10).join('; ')+(flags.length>10?'; and '+(flags.length-10)+' more':'')+'.';
+        return{success:true,message:msg};
+      }
+      if(toolName==="update_transactions"){
+        const ae=_bkAdminErr();if(ae)return ae;
+        const ids=Array.isArray(input&&input.ids)?input.ids.map(String):[];const u=input&&input.updates&&typeof input.updates==='object'?input.updates:{};
+        if(!ids.length)return{error:'Give the ids of the transactions to change (list_transactions shows them).'};
+        if(ids.length>300)return{error:'Change up to 300 transactions at a time.'};
+        const fields=['category','type','account','date','amount','description'].filter(k=>u[k]!==undefined&&u[k]!==null&&String(u[k]).trim()!=='');
+        if(!fields.length)return{error:'Say what to change: category, type, account, date, amount or description.'};
+        const txns=_bkTxns();const TYPES=['expense','revenue','asset','liability','equity'];
+        let nAcct=null;if(fields.includes('account')){const a=_bkResolveAcct(u.account,txns);if(a.error)return{error:a.error};nAcct=a.id}
+        const nType=fields.includes('type')?String(u.type).toLowerCase().trim():null;if(nType&&!TYPES.includes(nType))return{error:'Type must be expense, revenue, asset, liability or equity.'};
+        const nDate=fields.includes('date')?String(u.date).trim():null;if(nDate&&!_bkIsDate(nDate))return{error:'The new date must be a real date, YYYY-MM-DD.'};
+        let nAmt=null;if(fields.includes('amount')){nAmt=_bkAmt(u.amount);if(!isFinite(nAmt)||nAmt===0)return{error:'The new amount must be a number other than zero.'}}
+        const done=[],skipped=[];const at=new Date().toISOString();
+        ids.forEach(id=>{
+          const t=txns.find(x=>x.id===id);if(!t)return skipped.push(id+': not found');
+          if((t.plaidId||t.source==='statement')&&fields.some(f=>['account','date','amount','description'].includes(f)))return skipped.push(id+': a bank row keeps the bank\'s date, amount, description and account; only its category and type can change');
+          if(t.billId&&(fields.includes('category')||fields.includes('type')))return skipped.push(id+': paid against a vendor bill; remove that payment on the Bills tab first');
+          const lk=_brainLockCheck(t.date)||(nDate?_brainLockCheck(nDate):null);if(lk)return skipped.push(id+': '+lk);
+          const nx={...t};delete nx.id;
+          if(fields.includes('category'))nx.category=String(u.category).trim().slice(0,80);
+          if(nType)nx.type=nType;else if(fields.includes('category'))nx.type=bankCategoryType(nx.category,t.type||'expense');
+          if(nAcct)nx.account=nAcct;if(nDate)nx.date=nDate;if(nAmt!==null)nx.amount=String(nAmt);if(fields.includes('description'))nx.description=String(u.description).trim().replace(/\s+/g,' ').slice(0,200);
+          nx.editedVia='brain';nx.editedAt=at;
+          addSop({id:t.id,title:nx.description||'Transaction',cat:'ManualTxn',icon:'dollar',content:JSON.stringify(nx),custom:true});
+          done.push(t);
+        });
+        if(!done.length)return{error:'Nothing changed. '+skipped.slice(0,12).join('; ')+(skipped.length>12?'; and '+(skipped.length-12)+' more':'')};
+        const what=fields.map(f=>f+' to '+(f==='account'?_bkAcctName(nAcct):f==='amount'?_bkUsd(nAmt):String(u[f]).trim())).join(', ');
+        return{success:true,message:'Changed '+done.length+' transaction'+(done.length!==1?'s':'')+': '+what+'.'+(skipped.length?' Skipped '+skipped.length+': '+skipped.slice(0,12).join('; ')+'.':'')};
+      }
+      if(toolName==="delete_transactions"){
+        const ae=_bkAdminErr();if(ae)return ae;
+        const ids=Array.isArray(input&&input.ids)?input.ids.map(String):[];if(!ids.length)return{error:'Give the ids of the transactions to delete (list_transactions shows them).'};
+        if(ids.length>200)return{error:'Delete up to 200 transactions at a time.'};
+        const txns=_bkTxns();const done=[],skipped=[];
+        ids.forEach(id=>{const t=txns.find(x=>x.id===id);if(!t)return skipped.push(id+': not found');if(t.billId)return skipped.push(id+': paid against a vendor bill; remove that payment on the Bills tab first');const lk=_brainLockCheck(t.date);if(lk)return skipped.push(id+': '+lk);deleteSop(id);done.push(t)});
+        if(!done.length)return{error:'Nothing was deleted. '+skipped.slice(0,12).join('; ')};
+        const bank=done.filter(t=>t.plaidId||t.source==='statement').length;
+        return{success:true,message:'Deleted '+done.length+' transaction'+(done.length!==1?'s':'')+' ('+_bkUsd(done.reduce((a,t)=>a+(parseFloat(t.amount)||0),0))+').'+(bank?' '+bank+' came from the bank, so the AIOS remembers '+(bank!==1?'them':'it')+' as deleted and the bank feed will not bring '+(bank!==1?'them':'it')+' back (Financials >> Review can allow one again).':'')+(skipped.length?' Skipped '+skipped.length+': '+skipped.slice(0,12).join('; ')+'.':'')};
+      }
+      if(toolName==="balance_sheet_lines"){
+        const ae=_bkAdminErr();if(ae)return ae;
+        const asOf=String(input&&input.as_of||'').trim()||_bkIso(new Date());if(!_bkIsDate(asOf))return{error:'Give the date as YYYY-MM-DD.'};
+        const d0=parseLocalDate(asOf);const asOfD=new Date(d0.getFullYear(),d0.getMonth(),d0.getDate(),23,59,59);
+        const raw=_bkBookRaw();const accts=_bkBSAccounts(asOfD);const cash=_bkLiveCash();
+        const bk=(b)=>b?_bkUsd(b.amount)+' as of '+b.asOf+(b.applies?'':' (dated after '+asOf+', not used)'):'--';
+        let msg='## Balance Sheet lines as of '+asOf+'\nThe full statement is Financials >> Balance Sheet with To '+asOf+'. A line uses its QuickBooks book balance once that date has come; otherwise the AIOS figure.\n\n| Line | AIOS figure | QuickBooks book balance | On the sheet |\n| --- | --- | --- | --- |\n';
+        Object.keys(_BK_SYS).forEach(k=>{const b=_bkBookOf(raw,k,asOfD);const comp=k==='cash'&&cash!==null?Math.max(0,cash):null;msg+='| '+_BK_SYS[k]+' | '+(comp!==null?_bkUsd(comp)+' (live bank)':'see the Balance Sheet page')+' | '+bk(b)+' | '+(b&&b.applies?_bkUsd(b.amount):comp!==null?_bkUsd(comp):'the page figure')+' |\n'});
+        accts.forEach(a=>{msg+='| '+_bkCell(a.name)+' ('+a.kind+') | '+_bkUsd(a.computed)+' ('+a.count+' entr'+(a.count!==1?'ies':'y')+') | '+bk(a.book)+' | '+_bkUsd(a.value)+' |\n'});
+        const pl=_bkPL(_bkPeriod({from:asOf.slice(0,4)+'-01-01',to:asOf}));
+        msg+='| Net Income (Jan 1 to '+asOf+') | '+_bkUsd(pl.net)+' | never typed over | '+_bkUsd(pl.net)+' |\n';
+        return{success:true,message:msg};
+      }
+      if(toolName==="set_book_balances"){
+        const ae=_bkAdminErr();if(ae)return ae;
+        const lines=Array.isArray(input&&input.lines)?input.lines:[];if(!lines.length)return{error:'No book balances given.'};if(lines.length>100)return{error:'Set up to 100 lines at a time.'};
+        const raw=_bkBookRaw();const next={...raw};const accts=_bkBSAccounts(new Date(2100,0,1));
+        const SYS={'cash':'cash','cash & cash equivalents':'cash','cash and cash equivalents':'cash','ar':'ar','a/r':'ar','accounts receivable':'ar','receivables':'ar','inventory':'inventory','inventory (in transit)':'inventory','ap':'ap','a/p':'ap','accounts payable':'ap','payables':'ap','commissions':'commissions','commissions payable':'commissions','commission payable':'commissions'};
+        const by=(currentUser&&(currentUser.name||currentUser.email))||'admin';const at=new Date().toISOString();const done=[],skipped=[];
+        lines.forEach((l,ix)=>{
+          const x=l&&typeof l==='object'?l:{};const n=ix+1;
+          const name=String(x.line||x.account||'').trim().replace(/\s+/g,' ');if(!name)return skipped.push('line '+n+': no line name');
+          let key=SYS[name.toLowerCase()]||null;let label=key?_BK_SYS[key]:'';
+          if(!key){
+            const kind=String(x.kind||'').toLowerCase().trim();const ln=name.toLowerCase();
+            const hits=accts.filter(a=>a.name.toLowerCase()===ln&&(!kind||a.kind===kind));
+            const bookHits=Object.keys(raw).filter(k=>{const c=k.indexOf(':');return c>0&&k.slice(c+1).toLowerCase()===ln&&(!kind||k.slice(0,c)===kind)});
+            if(hits.length===1){key=hits[0].key;label=hits[0].name}
+            else if(!hits.length&&bookHits.length===1){key=bookHits[0];label=key.slice(key.indexOf(':')+1)}
+            else if(['asset','liability','equity'].includes(kind)){const nm=name.slice(0,80);key=kind+':'+nm;label=nm}
+            else return skipped.push(name+': say whether it is an asset, liability or equity account');
+          }
+          const prev=next[key];
+          if(prev&&typeof prev==='object'&&_bkIsDate(prev.asOf)){const lk=_brainLockCheck(prev.asOf);if(lk)return skipped.push(label+': '+lk)}
+          if(x.clear===true){if(!prev)return skipped.push(label+': has no book balance to clear');delete next[key];return done.push('cleared '+label)}
+          const amt=_bkAmt(x.amount);if(!isFinite(amt))return skipped.push(label+': amount "'+x.amount+'" is not a number');
+          const asOf=String(x.as_of||'').trim();if(!_bkIsDate(asOf))return skipped.push(label+': as_of must be a real date, YYYY-MM-DD');
+          const lk2=_brainLockCheck(asOf);if(lk2)return skipped.push(label+': '+lk2);
+          next[key]={amount:amt,asOf,memo:String(x.memo||'').trim().slice(0,200),setAt:at,setBy:by};
+          done.push(label+' '+_bkUsd(amt)+' as of '+asOf);
+        });
+        if(!done.length)return{error:'No book balances changed. '+skipped.join('; ')};
+        addSop({id:_BK_BOOK_ID,title:'Balance Sheet book balances',cat:'Settings',icon:'file',content:JSON.stringify({lines:next,updatedAt:at,updatedBy:by}),custom:true});
+        return{success:true,message:'QuickBooks book balances: '+done.join('; ')+'.'+(skipped.length?' Skipped: '+skipped.join('; ')+'.':'')+' Each shows on Financials >> Balance Sheet whenever the To date is on or after its date, with the AIOS figure underneath.'};
+      }
       if(toolName==="update_job"){
         const job=findJob(input.job_id);
         if(!job)return{error:"Job not found: "+input.job_id};
@@ -1594,6 +1911,17 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         return{success:true,message:"Created job: "+input.name+" ("+id+")"+(cust?" for "+cust.name:"")+(rep?" rep: "+rep.name:"")};
       }
       if(toolName==="update_line_item"){
+        if(input.tag&&input.job_id){
+          const job=findJob(input.job_id);if(!job)return{error:"Job not found: "+input.job_id};
+          const tg=String(input.tag).trim().toLowerCase();const all=getJobItems(job.id);
+          let rows=all.filter(i=>String(i.tag||'').trim().toLowerCase()===tg);
+          if(input.model_number){const mn=String(input.model_number).trim().toLowerCase();rows=rows.filter(i=>String(i.modelNumber||'').toLowerCase().includes(mn))}
+          if(!rows.length){const tags=Array.from(new Set(all.map(i=>String(i.tag||'').trim()).filter(Boolean))).sort();return{error:'No line items tagged "'+String(input.tag).trim()+'"'+(input.model_number?' with model '+input.model_number:'')+' on '+job.name+'. Tags on this job: '+(tags.join(', ')||'none')+'.'}}
+          if(!input.updates||typeof input.updates!=='object'||!Object.keys(input.updates).length)return{error:'Say what to change on the '+String(input.tag).trim()+' rows.'};
+          rows.forEach(i=>updateLineItem(i.id,input.updates));
+          const units=rows.reduce((a,i)=>a+(Number(i.qtyOrdered)||0),0);
+          return{success:true,message:'Updated '+rows.length+' line item'+(rows.length!==1?'s':'')+' tagged '+String(input.tag).trim()+' on '+job.name+' ('+units+' unit'+(units!==1?'s':'')+'): '+Object.entries(input.updates).map(([k,v])=>k+'='+v).join(', ')};
+        }
         let item=null;
         if(input.item_id)item=lineItems.find(i=>i.id===input.item_id);
         if(!item&&input.job_id&&input.item_description){
@@ -1619,13 +1947,13 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         msg+="Customer: "+(cust?.name||"--")+" | Rep: "+(rep?.name||"--")+" | Phase: "+job.phase+" | Payment: "+job.paymentStatus+"\n";
         msg+="Revenue: $"+f.totalRevenue.toFixed(2)+" | Cost: $"+f.totalCost.toFixed(2)+" | Margin: "+f.margin.toFixed(1)+"% | Items: "+items.length+"\n";
         if(job.terms)msg+="Terms: "+job.terms+(job.poNumber?" | PO#: "+job.poNumber:"")+(job.dueDate?" | Due: "+job.dueDate:"")+"\n";
-        msg+="\n| # | Description | Vendor | Model | Color | Qty | Cost | Price | Line Total | Received | Status |\n";
-        msg+="| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n";
+        msg+="\n| # | Tag | Description | Vendor | Model | Color | Qty | Cost | Price | Line Total | Received | Invoiced | Status |\n";
+        msg+="| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n";
         items.forEach((it,idx)=>{
           const v=vendors.find(v2=>v2.id===it.vendor);
           const total=((it.priceExtended&&it.priceExtended>0)?it.priceExtended:(it.unitPrice||0)*(it.qtyOrdered||0));
           const status=it.qtyReceived>=it.qtyOrdered?"complete":it.qtyReceived>0?"partial":"ordered";
-          msg+="| "+(idx+1)+" | "+clean(it.description)+" | "+clean(v?.name||it.manufacturer)+" | "+clean(it.modelNumber)+" | "+clean(it.color)+" | "+it.qtyOrdered+" | $"+(it.unitCost||0).toFixed(2)+" | $"+(it.unitPrice||0).toFixed(2)+" | $"+total.toFixed(2)+" | "+it.qtyReceived+"/"+it.qtyOrdered+" | "+status+" |\n";
+          msg+="| "+(idx+1)+" | "+clean(it.tag)+" | "+clean(it.description)+" | "+clean(v?.name||it.manufacturer)+" | "+clean(it.modelNumber)+" | "+clean(it.color)+" | "+it.qtyOrdered+" | $"+(it.unitCost||0).toFixed(2)+" | $"+(it.unitPrice||0).toFixed(2)+" | $"+total.toFixed(2)+" | "+it.qtyReceived+"/"+it.qtyOrdered+" | "+(Number(it.qtyInvoiced)||0)+"/"+it.qtyOrdered+" | "+status+" |\n";
         });
         msg+="\nYou can ask me to update any line item by description (e.g. 'change the desk price to $300') or make bulk changes.";
         return{success:true,message:msg};
@@ -1635,8 +1963,9 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         if(!job)return{error:"Job not found: "+input.job_id};
         const allItems=getJobItems(job.id);
         const filter=(input.filter_description||'').toLowerCase();
-        const targets=filter?allItems.filter(i=>i.description.toLowerCase().includes(filter)||(i.manufacturer||'').toLowerCase().includes(filter)||(i.modelNumber||'').toLowerCase().includes(filter)):allItems;
-        if(targets.length===0)return{error:"No items matched filter: "+(input.filter_description||"(all)")};
+        const _ftag=String(input.filter_tag||'').trim().toLowerCase();
+        const targets=(filter?allItems.filter(i=>i.description.toLowerCase().includes(filter)||(i.manufacturer||'').toLowerCase().includes(filter)||(i.modelNumber||'').toLowerCase().includes(filter)):allItems).filter(i=>!_ftag||String(i.tag||'').trim().toLowerCase()===_ftag);
+        if(targets.length===0)return{error:"No items matched filter: "+(input.filter_description||"")+(_ftag?" tag "+input.filter_tag:"")+(!filter&&!_ftag?"(all)":"")};
         let ct=0;const u=input.updates||{};
         targets.forEach(item=>{
           const changes={};
@@ -1649,7 +1978,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
           if(u.cost_multiply)changes.unitCost=Math.round(item.unitCost*u.cost_multiply*100)/100;
           if(Object.keys(changes).length>0){updateLineItem(item.id,changes);ct++}
         });
-        return{success:true,message:"Updated "+ct+" line items on "+job.name+(filter?" (filter: "+input.filter_description+")":"")};
+        return{success:true,message:"Updated "+ct+" line items on "+job.name+(filter?" (filter: "+input.filter_description+")":"")+(_ftag?" (tag "+String(input.filter_tag).trim()+")":"")};
       }
       if(toolName==="log_delivery"){
         const job=findJob(input.job_id);
@@ -2157,13 +2486,16 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         return{error:"Unknown export type: "+input.type};
       }
       if(toolName==="create_transaction"){
-        const txnDate=input.date||new Date().toISOString().split('T')[0];
+        const _ae=_bkAdminErr();if(_ae)return _ae;
+        const txnDate=input.date||_bkIso(new Date());
+        if(!_bkIsDate(txnDate))return{error:'The date must be a real date, YYYY-MM-DD.'};
         const _lockErr=_brainLockCheck(txnDate);
         if(_lockErr)return{error:_lockErr};
-        const txnType=input.type||'expense';
+        const txnType=['expense','revenue','asset','liability','equity'].includes(input.type)?input.type:'expense';
         const txnCat=input.category||(txnType==='revenue'?'Revenue - Product Sales':'Uncategorized');
-        const txnAcct=input.account||'Operating';
-        const txnAmt=String(Math.abs(Number(input.amount)||0));
+        const _ta=_bkResolveAcct(input.account,_bkTxns());if(_ta.error)return{error:_ta.error};
+        const txnAcct=_ta.id;
+        const txnAmt=String(['asset','liability','equity'].includes(txnType)?_bkMoney(Number(input.amount)||0):Math.abs(Number(input.amount)||0));
         // Dedup against current ManualTxn store. Same shared _bankTxnHash that
         // the manual UI add and Plaid sync use. Brain can't bypass dedup -- if
         // it's told twice or asked to create a row that already exists from
@@ -2176,7 +2508,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         }
         const id='TXN-'+Date.now()+'-'+Math.random().toString(36).slice(2,6);
         addSop({id,title:input.description||'Transaction',cat:'ManualTxn',icon:'dollar',content:JSON.stringify({date:txnDate,description:input.description||'',category:txnCat,amount:txnAmt,type:txnType,account:txnAcct}),custom:true});
-        return{success:true,message:'Created '+txnType+': $'+Number(txnAmt).toFixed(2)+' -- "'+input.description+'" ['+txnCat+'] on '+txnDate+' ('+txnAcct+' account)'};
+        return{success:true,message:'Created '+txnType+': $'+Number(txnAmt).toFixed(2)+' -- "'+input.description+'" ['+txnCat+'] on '+txnDate+' ('+_bkAcctName(txnAcct)+')'};
       }
       if(toolName==="categorize_transaction"){
         const txns=(customSops||[]).filter(s=>s.cat==='ManualTxn').map(s=>{try{return{id:s.id,...JSON.parse(s.content)}}catch{return null}}).filter(Boolean);
@@ -2186,7 +2518,9 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         if(dateFilter)matches=matches.filter(t=>t.date===dateFilter);
         if(matches.length===0)return{error:'No transaction found matching "'+input.transaction_description+'"'+(dateFilter?' on '+dateFilter:'')};
         const t=matches[0];
-        const newType=input.category.startsWith('Revenue')?'revenue':'expense';
+        if(t.billId&&input.category!=='Bill Payment')return{error:'That transaction is paid against a vendor bill; remove the payment on the Bills tab first.'};
+        const _clk=_brainLockCheck(t.date);if(_clk)return{error:_clk};
+        const newType=bankCategoryType(input.category,t.type||'expense');
         addSop({id:t.id,title:t.description||'Transaction',cat:'ManualTxn',icon:'dollar',content:JSON.stringify({...t,category:input.category,type:newType}),custom:true});
         return{success:true,message:'Categorized "'+t.description+'" ($'+Number(t.amount||0).toFixed(2)+') as '+input.category+(matches.length>1?' (matched first of '+matches.length+' results)':'')};
       }
@@ -3619,6 +3953,8 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     const vbOpen = vbAll.filter(b=>{const st=billStatus(b);return st==='open'||st==='partial'});
     const vbTodayMs = (()=>{const n=new Date();return new Date(n.getFullYear(),n.getMonth(),n.getDate()).getTime()})();
     const vbOverdue = vbOpen.filter(b=>{const d=parseLocalDate(b.dueDate);return !!d&&d.getTime()<vbTodayMs}).length;
+    // (Oct 6 2026) Admin only: where the books stand, so bookkeeping answers start from facts.
+    const finLine = _bkRole!=='admin' ? "" : (()=>{const tx=_bkTxns();const v=_bkView(tx);return "\nFINANCIALS: "+tx.length+" bank and manual transactions | the P&L and Balance Sheet count "+(v.active?v.sel.map(id=>_bkAcctName(id,v.meta)).join(", "):"all accounts except excluded ones")+" | new entries go on "+_bkAcctName(_bkResolveAcct("",tx).id,v.meta)+" unless the user names another account | closed periods: "+(Array.from(_brainClosed).sort().join(", ")||"none")+" | QuickBooks book balances set: "+Object.keys(_bkBookRaw()).length})();
     const vbLine = "VENDOR BILLS: " + vbOpen.length + " open | $" + Math.round(vbOpen.reduce((s,b)=>s+billBalance(b),0)) + " open balance | " + vbOverdue + " overdue" + (vbAll.length ? " | " + vbAll.length + " total (use list_financials_vendor_bills)" : "");
 
 
@@ -3632,7 +3968,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
 
 
     // Build job summaries -- always included, compact
-    const jobSummaries = jobs.map(j => {const f=getJobFinancials(j.id);const c=customers.find(c2=>c2.id===j.customer);const r=reps.find(r2=>r2.id===j.salesRep);const items=getJobItems(j.id);const totalOrd=items.reduce((s2,i2)=>s2+i2.qtyOrdered,0);const totalRcv=items.reduce((s2,i2)=>s2+i2.qtyReceived,0);return j.name+"("+j.phase+"|"+(c?.name||"")+" | Rep:"+(r?.name||"")+" | Rev:$"+Math.round(f.totalRevenue)+" | Cost:$"+Math.round(f.totalCost)+" | Margin:"+f.margin.toFixed(1)+"% | Delivered:"+totalRcv+"/"+totalOrd+" | Pay:"+j.paymentStatus+" | Due:"+(j.dueDate||"none")+" | ID:"+j.id+")"}).join("\n");
+    const jobSummaries = jobs.map(j => {const f=getJobFinancials(j.id);const c=customers.find(c2=>c2.id===j.customer);const r=reps.find(r2=>r2.id===j.salesRep);const items=getJobItems(j.id);const totalOrd=items.reduce((s2,i2)=>s2+i2.qtyOrdered,0);const totalRcv=items.reduce((s2,i2)=>s2+i2.qtyReceived,0);return j.name+"("+j.phase+"|"+(c?.name||"")+" | Rep:"+(r?.name||"")+" | Rev:$"+Math.round(f.totalRevenue)+" | Cost:$"+Math.round(f.totalCost)+" | Margin:"+f.margin.toFixed(1)+"% | Delivered:"+totalRcv+"/"+totalOrd+" | Pay:"+j.paymentStatus+" | Due:"+(j.dueDate||"none")+" | Date:"+String((jobReportDate?jobReportDate(j):j.createdDate)||"none").slice(0,10)+" | ID:"+j.id+")"}).join("\n");
 
 
     // Line item details: include for relevant jobs OR if user asks about items/deliveries
@@ -3644,7 +3980,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         return "--- "+j.name+" ("+j.id+") ---\n"+items.map(i=>{
           const v=vendors.find(v2=>v2.id===i.vendor);
           const desc=(i.description||'').replace(/\n/g,' ').replace(/\r/g,'').trim();
-          return "  "+desc+" | Vendor:"+(v?.name||"--")+" | Model:"+(i.modelNumber||"--")+" | Qty:"+i.qtyOrdered+" | Received:"+i.qtyReceived+" | Cost:$"+(i.unitCost||0).toFixed(2)+" | Price:$"+(i.unitPrice||0).toFixed(2)+" | Color:"+(i.color||"--")+" | Tag:"+(i.tag||"--")+" | ID:"+i.id;
+          return "  "+desc+" | Vendor:"+(v?.name||"--")+" | Model:"+(i.modelNumber||"--")+" | Qty:"+i.qtyOrdered+" | Received:"+i.qtyReceived+" | Invoiced:"+(Number(i.qtyInvoiced)||0)+" | Cost:$"+(i.unitCost||0).toFixed(2)+" | Price:$"+(i.unitPrice||0).toFixed(2)+" | Color:"+(i.color||"--")+" | Tag:"+(i.tag||"--")+" | ID:"+i.id;
         }).join("\n");
       }).filter(Boolean).join("\n");
     }
@@ -3738,9 +4074,11 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     const taskText = /task|todo|assign|follow.?up/i.test(q) ? (customSops||[]).filter(s=>s.cat==="Task").map(s=>{try{const d=JSON.parse(s.content);return d.text+" ["+d.status+"]"+(d.assignees?.length?" -> "+d.assignees.join(","):"")+(d.due?" due:"+d.due:"")}catch{return s.title}}).join("\n") : "";
 
 
-    return "You are the Midwest Brain -- a full-capability AI assistant powered by Claude, built into the operating system for Midwest Educational Furnishings (Kildeer, IL). Owner: Maureen Welter. Today: " + today + ".\n\nYou are a COMPLETE AI assistant. You can do everything Claude can do: write emails, draft proposals, create content, analyze data, brainstorm ideas, explain concepts, write code, give advice, and more. You happen to ALSO have full access to the live Midwest business database below, so you can weave in real company data when relevant.\n\nIf someone asks you to write an email -- write a great email, using Midwest context if relevant. If they ask for a marketing idea -- give one. If they ask to explain a concept -- explain it. You are not limited to just answering data questions.\n\nBUSINESS CONTEXT:\nSTATS: " + jobs.length + " jobs | Rev $" + Math.round(totalRev) + " | Cost $" + Math.round(totalCost) + " | Margin " + (totalRev>0?Math.round((totalRev-totalCost)/totalRev*100):0) + "% | " + lineItems.length + " line items | " + vendors.length + " vendors | " + customers.length + " customers | " + ((customSops||[]).filter(s=>s.cat==='Prospect').length) + " prospects\n" + vbLine + "\n\nALL JOBS:\n" + jobSummaries + lineItemDetail + "\n\nVENDORS: " + vendorSummaries + vendorDetail + "\n\nCUSTOMERS: " + custSummaries + "\n\nREPS: " + repSummaries + sopSection + (taskText?"\n\nTASKS:\n"+taskText:"") + "\n\nRULES:\n1. You are a FULL AI assistant. You can write emails, draft documents, create proposals, brainstorm, explain anything, give business advice, and do everything Claude can normally do.\n2. When the question relates to Midwest business data, use the real numbers above. NEVER say you don't have the data.\n3. When writing emails or documents, use Midwest context naturally: 'Midwest Educational Furnishings', Maureen Welter, Kildeer IL, the customer/vendor names from the database.\n4. For 'how do I' questions about business processes: check the RELEVANT SOP DETAILS section. If an SOP covers it, answer FROM the SOP.\n5. For general knowledge questions, advice, brainstorming, writing help: answer like a world-class AI assistant would. You are not limited to business data.\n6. When asked about a job, use its LINE ITEM DETAILS for specific products, vendors, quantities, and costs.\n7. Show your math when doing financial calculations.\n8. Think like a CFO+COO+executive assistant combined.\n9. Keep answers concise but complete. Match the tone to what's being asked -- formal for emails, casual for brainstorming, detailed for analysis.\n10. FORMAT DATA AS TABLES: When showing line items, price comparisons, job lists, vendor data, or any structured data with 3+ rows, ALWAYS use markdown table format (| Col1 | Col2 |). The chat renders markdown tables as styled interactive tables. Include dollar signs for money columns. This is critical for readability.\n11. At the end of business-related answers, suggest 2-3 follow-up questions:\n>> [question 1]\n>> [question 2]\n>> [question 3]\n12. NEVER use emoji. Text only.\n13. When the user asks you to DO something (update, create, mark, change, set, navigate), USE THE TOOLS. Don't just describe what would happen -- call the tool. You will see a confirmation before the action executes.\n14. For job references: match by job ID or by name keywords. If ambiguous, ask which job.\n15. When using tools, briefly explain what you are about to do BEFORE the tool call.\n16. PROACTIVELY USE save_memory to remember important patterns, preferences, decisions, and insights from conversations. Your memory persists forever and makes you smarter over time.\n16. Use detect_anomalies for health checks. Use analyze_trends for patterns. Use summarize_context for briefings. Use predictive_flag for risk assessment.\n17. Use draft_email for professional emails with Midwest branding.\n18. Use database_query for complex data lookups. Use parse_uploaded_file ONLY for files at public URLs.\n19. CRITICAL FILE ATTACHMENT RULE: When a user attaches a file via the paperclip button, the file content is ALREADY EMBEDDED directly in the user message as text or document blocks. You can read it right there. Do NOT call parse_uploaded_file for attached files. The data is already here.\n\nWhen a file is attached, be PROACTIVE about what you can do with it:\n- VENDOR QUOTE (has model numbers, prices, quantities): Extract all line items and use create_job_from_file to build a complete job. Ask for the customer name if not obvious.\n- CUSTOMER LIST (schools, districts, contacts): Use import_customers_from_file to add them to the directory.\n- VENDOR LIST (manufacturers, suppliers): Use import_vendors_from_file to add them.\n- INVOICE/RECEIPT: Extract the data, match to existing jobs, summarize what is owed.\n- PRICE LIST: Compare against existing job prices using compare_quote_to_job.\n- GENERAL DOCUMENT: Analyze thoroughly, extract key data, suggest next actions.\n\nAlways tell the user what you found AND what you can do with it. Don't just describe the file -- offer to take action.\n21. You have WEB SEARCH capability. When asked about current events, market prices, competitor info, or anything needing real-time data, the web_search tool is always available and Claude uses it automatically.\n22. After substantive interactions, consider what should be saved to memory." + (memoryText ? "\n\nBRAIN MEMORY (persistent knowledge):\n" + memoryText : "");
+    return "You are the Midwest Brain -- a full-capability AI assistant powered by Claude, built into the operating system for Midwest Educational Furnishings (Kildeer, IL). Owner: Maureen Welter. Today: " + today + ".\n\nYou are a COMPLETE AI assistant. You can do everything Claude can do: write emails, draft proposals, create content, analyze data, brainstorm ideas, explain concepts, write code, give advice, and more. You happen to ALSO have full access to the live Midwest business database below, so you can weave in real company data when relevant.\n\nIf someone asks you to write an email -- write a great email, using Midwest context if relevant. If they ask for a marketing idea -- give one. If they ask to explain a concept -- explain it. You are not limited to just answering data questions.\n\nBUSINESS CONTEXT:\nSTATS: " + jobs.length + " jobs | Rev $" + Math.round(totalRev) + " | Cost $" + Math.round(totalCost) + " | Margin " + (totalRev>0?Math.round((totalRev-totalCost)/totalRev*100):0) + "% | " + lineItems.length + " line items | " + vendors.length + " vendors | " + customers.length + " customers | " + ((customSops||[]).filter(s=>s.cat==='Prospect').length) + " prospects\n" + vbLine + finLine + "\n\nALL JOBS:\n" + jobSummaries + lineItemDetail + "\n\nVENDORS: " + vendorSummaries + vendorDetail + "\n\nCUSTOMERS: " + custSummaries + "\n\nREPS: " + repSummaries + sopSection + (taskText?"\n\nTASKS:\n"+taskText:"") + "\n\nRULES:\n1. You are a FULL AI assistant. You can write emails, draft documents, create proposals, brainstorm, explain anything, give business advice, and do everything Claude can normally do.\n2. When the question relates to Midwest business data, use the real numbers above. NEVER say you don't have the data.\n3. When writing emails or documents, use Midwest context naturally: 'Midwest Educational Furnishings', Maureen Welter, Kildeer IL, the customer/vendor names from the database.\n4. For 'how do I' questions about business processes: check the RELEVANT SOP DETAILS section. If an SOP covers it, answer FROM the SOP.\n5. For general knowledge questions, advice, brainstorming, writing help: answer like a world-class AI assistant would. You are not limited to business data.\n6. When asked about a job, use its LINE ITEM DETAILS for specific products, vendors, quantities, and costs.\n7. Show your math when doing financial calculations.\n8. Think like a CFO+COO+executive assistant combined.\n9. Keep answers concise but complete. Match the tone to what's being asked -- formal for emails, casual for brainstorming, detailed for analysis.\n10. FORMAT DATA AS TABLES: When showing line items, price comparisons, job lists, vendor data, or any structured data with 3+ rows, ALWAYS use markdown table format (| Col1 | Col2 |). The chat renders markdown tables as styled interactive tables. Include dollar signs for money columns. This is critical for readability.\n11. At the end of business-related answers, suggest 2-3 follow-up questions:\n>> [question 1]\n>> [question 2]\n>> [question 3]\n12. NEVER use emoji. Text only.\n13. When the user asks you to DO something (update, create, mark, change, set, navigate), USE THE TOOLS. Don't just describe what would happen -- call the tool. You will see a confirmation before the action executes.\n14. For job references: match by job ID or by name keywords. If ambiguous, ask which job.\n15. When using tools, briefly explain what you are about to do BEFORE the tool call.\n16. PROACTIVELY USE save_memory to remember important patterns, preferences, decisions, and insights from conversations. Your memory persists forever and makes you smarter over time.\n16. Use detect_anomalies for health checks. Use analyze_trends for patterns. Use summarize_context for briefings. Use predictive_flag for risk assessment.\n17. Use draft_email for professional emails with Midwest branding.\n18. Use database_query for complex data lookups. Use parse_uploaded_file ONLY for files at public URLs.\n19. CRITICAL FILE ATTACHMENT RULE: When a user attaches a file via the paperclip button, the file content is ALREADY EMBEDDED directly in the user message as text or document blocks. You can read it right there. Do NOT call parse_uploaded_file for attached files. The data is already here.\n\nWhen a file is attached, be PROACTIVE about what you can do with it:\n- VENDOR QUOTE (has model numbers, prices, quantities): Extract all line items and use create_job_from_file to build a complete job. Ask for the customer name if not obvious.\n- CUSTOMER LIST (schools, districts, contacts): Use import_customers_from_file to add them to the directory.\n- VENDOR LIST (manufacturers, suppliers): Use import_vendors_from_file to add them.\n- INVOICE/RECEIPT: Extract the data, match to existing jobs, summarize what is owed.\n- PRICE LIST: Compare against existing job prices using compare_quote_to_job.\n- GENERAL DOCUMENT: Analyze thoroughly, extract key data, suggest next actions.\n\nAlways tell the user what you found AND what you can do with it. Don't just describe the file -- offer to take action.\n21. You have WEB SEARCH capability. When asked about current events, market prices, competitor info, or anything needing real-time data, the web_search tool is always available and Claude uses it automatically.\n22. After substantive interactions, consider what should be saved to memory.\n23. LOOKUPS COME BACK TO YOU: read tools (sales_report, profit_and_loss, list_transactions, balance_sheet_lines, get_job_details, and the list_, get_, find_ and search tools) run right away, their output is shown to the user, and the result is sent back to you. Then answer the actual question in a sentence or two with the key numbers. Do not repeat a table the user can already see. When a question needs more than one lookup, make them one after another (up to 6). Never estimate a number a tool can give you, and never say a tool result is missing when it is above.\n24. SALES, GROSS PROFIT, MARGIN OR COMMISSION FOR A REP, QUARTER, YEAR OR DATE RANGE: always call sales_report. Quarters are calendar quarters (Q1 Jan-Mar, Q2 Apr-Jun, Q3 Jul-Sep, Q4 Oct-Dec). Sales are dated by the job report date (the Sales Portal and Financials rule). Commission is earned when a job is paid in full AND closed out, dated by whichever came last (the Commissions page rule). Say which view a number comes from.\n25. BOOKKEEPING (admin): find entries with list_transactions; enter many at once with add_transactions (one confirmation for the whole batch, e.g. every line of a QuickBooks payroll report); change or remove entries with update_transactions or delete_transactions using ids from list_transactions; P&L totals come from profit_and_loss, which matches Financials >> P&L; tie the Balance Sheet to QuickBooks with balance_sheet_lines and set_book_balances. New entries go on the account the Financials pages count unless the user names another. Never delete or alter bank-feed rows to make a total match QuickBooks; set the QuickBooks book balance on that line instead. After an action is confirmed its result comes back to you: say what changed in a sentence, and check it with a lookup when the user is reconciling.\n26. WORKSHEET TAGS: a tag like S4, C12 or L13 often covers several line item rows, one per ship-to. To change a tag pass tag and job_id to update_line_item (or filter_tag to bulk_edit_line_items) so every row with the tag changes in one action. Net price or net pricing is the dealer cost (unitCost)." + (memoryText ? "\n\nBRAIN MEMORY (persistent knowledge):\n" + memoryText : "");
   };
 
+
+  brainLiveRef.current={executeTool,buildContext};
 
   // Convert attached file to Anthropic API content blocks
   const processFileForBrain = async (file) => {
@@ -3869,44 +4207,25 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
   };
 
 
-  const handleQuery = async () => {
-    if (!brainQuery.trim() && !brainFile) return;
-    const q = brainQuery.trim();
-    setBrainQuery("");
-    setHistory(p => [...p, { role: "user", content: (brainFile ? "[Attached: " + brainFile.name + "] " : "") + q }]);
-    setBrainLoading(true);
-    setPendingActions([]);
-    try {
-      const ctx = buildContext(q);
-      // Build message content - include attached file if present
-      let userContent = q;
-      if (brainFile) {
-        try {
-          const fileBlocks = await processFileForBrain(brainFile);
-          userContent = [...fileBlocks, {type:'text', text:(q || 'A file has been attached. Analyze it thoroughly: identify what type of document this is (quote, invoice, customer list, vendor list, price sheet, etc), extract ALL data including line items/rows/entries, and then tell me what you found and what actions you can take with it (create a job, import customers, import vendors, compare prices, etc). Be specific about the data you extracted.') + '\n\n[SYSTEM: The file content is embedded above. Read it directly. Do NOT call parse_uploaded_file. The data is already here in this message.]'}];
-          // Save file context for follow-up messages
-          const textBlock = fileBlocks.find(b => b.type === 'text');
-          const hasDoc = fileBlocks.some(b => b.type === 'document' || b.type === 'image');
-          setBrainFileContext({name: brainFile.name, content: textBlock?.text || '', blocks: fileBlocks, hasDoc});
-          setBrainFile(null); setBrainFilePreview(null);
-        } catch(e) {
-          notify('File error: ' + e.message, 'error');
-          setHistory(p => [...p, {role:"assistant", content: "I couldn't read that file. " + e.message + "\n\nPlease try again with a different file or format."}]);
-          setBrainFile(null); setBrainFilePreview(null);
-          setBrainLoading(false);
-          return;
-        }
-      } else if (brainFileContext) {
-        // Include file context in follow-up messages so the AI remembers the file
-        if (brainFileContext.hasDoc && brainFileContext.blocks) {
-          // For PDFs/images, re-send the actual document/image blocks so Claude can see them
-          userContent = [...brainFileContext.blocks, {type:'text', text:q + '\n\n[SYSTEM: The previously attached file "' + brainFileContext.name + '" is embedded above. Read it directly.]'}];
-        } else {
-          userContent = [{type:'text', text:'[Context: Previously uploaded file "' + brainFileContext.name + '" -- the full file content is below. Read it directly, do NOT call parse_uploaded_file.]\n' + (brainFileContext.content || '').slice(0, 30000) + '\n\n' + q}];
-        }
-      }
-      const msgs = [...history.filter(h=>h.role==="user"||h.role==="assistant").slice(-8).map(h=>({role:h.role,content:typeof h.content==="string"?h.content:h.content})),{role:"user",content:userContent}];
-      let data;
+  // ==============================================================
+  // AGENT LOOP (Oct 6 2026)
+  // Before: a lookup's raw output was the whole answer, and the model never saw it, so
+  // "What were the 3rd quarter gross profit dollars for Jim Harris" could only be answered from
+  // whatever happened to be in the prompt. Now lookups run at once, their output is shown, and
+  // the result goes back to the model so it answers from real numbers or takes the next step.
+  // Changes still wait for Confirm; once confirmed, their results go back too, so a multi-step
+  // job (find the entries, fix them, check the total) carries on in one conversation.
+  // ==============================================================
+  const BRAIN_AGENT_STEPS=6;
+  const _brainReadOnly=new Set(['get_job_details','search_and_report','detect_anomalies','analyze_trends','summarize_context','recall_memory','predictive_flag','database_query','compare_quote_to_job','calculate_financials','export_data','get_banking_summary','get_payables_summary','draft_email','send_email','sales_report','profit_and_loss','list_transactions','balance_sheet_lines','list_vendor_bills','get_vendor_bill','search_bills_by_amount','get_bills_summary','list_financials_vendor_bills','list_vendor_credits','find_unmatched_credits','list_pos','get_po','find_pos_awaiting_action','list_invoices','find_overdue_invoices','list_prospects']);
+  // The assistant turn as the API needs it back: thinking (with its signature), text and
+  // tool_use blocks. Web search blocks are left out (they only pair with each other).
+  const _brainPassBack=(content)=>(Array.isArray(content)?content:[]).map(b=>{if(!b||typeof b!=='object')return null;if(b.type==='thinking')return b.signature?{type:'thinking',thinking:String(b.thinking||''),signature:String(b.signature)}:null;if(b.type==='redacted_thinking')return b.data?{type:'redacted_thinking',data:b.data}:null;if(b.type==='text')return String(b.text||'').trim()?{type:'text',text:String(b.text)}:null;if(b.type==='tool_use')return {type:'tool_use',id:b.id,name:b.name,input:b.input&&typeof b.input==='object'&&!Array.isArray(b.input)?b.input:{}};return null}).filter(Boolean);
+  const _brainToolResult=(id,r)=>{const ok=!!(r&&r.success);let t=ok?String(r.message==null?'Done.':r.message):String((r&&r.error)||'Failed.');if(!t.trim())t=ok?'Done.':'Failed.';if(t.length>24000)t=t.slice(0,24000)+'\n[The rest was cut to fit. Narrow the lookup to see more.]';const o={type:'tool_result',tool_use_id:id,content:t};if(!ok)o.is_error=true;return o};
+  const runBrainAgent=async(convo0,ctx,step0)=>{
+    let convo=convo0;
+    for(let step=step0;;step++){
+            let data;
       let streamPlaceholderIdx = -1;
       // Auto-retry transient API overloads (HTTP 529 "Overloaded", rate limits) with exponential
       // backoff so a busy-API blip during an upload self-heals instead of surfacing "Try again".
@@ -3915,7 +4234,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
       if (brainAttempt > 0) { await new Promise(r => setTimeout(r, 700 * Math.pow(2, brainAttempt - 1))); }
       brainAttempt++;
       streamPlaceholderIdx = -1;
-      const response = await fetch("/api/brain", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({system:ctx,messages:msgs,tools:brainTools,stream:true})});
+      const response = await fetch("/api/brain", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({system:ctx,messages:convo,tools:brainTools,stream:true})});
       // If server fell back to non-streaming (e.g. error path), parse as JSON.
       const ctype = (response.headers.get("content-type")||"").toLowerCase();
       if (!ctype.includes("text/event-stream")) {
@@ -4000,6 +4319,12 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
                   // Only stream text deltas to the visible bubble. Tool-use and web-search
                   // deltas are accumulated silently and surfaced after stream completion.
                   if (b.type === "text") appendToPlaceholder(evt.delta.text);
+                } else if (evt.delta?.type === "thinking_delta" && typeof evt.delta.thinking === "string") {
+                  b.thinking = (b.thinking || "") + evt.delta.thinking;
+                  blocks[evt.index] = b;
+                } else if (evt.delta?.type === "signature_delta" && typeof evt.delta.signature === "string") {
+                  b.signature = (b.signature || "") + evt.delta.signature;
+                  blocks[evt.index] = b;
                 } else if (evt.delta?.type === "input_json_delta" && typeof evt.delta.partial_json === "string") {
                   b.partialJson = (b.partialJson || "") + evt.delta.partial_json;
                   blocks[evt.index] = b;
@@ -4086,22 +4411,28 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
       (data.content||[]).filter(b=>b.type==="web_search_tool_result").forEach(b=>{(b.content||[]).filter(r=>r.type==="web_search_result").forEach(r=>{if(r.url&&r.title)webCitations.push({url:r.url,title:r.title})})});
       if(toolBlocks.length>0){
         // Separate read-only tools (auto-execute) from write tools (require confirmation)
-        const readOnlyTools=new Set(['get_job_details','search_and_report','detect_anomalies','analyze_trends','summarize_context','recall_memory','predictive_flag','database_query','compare_quote_to_job','calculate_financials','export_data','get_banking_summary','get_payables_summary','draft_email','send_email']);
+        const readOnlyTools=_brainReadOnly;
         const readTools=toolBlocks.filter(tb=>readOnlyTools.has(tb.name));
         const writeTools=toolBlocks.filter(tb=>!readOnlyTools.has(tb.name));
         // Auto-execute read-only tools and show results inline
         if(readTools.length>0&&writeTools.length===0){
           // Parallel tool execution: fire all read-only tools simultaneously instead of one at a time.
           // 5 tools that take 1s each go from 5s sequential to ~1s parallel.
-          const readResults=await Promise.all(readTools.map(tb=>executeTool(tb.name,tb.input).catch(err=>({success:false,error:'Tool '+tb.name+' failed: '+(err?.message||String(err))}))));
+          const _runTool=(brainLiveRef.current&&brainLiveRef.current.executeTool)||executeTool;
+          const readResults=await Promise.all(readTools.map(tb=>Promise.resolve().then(()=>_runTool(tb.name,tb.input)).catch(err=>({success:false,error:'Tool '+tb.name+' failed: '+(err?.message||String(err))}))));
           const readText=readResults.map(r=>r.success?r.message:(r.error||'Error')).join('\n\n');
           setHistory(p=>[...p,{role:"assistant",content:(data._brainStreamedTextWithTools?"":(textBlocks?textBlocks+"\n\n":""))+readText}]);
           setAnimatingIdx(history.length+1);setTimeout(()=>setAnimatingIdx(-1),800);
+          if(step<BRAIN_AGENT_STEPS){
+            convo=[...convo,{role:"assistant",content:_brainPassBack(data.content)},{role:"user",content:readTools.map((tb,k)=>_brainToolResult(tb.id,readResults[k]))}];
+            continue;
+          }
         } else {
         // Write tools -- show confirmation
         const allToolBlocks=writeTools.length>0?toolBlocks:writeTools;
         const actions=(allToolBlocks.length>0?allToolBlocks:toolBlocks).map(tb=>({id:tb.id,name:tb.name,input:tb.input,status:"pending"}));
         setPendingActions(actions);
+        brainAgentRef.current={convo:[...convo,{role:"assistant",content:_brainPassBack(data.content)}],ids:actions.map(a=>a.id),step};
         const actionSummary=actions.map(a=>{
           if(a.name==="update_job")return "Update "+((a.input.job_id||"job")+": "+Object.entries(a.input.updates||{}).map(([k,v])=>"**"+k+"** to **"+v+"**").join(", "));
           if(a.name==="create_job")return "Create new job: **"+(a.input.name||"")+"**"+(a.input.customer_name?" for "+a.input.customer_name:"");
@@ -4142,6 +4473,9 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
           if(a.name==="create_transaction")return "Add "+(a.input.type||"expense")+": **$"+(a.input.amount||0)+"** -- "+(a.input.description||"transaction")+" ["+(a.input.category||"Uncategorized")+"]";
           if(a.name==="categorize_transaction")return "Categorize **"+(a.input.transaction_description||"transaction")+"** as **"+(a.input.category||"")+"**";
           if(a.name==="update_line_item")return "Update line item: **"+(a.input.item_description||a.input.item_id||"")+"**"+(a.input.updates?" >> "+Object.entries(a.input.updates).map(([k,v])=>k+"="+v).join(", "):"");
+          if(a.name==="add_transactions"){const L=Array.isArray(a.input.transactions)?a.input.transactions:[];const tot=L.reduce((t2,r)=>{const v=_bkAmt(r&&r.amount);return t2+(isFinite(v)?v:0)},0);return "Add **"+L.length+" transaction"+(L.length!==1?"s":"")+"** totaling **"+_bkUsd(tot)+"**"+(a.input.account?" on **"+a.input.account+"**":"")+L.slice(0,8).map(r=>"\n"+_bkCell(r&&r.date)+" "+_bkUsd(_bkAmt(r&&r.amount)||0)+" "+_bkCell(String(r&&r.description||"").slice(0,60))+" ["+_bkCell((r&&r.category)||"Uncategorized")+"]").join("")+(L.length>8?"\n...and "+(L.length-8)+" more":"")}
+          if(a.name==="update_transactions"||a.name==="delete_transactions"){const T=_bkTxns();const ids=Array.isArray(a.input.ids)?a.input.ids:[];return (a.name==="delete_transactions"?"Delete **":"Change **")+ids.length+" transaction"+(ids.length!==1?"s":"")+"**"+(a.name==="update_transactions"?": "+Object.entries(a.input.updates||{}).map(([k,v])=>"**"+k+"** to **"+v+"**").join(", "):"")+ids.slice(0,8).map(id=>{const t=T.find(x=>x.id===id);return "\n"+(t?_bkCell(t.date)+" "+_bkUsd(parseFloat(t.amount)||0)+" "+_bkCell(String(t.description||"").slice(0,60))+" ["+_bkCell(t.category||"Uncategorized")+"]":_bkCell(id)+" (not found)")}).join("")+(ids.length>8?"\n...and "+(ids.length-8)+" more":"")}
+          if(a.name==="set_book_balances")return "Set QuickBooks book balances: "+(Array.isArray(a.input.lines)?a.input.lines:[]).map(l=>l&&(l.clear?"clear **"+_bkCell(l.line||l.account)+"**":"**"+_bkCell(l.line||l.account)+"** "+_bkUsd(_bkAmt(l.amount)||0)+" as of "+_bkCell(l.as_of))).join("; ");
           return a.name+"("+JSON.stringify(a.input).slice(0,60)+")";
         }).join("\n");
         setHistory(p=>[...p,{role:"assistant",content:(data._brainStreamedTextWithTools?"":(textBlocks?textBlocks+"\n\n":""))+"I'd like to take these actions:\n"+actionSummary,actions}]);
@@ -4182,6 +4516,48 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
             :"I did not get a usable answer back that time. Please ask again, and if it keeps happening let J know.");
         setHistory(p=>[...p,{role:"assistant",content:_msg}]);
       }
+      break;
+    }
+  };
+  const handleQuery = async () => {
+    if (!brainQuery.trim() && !brainFile) return;
+    const q = brainQuery.trim();
+    setBrainQuery("");
+    setHistory(p => [...p, { role: "user", content: (brainFile ? "[Attached: " + brainFile.name + "] " : "") + q }]);
+    setBrainLoading(true);
+    setPendingActions([]);
+    try {
+      const ctx = buildContext(q);
+      // Build message content - include attached file if present
+      let userContent = q;
+      if (brainFile) {
+        try {
+          const fileBlocks = await processFileForBrain(brainFile);
+          userContent = [...fileBlocks, {type:'text', text:(q || 'A file has been attached. Analyze it thoroughly: identify what type of document this is (quote, invoice, customer list, vendor list, price sheet, etc), extract ALL data including line items/rows/entries, and then tell me what you found and what actions you can take with it (create a job, import customers, import vendors, compare prices, etc). Be specific about the data you extracted.') + '\n\n[SYSTEM: The file content is embedded above. Read it directly. Do NOT call parse_uploaded_file. The data is already here in this message.]'}];
+          // Save file context for follow-up messages
+          const textBlock = fileBlocks.find(b => b.type === 'text');
+          const hasDoc = fileBlocks.some(b => b.type === 'document' || b.type === 'image');
+          setBrainFileContext({name: brainFile.name, content: textBlock?.text || '', blocks: fileBlocks, hasDoc});
+          setBrainFile(null); setBrainFilePreview(null);
+        } catch(e) {
+          notify('File error: ' + e.message, 'error');
+          setHistory(p => [...p, {role:"assistant", content: "I couldn't read that file. " + e.message + "\n\nPlease try again with a different file or format."}]);
+          setBrainFile(null); setBrainFilePreview(null);
+          setBrainLoading(false);
+          return;
+        }
+      } else if (brainFileContext) {
+        // Include file context in follow-up messages so the AI remembers the file
+        if (brainFileContext.hasDoc && brainFileContext.blocks) {
+          // For PDFs/images, re-send the actual document/image blocks so Claude can see them
+          userContent = [...brainFileContext.blocks, {type:'text', text:q + '\n\n[SYSTEM: The previously attached file "' + brainFileContext.name + '" is embedded above. Read it directly.]'}];
+        } else {
+          userContent = [{type:'text', text:'[Context: Previously uploaded file "' + brainFileContext.name + '" -- the full file content is below. Read it directly, do NOT call parse_uploaded_file.]\n' + (brainFileContext.content || '').slice(0, 30000) + '\n\n' + q}];
+        }
+      }
+      const msgs = [...history.filter(h=>h.role==="user"||h.role==="assistant").slice(-8).map(h=>({role:h.role,content:typeof h.content==="string"?h.content:h.content})),{role:"user",content:userContent}];
+      brainAgentRef.current=null;
+      await runBrainAgent(msgs, ctx, 0);
     } catch (err) {
       setHistory(p => [...p, { role: "assistant", content: "Connection error: " + err.message }]);
     }
@@ -4204,9 +4580,20 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     setPendingActions([]);
     notify(results.filter(r=>r.result.success).length+" action"+(results.length!==1?"s":"")+" completed");
     setAnimatingIdx(history.length+1);setTimeout(()=>setAnimatingIdx(-1),800);
+    const _ag=brainAgentRef.current;brainAgentRef.current=null;
+    if(_ag&&_ag.step<BRAIN_AGENT_STEPS*2){
+      try{
+        // Let the writes render so the next step reads fresh records.
+        await new Promise(r=>setTimeout(r,60));
+        const _live=brainLiveRef.current||{};
+        const _q=(()=>{for(let k=history.length-1;k>=0;k--){if(history[k]&&history[k].role==="user")return String(history[k].content||"")}return ""})();
+        const _ctx=_live.buildContext?_live.buildContext(_q):buildContext(_q);
+        await runBrainAgent([..._ag.convo,{role:"user",content:(_ag.ids||[]).map(id=>{const r=results.find(x=>x.id===id);return _brainToolResult(id,r?r.result:{success:false,error:'Not run.'})})}],_ctx,_ag.step+1);
+      }catch(e){setHistory(p=>[...p,{role:"assistant",content:"Connection error: "+((e&&e.message)||String(e))}])}
+    }
     setBrainLoading(false);
   };
-  const cancelActions=()=>{setPendingActions([]);setHistory(p=>[...p,{role:"assistant",content:"Actions cancelled. No changes were made."}])};
+  const cancelActions=()=>{brainAgentRef.current=null;setPendingActions([]);setHistory(p=>[...p,{role:"assistant",content:"Actions cancelled. No changes were made."}])};
 
 
   const renderMsg = (msg) => {
