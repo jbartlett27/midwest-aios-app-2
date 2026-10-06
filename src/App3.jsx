@@ -194,8 +194,8 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   // date >> latest delivery >> due date >> created) -- not the date the record was
   // typed into the AIOS. See jobReportDate in App.jsx for why this matters.
   const _finReportDate=fCtx.jobReportDate;
-  const filteredJobs=jobs.filter(j=>{const d=new Date(_finReportDate?_finReportDate(j):j.createdDate);return d>=fromD&&d<=toD});
-  const filteredItems=lineItems.filter(i=>{const j=jobs.find(jj=>jj.id===i.jobId);if(!j)return false;const d=new Date(j.createdDate);return d>=fromD&&d<=toD});
+  const filteredJobs=jobs.filter(j=>{const d=parseLocalDate(_finReportDate?_finReportDate(j):j.createdDate);return !!d&&d>=fromD&&d<=toD});
+  const filteredItems=lineItems.filter(i=>{const j=jobs.find(jj=>jj.id===i.jobId);if(!j)return false;const d=parseLocalDate(j.createdDate);return !!d&&d>=fromD&&d<=toD});
 
 
   // Core calculations (use filteredJobs)
