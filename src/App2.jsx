@@ -1308,7 +1308,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
   const _uPatch=(k,id,u,list)=>{const g=_uRec();if(!g||!id||!u||typeof u!=='object')return;const added=g.entries.find(z=>z.k===k&&z.op==='add'&&z.id===id);if(added){Object.keys(u).forEach(f=>{if(f!=='auditTrail')added.after[f]=_uClone(u[f])});return}const cur=(list||[]).find(z=>z&&z.id===id);if(!cur)return;let e=g.entries.find(z=>z.k===k&&z.op==='update'&&z.id===id);if(!e){e={k,op:'update',id,before:{},after:{}};g.entries.push(e)}const keys=Object.keys(u).filter(f=>f!=='auditTrail');const extra=k==='job'?[...(keys.includes('phase')?['closedDate']:[]),...(keys.includes('paymentStatus')?['endDate']:[])]:[];[...keys,...extra].forEach(f=>{if(!(f in e.before))e.before[f]=_uKeep(cur[f])});keys.forEach(f=>{e.after[f]=_uClone(u[f])})};
   const _uAdd=(k,obj,prefix)=>{const g=_uRec();let x=obj;if(g&&x&&typeof x==='object'){if(!x.id)x={...x,id:prefix+Date.now()+'-'+Math.random().toString(36).slice(2,7)};g.entries.push({k,op:'add',id:x.id,after:_uClone(x)})}return x};
   const updateJob=(id,u)=>{_uPatch('job',id,u,jobs);return _rawUpdateJob(id,u)};
-  const addJob=(job)=>{const g=_uRec();if(g&&job&&job.id)g.entries.push({k:'job',op:'add',id:job.id,after:_uClone(job)});return _rawAddJob(job)};
+  const addJob=(job)=>{const r=_rawAddJob(job);const fid=(typeof r==='string'&&r)||(job&&job.id);const g=_uRec();if(g&&fid)g.entries.push({k:'job',op:'add',id:fid,after:_uClone({...job,id:fid})});return r};
   const deleteJob=(id)=>{const g=_uRec();if(g&&id){const cur=(jobs||[]).find(j=>j.id===id);if(cur)g.entries.push({k:'job',op:'delete',id,before:_uClone(cur),items:_uClone((lineItems||[]).filter(i=>i&&i.jobId===id))})}return _rawDeleteJob(id)};
   const updateLineItem=(id,u)=>{_uPatch('li',id,u,lineItems);return _rawUpdateLineItem(id,u)};
   const addLineItem=(item)=>_rawAddLineItem(_uAdd('li',item,'LI-'));
@@ -2017,10 +2017,10 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         return{success:true,message:"Updated "+job.name+": "+Object.entries(input.updates||{}).map(([k,v])=>k+"="+v).join(", ")};
       }
       if(toolName==="create_job"){
-        const id="JOB-"+new Date().getFullYear()+"-"+String(jobs.length+1).padStart(3,"0");
+        let id="JOB-"+new Date().getFullYear()+"-"+String(jobs.length+1).padStart(3,"0");
         const cust=input.customer_name?findCustomer(input.customer_name):null;
         const rep=input.sales_rep_name?reps.find(r=>r.name.toLowerCase().includes(input.sales_rep_name.toLowerCase())):null;
-        addJob({id,name:input.name,customer:cust?.id||"",salesRep:rep?.id||"",phase:input.phase||"Quoting",paymentStatus:"unpaid",notes:input.notes||""});
+        id=addJob({id,name:input.name,customer:cust?.id||"",salesRep:rep?.id||"",phase:input.phase||"Quoting",paymentStatus:"unpaid",notes:input.notes||""})||id;
         return{success:true,message:"Created job: "+input.name+" ("+id+")"+(cust?" for "+cust.name:"")+(rep?" rep: "+rep.name:"")};
       }
       if(toolName==="update_line_item"){
@@ -2212,9 +2212,9 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
       if(toolName==="duplicate_job"){
         const job=findJob(input.job_id);
         if(!job)return{error:"Job not found: "+input.job_id};
-        const newId="JOB-"+new Date().getFullYear()+"-"+String(jobs.length+1).padStart(3,"0");
+        let newId="JOB-"+new Date().getFullYear()+"-"+String(jobs.length+1).padStart(3,"0");
         const newName=input.new_name||job.name+" (Copy)";
-        addJob({id:newId,name:newName,customer:job.customer,salesRep:job.salesRep,phase:"Quoting",paymentStatus:"unpaid",notes:job.notes||"",terms:job.terms||"Net 30",shipTo:job.shipTo||"",billTo:job.billTo||""});
+        newId=addJob({id:newId,name:newName,customer:job.customer,salesRep:job.salesRep,phase:"Quoting",paymentStatus:"unpaid",notes:job.notes||"",terms:job.terms||"Net 30",shipTo:job.shipTo||"",billTo:job.billTo||""})||newId;
         const srcItems=getJobItems(job.id);
         let ct=0;
         srcItems.forEach(item=>{
@@ -2430,12 +2430,12 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
       if(toolName==="create_job_from_file"){
         try{
           const maxNum=jobs.reduce((mx,j)=>{const m=j.id.match(/JOB-\d+-(\d+)/);return m?Math.max(mx,parseInt(m[1])):mx},0);
-          const jid='JOB-2026-'+String(maxNum+1).padStart(3,'0');
+          let jid='JOB-2026-'+String(maxNum+1).padStart(3,'0');
           const custMatch=input.customer_name?customers.find(c=>c.name.toLowerCase().includes(input.customer_name.toLowerCase())):null;
           const repMatch=input.sales_rep_name?reps.find(r=>r.name.toLowerCase().includes(input.sales_rep_name.toLowerCase())):null;
           let custId=custMatch?.id||'';
           if(input.customer_name&&!custMatch){custId='C-'+Date.now();addCustomer({id:custId,name:input.customer_name,contact:'',email:'',phone:'',type:'K-12 District',address:''})}
-          addJob({id:jid,name:input.job_name,customer:custId,salesRep:repMatch?.id||reps[0]?.id||'',phase:'Quoting',createdDate:new Date().toISOString().split('T')[0],startDate:'',dueDate:'',endDate:'',notes:input.notes||'Created from uploaded file via Brain',paymentStatus:'unpaid',terms:input.terms||'Net 30',poNumber:input.po_number||'',shipTo:'',shipVia:'',billTo:'',orderNotes:'',docStatuses:{},activities:[],auditTrail:[]});
+          jid=addJob({id:jid,name:input.job_name,customer:custId,salesRep:repMatch?.id||reps[0]?.id||'',phase:'Quoting',createdDate:new Date().toISOString().split('T')[0],startDate:'',dueDate:'',endDate:'',notes:input.notes||'Created from uploaded file via Brain',paymentStatus:'unpaid',terms:input.terms||'Net 30',poNumber:input.po_number||'',shipTo:'',shipVia:'',billTo:'',orderNotes:'',docStatuses:{},activities:[],auditTrail:[]})||jid;
           const existNames=new Set(vendors.map(v=>v.name.toLowerCase().trim()));
           const vMap={};vendors.forEach(v=>{vMap[v.name.toLowerCase().trim()]=v.id});
           let ct=0;
