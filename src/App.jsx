@@ -405,12 +405,12 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
       const items=parsed.items.filter(i=>selectedSheets[i.sheet]);
       if(items.length===0){notify("No items selected","error");setImporting(false);return}
       const maxNum=jobs.reduce((mx,j)=>{const m=j.id.match(/JOB-\d+-(\d+)/);return m?Math.max(mx,parseInt(m[1])):mx},0);
-      const jid="JOB-"+new Date().getFullYear()+"-"+String(maxNum+1).padStart(3,"0");
-      addJob({id:jid,name:jobName||"Imported Quote",customer:customers[0]?.id||"",salesRep:reps[0]?.id||"",
+      let jid="JOB-"+new Date().getFullYear()+"-"+String(maxNum+1).padStart(3,"0");
+      jid=addJob({id:jid,name:jobName||"Imported Quote",customer:customers[0]?.id||"",salesRep:reps[0]?.id||"",
         phase:"Quoting",createdDate:new Date().toISOString().split("T")[0],
         startDate:"",dueDate:"",endDate:"",notes:"Imported from Excel -- "+items.length+" line items",
         paymentStatus:"unpaid",terms:"Net 30",poNumber:"",shipTo:"",shipVia:"",billTo:"",orderNotes:"",
-        docStatuses:{},activities:[],auditTrail:[]});
+        docStatuses:{},activities:[],auditTrail:[]})||jid;
       const existNames=new Set(vendors.map(v=>v.name.toLowerCase().trim()));
       const vMap={};vendors.forEach(v=>{vMap[v.name.toLowerCase().trim()]=v.id});
       let newVendors=0;
@@ -514,12 +514,12 @@ function CsvUploadPage({db,jobs,setJobs,lineItems,setLineItems,vendors,setVendor
   };
   const importAiQuote=(data)=>{
     if(!data||!data.items||data.items.length===0){notify("No items found in scan","error");return}
-    const jobId="JOB-"+new Date().getFullYear()+"-"+String(jobs.length+1).padStart(3,"0");
+    let jobId="JOB-"+new Date().getFullYear()+"-"+String(jobs.length+1).padStart(3,"0");
     const jn=jobName||(data.customer?data.customer+" - AI Import":"AI Scanned Quote");
     // Create vendor if needed
     if(data.vendor){const existing=vendors.find(v=>v.name.toLowerCase()===data.vendor.toLowerCase());if(!existing)addVendor({id:"V-AI-"+Date.now(),name:data.vendor,category:"Furniture",email:"",phone:"",discountRate:0,contact:""})}
     const vendorObj=vendors.find(v=>v.name.toLowerCase()===(data.vendor||"").toLowerCase());
-    addJob({id:jobId,name:jn,customer:"",salesRep:"",phase:"Quoting",paymentStatus:"unpaid",paymentTerms:"Net 30",dueDate:"",notes:"AI scanned from "+(aiFile?.name||"document")});
+    jobId=addJob({id:jobId,name:jn,customer:"",salesRep:"",phase:"Quoting",paymentStatus:"unpaid",paymentTerms:"Net 30",dueDate:"",notes:"AI scanned from "+(aiFile?.name||"document")})||jobId;
     let ct=0;
     data.items.forEach((item,idx)=>{
       const v2=item.manufacturer?vendors.find(v=>v.name.toLowerCase()===item.manufacturer.toLowerCase()):vendorObj;
@@ -2209,13 +2209,26 @@ function MidwestAIOSInner() {
   const updateJob = (id, u) => {
     setJobs(p => { const old=p.find(j=>j.id===id);u=jobCloseOutPatch(old,u);const updated = p.map(j => j.id===id ? {...j,...u} : j); const job = updated.find(j=>j.id===id); if(job){const skip=new Set(["activities","docStatuses","auditTrail"]);const changes=Object.keys(u).filter(k=>!skip.has(k)&&String(old?.[k])!==String(u[k]));if(changes.length>0){const log={time:new Date().toISOString(),type:"edit",entity:"job",entityId:id,user:currentUser?.name||"System",fields:changes.map(k=>({field:k,from:old?.[k],to:u[k]}))};const trail=[log,...(job.auditTrail||[])].slice(0,200);job.auditTrail=trail}db.saveJob(job)} return updated; });
   };
+  // Ids handed to new jobs this session, so two jobs made before a re-render never share one.
+  const madeJobIds = useRef(new Set());
   const addJob = (job) => {
+    // Oct 13 2026: the save is an upsert on id, so a new job given an id that already exists
+    // REPLACES that job in the database (the Brain's create_job named one from the job count and
+    // overwrote July's JOB-2026-321). A taken or missing id gets the next free number instead,
+    // and the id actually used is returned so callers put the line items on the right job.
+    const takenIds = new Set([...jobs.map(j => j && j.id), ...madeJobIds.current]);
+    let newJob = job;
+    if (!newJob.id || takenIds.has(newJob.id)) {
+      let top = 0;
+      takenIds.forEach(x => { const m = /^JOB-\d+-(\d+)$/.exec(String(x || '')); if (m) top = Math.max(top, parseInt(m[1], 10)); });
+      newJob = {...newJob, id: 'JOB-' + new Date().getFullYear() + '-' + String(top + 1).padStart(3, '0')};
+    }
+    madeJobIds.current.add(newJob.id);
     // Assign a stable jobNum at creation if the caller didn't supply one. Compute as
     // max(existing jobNums)+1, so new jobs always get the highest number even if
     // some legacy jobs haven't been migrated yet. This is the SAME formula every
     // browser uses, so a job created in one browser will display as the same MW
     // number on all other browsers once realtime syncs the record.
-    let newJob = job;
     if (!newJob.jobNum) {
       let maxNum = 0;
       jobs.forEach(j => {
@@ -2226,10 +2239,11 @@ function MidwestAIOSInner() {
       });
       const floor = jobs.length + 1;
       const next = Math.max(maxNum + 1, floor);
-      newJob = {...job, jobNum: 'MW-'+String(next).padStart(4,'0')};
+      newJob = {...newJob, jobNum: 'MW-'+String(next).padStart(4,'0')};
     }
     setJobs(p => [...p, newJob]);
     db.saveJob(newJob).then(r=>{if(!r?.ok){setTimeout(()=>db.saveJob(newJob).catch(()=>{}),2000)}}).catch(()=>{setTimeout(()=>db.saveJob(newJob).catch(()=>{}),2000)});
+    return newJob.id;
   };
   const deleteJob = async (id) => {
     if (!await confirm("Delete this entire job and all its line items? This cannot be undone.")) return;
@@ -3183,12 +3197,12 @@ Never use emoji. Be concise.`;
       const items=uploadData.items.filter(i=>uploadSheets[i.sheet]);
       if(items.length===0){notify('No items selected','error');setUploading(false);return}
       const maxNum=jobs.reduce((mx,j)=>{const m=j.id.match(/JOB-\d+-(\d+)/);return m?Math.max(mx,parseInt(m[1])):mx},0);
-      const jid='JOB-2026-'+String(maxNum+1).padStart(3,'0');
-      addJob({id:jid,name:uploadJobName||'Imported Quote',customer:customers[0]?.id||'',salesRep:reps[0]?.id||'',
+      let jid='JOB-2026-'+String(maxNum+1).padStart(3,'0');
+      jid=addJob({id:jid,name:uploadJobName||'Imported Quote',customer:customers[0]?.id||'',salesRep:reps[0]?.id||'',
         phase:'Quoting',createdDate:new Date().toISOString().split('T')[0],
         startDate:'',dueDate:'',endDate:'',notes:'Imported from uploaded quote - '+items.length+' line items',
         paymentStatus:'unpaid',terms:'Net 30',poNumber:'',shipTo:'',shipVia:'',billTo:'',orderNotes:'',
-        docStatuses:{},activities:[],auditTrail:[]});
+        docStatuses:{},activities:[],auditTrail:[]})||jid;
       const existNames=new Set(vendors.map(v=>v.name.toLowerCase().trim()));
       const vMap={};vendors.forEach(v=>{vMap[v.name.toLowerCase().trim()]=v.id});
       for(const vn of uploadData.vendors){const k=vn.toLowerCase().trim();
@@ -3214,7 +3228,7 @@ Never use emoji. Be concise.`;
   const uploadSelPricedCount=uploadData?uploadData.items.filter(i=>uploadSheets[i.sheet]&&(i.unitPrice>0||i.priceExtended>0)).length:0;
   const uploadSelCost=uploadData?uploadData.items.filter(i=>uploadSheets[i.sheet]).reduce((s,i)=>s+(i.unitCost*(i.qtyOrdered||1)),0):0;
   const uploadSelRev=uploadData?uploadData.items.filter(i=>uploadSheets[i.sheet]).reduce((s,i)=>s+(i.priceExtended&&i.priceExtended>0?i.priceExtended:(i.unitPrice||0)*(i.qtyOrdered||1)),0):0;
-  const handleCreateJob=()=>{if(!newJob.name)return;const maxNum=jobs.reduce((mx,j)=>{const m=j.id.match(/JOB-\d+-(\d+)/);return m?Math.max(mx,parseInt(m[1])):mx},0);const id=`JOB-2026-${String(maxNum+1).padStart(3,"0")}`;addJob({id,...newJob,phase:newJob.phase||"Quoting",createdDate:new Date().toISOString().split("T")[0],startDate:newJob.startDate||"",endDate:"",paymentStatus:"unpaid",terms:newJob.terms||"Net 30",poNumber:newJob.poNumber||"",shipTo:newJob.shipTo||"",shipVia:newJob.shipVia||"",billTo:newJob.billTo||"",orderNotes:""});setShowNewJob(false);setNewJob({name:"",customer:"",salesRep:reps[0]?.id||"",phase:"Quoting",dueDate:"",startDate:"",notes:"",terms:"Net 30",poNumber:"",shipTo:"",shipVia:""});notify(`Job ${id} created -- saved to database`)};
+  const handleCreateJob=()=>{if(!newJob.name)return;const maxNum=jobs.reduce((mx,j)=>{const m=j.id.match(/JOB-\d+-(\d+)/);return m?Math.max(mx,parseInt(m[1])):mx},0);let id=`JOB-2026-${String(maxNum+1).padStart(3,"0")}`;id=addJob({id,...newJob,phase:newJob.phase||"Quoting",createdDate:new Date().toISOString().split("T")[0],startDate:newJob.startDate||"",endDate:"",paymentStatus:"unpaid",terms:newJob.terms||"Net 30",poNumber:newJob.poNumber||"",shipTo:newJob.shipTo||"",shipVia:newJob.shipVia||"",billTo:newJob.billTo||"",orderNotes:""})||id;setShowNewJob(false);setNewJob({name:"",customer:"",salesRep:reps[0]?.id||"",phase:"Quoting",dueDate:"",startDate:"",notes:"",terms:"Net 30",poNumber:"",shipTo:"",shipVia:""});notify(`Job ${id} created -- saved to database`)};
 
 
   const newJobModal = <><input ref={uploadRef} type="file" accept=".xls,.xlsx,.pdf,.png,.jpg,.jpeg" onChange={e=>{if(!e.target.files[0])return;const f=e.target.files[0];const ext=(f.name||'').split('.').pop().toLowerCase();if(ext==='pdf'||f.type==='application/pdf'||f.type?.startsWith('image/'))parseQuoteFileAI(f);else parseQuoteFile(f)}} style={{display:"none"}}/>{showNewJob&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(8px)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20,animation:"fadeUp 0.25s"}} onClick={e=>{if(e.target===e.currentTarget)setShowNewJob(false)}}><div style={{background:"#111",border:"1px solid rgba(45,212,191,0.15)",borderRadius:16,padding:28,width:"100%",maxWidth:640,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 24px 80px rgba(0,0,0,0.6)"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}><div style={{fontSize:18,fontWeight:800,color:"#f0f0f0"}}>New Job Record</div><div onClick={()=>setShowNewJob(false)} style={{width:32,height:32,borderRadius:8,background:"rgba(255,255,255,0.06)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",color:"#737373",fontSize:18,transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.1)";e.currentTarget.style.color="#f0f0f0"}} onMouseLeave={e=>{e.currentTarget.style.background="rgba(255,255,255,0.06)";e.currentTarget.style.color="#737373"}}>x</div></div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:12}}><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Job Name</label><input value={newJob.name} onChange={e=>setNewJob({...newJob,name:e.target.value})} placeholder="e.g., Lincoln USD Media Center" style={inputStyle}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Customer</label><CustomerPicker value={newJob.customer} onChange={v=>setNewJob({...newJob,customer:v})} customers={customers} onAddNew={(name)=>{const id="CUST-"+Math.random().toString(36).slice(2,8);addCustomer({id,name:name||"New Customer",contact:"",email:"",phone:"",type:"K-12 District",address:""});setNewJob({...newJob,customer:id});notify("Customer created: "+(name||"New Customer"))}}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Sales Rep</label><select value={newJob.salesRep} onChange={e=>setNewJob({...newJob,salesRep:e.target.value})} style={inputStyle}>{reps.filter(isSalesRep).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Phase</label><select value={newJob.phase||"Quoting"} onChange={e=>setNewJob({...newJob,phase:e.target.value})} style={inputStyle}><option>Quoting</option><option>Approved</option><option>Ordered</option><option>In Production</option><option>Delivering</option><option>Invoiced</option><option>Complete</option></select></div></div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12,marginBottom:12}}><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Start Date</label><input type="date" value={newJob.startDate} onChange={e=>setNewJob({...newJob,startDate:e.target.value})} style={inputStyle}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Due Date</label><input type="date" value={newJob.dueDate} onChange={e=>setNewJob({...newJob,dueDate:e.target.value})} style={inputStyle}/></div><div style={{gridColumn:"span 2"}}><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Notes</label><input value={newJob.notes} onChange={e=>setNewJob({...newJob,notes:e.target.value})} placeholder="Project details..." style={inputStyle}/></div></div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12,marginBottom:12}}><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Payment Terms</label><select value={newJob.terms||"Net 30"} onChange={e=>setNewJob({...newJob,terms:e.target.value})} style={inputStyle}><option>Net 30</option><option>Net 15</option><option>Due Upon Receipt</option></select></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Customer PO #</label><input value={newJob.poNumber||""} onChange={e=>setNewJob({...newJob,poNumber:e.target.value})} placeholder="Customer PO number" style={inputStyle}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Ship To</label><textarea value={newJob.shipTo||""} onChange={e=>setNewJob({...newJob,shipTo:e.target.value})} placeholder={"School Name\nStreet Address\nCity, State Zip"} rows={3} style={{...inputStyle,resize:"vertical",minHeight:56,lineHeight:1.4,fontFamily:"inherit"}}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Ship Via</label><input value={newJob.shipVia||""} onChange={e=>setNewJob({...newJob,shipVia:e.target.value})} placeholder="Shipping instructions" style={inputStyle}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Bill To</label><textarea value={newJob.billTo||""} onChange={e=>setNewJob({...newJob,billTo:e.target.value})} placeholder={"School Name\nStreet Address\nCity, State Zip"} rows={3} style={{...inputStyle,resize:"vertical",minHeight:56,lineHeight:1.4,fontFamily:"inherit"}}/></div></div><div style={{display:"flex",gap:8}}><Btn onClick={handleCreateJob}>Create Job Record</Btn><Btn v="secondary" onClick={()=>setShowNewJob(false)}>Cancel</Btn></div></div></div>}</>;
@@ -3434,7 +3448,7 @@ function JobDetail({job,ctx}){
   const auditEntries = (job.auditTrail || []).map(a=>({id:a.time+a.type,text:a.type==="edit"?"Edited: "+a.fields.map(f=>f.field+" changed"+(f.from?" from "+String(f.from).slice(0,20):"")+" to "+String(f.to).slice(0,30)).join(", "):a.type==="create"?"Job created":a.type,time:a.time,user:a.user||"",source:"auto"}));
   const activities = [...manualActivities,...auditEntries].sort((a,b)=>new Date(b.time)-new Date(a.time));
   const addActivity=(text)=>{const entry={text,time:new Date().toISOString(),id:Math.random().toString(36).slice(2),user:ctx.currentUser?.name||"System"};const next=[entry,...activities];updateJob(job.id,{activities:next})};
-  const duplicateJob=()=>{const newId='JOB-'+new Date().getFullYear()+'-'+String(Math.floor(Math.random()*900)+100);const newJob={...job,id:newId,name:job.name+' (Copy)',phase:'Quoting',paymentStatus:'unpaid',createdDate:new Date().toISOString().split('T')[0],startDate:'',endDate:''};addJob(newJob);items.forEach((item,_ix)=>{addLineItem({...item,id:'LI-'+Date.now()+'-'+String(_ix).padStart(3,'0')+'-'+Math.random().toString(36).slice(2,6),jobId:newId,qtyReceived:0,qtyInvoiced:0,deliveryDate:'',invoiceDate:''})});setSelectedJob(newId);notify('Job duplicated -- '+newId+' created with all line items')};
+  const duplicateJob=()=>{const newId='JOB-'+new Date().getFullYear()+'-'+String(Math.floor(Math.random()*900)+100);const newJob={...job,id:newId,name:job.name+' (Copy)',phase:'Quoting',paymentStatus:'unpaid',createdDate:new Date().toISOString().split('T')[0],startDate:'',endDate:''};const fid=addJob(newJob)||newId;items.forEach((item,_ix)=>{addLineItem({...item,id:'LI-'+Date.now()+'-'+String(_ix).padStart(3,'0')+'-'+Math.random().toString(36).slice(2,6),jobId:fid,qtyReceived:0,qtyInvoiced:0,deliveryDate:'',invoiceDate:''})});setSelectedJob(fid);notify('Job duplicated -- '+fid+' created with all line items')};
   const jobQuoteRef=React.useRef(null);
   const [uploadingToJob,setUploadingToJob]=useState(false);
   const parseQuoteIntoJob=async(file)=>{
