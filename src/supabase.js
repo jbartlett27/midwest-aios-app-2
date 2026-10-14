@@ -394,6 +394,34 @@ export const db = {
     };
   },
   async saveJob(job) { return upsertRow('jobs', jobToDb(job)); },
+  // A NEW job is inserted, never upserted: if the id is taken the database answers 409 instead of
+  // replacing that job (Oct 14 2026). { ok, conflict }.
+  async insertJob(job) {
+    try {
+      const r = await fetch(URL + '/jobs', { method: 'POST', headers: { ...hdrs, 'Prefer': 'return=minimal' }, body: JSON.stringify(jobToDb(job)) });
+      return { ok: r.ok, conflict: r.status === 409 };
+    } catch (e) { console.error('Insert jobs:', e); return { ok: false, conflict: false }; }
+  },
+  // Every job id in the database (paged), or null if any page fails.
+  async fetchJobIds() {
+    try {
+      let all = [];
+      for (let offset = 0; ; offset += 1000) {
+        const r = await fetch(URL + '/jobs?select=id&order=id&limit=1000&offset=' + offset, { headers: hdrs });
+        if (!r.ok) return null;
+        const page = await r.json(); if (!Array.isArray(page)) return null;
+        all = all.concat(page.map(x => x && x.id).filter(Boolean));
+        if (page.length < 1000) return all;
+      }
+    } catch (e) { console.error('Fetch job ids:', e); return null; }
+  },
+  // The few fields that tell whether the job under an id is the one this browser just made.
+  async fetchJobRow(id) {
+    try {
+      const r = await fetch(URL + '/jobs?id=eq.' + encodeURIComponent(id) + '&select=id,name,customer,sales_rep', { headers: hdrs });
+      if (!r.ok) return null; const a = await r.json(); return Array.isArray(a) ? (a[0] || null) : null;
+    } catch (e) { return null; }
+  },
   async saveLineItem(li) { return upsertRow('line_items', liToDb(li)); },
   async saveVendor(v) { return upsertRow('vendors', vendorToDb(v)); },
   async saveCustomer(c) { return upsertRow('customers', custToDb(c)); },
