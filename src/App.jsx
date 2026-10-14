@@ -1710,14 +1710,11 @@ function MidwestAIOSInner() {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, []);
-  // STABLE jobNum across users: stored on the job record itself (persists in Supabase),
-  // so all browsers see the same MW number for the same underlying job regardless of
-  // their local jobs-array length or load timing. If a job is missing a stored jobNum,
-  // we compute it deterministically (sort by createdDate ASC, then id ASC) and queue
-  // a save back via db.saveJob so the value sticks. The sort key is universal across
-  // browsers, so any browser assigning legacy numbers picks the SAME number for the
-  // same job (provided their jobs arrays have synced via realtime). After this runs
-  // once across the team, every job has a permanent stored jobNum.
+  // jobNum (the MW number) is computed deterministically (sort by createdDate ASC, then id ASC),
+  // so every browser shows the same number for the same job. It is cached on the job in this
+  // tab only. Oct 14 2026: it used to be "saved back" with db.saveJob, but jobs has no job_num
+  // column, so that save only rewrote the whole job from this tab's copy, every session, for
+  // every job on screen. A day-old tab did that at 12:40 and restored a deleted job.
   // CRITICAL: never call setJobs synchronously inside this function -- jobNum is
   // called during render, and setJobs in render triggers infinite re-render. Defer
   // via setTimeout(...,0) to escape the render phase. Track migrated job IDs in a
@@ -1733,12 +1730,7 @@ function MidwestAIOSInner() {
     if (!jobNumMigrated.current.has(jobId)) {
       jobNumMigrated.current.add(jobId);
       setTimeout(() => {
-        try {
-          if (db && typeof db.saveJob === 'function') {
-            db.saveJob({...j, jobNum: computed}).catch(()=>{});
-          }
-          setJobs(p => p.map(x => x.id === jobId ? {...x, jobNum: computed} : x));
-        } catch {}
+        try { setJobs(p => p.map(x => x.id === jobId ? {...x, jobNum: computed} : x)); } catch {}
       }, 0);
     }
     return computed;
@@ -1833,6 +1825,49 @@ function MidwestAIOSInner() {
 
 
 
+
+  // --- A TAB THAT WAS AWAY RE-READS EVERYTHING (Oct 14 2026) ---
+  // A laptop asleep overnight, or a background tab the browser froze, misses realtime updates and
+  // keeps an old copy of every job. When it comes back after 2+ minutes away (hidden, or timers
+  // stopped), re-read all data. A failed or empty read never replaces what is on screen, and new
+  // jobs still being saved stay. If a newer AIOS is live by then, a banner offers Refresh.
+  const [newerBuildLive, setNewerBuildLive] = useState(false);
+  useEffect(() => {
+    if (!appReady) return;
+    let hiddenAt = (typeof document !== 'undefined' && document.hidden) ? Date.now() : 0;
+    let lastTick = Date.now(), busy = false, lastResync = 0;
+    const resync = async () => {
+      if (busy || Date.now() - lastResync < 60000) return;
+      busy = true; lastResync = Date.now();
+      try {
+        let d = null; try { d = await db.loadAll(); } catch { d = null; }
+        if (d && Array.isArray(d.jobs) && d.jobs.length) setJobs(p => { const ids = new Set(d.jobs.map(j => j.id)); return [...d.jobs, ...p.filter(j => j && j._pendKey && !ids.has(j.id))]; });
+        if (d && Array.isArray(d.lineItems) && d.lineItems.length) setLineItems(p => {
+          const ids = new Set(d.lineItems.map(i => i.id)); const held = new Set();
+          pendingJobs.current.forEach(pj => pj.items.forEach(x => held.add(x)));
+          return [...d.lineItems, ...p.filter(i => i && held.has(i.id) && !ids.has(i.id))];
+        });
+        if (d && Array.isArray(d.vendors) && d.vendors.length) setVendors(d.vendors.filter(v => v.name && !v.id.includes("SEED_FLAG")));
+        if (d && Array.isArray(d.customers) && d.customers.length) setCustomers(d.customers);
+        if (d && Array.isArray(d.reps) && d.reps.length) setReps(d.reps.filter(r => r.name && !r.id.includes("SEED_FLAG")));
+        if (d && Array.isArray(d.sops) && d.sops.length) {
+          const deduped = []; const seen = new Set();
+          for (let i = d.sops.length - 1; i >= 0; i--) { if (!seen.has(d.sops[i].id)) { seen.add(d.sops[i].id); deduped.unshift(d.sops[i]); } }
+          setCustomSops(deduped);
+        }
+        try { if (!(await bankSyncBundleIsCurrent())) setNewerBuildLive(true); } catch {}
+      } finally { busy = false; }
+    };
+    const onVis = () => {
+      if (document.hidden) { hiddenAt = Date.now(); return; }
+      const away = hiddenAt ? Date.now() - hiddenAt : 0; hiddenAt = 0;
+      if (away >= 120000) resync();
+    };
+    // Timers stop while the computer sleeps (and slow down in a frozen tab): a long gap between ticks means it was away.
+    const tick = setInterval(() => { const now = Date.now(); if (now - lastTick >= 120000) resync(); lastTick = now; }, 30000);
+    document.addEventListener('visibilitychange', onVis);
+    return () => { clearInterval(tick); document.removeEventListener('visibilitychange', onVis); };
+  }, [appReady]);
 
   // --- REALTIME COLLABORATION ---
   const [onlineUsers, setOnlineUsers] = useState([]);
@@ -2532,6 +2567,7 @@ const sharedScreen = sharedQuote ? <ShareQuotePortal quoteData={sharedQuote} onA
     <div style={{display:"flex",height:"100vh",width:"100vw",fontFamily:"'Satoshi','Satoshi',sans-serif",background:"#000000",color:"#d4d4d4",overflow:"hidden"}}>
       <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700&display=swap" rel="stylesheet"/><link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"/>
       {searchOpen&&<div style={{position:"fixed",inset:0,zIndex:99998,display:"flex",alignItems:"flex-start",justifyContent:"center",paddingTop:"15vh"}}><div onClick={()=>setSearchOpen(false)} style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.5)",backdropFilter:"blur(40px) saturate(180%)",WebkitBackdropFilter:"blur(40px) saturate(180%)"}}/><div style={{position:"relative",width:"100%",maxWidth:560,background:"#111111",borderRadius:16,border:"1px solid rgba(255,255,255,0.08)",boxShadow:"0 24px 80px rgba(0,0,0,0.5)",overflow:"hidden",animation:"fadeUp 0.2s cubic-bezier(0.25,0.1,0.25,1)"}}><div style={{padding:"16px 20px",borderBottom:"1px solid rgba(255,255,255,0.06)",display:"flex",alignItems:"center",gap:12}}><I n="search" s={18}/><input autoFocus value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} placeholder="Search jobs, vendors, customers, items..." style={{flex:1,background:"transparent",border:"none",outline:"none",color:"#e5e5e5",fontSize:16,fontFamily:"inherit"}}/><span style={{fontSize:12,color:"#333333",background:"#1a1a1a",padding:"2px 8px",borderRadius:4}}>ESC</span></div>{searchResults.length>0&&<div style={{maxHeight:400,overflow:"auto",padding:"8px"}}>{searchResults.map((r,i)=><div key={r.id+i} onClick={r.action} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",borderRadius:10,cursor:"pointer",transition:"background 0.15s"}} onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.06)"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}><div style={{width:32,height:32,borderRadius:8,background:r.type==="Job"?"#2dd4bf18":r.type==="Vendor"?"#2563eb18":r.type==="Customer"?"#05966918":"#d9770618",display:"flex",alignItems:"center",justifyContent:"center"}}><I n={r.type==="Job"?"briefcase":r.type==="Vendor"?"package":r.type==="Customer"?"users":"file"} s={14}/></div><div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:600,color:"#e5e5e5",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.name}</div><div style={{fontSize:12,color:"#a3a3a3"}}>{r.sub}</div></div><Badge label={r.type} color={r.type==="Job"?"#2dd4bf":r.type==="Vendor"?"#a78bfa":"#34d399"}/></div>)}</div>}{searchQuery.length>=2&&searchResults.length===0&&<div style={{padding:40,textAlign:"center",color:"#333333",fontSize:13}}>No results for "{searchQuery}"</div>}{searchQuery.length<2&&<div style={{padding:30,textAlign:"center",color:"#333333",fontSize:12}}>Type at least 2 characters to search</div>}</div></div>}
+      {newerBuildLive&&<div className="newer-build-banner" style={{position:"fixed",top:12,left:"50%",transform:"translateX(-50%)",zIndex:99999,background:"#111111",border:"1px solid #2dd4bf",color:"#f0f0f0",padding:"10px 16px",borderRadius:10,fontSize:13,display:"flex",alignItems:"center",gap:12,maxWidth:"calc(100vw - 32px)",boxShadow:"0 8px 32px rgba(0,0,0,0.4)"}}><span>A newer version of the AIOS is live. Refresh to get it.</span><button onClick={()=>{try{window.location.reload()}catch{}}} style={{background:"#2dd4bf",color:"#000000",border:"none",borderRadius:6,padding:"6px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>Refresh</button></div>}
       {notification&&<div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",zIndex:99999,background:notification.type==="error"?"rgba(248,113,113,0.9)":"rgba(45,212,191,0.9)",color:"#fff",padding:"14px 24px",borderRadius:50,fontSize:13,fontWeight:600,boxShadow:"0 8px 32px rgba(0,0,0,0.4)",animation:"fadeUp 0.35s cubic-bezier(0.25,0.1,0.25,1)",maxWidth:"calc(100vw - 48px)",display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:16}}>{notification.type==="error"?"!":"+"}</span>{notification.msg}</div>}
       <PrintOverlay />
       <ConfirmDialog />
