@@ -2198,7 +2198,11 @@ function MidwestAIOSInner() {
     _liSeq++;
     const newItem = {...item, id: item.id||("LI-"+Date.now()+"-"+String(_liSeq).padStart(3,'0')+"-"+Math.random().toString(36).slice(2,6))};
     setLineItems(p => [...p, newItem]);
-    db.saveLineItem(newItem).then(r=>{if(!r?.ok){setTimeout(()=>db.saveLineItem(newItem).catch(()=>{}),2000)}}).catch(()=>{setTimeout(()=>db.saveLineItem(newItem).catch(()=>{}),2000)});
+    const saveItem = (it) => db.saveLineItem(it).then(r=>{if(!r?.ok){setTimeout(()=>db.saveLineItem(it).catch(()=>{}),2000)}}).catch(()=>{setTimeout(()=>db.saveLineItem(it).catch(()=>{}),2000)});
+    // A line item for a job that is still being inserted waits for it, and goes on the id it got.
+    const pend = pendingJobs.current.get(newItem.jobId);
+    if (pend) { pend.items.add(newItem.id); pend.done.then(fid => saveItem(fid === newItem.jobId ? newItem : {...newItem, jobId: fid})); }
+    else saveItem(newItem);
   };
   const deleteLineItem = async (id) => {
     if (!await confirm("Delete this line item? This cannot be undone.")) return;
@@ -2211,6 +2215,8 @@ function MidwestAIOSInner() {
   };
   // Ids handed to new jobs this session, so two jobs made before a re-render never share one.
   const madeJobIds = useRef(new Set());
+  // New jobs whose database insert is not confirmed yet: id -> { key, items, done (resolves to the final id) }.
+  const pendingJobs = useRef(new Map());
   const addJob = (job) => {
     // Oct 13 2026: the save is an upsert on id, so a new job given an id that already exists
     // REPLACES that job in the database (the Brain's create_job named one from the job count and
@@ -2218,10 +2224,14 @@ function MidwestAIOSInner() {
     // and the id actually used is returned so callers put the line items on the right job.
     const takenIds = new Set([...jobs.map(j => j && j.id), ...madeJobIds.current]);
     let newJob = job;
-    if (!newJob.id || takenIds.has(newJob.id)) {
-      let top = 0;
-      takenIds.forEach(x => { const m = /^JOB-\d+-(\d+)$/.exec(String(x || '')); if (m) top = Math.max(top, parseInt(m[1], 10)); });
-      newJob = {...newJob, id: 'JOB-' + new Date().getFullYear() + '-' + String(top + 1).padStart(3, '0')};
+    // Oct 14 2026: a number at or below the highest one known is renumbered too. A deleted job's number is
+    // never reused, because its quotes, POs and invoices are still filed under it (DOC_STATUSES_GLOBAL).
+    const jobNumOf = (x) => { const m = /^JOB-\d+-(\d+)$/.exec(String(x || '')); return m ? parseInt(m[1], 10) : null; };
+    let topKnown = 0;
+    takenIds.forEach(x => { const n = jobNumOf(x); if (n !== null) topKnown = Math.max(topKnown, n); });
+    const askedNum = jobNumOf(newJob.id);
+    if (!newJob.id || takenIds.has(newJob.id) || (askedNum !== null && askedNum <= topKnown)) {
+      newJob = {...newJob, id: 'JOB-' + new Date().getFullYear() + '-' + String(topKnown + 1).padStart(3, '0')};
     }
     madeJobIds.current.add(newJob.id);
     // Assign a stable jobNum at creation if the caller didn't supply one. Compute as
@@ -2241,10 +2251,49 @@ function MidwestAIOSInner() {
       const next = Math.max(maxNum + 1, floor);
       newJob = {...newJob, jobNum: 'MW-'+String(next).padStart(4,'0')};
     }
+    // Oct 14 2026: a tab left open overnight does not know every job, so the database decides. The job is
+    // INSERTED (never upserted); a 409 means the id is taken, so read the real ids, take the next free
+    // number, re-key the job, its line items and the open job in this tab, and try again.
+    const pendKey = 'pj-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8);
+    newJob = {...newJob, _pendKey: pendKey};
     setJobs(p => [...p, newJob]);
-    db.saveJob(newJob).then(r=>{if(!r?.ok){setTimeout(()=>db.saveJob(newJob).catch(()=>{}),2000)}}).catch(()=>{setTimeout(()=>db.saveJob(newJob).catch(()=>{}),2000)});
+    const firstId = newJob.id;
+    const pend = { key: pendKey, items: new Set() };
+    pend.done = (async () => {
+      let cur = firstId;
+      const rekey = (next) => {
+        const prev = cur; cur = next; madeJobIds.current.add(next);
+        setJobs(p => p.map(j => j && j._pendKey === pendKey ? {...j, id: next} : j));
+        setLineItems(p => p.map(i => i && pend.items.has(i.id) ? {...i, jobId: next} : i));
+        setSelectedJob(sj => sj === prev ? next : sj);
+      };
+      const nextFree = (ids) => { let top = 0; ids.forEach(x => { const n = jobNumOf(x); if (n !== null) top = Math.max(top, n); }); return 'JOB-' + new Date().getFullYear() + '-' + String(top + 1).padStart(3, '0'); };
+      // Number it from the database, not from this tab's list (which may be hours old).
+      if (jobNumOf(cur) !== null) {
+        let dbIds = null; try { dbIds = await db.fetchJobIds(); } catch { dbIds = null; }
+        if (dbIds) { const others = [...dbIds, ...[...madeJobIds.current].filter(x => x !== cur)]; if (others.some(x => (jobNumOf(x) || 0) >= jobNumOf(cur))) rekey(nextFree(others)); }
+      }
+      for (let attempt = 0; attempt < 6; attempt++) {
+        let r = null; try { r = await db.insertJob({...newJob, id: cur}); } catch { r = null; }
+        if (r && r.ok) return cur;
+        if (r && r.conflict) {
+          // An earlier try that timed out may have landed: same name, customer and rep means it is this job.
+          let row = null; try { row = await db.fetchJobRow(cur); } catch { row = null; }
+          if (row && (row.name || '') === (newJob.name || '') && (row.customer || '') === (newJob.customer || '') && (row.sales_rep || '') === (newJob.salesRep || '')) return cur;
+          let dbIds = null; try { dbIds = await db.fetchJobIds(); } catch { dbIds = null; }
+          rekey(nextFree([...(dbIds || []), ...jobs.map(j => j && j.id), ...madeJobIds.current, cur]));
+          continue;
+        }
+        await new Promise(res => setTimeout(res, 2000));
+      }
+      return cur;
+    })();
+    pendingJobs.current.set(firstId, pend);
+    pend.done.then(() => { if (pendingJobs.current.get(firstId) === pend) pendingJobs.current.delete(firstId); });
     return newJob.id;
   };
+  // Resolves to the id a new job was finally saved under (the same id once it is in the database).
+  const confirmJobId = (id) => { const p = pendingJobs.current.get(id); return p ? p.done : Promise.resolve(id); };
   const deleteJob = async (id) => {
     if (!await confirm("Delete this entire job and all its line items? This cannot be undone.")) return;
     // Delete all line items for this job first
@@ -2416,7 +2465,7 @@ function MidwestAIOSInner() {
   // it passes through for everyone; Vendor 360 reads the unfiltered line-item
   // ledger (vendor spend across ALL jobs), so sales-role users are excluded.
   const _allowedPageIds = new Set([...navItems.map(i=>i.id),"customer360",...(userRole==="sales"?[]:["vendor360"])]);
-  const ctx = {jobs:visibleJobs,allJobs:jobs,setJobs,jobNum,currentUser,userRole,userRepId,logout,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,_commissionFor,_bankTxnHash,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,forceDeleteVendor,forceDeleteLineItem,forceDeleteCustomer,forceDeleteRep,db,lineItemShipTos,setLineItemShipTo,setPage:p=>{const _tp=_allowedPageIds.has(p)?p:(navItems[0]?.id||"dashboard");setPage(_tp);setMobileMenuOpen(false);window.scrollTo(0,0);const mc=document.querySelector('.main-content');if(mc)mc.scrollTop=0},viewCustomer:id=>{setPage("customer360");window._viewCustId=id;window.scrollTo(0,0)},jobReportDate,brainQuery,setBrainQuery,customSops,setCustomSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter,pendingCommPreview,setPendingCommPreview,pendingBrainFile,setPendingBrainFile,pendingBrainEmail,setPendingBrainEmail,focusSopId,setFocusSopId};
+  const ctx = {jobs:visibleJobs,allJobs:jobs,setJobs,confirmJobId,jobNum,currentUser,userRole,userRepId,logout,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,_commissionFor,_bankTxnHash,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,forceDeleteVendor,forceDeleteLineItem,forceDeleteCustomer,forceDeleteRep,db,lineItemShipTos,setLineItemShipTo,setPage:p=>{const _tp=_allowedPageIds.has(p)?p:(navItems[0]?.id||"dashboard");setPage(_tp);setMobileMenuOpen(false);window.scrollTo(0,0);const mc=document.querySelector('.main-content');if(mc)mc.scrollTop=0},viewCustomer:id=>{setPage("customer360");window._viewCustId=id;window.scrollTo(0,0)},jobReportDate,brainQuery,setBrainQuery,customSops,setCustomSops,addSop,deleteSop,brainLoading,setBrainLoading,brainHistory,setBrainHistory,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter,pendingCommPreview,setPendingCommPreview,pendingBrainFile,setPendingBrainFile,pendingBrainEmail,setPendingBrainEmail,focusSopId,setFocusSopId};
 
 
   const loadingScreen = (
@@ -2906,7 +2955,7 @@ function Dashboard({jobs,lineItems,reps,vendors,customers,getJobFinancials,getJo
 
 
 function JobsPage(ctx){
-  const {jobs,reps,customers,vendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobFinancials,getJobItems,getItemStatus,getJobPOStatus,getJobInvStatus,updateJob,addJob,addLineItem,updateLineItem,deleteLineItem,lineItems,addCustomer,addVendor,deleteJob,confirm,db} = ctx;
+  const {confirmJobId,jobs,reps,customers,vendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobFinancials,getJobItems,getItemStatus,getJobPOStatus,getJobInvStatus,updateJob,addJob,addLineItem,updateLineItem,deleteLineItem,lineItems,addCustomer,addVendor,deleteJob,confirm,db} = ctx;
   const [viewMode,setViewMode]=useState("kanban");
   const [newJob,setNewJob]=useState({name:"",customer:"",salesRep:reps[0]?.id||"",phase:"Quoting",dueDate:"",startDate:"",notes:"",terms:"Net 30",poNumber:"",shipTo:"",shipVia:""});
   const [newCust,setNewCust]=useState(false);
@@ -3228,7 +3277,7 @@ Never use emoji. Be concise.`;
   const uploadSelPricedCount=uploadData?uploadData.items.filter(i=>uploadSheets[i.sheet]&&(i.unitPrice>0||i.priceExtended>0)).length:0;
   const uploadSelCost=uploadData?uploadData.items.filter(i=>uploadSheets[i.sheet]).reduce((s,i)=>s+(i.unitCost*(i.qtyOrdered||1)),0):0;
   const uploadSelRev=uploadData?uploadData.items.filter(i=>uploadSheets[i.sheet]).reduce((s,i)=>s+(i.priceExtended&&i.priceExtended>0?i.priceExtended:(i.unitPrice||0)*(i.qtyOrdered||1)),0):0;
-  const handleCreateJob=()=>{if(!newJob.name)return;const maxNum=jobs.reduce((mx,j)=>{const m=j.id.match(/JOB-\d+-(\d+)/);return m?Math.max(mx,parseInt(m[1])):mx},0);let id=`JOB-2026-${String(maxNum+1).padStart(3,"0")}`;id=addJob({id,...newJob,phase:newJob.phase||"Quoting",createdDate:new Date().toISOString().split("T")[0],startDate:newJob.startDate||"",endDate:"",paymentStatus:"unpaid",terms:newJob.terms||"Net 30",poNumber:newJob.poNumber||"",shipTo:newJob.shipTo||"",shipVia:newJob.shipVia||"",billTo:newJob.billTo||"",orderNotes:""})||id;setShowNewJob(false);setNewJob({name:"",customer:"",salesRep:reps[0]?.id||"",phase:"Quoting",dueDate:"",startDate:"",notes:"",terms:"Net 30",poNumber:"",shipTo:"",shipVia:""});notify(`Job ${id} created -- saved to database`)};
+  const handleCreateJob=()=>{if(!newJob.name)return;const maxNum=jobs.reduce((mx,j)=>{const m=j.id.match(/JOB-\d+-(\d+)/);return m?Math.max(mx,parseInt(m[1])):mx},0);let id=`JOB-2026-${String(maxNum+1).padStart(3,"0")}`;id=addJob({id,...newJob,phase:newJob.phase||"Quoting",createdDate:new Date().toISOString().split("T")[0],startDate:newJob.startDate||"",endDate:"",paymentStatus:"unpaid",terms:newJob.terms||"Net 30",poNumber:newJob.poNumber||"",shipTo:newJob.shipTo||"",shipVia:newJob.shipVia||"",billTo:newJob.billTo||"",orderNotes:""})||id;setShowNewJob(false);setNewJob({name:"",customer:"",salesRep:reps[0]?.id||"",phase:"Quoting",dueDate:"",startDate:"",notes:"",terms:"Net 30",poNumber:"",shipTo:"",shipVia:""});(confirmJobId?confirmJobId(id):Promise.resolve(id)).then(fid=>notify(`Job ${fid} created -- saved to database`))};
 
 
   const newJobModal = <><input ref={uploadRef} type="file" accept=".xls,.xlsx,.pdf,.png,.jpg,.jpeg" onChange={e=>{if(!e.target.files[0])return;const f=e.target.files[0];const ext=(f.name||'').split('.').pop().toLowerCase();if(ext==='pdf'||f.type==='application/pdf'||f.type?.startsWith('image/'))parseQuoteFileAI(f);else parseQuoteFile(f)}} style={{display:"none"}}/>{showNewJob&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(8px)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20,animation:"fadeUp 0.25s"}} onClick={e=>{if(e.target===e.currentTarget)setShowNewJob(false)}}><div style={{background:"#111",border:"1px solid rgba(45,212,191,0.15)",borderRadius:16,padding:28,width:"100%",maxWidth:640,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 24px 80px rgba(0,0,0,0.6)"}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}><div style={{fontSize:18,fontWeight:800,color:"#f0f0f0"}}>New Job Record</div><div onClick={()=>setShowNewJob(false)} style={{width:32,height:32,borderRadius:8,background:"rgba(255,255,255,0.06)",display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",color:"#737373",fontSize:18,transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.1)";e.currentTarget.style.color="#f0f0f0"}} onMouseLeave={e=>{e.currentTarget.style.background="rgba(255,255,255,0.06)";e.currentTarget.style.color="#737373"}}>x</div></div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:12}}><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Job Name</label><input value={newJob.name} onChange={e=>setNewJob({...newJob,name:e.target.value})} placeholder="e.g., Lincoln USD Media Center" style={inputStyle}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Customer</label><CustomerPicker value={newJob.customer} onChange={v=>setNewJob({...newJob,customer:v})} customers={customers} onAddNew={(name)=>{const id="CUST-"+Math.random().toString(36).slice(2,8);addCustomer({id,name:name||"New Customer",contact:"",email:"",phone:"",type:"K-12 District",address:""});setNewJob({...newJob,customer:id});notify("Customer created: "+(name||"New Customer"))}}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Sales Rep</label><select value={newJob.salesRep} onChange={e=>setNewJob({...newJob,salesRep:e.target.value})} style={inputStyle}>{reps.filter(isSalesRep).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Phase</label><select value={newJob.phase||"Quoting"} onChange={e=>setNewJob({...newJob,phase:e.target.value})} style={inputStyle}><option>Quoting</option><option>Approved</option><option>Ordered</option><option>In Production</option><option>Delivering</option><option>Invoiced</option><option>Complete</option></select></div></div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12,marginBottom:12}}><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Start Date</label><input type="date" value={newJob.startDate} onChange={e=>setNewJob({...newJob,startDate:e.target.value})} style={inputStyle}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Due Date</label><input type="date" value={newJob.dueDate} onChange={e=>setNewJob({...newJob,dueDate:e.target.value})} style={inputStyle}/></div><div style={{gridColumn:"span 2"}}><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Notes</label><input value={newJob.notes} onChange={e=>setNewJob({...newJob,notes:e.target.value})} placeholder="Project details..." style={inputStyle}/></div></div><div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12,marginBottom:12}}><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Payment Terms</label><select value={newJob.terms||"Net 30"} onChange={e=>setNewJob({...newJob,terms:e.target.value})} style={inputStyle}><option>Net 30</option><option>Net 15</option><option>Due Upon Receipt</option></select></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Customer PO #</label><input value={newJob.poNumber||""} onChange={e=>setNewJob({...newJob,poNumber:e.target.value})} placeholder="Customer PO number" style={inputStyle}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Ship To</label><textarea value={newJob.shipTo||""} onChange={e=>setNewJob({...newJob,shipTo:e.target.value})} placeholder={"School Name\nStreet Address\nCity, State Zip"} rows={3} style={{...inputStyle,resize:"vertical",minHeight:56,lineHeight:1.4,fontFamily:"inherit"}}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Ship Via</label><input value={newJob.shipVia||""} onChange={e=>setNewJob({...newJob,shipVia:e.target.value})} placeholder="Shipping instructions" style={inputStyle}/></div><div><label style={{fontSize:12,color:"#a3a3a3",display:"block",marginBottom:4}}>Bill To</label><textarea value={newJob.billTo||""} onChange={e=>setNewJob({...newJob,billTo:e.target.value})} placeholder={"School Name\nStreet Address\nCity, State Zip"} rows={3} style={{...inputStyle,resize:"vertical",minHeight:56,lineHeight:1.4,fontFamily:"inherit"}}/></div></div><div style={{display:"flex",gap:8}}><Btn onClick={handleCreateJob}>Create Job Record</Btn><Btn v="secondary" onClick={()=>setShowNewJob(false)}>Cancel</Btn></div></div></div>}</>;
@@ -3416,7 +3465,7 @@ function QuoteColToggle({job, updateJob}){
 }
 function JobDetail({job,ctx}){
   if(!job||!ctx)return <div style={{padding:40,textAlign:"center",color:"#f87171"}}>Missing job data. <button onClick={()=>ctx?.setSelectedJob?.(null)} style={{color:"#2dd4bf",background:"none",border:"none",cursor:"pointer",fontFamily:"inherit",textDecoration:"underline"}}>Back to jobs</button></div>;
-  const {getJobFinancials,getJobItems,getItemStatus,vendors,customers,reps,updateJob,addJob,addLineItem,updateLineItem,deleteLineItem,deleteJob,setSelectedJob,notify,lineItems,jobs,triggerPrint,updateVendor,lineItemShipTos,setLineItemShipTo,_commissionFor}=ctx;
+  const {confirmJobId,getJobFinancials,getJobItems,getItemStatus,vendors,customers,reps,updateJob,addJob,addLineItem,updateLineItem,deleteLineItem,deleteJob,setSelectedJob,notify,lineItems,jobs,triggerPrint,updateVendor,lineItemShipTos,setLineItemShipTo,_commissionFor}=ctx;
   // Line-item ship-to fallback: read prefers a value from the sops-backed lineItemShipTos
   // store, falling back to the column value on the line item. Writes go to BOTH the store
   // (sops, reliable) AND updateLineItem (forward-compat for when the supabase.js write path
@@ -3448,7 +3497,7 @@ function JobDetail({job,ctx}){
   const auditEntries = (job.auditTrail || []).map(a=>({id:a.time+a.type,text:a.type==="edit"?"Edited: "+a.fields.map(f=>f.field+" changed"+(f.from?" from "+String(f.from).slice(0,20):"")+" to "+String(f.to).slice(0,30)).join(", "):a.type==="create"?"Job created":a.type,time:a.time,user:a.user||"",source:"auto"}));
   const activities = [...manualActivities,...auditEntries].sort((a,b)=>new Date(b.time)-new Date(a.time));
   const addActivity=(text)=>{const entry={text,time:new Date().toISOString(),id:Math.random().toString(36).slice(2),user:ctx.currentUser?.name||"System"};const next=[entry,...activities];updateJob(job.id,{activities:next})};
-  const duplicateJob=()=>{const newId='JOB-'+new Date().getFullYear()+'-'+String(Math.floor(Math.random()*900)+100);const newJob={...job,id:newId,name:job.name+' (Copy)',phase:'Quoting',paymentStatus:'unpaid',createdDate:new Date().toISOString().split('T')[0],startDate:'',endDate:''};const fid=addJob(newJob)||newId;items.forEach((item,_ix)=>{addLineItem({...item,id:'LI-'+Date.now()+'-'+String(_ix).padStart(3,'0')+'-'+Math.random().toString(36).slice(2,6),jobId:fid,qtyReceived:0,qtyInvoiced:0,deliveryDate:'',invoiceDate:''})});setSelectedJob(fid);notify('Job duplicated -- '+fid+' created with all line items')};
+  const duplicateJob=()=>{const newId='JOB-'+new Date().getFullYear()+'-'+String(Math.floor(Math.random()*900)+100);const newJob={...job,id:newId,name:job.name+' (Copy)',phase:'Quoting',paymentStatus:'unpaid',createdDate:new Date().toISOString().split('T')[0],startDate:'',endDate:''};const fid=addJob(newJob)||newId;items.forEach((item,_ix)=>{addLineItem({...item,id:'LI-'+Date.now()+'-'+String(_ix).padStart(3,'0')+'-'+Math.random().toString(36).slice(2,6),jobId:fid,qtyReceived:0,qtyInvoiced:0,deliveryDate:'',invoiceDate:''})});setSelectedJob(fid);(confirmJobId?confirmJobId(fid):Promise.resolve(fid)).then(id=>notify('Job duplicated -- '+id+' created with all line items'))};
   const jobQuoteRef=React.useRef(null);
   const [uploadingToJob,setUploadingToJob]=useState(false);
   const parseQuoteIntoJob=async(file)=>{
