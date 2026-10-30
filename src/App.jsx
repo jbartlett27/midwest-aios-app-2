@@ -1,3 +1,4 @@
+import { resolveInvoiceDates, invoiceTermsDays } from './invoiceDates.js';
 import { isBusinessDate, businessDayAfter } from './businessDate.js';
 import DateInput from './DateInput.jsx';
 import { BrainPage, CommissionsPage, Customer360Page, DirectoryPage, ExitReadinessPage, FilesPage, FinancialsPage, NotesPage, PlaybookPage, ProspectsPage, SalesPortalPage, TasksPage, UserMgmtPage, Vendor360Page } from "./App2.jsx";
@@ -4410,8 +4411,11 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
   useEffect(()=>{setIssuedInvNum('')},[previewDoc]);
   const invoiceIssueNum=(d)=>{const doc=d||previewDoc;if(!doc||doc.type!=="invoice")return (doc&&doc.data&&doc.data.docNum)||"";if(isCreditMemo||isProforma)return doc.data.docNum||"";return issuedInvNum||(invRegNum.trim().replace(/^#/,'')||nextInvoiceNum(invoicesForJob(doc.job&&doc.job.id),doc.data.docNum))};
   const invoiceQtyFor=(i)=>{const r=lineOverrides[i.id];const has=r!==undefined&&r!=="";const sug=i.displayQty!==undefined?i.displayQty:i.qtyOrdered;const q=has?Number(r):sug;return isNaN(q)?sug:q};
+  const previewInvoiceKey=previewDoc?.type==="invoice"&&!isCreditMemo&&!isProforma?invoiceIssueNum(previewDoc):previewDoc?.data?.docNum||'';
+  const datesForDocument=(doc)=>{const key=doc.type==="invoice"&&!isCreditMemo&&!isProforma?(doc.data.invoiceNum||invoiceIssueNum(doc)):doc.data.docNum;return resolveInvoiceDates({invoiceNum:key,docNum:doc.data.docNum,record:invoiceRecords.find(r=>normInvoiceNum(r.invoiceNum)===normInvoiceNum(key)),draftDate:doc.type==="invoice"&&!issuedInvNum?invRegDate:''},docStatuses,doc.job?.terms,_localToday())};
+  const changePreviewDate=(field,value)=>{if(value&&!isBusinessDate(value)){notify("Use a real date between 2000 and 2100","error");return}const current=datesForDocument(previewDoc);const date=field==='date'?(value||_localToday()):current.date;const dueDate=field==='due'?(value||businessDayAfter(date,invoiceTermsDays(previewDoc.job?.terms))):businessDayAfter(date,invoiceTermsDays(previewDoc.job?.terms));const patch={[previewInvoiceKey+'__date']:date,[previewInvoiceKey+'__due']:dueDate};setDocStatuses(patch);if(previewDoc.type==='invoice'){setInvRegDate(date);const rec=invoiceRecords.find(r=>normInvoiceNum(r.invoiceNum)===normInvoiceNum(previewInvoiceKey));if(rec)saveInvoiceRecord({...rec,date,dueDate})}};
   const invoiceForIssue=(d)=>{if(!d||d.type!=="invoice")return d;const items=(d.data.items||[]).map(it=>({...it,displayQty:invoiceQtyFor(it)})).filter(it=>(Number(it.displayQty)||0)>0);return {...d,data:{...d.data,items,total:items.reduce((t,i)=>t+(Number(i.displayQty)||0)*((i.displayPrice!==undefined?i.displayPrice:i.unitPrice)||0),0),invoiceNum:invoiceIssueNum(d)}}};
-  const fileInvoice=()=>{const _register=!isCreditMemo&&!isProforma;const _job=previewDoc.job||{};const _regDate=_isDateStr(invRegDate)?invRegDate:_localToday();const _regNum=_register?invoiceIssueNum(previewDoc):"";if(_register&&_regNum.length>40){notify("Invoice number is too long","error");return false}if(_register&&invoiceNumTaken(_regNum)){notify("Invoice # "+_regNum+" is already on file -- change the number in the register row first","error");return false}let _bumpedCount=0;const _regLines=[];previewDoc.data.items.forEach(item=>{const _ovRaw=lineOverrides[item.id];const _hasOv=_ovRaw!==undefined&&_ovRaw!==""&&!isNaN(Number(_ovRaw));const _suggested=item.displayQty!==undefined?item.displayQty:(item.qtyReceived||0)-(item.qtyInvoiced||0);const _bump=_hasOv?Number(_ovRaw):_suggested;const _safeBump=isNaN(_bump)?0:Math.max(0,_bump);const _newQI=Math.min((item.qtyOrdered||0),(item.qtyInvoiced||0)+_safeBump);if(_safeBump>0){updateLineItem(item.id,{qtyInvoiced:_newQI,invoiceDate:_regDate});_regLines.push({lineItemId:item.id,description:String(item.description||"").split("\n")[0].slice(0,120),qty:_safeBump,unitPrice:Number(item.displayPrice!==undefined?item.displayPrice:item.unitPrice)||0});_bumpedCount++}});if(_bumpedCount>0&&_register){const _cust=customers.find(c=>c.id===_job.customer);const _anyPrior=(previewDoc.data.items||[]).some(i=>(i.qtyInvoiced||0)>0);saveInvoiceRecord({invoiceNum:_regNum,jobId:_job.id||"",jobName:_job.name||"",customerId:_job.customer||"",customerName:_cust?.name||"",date:_regDate,dueDate:"",kind:isAdvanceInvoice?"advance":(previewDoc.data.isPartial||isRemainingBalanceFlow||_anyPrior)?"partial":"full",source:"aios",docNum:previewDoc.data.docNum||"",total:invoiceLineTotal(_regLines),lines:_regLines,notes:""});setIssuedInvNum(_regNum)}notify(_bumpedCount>0?("Marked invoiced -- "+_bumpedCount+" line"+(_bumpedCount!==1?"s":"")+" updated"+(_register?" and invoice #"+_regNum+" registered on the job":"")):"No lines bumped (all overrides were 0 or empty)");setLineOverrides({});return _bumpedCount>0};
+  const fileInvoice=()=>{const _register=!isCreditMemo&&!isProforma;const _job=previewDoc.job||{};const _invoiceDates=datesForDocument(previewDoc);const _regDate=_invoiceDates.date;const _regNum=_register?invoiceIssueNum(previewDoc):"";if(_register&&_regNum.length>40){notify("Invoice number is too long","error");return false}if(_register&&invoiceNumTaken(_regNum)){notify("Invoice # "+_regNum+" is already on file -- change the number in the register row first","error");return false}let _bumpedCount=0;const _regLines=[];previewDoc.data.items.forEach(item=>{const _ovRaw=lineOverrides[item.id];const _hasOv=_ovRaw!==undefined&&_ovRaw!==""&&!isNaN(Number(_ovRaw));const _suggested=item.displayQty!==undefined?item.displayQty:(item.qtyReceived||0)-(item.qtyInvoiced||0);const _bump=_hasOv?Number(_ovRaw):_suggested;const _safeBump=isNaN(_bump)?0:Math.max(0,_bump);const _newQI=Math.min((item.qtyOrdered||0),(item.qtyInvoiced||0)+_safeBump);if(_safeBump>0){updateLineItem(item.id,{qtyInvoiced:_newQI,invoiceDate:_regDate});_regLines.push({lineItemId:item.id,description:String(item.description||"").split("\n")[0].slice(0,120),qty:_safeBump,unitPrice:Number(item.displayPrice!==undefined?item.displayPrice:item.unitPrice)||0});_bumpedCount++}});if(_bumpedCount>0&&_register){const _cust=customers.find(c=>c.id===_job.customer);const _anyPrior=(previewDoc.data.items||[]).some(i=>(i.qtyInvoiced||0)>0);saveInvoiceRecord({invoiceNum:_regNum,jobId:_job.id||"",jobName:_job.name||"",customerId:_job.customer||"",customerName:_cust?.name||"",date:_regDate,dueDate:_invoiceDates.dueDate,kind:isAdvanceInvoice?"advance":(previewDoc.data.isPartial||isRemainingBalanceFlow||_anyPrior)?"partial":"full",source:"aios",docNum:previewDoc.data.docNum||"",total:invoiceLineTotal(_regLines),lines:_regLines,notes:""});setIssuedInvNum(_regNum)}notify(_bumpedCount>0?("Marked invoiced -- "+_bumpedCount+" line"+(_bumpedCount!==1?"s":"")+" updated"+(_register?" and invoice #"+_regNum+" registered on the job":"")):"No lines bumped (all overrides were 0 or empty)");setLineOverrides({});return _bumpedCount>0};
   // A partial invoice (lines held back, some items not received yet, or any invoice on a job that
   // already has one) that is exported or emailed without being filed would leave the next invoice on
   // the same number with the same lines. Offer to file it. A job's one full invoice goes out as before.
@@ -4530,33 +4534,17 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
   const [localStatuses, setLocalStatuses] = useState({});
   const lsApprovals=(()=>{try{const a={};Object.keys(localStorage).filter(k=>k.startsWith("quote_approved_")).forEach(k=>{const dn=k.replace("quote_approved_","");if(dn)a[dn]="approved"});return a}catch{return {}}})();
   const docStatuses = {...mergedDocStatuses, ...localStatuses, ...lsApprovals};
-  const setDocStatus = (docNum, status) => {
-    // 1. Immediate UI
-    setLocalStatuses(prev => ({...prev, [docNum]: status}));
-    // 2. Save to sops table (guaranteed to work - same as tasks/notes)
-    const allStatuses = {...mergedDocStatuses, ...localStatuses, [docNum]: status};
-    const sopRecord = {id:"DOC_STATUSES_GLOBAL",title:"Document Statuses",cat:"DocStatuses",icon:"file",content:JSON.stringify(allStatuses),custom:true};
-    // Use addSop which does upsert
-    addSop(sopRecord);
-    // 3. Also try to save on the job record
-    const sn = (prefix, a, b) => prefix + (a||"").replace(/[^A-Z0-9]/gi,"").slice(-4).toUpperCase() + "-" + (b||"").replace(/[^A-Z0-9]/gi,"").slice(-4).toUpperCase();
-    for (const j of jobs) {
-      const nums = [sn("QT-",j.id,j.customer), sn("INV-",j.id,j.customer)];
-      if (j.salesRep) nums.push(sn("COMM-",j.salesRep,"stmt"));
-      const jItems = getJobItems ? getJobItems(j.id) : [];
-      [...new Set(jItems.map(i=>i.vendor))].forEach(vid => nums.push(sn("PO-",j.id,vid)));
-      if ((j.docStatuses||{})[docNum] !== undefined) nums.push(docNum);
-      if (nums.includes(docNum) || nums.some(n => n.startsWith('PO-') && docNum.startsWith(n + '-S'))) {
-        const newDS = {...(j.docStatuses||{}), [docNum]: status};
-        setJobs(p => p.map(jj => jj.id === j.id ? {...jj, docStatuses: newDS} : jj));
-        db.saveJob({...j, docStatuses: newDS});
-        break;
-      }
-    }
-    // 4. localStorage backup
-    try { const fb = JSON.parse(localStorage.getItem("mw_doc_statuses_fallback") || "{}"); fb[docNum] = status; localStorage.setItem("mw_doc_statuses_fallback", JSON.stringify(fb)); } catch {}
-    try{localStorage.removeItem("quote_approved_"+docNum)}catch{};
+  const statusEdits=useRef({});
+  const setDocStatuses = (patch) => {
+    statusEdits.current={...statusEdits.current,...patch};
+    setLocalStatuses({...statusEdits.current});
+    const allStatuses={...mergedDocStatuses,...localStatuses,...statusEdits.current};
+    addSop({id:"DOC_STATUSES_GLOBAL",title:"Document Statuses",cat:"DocStatuses",icon:"file",content:JSON.stringify(allStatuses),custom:true});
+    for(const job of jobs){const own={};const bases=[stableNum('QT-',job.id,job.customer),stableNum('INV-',job.id,job.customer),...getJobItems(job.id).map(i=>stableNum('PO-',job.id,i.vendor))];for(const [key,value] of Object.entries(patch)){const rec=invoiceRecords.find(r=>r.jobId===job.id&&(key===r.invoiceNum||key.startsWith(r.invoiceNum+'__')));if(rec||bases.some(base=>key===base||key.startsWith(base+'__')||key.startsWith(base+'-')))own[key]=value}if(Object.keys(own).length)updateJob(job.id,{docStatuses:{...(job.docStatuses||{}),...own}})}
+    try{localStorage.setItem("mw_doc_statuses_fallback",JSON.stringify(allStatuses))}catch{}
   };
+  const setDocStatus = (docNum, status) => {setDocStatuses({[docNum]:status});try{localStorage.removeItem("quote_approved_"+docNum)}catch{}};
+
 
 
   // Check for quote approvals from shared customer links
@@ -4683,11 +4671,9 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
     const logoSrc=forEmail?(window.location.origin+'/mw-logo.png'):MW_LOGO;
     const job=doc.job||{};const customer2=customers.find(c=>c.id===job.customer)||{};
     const terms=job.terms||"Net 30";const termDays=terms.includes("15")?15:terms.includes("Receipt")?0:30;
-    const docDateKey=doc.data?.docNum||'';
-    const overrideDate=docDateKey?docStatuses[docDateKey+'__date']||'':'';
-    const overrideDue=docDateKey?docStatuses[docDateKey+'__due']||'':'';
-    const baseDate=overrideDate?new Date(overrideDate+'T12:00:00'):new Date();
-    const dueDate=overrideDue?new Date(overrideDue+'T12:00:00'):(()=>{const d=new Date(baseDate);d.setDate(d.getDate()+termDays);return d})();
+    const dates=datesForDocument(doc);
+    const baseDate=parseLocalDate(dates.date)||new Date();
+    const dueDate=parseLocalDate(dates.dueDate)||baseDate;
     const fmtDate=d=>{if(!d)return"";const dt=new Date(d);return(dt.getMonth()+1)+"/"+dt.getDate()+"/"+dt.getFullYear()};
     const todayStr=fmtDate(baseDate);const dueDateStr=fmtDate(dueDate);
     const buildDesc=(i)=>{let d=i.modelNumber?i.modelNumber+"<br>":"";d+=(i.description||"").replace(/\n/g,"<br>");if(i.color)d+="<br>"+i.color;return d};
@@ -6708,13 +6694,13 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
       {previewDoc.data.docNum&&previewDoc.type!=="commission"&&<div style={{display:"flex",alignItems:"center",gap:10}}>
         <div style={{display:"flex",alignItems:"center",gap:6}}>
           <label style={{fontSize:10,color:"#737373",fontWeight:600,whiteSpace:"nowrap"}}>DATE</label>
-          <DateInput type="date" value={docStatuses[previewDoc.data.docNum+'__date']||''} onChange={e=>{setDocStatus(previewDoc.data.docNum+'__date',e.target.value);if(e.target.value&&!docStatuses[previewDoc.data.docNum+'__due']){const terms=previewDoc.job?.terms||'Net 30';const days=terms.includes('15')?15:terms.includes('Receipt')?0:30;const d=new Date(e.target.value+'T12:00:00');d.setDate(d.getDate()+days);setDocStatus(previewDoc.data.docNum+'__due',d.toISOString().split('T')[0])}}} style={{...inputStyle,width:130,fontSize:11,padding:"3px 6px"}}/>
+          <DateInput type="date" value={datesForDocument(previewDoc).date} onChange={e=>changePreviewDate('date',e.target.value)} style={{...inputStyle,width:130,fontSize:11,padding:"3px 6px"}}/>
         </div>
         {(previewDoc.type==="invoice"||previewDoc.type==="po")&&<div style={{display:"flex",alignItems:"center",gap:6}}>
           <label style={{fontSize:10,color:"#737373",fontWeight:600,whiteSpace:"nowrap"}}>DUE</label>
-          <DateInput type="date" value={docStatuses[previewDoc.data.docNum+'__due']||''} onChange={e=>setDocStatus(previewDoc.data.docNum+'__due',e.target.value)} style={{...inputStyle,width:130,fontSize:11,padding:"3px 6px"}}/>
+          <DateInput type="date" value={datesForDocument(previewDoc).dueDate} onChange={e=>changePreviewDate('due',e.target.value)} style={{...inputStyle,width:130,fontSize:11,padding:"3px 6px"}}/>
         </div>}
-        {(docStatuses[previewDoc.data.docNum+'__date']||docStatuses[previewDoc.data.docNum+'__due'])&&<button onClick={()=>{setDocStatus(previewDoc.data.docNum+'__date','');setDocStatus(previewDoc.data.docNum+'__due','');notify('Dates reset to today')}} style={{fontSize:9,color:"#f87171",background:"transparent",border:"1px solid #f8717130",borderRadius:4,padding:"2px 6px",cursor:"pointer",fontFamily:"inherit"}}>Reset</button>}
+        <button onClick={()=>changePreviewDate('date',_localToday())} style={{fontSize:9,color:"#f87171",background:"transparent",border:"1px solid #f8717130",borderRadius:4,padding:"2px 6px",cursor:"pointer",fontFamily:"inherit"}}>Reset dates to today</button>
       </div>}{previewDoc.type==="quote"&&<Btn v="ghost" onClick={()=>{const data=btoa(JSON.stringify({hiddenCols,projectNum:previewDoc.data.projectNum,job:{name:previewDoc.job.name,terms:previewDoc.job.terms,shipTo:previewDoc.job.shipTo,shipVia:previewDoc.job.shipVia||"",poNumber:previewDoc.job.poNumber||"",billTo:previewDoc.job.billTo||""},customer:{name:previewDoc.data.customer?.name||"",contact:previewDoc.data.customer?.contact||"",address:previewDoc.data.customer?.address||"",email:previewDoc.data.customer?.email||""},items:previewDoc.data.items.map(it=>({description:it.description||"",tag:it.tag||"",manufacturer:it.manufacturer||"",modelNumber:it.modelNumber||"",color:it.color||"",qtyOrdered:it.qtyOrdered||0,unitPrice:it.unitPrice||0,shippingPerUnit:it.shippingPerUnit||0,installPerUnit:it.installPerUnit||0})),total:previewDoc.data.total,docNum:previewDoc.data.docNum}));const url=window.location.origin+window.location.pathname+"#quote="+data;window.open(url,"_blank");navigator.clipboard.writeText(url).catch(()=>{})}}><I n="send" s={14}/> Share Link</Btn>}<Btn v="ghost" onClick={async()=>{const _doc=invoiceForIssue(previewDoc);await offerToFileInvoice();const isQuote=_doc.type==="quote";const isPO=_doc.type==="po";const isComm=_doc.type==="commission";const recipient=isQuote?_doc.data.customer?.email:isPO?_doc.data.vendor?.email:isComm?_doc.data.rep?.email:_doc.data.customer?.email;setEmailTo(recipient||"");setEmailSubject((isQuote?"Project Quote":isPO?"Purchase Order":isComm?"Commission Statement":"Invoice")+" - "+_doc.job.name+" - "+(_doc.data.invoiceNum||_doc.data.docNum||""));setEmailModal(_doc)}}><I n="send" s={14}/> Email</Btn><Btn v="secondary" onClick={()=>{if(previewDoc.type==="commission"){setPage("commissions");return}setTab(previewDoc.type==="quote"?"quotes":previewDoc.type==="po"?"pos":"invoices")}}>&larr; Back</Btn>{previewDoc.type==="invoice"&&previewDoc.data.items.length>0&&<Btn v="ghost" style={{fontSize:12,color:"#34d399",border:"1px solid #05966930"}} onClick={()=>{fileInvoice()}}>Mark All Invoiced</Btn>}{previewDoc.type==="invoice"&&previewDoc.data.total>0&&!stripePayUrl&&<Btn v="ghost" style={{fontSize:12,color:"#a78bfa",border:"1px solid #a78bfa30"}} onClick={async()=>{
               setStripeLoading(true);const doc=previewDoc;const cust=doc.data.customer;
               try{const r=await fetch("/api/stripe-pay",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"create_checkout",job_name:doc.job.name,customer_name:cust?.name||"",customer_email:cust?.email||"",amount_cents:Math.round(doc.data.total*100),job_id:doc.job.id,invoice_id:doc.data.docNum})});
@@ -6744,7 +6730,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
         {/* MW Header - same on all docs */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:24}}>
           <div><img src={MW_LOGO} alt="MW" style={{height:44,width:44,borderRadius:8,objectFit:"contain",flexShrink:0}}/><div style={{fontSize:16,fontWeight:700,color:"#111"}}>Midwest Educational Furnishings, Inc.</div><div style={{fontSize:12,color:"#888",lineHeight:1.6}}>21191 N Valley Rd<br/>Kildeer, IL 60047 US<br/>(847) 847-1865</div></div>
-          <div style={{textAlign:"right"}}><div style={{fontSize:24,fontWeight:300,color:"#888",letterSpacing:1}}>{previewDoc.type==="quote"?"Quote":previewDoc.type==="po"?"Purchase Order":previewDoc.type==="commission"?"Commission Statement":previewDoc.data?.isPartial?"Partial Invoice":"Invoice"}</div><div style={{fontSize:14,fontWeight:600,color:"#111",marginTop:4}}>{(previewDoc.type==="invoice"?invoiceIssueNum(previewDoc):previewDoc.data.docNum)||""}</div><div style={{fontSize:12,color:"#888",marginTop:8}}>Date: {new Date().toLocaleDateString()}</div></div>
+          <div style={{textAlign:"right"}}><div style={{fontSize:24,fontWeight:300,color:"#888",letterSpacing:1}}>{previewDoc.type==="quote"?"Quote":previewDoc.type==="po"?"Purchase Order":previewDoc.type==="commission"?"Commission Statement":previewDoc.data?.isPartial?"Partial Invoice":"Invoice"}</div><div style={{fontSize:14,fontWeight:600,color:"#111",marginTop:4}}>{(previewDoc.type==="invoice"?invoiceIssueNum(previewDoc):previewDoc.data.docNum)||""}</div><div style={{fontSize:12,color:"#888",marginTop:8}}>Date: {(parseLocalDate(datesForDocument(previewDoc).date)||new Date()).toLocaleDateString()}</div></div>
         </div>
 
 
@@ -6764,7 +6750,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
           <div style={{display:"flex",gap:40,marginBottom:20}}>
             <div style={{flex:1}}><div style={{fontSize:10,fontWeight:700,color:"#888",textTransform:"uppercase",letterSpacing:1.5,marginBottom:6}}>BILL TO</div><div style={{fontSize:13,color:"#333",lineHeight:1.6}}>{previewDoc.job.billTo||previewDoc.data.customer?.name||""}{previewDoc.data.customer?.address&&<><br/>{fmtAddrJsx(previewDoc.data.customer.address)}</>}{previewDoc.data.customer?.contact&&<><br/>{"Attn: "+previewDoc.data.customer.contact}</>}</div></div>
             <div style={{flex:1}}><div style={{fontSize:10,fontWeight:700,color:"#888",textTransform:"uppercase",letterSpacing:1.5,marginBottom:6}}>SHIP TO</div><div style={{fontSize:13,color:"#333",lineHeight:1.6}}>{previewDoc.job.shipTo?fmtShipJsx(previewDoc.job.shipTo):<>{previewDoc.data.customer?.name||""}{previewDoc.data.customer?.address&&<><br/>{fmtAddrJsx(previewDoc.data.customer.address)}</>}{previewDoc.data.customer?.contact&&<><br/>{"Attn: "+previewDoc.data.customer.contact}</>}</>}</div></div>
-            <div style={{minWidth:180,textAlign:"right"}}><div style={{fontSize:12,color:"#888"}}>Terms: {previewDoc.job.terms||"Net 30"}</div><div style={{fontSize:12,color:"#2dd4bf",fontWeight:600}}>Due: {(()=>{const d=new Date();d.setDate(d.getDate()+((previewDoc.job.terms||"").includes("15")?15:(previewDoc.job.terms||"").includes("Receipt")?0:30));return d.toLocaleDateString()})()}</div></div>
+            <div style={{minWidth:180,textAlign:"right"}}><div style={{fontSize:12,color:"#888"}}>Terms: {previewDoc.job.terms||"Net 30"}</div><div style={{fontSize:12,color:"#2dd4bf",fontWeight:600}}>Due: {(parseLocalDate(datesForDocument(previewDoc).dueDate)||new Date()).toLocaleDateString()}</div></div>
           </div>
           {previewDoc.job.poNumber&&<div style={{marginBottom:16}}><div style={{fontSize:10,fontWeight:700,color:"#888",textTransform:"uppercase",letterSpacing:1.5,marginBottom:4}}>P.O. NUMBER</div><div style={{fontSize:14,fontWeight:600}}>{previewDoc.job.poNumber}</div></div>}
         </>}
@@ -6900,7 +6886,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
             {(()=>{const _onFile=invoicesForJob(previewDoc.job?.id);const _suggestedNum=nextInvoiceNum(_onFile,previewDoc.data.docNum);return <div className="inv-register-row" style={{marginTop:10,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",fontSize:11,color:"#555"}}>
               <span style={{fontWeight:700,color:accentColor,letterSpacing:0.8}}>REGISTER AS</span>
               <label style={{display:"flex",alignItems:"center",gap:4}}>Invoice #<input type="text" value={invRegNum} onChange={e=>setInvRegNum(e.target.value)} placeholder={_suggestedNum} title="The number this invoice is filed under on the job. Type your own (for example the QuickBooks number) or leave the suggested one." style={{width:140,padding:"4px 6px",borderRadius:4,border:"1px solid "+accentColor+"40",background:"#fff",color:"#333",fontFamily:"'JetBrains Mono',monospace",fontSize:11}}/></label>
-              <label style={{display:"flex",alignItems:"center",gap:4}}>Dated<DateInput type="date" value={invRegDate||_localToday()} onChange={e=>setInvRegDate(e.target.value)} style={{padding:"4px 6px",borderRadius:4,border:"1px solid "+accentColor+"40",background:"#fff",color:"#333",fontFamily:"'JetBrains Mono',monospace",fontSize:11}}/></label>
+              <label style={{display:"flex",alignItems:"center",gap:4}}>Dated<DateInput type="date" value={datesForDocument(previewDoc).date} onChange={e=>changePreviewDate('date',e.target.value)} style={{padding:"4px 6px",borderRadius:4,border:"1px solid "+accentColor+"40",background:"#fff",color:"#333",fontFamily:"'JetBrains Mono',monospace",fontSize:11}}/></label>
               <span>Mark All Invoiced files this invoice on the job with the quantities above{_onFile.length>0?" ("+_onFile.length+" already on file)":""}.</span>
             </div>})()}
             <div style={{marginTop:10,padding:"8px 12px",background:"#fffaeb",border:"1px solid #fbbf2440",borderRadius:6,fontSize:11,color:"#92400e",lineHeight:1.5}}>
