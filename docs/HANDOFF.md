@@ -2,6 +2,14 @@
 
 > Canonical copy lives in the repo at `docs/HANDOFF.md`. A mirror is kept in the MIDWEST APP project on claude.ai. If they differ, the repo wins.
 
+## Current workflow update, October 30, 2026
+
+Read [DEVELOPMENT.md](DEVELOPMENT.md), [PARALLEL-WORK.md](PARALLEL-WORK.md) and [RELEASING.md](RELEASING.md) alongside this handoff. These describe the current working build/test/release flow for Claude, Codex and humans. This original handoff is preserved below as dated business and engineering history; its old source checksums, missing-harness and access assumptions are not current startup facts.
+
+Release `6e88cfeffcd0ce2a286e543dc6a3d963acbadabd` shipped October 30. It added invoice-level overdue balances, independent issued-invoice dates, correct partial-invoice checkout amounts/numbers, validated date inputs and field-only job PATCH updates. Historical backlog items 3, 4, 5 (input prevention) and 6 below were addressed in code; existing invalid data was not repaired. Same-field/nested-JSON concurrency and already-shared payment sessions remain limitations. See [build notes](builds/2026-10-30-invoice-reliability.md).
+
+The harness now lives in [tests/reliability](../tests/reliability/README.md). It is a recorded focused battery, not a claim that the unavailable historical 28 suites were rerun. Local Git read/build access and connected GitHub writes were verified; command-line HTTPS push authentication was not available in that session. Do not ask for raw login credentials. Isolated topic branches/worktrees are now the collaboration workflow; main remains the production release branch.
+
 Written 2026-10-29 by Claude for J (j@dyfrent.vip, DYFRENT). Repo HEAD at time of writing: `5621e1c`. Read this whole file before touching code. It is the operating manual for continuing the build.
 
 ## 1. What this is
@@ -160,7 +168,7 @@ For each change, build a mutant that reverts or breaks it and confirm the test g
 J has no local git and no token, so production deploys are **paste-commits through the GitHub web editor in J's Chrome**. If Codex has repo write access of its own, use normal git (still one change per commit, still verify the live bytes). Otherwise follow this exactly:
 
 1. **Stage the verified file under a NEW unique name each round** (e.g. `_push_r21_App.jsx`). Reusing a name once delivered a stale cached file; an md5 check caught it.
-2. Place it in J's connected Mac folder `/Users/jbartlett/Desktop/]/CLAUDE/CLAUDE FOR MIDWEST/` (the folder name contains a literal `]`; in AppleScript strings write it `\\]`).
+2. Place it in J's connected Mac folder `/Users/jbartlett/Desktop/\]/CLAUDE/CLAUDE FOR MIDWEST/` (the folder name contains a literal `]`; in AppleScript strings write it `\\]`).
 3. On the Mac: md5 the file; `export LANG=en_US.UTF-8; export LC_ALL=en_US.UTF-8; cat file | pbcopy` (without the LANG export pbcopy mojibakes UTF-8); `pbpaste` to a check file and confirm the md5 matches.
 4. In Chrome open `github.com/jbartlett27/midwest-aios-app-2/edit/main/src/App.jsx`, click into a long code line, confirm the active element is the CodeMirror content area, select all, paste, jump to the end. The gutter's last line number must equal `wc -l` + 1.
 5. "Commit changes...", type a clear message, add the description with the attribution lines, confirm Commit changes in the dialog.

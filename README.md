@@ -1,3 +1,24 @@
+# Midwest AIOS
+
+Live Midwest Educational Furnishings application, built by DYFRENT. Vite + React, Supabase data, Vercel hosting at midwestaios.com. Main auto-deploys to production; there is no staging environment.
+
+## Start here
+
+1. [AGENTS.md](AGENTS.md): shared rules for Codex, Claude and developers.
+2. [Developer guide](docs/DEVELOPMENT.md): setup, architecture, edit and test loop.
+3. [Parallel-session workflow](docs/PARALLEL-WORK.md): safe concurrent branches/worktrees and serialized integration.
+4. [Release runbook](docs/RELEASING.md): deployment scope, exact revision verification and release evidence.
+5. [Canonical handoff](docs/HANDOFF.md): business context, data model, past failures and historical backlog.
+6. [Reliability tests](tests/reliability/README.md) and [build records](docs/builds/2026-10-30-invoice-reliability.md).
+
+Claude starts at [CLAUDE.md](CLAUDE.md); Codex starts at [AGENTS.md](AGENTS.md). Both follow the same workflow. Never request or copy credentials, sign in to the app, send client email, or test against real provider/database writes as part of a build.
+
+The root lockfile is currently out of sync with package.json. Use the documented install fallback and label its reproducibility limit; do not silently regenerate the lockfile during a feature task.
+
+## Original scaffold reference
+
+The original Vite template notes are retained below as scaffold history. They are not the project's current setup instructions.
+
 # React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.

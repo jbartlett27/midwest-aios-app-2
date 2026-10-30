@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Instructions for AI coding agents (Codex, Claude, others) working in this repo. Read this first, then read `docs/HANDOFF.md` in full before changing anything.
+Instructions for AI coding agents (Codex, Claude, others) working in this repo. Read this first, then [the developer guide](docs/DEVELOPMENT.md), [parallel-session workflow](docs/PARALLEL-WORK.md), and `docs/HANDOFF.md` in full before changing anything. The dated handoff retains historical context; the current guides and inspected source describe the working flow.
 
 ## What this repo is
 
@@ -34,3 +34,13 @@ Parse every edited file, bundle `src/App.jsx` with esbuild (stub clerk, recharts
 ## Where the history lives
 
 Per-change build write-ups (root cause, hunks, test results) are kept in the MIDWEST APP project on claude.ai, newest first. Ask J (j@dyfrent.vip) if you need one. Open backlog is in section 10 of `docs/HANDOFF.md`.
+
+## Shared build and release entry points
+
+- [Development and architecture](docs/DEVELOPMENT.md): working install commands, scripts, current date/invoice conventions and offline checks.
+- [Parallel sessions](docs/PARALLEL-WORK.md): one branch/worktree per session, explicit ownership for overlapping files, and serialized integration/release.
+- [Production release runbook](docs/RELEASING.md): correct Vercel team/project, exact commit/deployment tracking, live-byte verification and rollback boundaries.
+- [Claude entry point](CLAUDE.md) and [human overview](README.md) point to these same documents. No separate competing rulebook.
+- [Committed reliability tests](tests/reliability/README.md) and [October 30 build notes](docs/builds/2026-10-30-invoice-reliability.md) supplement the historical scratchpad recipe.
+
+J prefers many simultaneous sessions across Codex, Claude and developers. Assume others may already be working or deploying. Coding sessions can run concurrently in isolated working copies with owned local preview ports/processes; preserve other sessions' work and running processes. Keep Midwest separate from DYFRENT and do not import its release tooling by assumption. Integration to main and production verification have one named coordinator at a time. A cooperative claim is not an enforced lock; Git does not detect every semantic conflict. Never overwrite another session's files, force-push, or treat another session's deployment as proof of your release. Refresh main, reconcile overlapping work and rerun checks before integration. A docs-only push to main still triggers the existing production build.
