@@ -1,0 +1,17 @@
+import {build} from 'esbuild';
+import fs from 'node:fs';
+import {createRequire} from 'node:module';
+import assert from 'node:assert/strict';
+const mutant=process.argv.includes('--mutant');
+await build({entryPoints:['../../src/invoiceDates.js'],bundle:true,platform:'node',format:'cjs',outfile:'invoice-dates.cjs',plugins:mutant?[{name:'mutant',setup(b){b.onLoad({filter:/invoiceDates.js$/},async a=>({contents:fs.readFileSync(a.path,'utf8').replace('invoiceNum || docNum','docNum'),loader:'js'}))}}]:[]});
+const {resolveInvoiceDates}=createRequire(import.meta.url)('./invoice-dates.cjs');
+const statuses={'INV-1__date':'2026-09-01','INV-1__due':'2026-10-01','INV-1-2__date':'2026-10-15','INV-1-2__due':'2026-11-14'};
+const resolve=(invoiceNum,record,draftDate)=>resolveInvoiceDates({invoiceNum,docNum:'INV-1',record,draftDate},statuses,'Net 30','2026-10-30');
+assert.deepEqual(resolve('INV-1'),{date:'2026-09-01',dueDate:'2026-10-01'});
+assert.deepEqual(resolve('INV-1-2'),{date:'2026-10-15',dueDate:'2026-11-14'},'second invoice keeps its own dates');
+assert.deepEqual(resolve('INV-1-3'),{date:'2026-10-30',dueDate:'2026-11-29'},'a new invoice never inherits the first invoice dates');
+assert.deepEqual(resolve('CUSTOM',{date:'2026-10-10',dueDate:'2026-10-25'}),{date:'2026-10-10',dueDate:'2026-10-25'});
+assert.equal(resolve('CUSTOM',null,'2026-10-11').date,'2026-10-11');
+assert.equal(resolveInvoiceDates({invoiceNum:'X'},{X__date:'0002-08-19'},'Net 15','2026-03-01').dueDate,'2026-03-16');
+assert.equal(resolveInvoiceDates({invoiceNum:'X'},null,'Due Upon Receipt','2024-02-29').dueDate,'2024-02-29');
+console.log('PASS independent invoice dates, legacy first invoice and malformed-date fallback');
