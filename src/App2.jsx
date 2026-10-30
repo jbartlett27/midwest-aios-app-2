@@ -1,3 +1,4 @@
+import DateInput from './DateInput.jsx';
 import React, { useState, useEffect, useRef } from "react";
 import { db } from "./supabase.js";
 import { useUser, useClerk, SignIn, UserButton, useAuth } from "@clerk/clerk-react";
@@ -1046,7 +1047,7 @@ function EditTaskOverlay({task,setEditTask,jobs,reps,customers,vendors,prospects
       <input value={t.text||""} onChange={e=>setT({...t,text:e.target.value})} autoFocus placeholder="What needs to be done?" style={{...inputStyle,fontSize:18,fontWeight:700,background:"transparent",border:"none",padding:"8px 0",color:"#f0f0f0",marginBottom:12}}/>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:8,marginBottom:12}}>
         <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Status</label><select value={t.status||"To Do"} onChange={e=>setT({...t,status:e.target.value})} style={inputStyle}><option>To Do</option><option>In Progress</option><option>Done</option></select></div>
-        <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Due</label><input type="date" value={t.due||""} onChange={e=>setT({...t,due:e.target.value})} style={inputStyle}/>{isFutureDue(t.due)&&<div style={{fontSize:10,color:"#2dd4bf",marginTop:4,lineHeight:1.4}}>Assignees are emailed on the morning of {dueDateLabel(t.due)}, not today.</div>}</div>
+        <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Due</label><DateInput type="date" value={t.due||""} onChange={e=>setT({...t,due:e.target.value})} style={inputStyle}/>{isFutureDue(t.due)&&<div style={{fontSize:10,color:"#2dd4bf",marginTop:4,lineHeight:1.4}}>Assignees are emailed on the morning of {dueDateLabel(t.due)}, not today.</div>}</div>
         <div><label style={{fontSize:11,color:"#737373",display:"block",marginBottom:3}}>Priority</label><select value={t.priority||"normal"} onChange={e=>setT({...t,priority:e.target.value})} style={inputStyle}><option value="normal">Normal</option><option value="high">High</option><option value="low">Low</option></select></div>
         </div>
       <div style={{marginBottom:12,padding:12,borderRadius:12,background:"rgba(255,255,255,0.02)",border:"1px solid rgba(255,255,255,0.05)"}}>
