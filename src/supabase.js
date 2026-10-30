@@ -1,3 +1,4 @@
+import { isBusinessDate } from './businessDate.js';
 // Supabase Client -- Pure fetch(), zero npm packages
 
 const URL = 'https://kogjthgceejpzxnekprr.supabase.co/rest/v1';
@@ -111,6 +112,9 @@ const jobToDb = (j) => ({
   activities: typeof j.activities === 'string' ? j.activities : JSON.stringify(j.activities || []),
   audit_trail: typeof j.auditTrail === 'string' ? j.auditTrail : JSON.stringify(j.auditTrail || []),
 });
+// Map only explicitly changed fields; mapper defaults must never clear unrelated columns.
+const JOB_PATCH_FIELDS={name:'name',customer:'customer',salesRep:'sales_rep',phase:'phase',createdDate:'created_date',startDate:'start_date',endDate:'end_date',dueDate:'due_date',closedDate:'closed_date',notes:'notes',paymentStatus:'payment_status',terms:'terms',poNumber:'po_number',shipTo:'ship_to',shipVia:'ship_via',billTo:'bill_to',orderNotes:'order_notes',docStatuses:'doc_statuses',activities:'activities',auditTrail:'audit_trail'};
+const jobPatchToDb=(patch)=>{const mapped=jobToDb(patch);const row={};for(const [key,column] of Object.entries(JOB_PATCH_FIELDS)){if(Object.prototype.hasOwnProperty.call(patch,key)&&patch[key]!==undefined)row[column]=mapped[column]}return row};
 const jobFromDb = (r) => ({
   id: r.id, name: r.name, customer: r.customer, salesRep: r.sales_rep,
   phase: r.phase, createdDate: r.created_date, startDate: r.start_date || '',
@@ -394,6 +398,16 @@ export const db = {
     };
   },
   async saveJob(job) { return upsertRow('jobs', jobToDb(job)); },
+  async patchJob(id, changes) {
+    if(!id||!changes||typeof changes!=='object')return {ok:false};
+    for(const key of ['createdDate','startDate','endDate','dueDate','closedDate']){if(changes[key]&&!isBusinessDate(changes[key]))return {ok:false}}
+    const patch=jobPatchToDb(changes);if(!Object.keys(patch).length)return {ok:true};
+    try{
+      const response=await fetch(URL+'/jobs?id=eq.'+encodeURIComponent(id),{method:'PATCH',headers:{...hdrs,Prefer:'return=representation'},body:JSON.stringify(patch)});
+      if(!response.ok)return {ok:false};
+      const rows=await response.json();return {ok:Array.isArray(rows)&&rows.length===1};
+    }catch{return {ok:false}}
+  },
   // A NEW job is inserted, never upserted: if the id is taken the database answers 409 instead of
   // replacing that job (Oct 14 2026). { ok, conflict }.
   async insertJob(job) {

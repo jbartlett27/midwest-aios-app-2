@@ -2230,7 +2230,7 @@ function MidwestAIOSInner() {
 
   // --- MUTATORS (update state + save to Supabase) ------------
   const updateLineItem = (id, u) => {
-    setLineItems(p => { const old=p.find(li=>li.id===id);const updated = p.map(li => li.id===id ? {...li,...u} : li); const item = updated.find(li=>li.id===id); if(item){db.saveLineItem(item);const changes=Object.keys(u).filter(k=>String(old?.[k])!==String(u[k]));if(changes.length>0){const log={time:new Date().toISOString(),type:"edit",entity:"lineItem",entityId:id,desc:(old?.description||"item"),fields:changes.map(k=>({field:k,from:old?.[k],to:u[k]}))};setTimeout(()=>{setJobs(jp=>{const jobId=item.jobId;return jp.map(j=>{if(j.id!==jobId)return j;const trail=[log,...(j.auditTrail||[])].slice(0,200);const nj={...j,auditTrail:trail};db.saveJob(nj);return nj})})},0)}} return updated; });
+    setLineItems(p => { const old=p.find(li=>li.id===id);const updated = p.map(li => li.id===id ? {...li,...u} : li); const item = updated.find(li=>li.id===id); if(item){db.saveLineItem(item);const changes=Object.keys(u).filter(k=>String(old?.[k])!==String(u[k]));if(changes.length>0){const log={time:new Date().toISOString(),type:"edit",entity:"lineItem",entityId:id,desc:(old?.description||"item"),fields:changes.map(k=>({field:k,from:old?.[k],to:u[k]}))};setTimeout(()=>{setJobs(jp=>{const jobId=item.jobId;return jp.map(j=>{if(j.id!==jobId)return j;const trail=[log,...(j.auditTrail||[])].slice(0,200);const nj={...j,auditTrail:trail};db.patchJob(jobId,{auditTrail:trail}).then(result=>{if(!result.ok)notify('Job history could not be saved. Reload before editing again.','error')});return nj})})},0)}} return updated; });
   };
   let _liSeq=0;
   const addLineItem = item => {
@@ -2250,8 +2250,18 @@ function MidwestAIOSInner() {
   };
   const forceDeleteLineItem = (id) => { setLineItems(p => p.filter(li => li.id !== id)); db.deleteLineItem(id); };
   const updateJob = (id, u) => {
-    setJobs(p => { const old=p.find(j=>j.id===id);u=jobCloseOutPatch(old,u);const updated = p.map(j => j.id===id ? {...j,...u} : j); const job = updated.find(j=>j.id===id); if(job){const skip=new Set(["activities","docStatuses","auditTrail"]);const changes=Object.keys(u).filter(k=>!skip.has(k)&&String(old?.[k])!==String(u[k]));if(changes.length>0){const log={time:new Date().toISOString(),type:"edit",entity:"job",entityId:id,user:currentUser?.name||"System",fields:changes.map(k=>({field:k,from:old?.[k],to:u[k]}))};const trail=[log,...(job.auditTrail||[])].slice(0,200);job.auditTrail=trail}db.saveJob(job)} return updated; });
+    setJobs(previous => {
+      const old=previous.find(job=>job.id===id);if(!old)return previous;
+      const requested=jobCloseOutPatch(old,u);const patch={};
+      for(const key of Object.keys(requested||{})){if(key!=='id'&&requested[key]!==undefined&&JSON.stringify(old[key])!==JSON.stringify(requested[key]))patch[key]=requested[key]}
+      if(!Object.keys(patch).length)return previous;
+      const fields=Object.keys(patch).filter(key=>!['activities','docStatuses','auditTrail'].includes(key));
+      if(fields.length){const log={time:new Date().toISOString(),type:'edit',entity:'job',entityId:id,user:currentUser?.name||'System',fields:fields.map(field=>({field,from:old[field],to:patch[field]}))};patch.auditTrail=[log,...(old.auditTrail||[])].slice(0,200)}
+      db.patchJob(id,patch).then(result=>{if(!result.ok)notify('Job update could not be saved. Reload before editing again.','error')});
+      return previous.map(job=>job.id===id?{...job,...patch}:job);
+    });
   };
+
   // Ids handed to new jobs this session, so two jobs made before a re-render never share one.
   const madeJobIds = useRef(new Set());
   // New jobs whose database insert is not confirmed yet: id -> { key, items, done (resolves to the final id) }.
