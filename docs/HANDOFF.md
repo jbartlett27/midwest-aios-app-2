@@ -23,7 +23,7 @@ It is live and in daily use. Treat every change as a production change. There is
 - **Maureen Welter** (mwelter@mwfurnishings.com): owner, primary user, reports bugs by email.
 - **Lisa Monchunski** (lmonchunski@mwfurnishings.com): enters financials, uploads worksheets.
 - **Dave Welter**: owner, sales. Reps with logins: Dave Welter, Jim Harris, Jim Lindner, Jackie Biller.
-- **Joe LaPoint** (joe@dyfrent.vip): CC on every client email.
+- **Joe LaPoint** (joe@dyfrent.vip): leave off Midwest emails by default unless J explicitly asks to include him. Verify the current thread audience; prior inclusion alone is not authorization to retain him.
 - Current contract runs through April 2027. Next meeting with Maureen and Dave: Thu 11/5 at 3pm EST.
 
 ### J's standing instruction (verbatim, applies to every task)
@@ -34,7 +34,7 @@ Scope creep is a bug. One change per push. Prove it. Verify the live bytes.
 ## 2. Hard rules (do not break)
 
 1. **Never enter, read aloud, or store credentials.** No passwords, API keys, tokens. Do not sign in to the AIOS. Do not print env var values. The GitHub login belongs to J.
-2. **Gmail: drafts only, never send.** CC joe@dyfrent.vip on Maureen emails. Reply in-thread.
+2. **Gmail: drafts only, never send.** Reply in-thread. Leave Joe off Midwest emails by default unless J explicitly asks to include him. Verify the existing thread audience without automatically retaining Joe from history.
 3. **Voice:** no emoji, no em dashes anywhere (code, UI copy, email). Use `>>` as the connector in prose and UI copy (`&gt;&gt;` inside JSX text). Use `--` only inside code comments or UI strings where a dash is needed. Numbers in JetBrains Mono.
 4. **Email sign-off:** `Blessings,` / `J` / `DYFRENT | The Art of Business`. Warm, short, plain language, bold section headers if long, own the cause when it was ours.
 5. **No bare URLs or domains in client emails** (Gmail rewrites them into redirects). Say "live in the AIOS".
@@ -212,7 +212,7 @@ Recent builds (full write-ups are in the MIDWEST APP project docs, newest first)
 5. Run the full battery plus mutants (section 6).
 6. Deploy (section 7) and verify live bytes.
 7. Write a build doc to the MIDWEST APP project: `claude/YYYY-MM-DD <what> build.md` with the ask quoted, root cause, hunks, battery table, live evidence, backlog carried over.
-8. Draft (never send) a plain-language note to Maureen in J's Gmail, CC joe@dyfrent.vip, in-thread.
+8. Draft (never send) a plain-language note to Maureen in J's Gmail, in-thread. Leave Joe off by default unless J explicitly asks to include him; verify the thread audience without automatically carrying Joe forward from earlier messages.
 
 If nothing needs to change after reading Maureen's mail, change nothing and give J a short write-up.
 

@@ -10,7 +10,7 @@ The Midwest Educational Furnishings AIOS: a live, production Vite + React single
 
 1. Make exactly one surgical change per commit. Do not refactor, reformat or "clean up" anything outside the ask.
 2. Never enter, request, print or commit credentials, API keys or tokens. Do not sign in to the app.
-3. Never send email. Drafts only. CC joe@dyfrent.vip on client email.
+3. Never send email. Drafts only. Leave Joe off Midwest emails by default unless J explicitly asks to include him. Verify the existing thread audience; do not retain Joe merely because he appeared earlier.
 4. No emoji and no em dashes anywhere (code, UI copy, docs, email). Use `>>` as the prose and UI connector.
 5. Bare `YYYY-MM-DD` strings are wall-clock dates. Parse with `parseLocalDate`, never `new Date("YYYY-MM-DD")`.
 6. `getJobFinancials(jobId)` is the single source of truth for revenue, cost and margin. Never fork it.

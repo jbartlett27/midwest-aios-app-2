@@ -34,7 +34,7 @@ Use existing authorized connectors rather than requesting raw keys or J's login.
 4. Fetch public production HTML without credentials, identify the actual referenced JavaScript asset, fetch it, and verify the changed behavior's stable code markers. Record HTTP status, asset path and checksum. Local and hosted asset hashes may differ because build environment values differ; do not read secret env values to manufacture a match.
 5. Use safe offline component tests for behavior. Public bytes plus READY establish publication, not a live financial transaction or exhaustive user journey. Do not sign in, send messages, create a real checkout or mutate client data to prove a release. Report limitations plainly.
 6. Write release evidence under docs/builds/ or the task artifact: exact commit/tree, deployment ID/state, aliases, fetched asset/hash, checks and limits. A follow-up docs commit itself rebuilds production, so distinguish that revision from the functional release rather than repeatedly editing a supposedly final SHA record.
-7. Prepare the client update only after verification. Gmail remains a formatted in-thread draft to Maureen with Joe CC'd; preserve existing drafts, use the required sign-off and no bare domains/URLs in authored client text. Do not send without J's separate explicit instruction.
+7. Prepare the client update only after verification. Gmail remains a formatted in-thread draft to Maureen. Leave Joe off Midwest emails by default unless J explicitly asks to include him. Verify the existing thread audience without retaining Joe solely from history; preserve existing drafts, use the required sign-off and no bare domains/URLs in authored client text. Do not send without J's separate explicit instruction.
 
 ## Verified reference release
 

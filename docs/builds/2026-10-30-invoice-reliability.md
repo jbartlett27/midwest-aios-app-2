@@ -24,4 +24,4 @@ Field-level PATCH reduces overwrites of unrelated job columns. Simultaneous edit
 
 Root package-lock.json remains inconsistent with package.json. Local production dependencies were installed with lifecycle scripts disabled and package-lock changes disabled; production compilation passed. The isolated test package has its own consistent lockfile.
 
-Deployment and live-byte verification must be recorded in the release result after the authorized main update. Gmail follow-up is a formatted in-thread draft to Maureen, CC Joe; never sent automatically.
+Deployment and live-byte verification must be recorded in the release result after the authorized main update. The release follow-up was prepared as a formatted in-thread draft with Joe CC'd under the then-current preference. For future Midwest messages, leave Joe off by default unless J explicitly asks to include him; verify the thread audience without automatically retaining Joe from history. This audience correction does not modify existing messages/drafts or change sending authorization.
