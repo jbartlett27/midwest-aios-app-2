@@ -4,7 +4,9 @@ function run(args,{fail=false,env={}}={}){const result=spawnSync(process.execPat
 run(['invariants.mjs']);
 for(const tz of ['UTC','America/Chicago','America/Los_Angeles']){console.log('Timezone '+tz);for(const file of ['date-test.mjs','invoice-dates-test.mjs','ledger-test.mjs'])run([file],{env:{TZ:tz}})}
 run(['job-patch-test.mjs']);run(['build-harness.mjs']);run(['render-test.mjs']);
+run(['file-index-test.mjs']);run(['files-brain-test.mjs']);
 for(const file of ['date-test.mjs','invoice-dates-test.mjs','ledger-test.mjs','job-patch-test.mjs'])run([file,'--mutant'],{fail:true});
+run(['file-index-test.mjs','--mutant'],{fail:true});for(let i=0;i<6;i++)run(['files-brain-test.mjs','--mutant',String(i)],{fail:true});
 for(const mutation of ['stripe','dashboard','proforma']){run(['build-harness.mjs',mutation]);run(['render-test.mjs'],{fail:true})}
 run(['build-harness.mjs']);run(['render-test.mjs']);
-console.log('PASS complete reliability battery; all 7 deliberate mutants rejected');
+console.log('PASS complete reliability battery; all deliberate mutants rejected (7 invoice/date/dashboard, 8 file-index, 6 Files tab and Brain)');
