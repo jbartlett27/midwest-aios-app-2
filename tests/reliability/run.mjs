@@ -10,4 +10,4 @@ run(['file-index-test.mjs','--mutant'],{fail:true});for(let i=0;i<6;i++)run(['fi
 run(['vendor-catalog-test.mjs','--mutant'],{fail:true});run(['catalog-ingest-test.mjs','--mutant'],{fail:true});for(let i=0;i<32;i++)run(['vendor-catalog-brain-test.mjs','--mutant',String(i)],{fail:true});
 for(const mutation of ['stripe','dashboard','proforma']){run(['build-harness.mjs',mutation]);run(['render-test.mjs'],{fail:true})}
 run(['build-harness.mjs']);run(['render-test.mjs']);
-console.log('PASS complete reliability battery; all deliberate mutants rejected (7 invoice/date/dashboard, 8 file-index, 6 Files tab and Brain, 24 vendor catalogue module, 24 catalogue upload engine, 32 vendor catalogue page, upload dialog, Directory and Brain)');
+console.log('PASS complete reliability battery; all deliberate mutants rejected (7 invoice/date/dashboard, 8 file-index, 6 Files tab and Brain, 24 vendor catalogue module, 27 catalogue upload engine, 32 vendor catalogue page, upload dialog, Directory and Brain)');

@@ -129,18 +129,22 @@ export function priceFigures(text) { const m = String(text == null ? '' : text).
 // ---------- model rows ----------
 const CODE_A = /(?<![A-Za-z0-9\-/.$])([A-Z]{1,6}\d[A-Z0-9]*(?:-[A-Z0-9]{1,14}){0,5})(?![A-Za-z0-9])/g;
 const CODE_B = /(?<![A-Za-z0-9\-/.$])(\d{1,5}-[A-Z0-9]{2,12}(?:-[A-Z0-9]{1,10}){0,3})(?![A-Za-z0-9])/g;
+// Numeric-leading model IDs keep their suffix and leading zeros (for example 0469JC18).
+const CODE_C = /(?<![A-Za-z0-9\-/.$])(\d{2,7}[A-Z]{2,6}[A-Z0-9]*(?:-[A-Z0-9]{1,14}){0,5})(?![A-Za-z0-9])/g;
+const MEASUREMENT_CODE = /^\d+(?:MM|CM|IN|FT|LB|LBS|KG|OZ|VAC|VDC|USB|AC|AMP|AMPS)\d*$/;
 const STOP = /^(ISO|ANSI|BIFMA|ASTM|TSCA|CARB|AWI|NSF|CAL|UL|PO|FAX|TEL|SUITE|PAGE|FORM)/;
 const HEADER_RE = /\b(model|item|part|sku|catalog|description|price|list|net|cost|each|qty|size|dimensions?|wgt|weight|color|finish|width|depth|height)\b/i;
 const PRICEY_HEADER = /\b(price|msrp|your cost)\b/i;
 
 export function codesInLine(line) {
   const out = [];
-  for (const re of [CODE_A, CODE_B]) {
+  for (const re of [CODE_A, CODE_B, CODE_C]) {
     re.lastIndex = 0;
     let m;
     while ((m = re.exec(line))) {
       const c = m[1];
-      if (c.length < 4 || c.length > 30 || STOP.test(c)) continue;
+      if (c.length < 3 || c.length > 30 || STOP.test(c)) continue;
+      if (re === CODE_C && MEASUREMENT_CODE.test(c)) continue;
       if (re === CODE_B && !/[A-Z]/.test(c)) continue;
       if (!out.includes(c)) out.push(c);
     }

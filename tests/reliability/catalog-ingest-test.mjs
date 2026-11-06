@@ -6,6 +6,10 @@ import fs from 'node:fs';
 // by in-memory fakes, so this runs offline. The real libraries are exercised by tools/ingest-browser-check.mjs.
 const mutant = process.argv.includes('--mutant');
 const MUTANTS = [
+  ['numeric-leading suffix identifiers are recognized', '[CODE_A, CODE_B, CODE_C]', '[CODE_A, CODE_B]'],
+  ['short series identifiers survive the length guard', 'c.length < 3', 'c.length < 4'],
+  ['measurements do not become suffix model rows', 're === CODE_C && MEASUREMENT_CODE.test(c)', 'false'],
+
   ['a missing edition stays unknown', "if (value == null) return '';", "if (value == null) return todayLocal();"],
   ['blank editions are not replaced with the upload date', 'const ed = normalizeCatalogEdition(edition);', 'const ed = normalizeCatalogEdition(edition || todayLocal());'],
   ['year-only edition precision is kept', 'if (!ed || /^[1-9]\\d{3}$/.test(ed)) return ed;', "if (!ed || /^[1-9]\\d{3}$/.test(ed)) return ed ? ed + '-01-01' : ed;"],
@@ -118,6 +122,24 @@ async function suite(M, label) {
   eq([rows.products[0].b, rows.products[0].x, rows.products[1].x], ['Alpha Desk', undefined, undefined], 'a leading name is kept; a heading line or another row is not context');
   eq(M.rowsFromPages([{n: 1, lines: ['Student chair, stackable', 'CH100A | 18 in']}]).products[0].x, 'Student chair, stackable', 'a plain line above a row is kept as its context');
   eq(rows.pricedHeaders, 1, 'a price column heading is counted');
+
+  // Synthetic rows shaped like numeric-leading catalogues and short-series lookbooks.
+  eq(M.codesInLine('0469JC | shelf; 0269JC | cabinet; 0324JC18 | extra deep'), ['0469JC', '0269JC', '0324JC18'], 'numeric-leading suffix codes preserve leading zeros and variants');
+  eq(M.codesInLine('ED4 ED8 AB1 A12'), ['ED4', 'ED8', 'AB1', 'A12'], 'three-character series and model identifiers are searchable');
+  eq(M.codesInLine('Call 800-242-2303; 2026-11-06; $0469JC; 30X60; 100MM; 120VAC; 1USB; 3D; ISO9001; ANSI12345'), [], 'prices, contacts, dates, dimensions, units and standards do not become model codes');
+  const suffixRows = M.rowsFromPages([{n: 7, lines: ['Shelf', '0469JC', 'Cabinet', '0269JC', '0324JC18 | Extra Deep']}, {n: 8, lines: ['NEW! ED4', 'ED8', 'Dimensions | 30X60 | 100MM']}]);
+  eq(suffixRows.products.map((r) => [r.c, r.p]), [['0469JC', 7], ['0269JC', 7], ['0324JC18', 7], ['ED4', 8], ['ED8', 8]], 'new model patterns keep their source page without inventing rows from measurements');
+
+  const identifierPdf = Array.from({length: 8}, (_, i) => i === 6 ? row(750, '0469JC', '0269JC', '0324JC18') : i === 7 ? row(750, 'ED4', 'ED8') : row(750, 'Introduction'));
+  const identifierStore = mkDeps(fakePdf(identifierPdf));
+  const identifierUpload = await M.ingestCatalog({file: mkFile('identifier-fixture.pdf', 1e6), vendor: VENDOR, deps: identifierStore.deps});
+  const identifierJson = JSON.parse(await [...identifierStore.uploads.entries()].find(([p]) => p.endsWith('/catalog.json'))[1].text());
+  VC._resetCatalogCache();
+  const identifierCat = await VC.loadCatalog(identifierUpload.rec, {fetchImpl: async () => ({ok: true, json: async () => identifierJson})});
+  for (const [code, page] of [['0469JC', 7], ['0269JC', 7], ['0324JC18', 7], ['ED4', 8], ['ED8', 8]]) {
+    eq(VC.searchCatalog(identifierCat, code).rows[0].code, code, 'a new code from the stored catalogue is searchable exactly');
+    eq(VC.getProduct(identifierCat, code).rows[0].page, page, 'exact product lookup retains its source PDF page');
+  }
 
   // ---- sections ----
   const tree = [{title: 'Front', page: 1, items: []}, {title: 'Desks', page: 4, items: [{title: 'Alpha Desk', page: 4, items: []}, {title: 'Beta Desk', page: 7, items: []}]}, {title: 'Gone', page: 0, items: []}];
