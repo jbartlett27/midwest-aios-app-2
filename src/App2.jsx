@@ -1,5 +1,6 @@
 import DateInput from './DateInput.jsx';
 import { buildFileIndex, latestVersions, isSpreadsheetFile, searchRecords, quickSearch, recordsToMarkdown, journalToMarkdown, journalFor, describeSheets, fmtUsd as fiUsd, fmtUs as fiUs, KIND_LABEL as FI_KIND } from './fileIndex.js';
+import { catalogRecords, catalogsForVendor, loadCatalog as vcLoad, searchCatalog as vcSearch, getProduct as vcProduct, getPage as vcPage, overviewMarkdown as vcOverview, profileMarkdown as vcProfile, rowsToMarkdown as vcRows, pageRef as vcPageRef, promptLine as vcPromptLine } from './vendorCatalog.js';
 import React, { useState, useEffect, useRef } from "react";
 import { db } from "./supabase.js";
 import { useUser, useClerk, SignIn, UserButton, useAuth } from "@clerk/clerk-react";
@@ -565,6 +566,8 @@ function Vendor360Page({jobs,lineItems,vendors,customers,reps,getJobFinancials,g
       <div style={{display:"flex",gap:8}}><Btn onClick={()=>{updateVendor(vendorId,editForm);setEditing(false);notify("Vendor updated")}}>Save</Btn><Btn v="secondary" onClick={()=>setEditing(false)}>Cancel</Btn></div>
     </Card>}
 
+    <VendorCatalogPanel key={vend.id} vendor={vend} customSops={customSops} setPage={setPage}/>
+
 
     <div className="resp-grid-4" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:14,marginBottom:28}}>
       <div style={kpiStyle}><div style={kpiVal(0,"#2dd4bf")}>{fmt(totalSpend)}</div><div style={kpiLabel}>Lifetime Spend</div></div>
@@ -644,6 +647,104 @@ function Vendor360Page({jobs,lineItems,vendors,customers,reps,getJobFinancials,g
 
 
 
+
+// ===============================================================
+// VENDOR CATALOGUE (Vendor page): the vendor's whole catalogue, searchable. A `VendorCatalog` row in
+// sops links the file to the vendor (see src/vendorCatalog.js). Shows nothing for a vendor with no catalogue.
+// ===============================================================
+function VendorCatalogPanel({vendor,customSops,setPage}){
+  const rec=catalogsForVendor(customSops,vendor.id).slice().sort((a,b)=>String(b.edition||'').localeCompare(String(a.edition||'')))[0]||null;
+  const url=rec?rec.url:'';
+  const [st,setSt]=useState({status:'loading',cat:null,err:''});
+  const [tries,setTries]=useState(0);
+  const [q,setQ]=useState('');
+  const [sec,setSec]=useState('');
+  const [pageN,setPageN]=useState(0);
+  useEffect(()=>{
+    if(!rec)return;
+    let alive=true;
+    setSt({status:'loading',cat:null,err:''});
+    vcLoad(rec,{fetchImpl:(u)=>fetch(u)}).then(cat=>{if(alive)setSt({status:'ready',cat,err:''})}).catch(e=>{if(alive)setSt({status:'error',cat:null,err:String((e&&e.message)||e)})});
+    return ()=>{alive=false};
+  },[url,tries]);
+  if(!rec)return null;
+  const cat=st.cat;
+  const mono="'JetBrains Mono',monospace";
+  const co=(cat&&cat.company)||{};
+  const secs=cat?cat.sections.filter(s=>s.products!==false&&s.group!=="Front matter"):[];
+  const groups=[...new Set(secs.map(s=>s.group))];
+  const res=cat&&(q.trim()||sec)?vcSearch(cat,q,{section:sec,limit:60}):null;
+  const pg=cat&&pageN?vcPage(cat,pageN):null;
+  const chip={display:"inline-block",padding:"4px 10px",margin:"0 6px 6px 0",borderRadius:8,background:"#0a0a0a",border:"1px solid rgba(255,255,255,0.06)",fontSize:12,color:"#c4c4c4",cursor:"pointer"};
+  const link={color:"#2dd4bf",cursor:"pointer",fontFamily:mono,fontSize:12};
+  return <Card style={{marginBottom:28,border:"1px solid rgba(167,139,250,0.18)"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:12,marginBottom:14}}>
+      <div>
+        <div style={{fontSize:15,fontWeight:700,color:"#a78bfa"}}>Vendor Catalogue</div>
+        <div style={{fontSize:14,color:"#f0f0f0",fontWeight:600,marginTop:4}}>{rec.title}</div>
+        <div style={{fontSize:12,color:"#9a9a9a",marginTop:2,fontFamily:mono}}>edition {rec.edition} | {rec.pageCount} pages | {rec.productCount} model rows | {rec.hasPrices?"prices included":"no prices in this edition"}</div>
+      </div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        {rec.pdfUrl&&<Btn v="secondary" onClick={()=>window.open(rec.pdfUrl,"_blank","noopener")}>Open PDF</Btn>}
+        {setPage&&<Btn v="secondary" onClick={()=>setPage("brain")}>Ask the Brain</Btn>}
+      </div>
+    </div>
+    {st.status==="loading"&&<div style={{fontSize:13,color:"#9a9a9a"}}>Loading the catalogue...</div>}
+    {st.status==="error"&&<div style={{fontSize:13,color:"#f87171"}}>Could not open the catalogue file ({st.err}). <span style={link} onClick={()=>setTries(tries+1)}>Try again</span></div>}
+    {cat&&<div>
+      <div style={{fontSize:13,color:"#c4c4c4",marginBottom:6}}>{[co.name,co.address,co.phone,co.email,co.web].filter(Boolean).join(" | ")}</div>
+      {co.hours&&<div style={{fontSize:12,color:"#9a9a9a",marginBottom:6}}>{co.hours}</div>}
+      {co.about&&<div style={{fontSize:12,color:"#9a9a9a",marginBottom:12}}>{co.about}</div>}
+      {(cat.profilePages||[]).length>0&&<div style={{marginBottom:12}}>
+        <span style={{fontSize:12,color:"#737373",marginRight:8}}>Company, ordering and warranty pages:</span>
+        {cat.profilePages.map(n=>{const p=vcPage(cat,n);return p?<span key={n} style={chip} onClick={()=>setPageN(n)}>p.{n} {String(p.title||"").slice(0,32)}</span>:null})}
+      </div>}
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
+        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Model code or words (EONP401, locker bench, 48 x 72 x 22, warranty)" style={{...inputStyle,flex:"1 1 260px"}}/>
+        <select value={sec} onChange={e=>setSec(e.target.value)} style={{...inputStyle,flex:"0 1 280px"}}>
+          <option value="">All sections</option>
+          {groups.map(g=><optgroup key={g} label={g}><option value={g}>{g} (all)</option>{secs.filter(s=>s.group===g).map(s=><option key={s.id} value={s.title}>{s.title}</option>)}</optgroup>)}
+        </select>
+        {(q||sec)&&<Btn v="secondary" onClick={()=>{setQ("");setSec("")}}>Clear</Btn>}
+      </div>
+      {res&&res.error&&<div style={{fontSize:13,color:"#9a9a9a"}}>{res.error}</div>}
+      {res&&!res.error&&<div style={{marginBottom:12}}>
+        <div style={{fontSize:12,color:"#9a9a9a",marginBottom:8}}>{res.total} model row{res.total===1?"":"s"} ({res.codes} distinct model code{res.codes===1?"":"s"}){res.total>res.rows.length?", showing the first "+res.rows.length+". Type more to narrow.":""}</div>
+        {res.rows.length>0&&<div style={{overflowX:"auto",maxHeight:420,overflowY:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+          <thead><tr>{["Model","Page","Section","Row"].map(h=><th key={h} style={{textAlign:"left",padding:"6px 8px",color:"#737373",fontWeight:600,borderBottom:"1px solid rgba(255,255,255,0.06)"}}>{h}</th>)}</tr></thead>
+          <tbody>{res.rows.map((r,i)=><tr key={i} style={{borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
+            <td style={{padding:"6px 8px",color:"#2dd4bf",fontFamily:mono,whiteSpace:"nowrap"}}>{r.code}</td>
+            <td style={{padding:"6px 8px"}}><span style={link} onClick={()=>setPageN(r.page)}>p.{r.page}</span></td>
+            <td style={{padding:"6px 8px",color:"#9a9a9a"}}>{r.section}</td>
+            <td style={{padding:"6px 8px",color:"#c4c4c4"}} title={r.row}>{(r.name?r.name+" >> ":"")+r.row.slice(0,150)}</td>
+          </tr>)}</tbody></table></div>}
+        {res.pages.length>0&&<div style={{marginTop:10}}>
+          <div style={{fontSize:12,color:"#737373",marginBottom:6}}>Pages that mention it ({res.pageTotal})</div>
+          {res.pages.map(p=><div key={p.n} style={{fontSize:12,color:"#9a9a9a",marginBottom:4}}><span style={link} onClick={()=>setPageN(p.n)}>p.{p.n}</span> <span style={{color:"#c4c4c4"}}>{p.title}</span> {p.snippet}</div>)}
+        </div>}
+      </div>}
+      {!res&&<div style={{marginBottom:12}}>
+        {groups.map(g=><div key={g} style={{marginBottom:8}}>
+          <div style={{fontSize:12,fontWeight:700,color:"#2dd4bf",marginBottom:4}}>{g}</div>
+          {secs.filter(s=>s.group===g).map(s=><span key={s.id} style={chip} onClick={()=>setSec(s.title)}>{s.title} <span style={{color:"#737373",fontFamily:mono}}>p.{s.page}{s.end>s.page?"-"+s.end:""}</span></span>)}
+        </div>)}
+      </div>}
+      {pg&&<div style={{background:"#0a0a0a",border:"1px solid rgba(255,255,255,0.06)",borderRadius:10,padding:14}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:8}}>
+          <div style={{fontSize:13,color:"#f0f0f0",fontWeight:600}}>Page {pg.n}{pg.pn?" (printed "+pg.pn+")":""}: {pg.title} <span style={{color:"#737373",fontWeight:400}}>{pg.group} &gt;&gt; {pg.section}</span></div>
+          <div style={{display:"flex",gap:8}}>
+            {pg.n>1&&<Btn v="secondary" onClick={()=>setPageN(pg.n-1)}>Previous</Btn>}
+            {pg.n<cat.pageCount&&<Btn v="secondary" onClick={()=>setPageN(pg.n+1)}>Next</Btn>}
+            {rec.pdfUrl&&<Btn v="secondary" onClick={()=>window.open(rec.pdfUrl+"#page="+pg.n,"_blank","noopener")}>This page in the PDF</Btn>}
+            <Btn v="secondary" onClick={()=>setPageN(0)}>Close</Btn>
+          </div>
+        </div>
+        <pre style={{margin:0,whiteSpace:"pre-wrap",wordBreak:"break-word",fontFamily:mono,fontSize:11,lineHeight:1.5,color:"#c4c4c4",maxHeight:460,overflow:"auto"}}>{pg.text}</pre>
+      </div>}
+      <div style={{fontSize:11,color:"#525252",marginTop:10}}>Read from the vendor's own catalogue. These are the vendor's specs, not our quotes or costs. Page numbers are PDF pages.</div>
+    </div>}
+  </Card>;
+}
 
 // ===============================================================
 // PLAYBOOK & SOPs
@@ -764,7 +865,7 @@ function PlaybookPage({jobs,reps,vendors,customers,lineItems,getJobFinancials,se
   //   LineItemShipTo -> per-line ship-to overrides applied silently in PO generation
   //   PlaidConn -> Plaid connection token storage
   //   VendorCredit / StandaloneBill -> Documents > Vendor Bills tab
-  const internalCats=new Set(["Notes","Task","DocStatuses","ManualTxn","HistoricalDoc","Settings","BrainMemory","Prospect","Config","File","LineItemShipTo","PlaidConn","VendorCredit","StandaloneBill","ExpenseCheck","BankBalances","Invoice","VendorBill"]);
+  const internalCats=new Set(["Notes","Task","DocStatuses","ManualTxn","HistoricalDoc","Settings","BrainMemory","Prospect","Config","File","LineItemShipTo","PlaidConn","VendorCredit","StandaloneBill","ExpenseCheck","BankBalances","Invoice","VendorBill","VendorCatalog"]);
   const customIds=new Set((customSops||[]).filter(s=>!internalCats.has(s.cat)).map(s=>s.overrideId||s.id));const allSops=[...DEFAULT_SOPS.filter(d=>!customIds.has(d.id)),...(customSops||[])].filter(s=>!internalCats.has(s.cat));
   const cats=[...new Set(allSops.map(s=>s.cat))];
   const filtered=search?allSops.filter(s=>s.title.toLowerCase().includes(search.toLowerCase())||s.content.toLowerCase().includes(search.toLowerCase())):allSops;
@@ -1523,6 +1624,10 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
   // Files tab: the newest version of every stored file, and the searchable index of the QuickBooks spreadsheets among them.
   const _qbFiles=()=>(customSops||[]).filter(x=>x&&x.cat==='File').map(x=>{try{const d=JSON.parse(x.content);return d&&typeof d==='object'&&!Array.isArray(d)?{id:x.id,...d}:null}catch{return null}}).filter(Boolean);
   const _qbIndex=()=>buildFileIndex(_qbFiles(),{importXlsx:()=>import('xlsx'),fetchImpl:(u)=>fetch(u)});
+  // Vendor catalogues (Vendor page and Brain): the file each VendorCatalog row points at. A priced catalogue is kept from the sales role.
+  const _vcRecs=()=>catalogRecords(customSops).filter(r=>!(r.hasPrices&&_bkRole==='sales'));
+  const _vcPick=async(vendor)=>{const recs=_vcRecs();if(!recs.length)return {error:'No vendor catalogues are loaded yet.'};const q=String(vendor==null?'':vendor).trim().toLowerCase();let m=recs;if(q){m=recs.filter(r=>String(r.vendorId||'').toLowerCase()===q||String(r.vendorName||'').toLowerCase().includes(q)||String(r.title||'').toLowerCase().includes(q));if(!m.length)return {error:'No catalogue matches "'+vendor+'". Loaded: '+recs.map(r=>r.vendorName).join(', ')+'.'}}if(m.length>1&&m.every(r=>r.vendorId===m[0].vendorId))m=m.slice().sort((a,b)=>String(b.edition||'').localeCompare(String(a.edition||'')));else if(m.length>1)return {error:'More than one catalogue is loaded. Say which vendor: '+m.map(r=>r.vendorName).join(', ')+'.'};try{return {rec:m[0],cat:await vcLoad(m[0],{fetchImpl:(u)=>fetch(u)})}}catch(e){return {error:'Could not open the '+m[0].vendorName+' catalogue file ('+((e&&e.message)||'error')+'). Try again in a moment.'}}};
+  const _vcSrc=(rec)=>'\n\nSource: '+rec.vendorName+' >> '+rec.title+' (edition '+rec.edition+'). Page numbers are PDF pages.'+(rec.pdfUrl?' [Open the PDF]('+rec.pdfUrl+')':'');
   const _bkIso=(d)=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
   const _bkIsDate=(v)=>{const x=String(v==null?'':v);if(!/^\d{4}-\d{2}-\d{2}$/.test(x))return false;const d=parseLocalDate(x);return !!d&&_bkIso(d)===x};
   const _bkMoney=(n)=>{const v=Number(n);return isFinite(v)?Math.round(v*100)/100:0};
@@ -1748,6 +1853,11 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     {name:"search_file_records",description:"Search INSIDE the QuickBooks export spreadsheets in the Files tab: invoices, purchase orders, bill (vendor) payments, customer payments, and checks and expenses. Returns a table (date, type, number, name, amount, and the exact file > sheet > row it came from) plus a total over ALL matches. Use for 'find invoice 10367', 'what did we pay Spectrum Industries this year', 'checks to Maureen', 'POs over $5,000', 'the roughly $17K Homer invoice', 'vendor payments by month'. These are QuickBooks numbers, not the app's INV-/PO- numbers. Admin only.",input_schema:{type:"object",properties:{kind:{type:"string",description:"invoice | purchase_order | vendor_payment | customer_payment | check_expense (omit to search all)"},number:{type:"string",description:"QuickBooks document or check number, e.g. 10367 or 9165"},name:{type:"string",description:"Customer, project, vendor or payee (partial match)"},text:{type:"string",description:"Words that must all appear in the name, memo, number or account"},amount:{type:"number",description:"Exact dollar amount"},amount_min:{type:"number"},amount_max:{type:"number"},date_from:{type:"string",description:"YYYY-MM-DD"},date_to:{type:"string",description:"YYYY-MM-DD"},group_by:{type:"string",description:"name | month | kind | file: also return counts and totals per group"},file:{type:"string",description:"Only records from files whose name contains this"},limit:{type:"number",description:"Rows to show (default 25, max 200); totals always cover every match"}}}},
     {name:"get_file_record",description:"Open one QuickBooks record in full: every field plus its Journal Detail lines (accounts, debits, credits, memos) and the file it came from. Use after search_file_records, or when the user gives a QuickBooks number. Admin only.",input_schema:{type:"object",properties:{number:{type:"string",description:"QuickBooks number, e.g. 10367 or 9165"},kind:{type:"string",description:"invoice | purchase_order | vendor_payment | customer_payment | check_expense"},name:{type:"string",description:"Optional customer or vendor to narrow duplicates"}},required:["number"]}},
     {name:"load_file",description:"Load a stored PDF, image, text or CSV file from the Files tab into this chat so it can be read. The file is attached to the user's NEXT message, so after calling this tell the user it is loaded and ask what they want to know about it. Spreadsheets are not loaded this way; use search_file_records.",input_schema:{type:"object",properties:{file:{type:"string",description:"The file id (from list_files) or part of its name"}},required:["file"]}},
+    // Vendor catalogues: a vendor's whole catalogue, read from the file linked to the vendor
+    {name:"list_vendor_catalogs",description:"List the vendor catalogues that are loaded, or show the contents of one: its sections with page ranges and model-row counts, edition, whether it has prices, and the company details. With topic set, returns the catalogue's own company, ordering, warranty, materials and green-initiative pages instead. Use first for 'what do we have for WB', 'what does the WB catalogue cover', 'what is WB's warranty', 'how do I place an order with WB'.",input_schema:{type:"object",properties:{vendor:{type:"string",description:"Vendor name, for example 'WB Mfg'. Optional when only one catalogue is loaded."},topic:{type:"string",description:"Optional. Any text (for example 'company' or 'warranty') returns the catalogue's company, ordering, warranty and policy pages."}},required:[]}},
+    {name:"search_vendor_catalog",description:"Search a vendor's catalogue for model codes and words. Returns the matching model rows (model code, PDF page, section, the row as printed: size, weight, description) and the pages that mention the words. Use for 'find ELS7601', 'which WB locker benches do they make', 'what 48 x 72 tables are there', 'WB student desks', 'show every model in the Bookcases section'. A section name with no query lists that section's models. The catalogue has no prices unless list_vendor_catalogs says so.",input_schema:{type:"object",properties:{query:{type:"string",description:"A model code or words. Part of a model code works."},vendor:{type:"string",description:"Vendor name. Optional when only one catalogue is loaded."},section:{type:"string",description:"Optional section or group to search inside, e.g. 'Seating', 'Lockers and Cubbies'"},limit:{type:"number",description:"Rows to return, up to 60 (default 25)"}},required:[]}},
+    {name:"get_catalog_product",description:"Look up one model code in a vendor's catalogue: every row it appears in, with page, section, size and weight columns as printed. Use after search_vendor_catalog or when the user gives an exact model code such as EONP401-EJA. Then use read_catalog_page for the options, colors and specs on its page.",input_schema:{type:"object",properties:{code:{type:"string",description:"The model code, e.g. EONP401-EJA"},vendor:{type:"string",description:"Vendor name. Optional when only one catalogue is loaded."}},required:["code"]}},
+    {name:"read_catalog_page",description:"Read the full text of one page of a vendor's catalogue (use the PDF page number the other catalogue tools give). Use to answer questions about the options, configurations, materials, colors, how to build a model number, ordering rules or warranty on a page.",input_schema:{type:"object",properties:{page:{type:"number",description:"PDF page number"},vendor:{type:"string",description:"Vendor name. Optional when only one catalogue is loaded."}},required:["page"]}},
     // Vendor Bills: queries
     {name:"list_vendor_bills",description:"List vendor bills with rich filters. Returns a markdown table. Use when the user says 'show me unpaid bills', 'what bills are due this week', 'list all bills from Marco Group', 'overdue bills', 'show me bills for the Sandburg job', 'show deleted bills'. Bills include both PO-derived bills (auto-generated from purchase orders) and standalone bills (created ad-hoc). Default behavior with no filters returns the 25 most-due-soon unpaid bills.",input_schema:{type:"object",properties:{vendor_name:{type:"string",description:"Filter by vendor name (partial match, case-insensitive)"},job_id:{type:"string",description:"Filter by job ID or name keywords"},status:{type:"string",description:"unpaid | paid | overdue | check_sent | void | deleted | all (default: unpaid)"},due_within_days:{type:"number",description:"Only show bills due within N days from today"},date_from:{type:"string",description:"Bill date from (YYYY-MM-DD)"},date_to:{type:"string",description:"Bill date to (YYYY-MM-DD)"},has_file:{type:"boolean",description:"true to show only bills with attached invoice files, false to show only bills without"},amount_min:{type:"number",description:"Minimum bill amount"},amount_max:{type:"number",description:"Maximum bill amount"},limit:{type:"number",description:"Max rows to return (default 25)"}}}},
     {name:"get_vendor_bill",description:"Get the full record of a vendor bill by its docNum (e.g. BILL-1234-VENDR or a standalone SB-/VC- id). Returns bill details, line items if PO-derived, payment history, and attached file info. Use when user says 'show me bill BILL-6100-SUKI', 'pull up the Doane Keyes bill on G103', 'get the full record for the Marco credit'.",input_schema:{type:"object",properties:{bill_doc_num:{type:"string",description:"The billDocNum (e.g. BILL-1234-VENDR) or standalone SOP id (e.g. SB-xxxxxx, VC-xxxxxx)"}},required:["bill_doc_num"]}},
@@ -3144,6 +3254,49 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         }
         return {success: true, message: msg};
       }
+      // ----------- VENDOR CATALOGUES -----------
+      if (toolName === 'list_vendor_catalogs') {
+        const recs = _vcRecs();
+        if (!recs.length) return {success: true, message: 'No vendor catalogues are loaded yet.'};
+        if (!input.vendor && recs.length > 1) return {success: true, message: '**Vendor catalogues**\n'+recs.map(r => '- '+r.vendorName+': '+r.title+' (edition '+r.edition+', '+r.pageCount+' pages, '+r.productCount+' model rows'+(r.hasPrices?'':', no prices')+')').join('\n')+'\n\nName a vendor to see its contents.'};
+        const p = await _vcPick(input.vendor);
+        if (p.error) return {error: p.error};
+        const topic = String(input.topic||'').trim();
+        return {success: true, message: (topic ? '**'+p.rec.vendorName+' >> company, ordering, warranty and policy pages**\n\n'+vcProfile(p.cat) : vcOverview(p.cat, p.rec)) + _vcSrc(p.rec)};
+      }
+      if (toolName === 'search_vendor_catalog') {
+        const p = await _vcPick(input.vendor);
+        if (p.error) return {error: p.error};
+        const r = vcSearch(p.cat, input.query, {section: input.section, limit: input.limit});
+        if (r.error) return {error: r.error};
+        if (!r.total && !r.pageTotal) return {success: true, message: 'Nothing in the '+p.rec.vendorName+' catalogue matches "'+String(input.query||'').trim()+'"'+(input.section?' in '+input.section:'')+'. Try fewer words or part of the model code.'};
+        let msg = '**'+r.total+' model row'+(r.total===1?'':'s')+'** ('+r.codes+' distinct model code'+(r.codes===1?'':'s')+') in the '+p.rec.vendorName+' catalogue';
+        if (r.rows.length) msg += '\n\n'+vcRows(r.rows, p.rec)+(r.total>r.rows.length?'\n_(showing '+r.rows.length+' of '+r.total+'; narrow with more words or a section)_':'');
+        if (r.pages.length) msg += '\n\n**Pages that mention it ('+r.pageTotal+')**\n'+r.pages.map(x => '- '+vcPageRef(p.rec, x.n)+' >> '+x.title+' ('+x.section+'): '+x.snippet).join('\n');
+        return {success: true, message: msg + _vcSrc(p.rec)};
+      }
+      if (toolName === 'get_catalog_product') {
+        const code = String(input.code == null ? '' : input.code).trim();
+        if (!code) return {error: 'Give the model code, for example EONP401-EJA.'};
+        const p = await _vcPick(input.vendor);
+        if (p.error) return {error: p.error};
+        const g = vcProduct(p.cat, code);
+        if (!g.rows.length) return {error: 'No model code "'+code+'" in the '+p.rec.vendorName+' catalogue. Use search_vendor_catalog to look for part of it.'};
+        let msg = (g.exact ? '**'+g.rows[0].code+'** is in '+g.rows.length+' row'+(g.rows.length===1?'':'s') : 'No exact match for "'+code+'". '+g.rows.length+' row'+(g.rows.length===1?'':'s')+' start with it')+' in the '+p.rec.vendorName+' catalogue\n\n'+vcRows(g.rows.slice(0, 40), p.rec);
+        const hs = [...new Set(g.rows.map(x => x.header).filter(Boolean))].slice(0, 6);
+        if (hs.length) msg += '\n\nColumn headings printed above those rows:\n'+hs.map(h => '- '+h).join('\n');
+        msg += '\n\nUse read_catalog_page for the options, colors and specs on the page.';
+        return {success: true, message: msg + _vcSrc(p.rec)};
+      }
+      if (toolName === 'read_catalog_page') {
+        const n = Number(input.page);
+        if (!Number.isInteger(n) || n < 1) return {error: 'Give the PDF page number, for example 12.'};
+        const p = await _vcPick(input.vendor);
+        if (p.error) return {error: p.error};
+        const pg = vcPage(p.cat, n);
+        if (!pg) return {error: 'The '+p.rec.vendorName+' catalogue has pages 1 to '+p.cat.pageCount+'.'};
+        return {success: true, message: '### '+p.rec.vendorName+' catalogue, page '+pg.n+(pg.pn?' (printed page '+pg.pn+')':'')+': '+pg.title+'\nSection: '+pg.group+' >> '+pg.section+'\n\n'+pg.text+(pg.trunc?'\n[The page text was cut here.]':'') + _vcSrc(p.rec)};
+      }
       // ----------- FILES TAB: QuickBooks exports -----------
       if (toolName === 'list_files') {
         const folders = _bkSopJson('FILE_FOLDERS', []);
@@ -4177,6 +4330,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     const vbLine = "VENDOR BILLS: " + vbOpen.length + " open | $" + Math.round(vbOpen.reduce((s,b)=>s+billBalance(b),0)) + " open balance | " + vbOverdue + " overdue" + (vbAll.length ? " | " + vbAll.length + " total (use list_financials_vendor_bills)" : "");
     // (Nov 2026) What is in the Files tab, and how to use it: the QuickBooks exports live there and are searched, never guessed.
     const filesLine = (()=>{const fl=latestVersions(_qbFiles());if(!fl.length)return "";const ss=fl.filter(f=>isSpreadsheetFile(f)).length;return "\nFILES TAB: "+fl.length+" file"+(fl.length===1?"":"s")+" ("+ss+" spreadsheet"+(ss===1?"":"s")+") -- list_files shows what each one is"+(_bkRole==='admin'?". The QuickBooks exports in them (invoices, purchase orders, vendor and customer payments, checks and expenses, with Journal Detail) are searched with search_file_records and opened with get_file_record, never guessed. QuickBooks numbers (invoice 10367, check 9165) are not the app's INV-/PO- numbers: say which system a number comes from, cite the file, sheet and row, and report any difference between QuickBooks and the app instead of choosing one silently":"")})();
+    const catLine = vcPromptLine(_vcRecs());
 
 
     // Smart job matching: find which jobs the query is about
@@ -4228,7 +4382,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
 
 
     // Smart SOP matching -- always know what SOPs exist, include full content when relevant
-    const allSopDocs=(customSops||[]).filter(s=>!["Notes","Task","DocStatuses","ManualTxn","HistoricalDoc","Settings"].includes(s.cat));
+    const allSopDocs=(customSops||[]).filter(s=>!["Notes","Task","DocStatuses","ManualTxn","HistoricalDoc","Settings","VendorCatalog"].includes(s.cat));
     // Build a compact index of all SOPs (always sent -- very cheap, ~50 tokens)
     const sopIndex=allSopDocs.map(s=>s.title+" ["+s.cat+"]").join(", ");
     // Determine which SOPs are relevant to this query using multi-signal matching
@@ -4295,7 +4449,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     const taskText = /task|todo|assign|follow.?up/i.test(q) ? (customSops||[]).filter(s=>s.cat==="Task").map(s=>{try{const d=JSON.parse(s.content);return d.text+" ["+d.status+"]"+(d.assignees?.length?" -> "+d.assignees.join(","):"")+(d.due?" due:"+d.due:"")}catch{return s.title}}).join("\n") : "";
 
 
-    return "You are the Midwest Brain -- a full-capability AI assistant powered by Claude, built into the operating system for Midwest Educational Furnishings (Kildeer, IL). Owner: Maureen Welter. Today: " + today + ".\n\nYou are a COMPLETE AI assistant. You can do everything Claude can do: write emails, draft proposals, create content, analyze data, brainstorm ideas, explain concepts, write code, give advice, and more. You happen to ALSO have full access to the live Midwest business database below, so you can weave in real company data when relevant.\n\nIf someone asks you to write an email -- write a great email, using Midwest context if relevant. If they ask for a marketing idea -- give one. If they ask to explain a concept -- explain it. You are not limited to just answering data questions.\n\nBUSINESS CONTEXT:\nSTATS: " + jobs.length + " jobs | Rev $" + Math.round(totalRev) + " | Cost $" + Math.round(totalCost) + " | Margin " + (totalRev>0?Math.round((totalRev-totalCost)/totalRev*100):0) + "% | " + lineItems.length + " line items | " + vendors.length + " vendors | " + customers.length + " customers | " + ((customSops||[]).filter(s=>s.cat==='Prospect').length) + " prospects\n" + vbLine + finLine + filesLine + "\n\nALL JOBS:\n" + jobSummaries + lineItemDetail + "\n\nVENDORS: " + vendorSummaries + vendorDetail + "\n\nCUSTOMERS: " + custSummaries + "\n\nREPS: " + repSummaries + sopSection + (taskText?"\n\nTASKS:\n"+taskText:"") + "\n\nRULES:\n1. You are a FULL AI assistant. You can write emails, draft documents, create proposals, brainstorm, explain anything, give business advice, and do everything Claude can normally do.\n2. When the question relates to Midwest business data, use the real numbers above. NEVER say you don't have the data.\n3. When writing emails or documents, use Midwest context naturally: 'Midwest Educational Furnishings', Maureen Welter, Kildeer IL, the customer/vendor names from the database.\n4. For 'how do I' questions about business processes: check the RELEVANT SOP DETAILS section. If an SOP covers it, answer FROM the SOP.\n5. For general knowledge questions, advice, brainstorming, writing help: answer like a world-class AI assistant would. You are not limited to business data.\n6. When asked about a job, use its LINE ITEM DETAILS for specific products, vendors, quantities, and costs.\n7. Show your math when doing financial calculations.\n8. Think like a CFO+COO+executive assistant combined.\n9. Keep answers concise but complete. Match the tone to what's being asked -- formal for emails, casual for brainstorming, detailed for analysis.\n10. FORMAT DATA AS TABLES: When showing line items, price comparisons, job lists, vendor data, or any structured data with 3+ rows, ALWAYS use markdown table format (| Col1 | Col2 |). The chat renders markdown tables as styled interactive tables. Include dollar signs for money columns. This is critical for readability.\n11. At the end of business-related answers, suggest 2-3 follow-up questions:\n>> [question 1]\n>> [question 2]\n>> [question 3]\n12. NEVER use emoji. Text only.\n13. When the user asks you to DO something (update, create, mark, change, set, navigate), USE THE TOOLS. Don't just describe what would happen -- call the tool. You will see a confirmation before the action executes.\n14. For job references: match by job ID or by name keywords. If ambiguous, ask which job.\n15. When using tools, briefly explain what you are about to do BEFORE the tool call.\n16. PROACTIVELY USE save_memory to remember important patterns, preferences, decisions, and insights from conversations. Your memory persists forever and makes you smarter over time.\n16. Use detect_anomalies for health checks. Use analyze_trends for patterns. Use summarize_context for briefings. Use predictive_flag for risk assessment.\n17. Use draft_email for professional emails with Midwest branding.\n18. Use database_query for complex data lookups. Use parse_uploaded_file ONLY for files at public URLs.\n19. CRITICAL FILE ATTACHMENT RULE: When a user attaches a file via the paperclip button, the file content is ALREADY EMBEDDED directly in the user message as text or document blocks. You can read it right there. Do NOT call parse_uploaded_file for attached files. The data is already here.\n\nWhen a file is attached, be PROACTIVE about what you can do with it:\n- VENDOR QUOTE (has model numbers, prices, quantities): Extract all line items and use create_job_from_file to build a complete job. Ask for the customer name if not obvious.\n- CUSTOMER LIST (schools, districts, contacts): Use import_customers_from_file to add them to the directory.\n- VENDOR LIST (manufacturers, suppliers): Use import_vendors_from_file to add them.\n- INVOICE/RECEIPT: Extract the data, match to existing jobs, summarize what is owed.\n- PRICE LIST: Compare against existing job prices using compare_quote_to_job.\n- GENERAL DOCUMENT: Analyze thoroughly, extract key data, suggest next actions.\n\nAlways tell the user what you found AND what you can do with it. Don't just describe the file -- offer to take action.\n21. You have WEB SEARCH capability. When asked about current events, market prices, competitor info, or anything needing real-time data, the web_search tool is always available and Claude uses it automatically.\n22. After substantive interactions, consider what should be saved to memory.\n23. LOOKUPS COME BACK TO YOU: read tools (sales_report, profit_and_loss, list_transactions, balance_sheet_lines, get_job_details, and the list_, get_, find_ and search tools) run right away, their output is shown to the user, and the result is sent back to you. Then answer the actual question in a sentence or two with the key numbers. Do not repeat a table the user can already see. When a question needs more than one lookup, make them one after another (up to 6). Never estimate a number a tool can give you, and never say a tool result is missing when it is above.\n24. SALES, GROSS PROFIT, MARGIN OR COMMISSION FOR A REP, QUARTER, YEAR OR DATE RANGE: always call sales_report. Quarters are calendar quarters (Q1 Jan-Mar, Q2 Apr-Jun, Q3 Jul-Sep, Q4 Oct-Dec). Sales are dated by the job report date (the Sales Portal and Financials rule). Commission is earned when a job is paid in full AND closed out, dated by whichever came last (the Commissions page rule). Say which view a number comes from.\n25. BOOKKEEPING (admin): find entries with list_transactions; enter many at once with add_transactions (one confirmation for the whole batch, e.g. every line of a QuickBooks payroll report); change or remove entries with update_transactions or delete_transactions using ids from list_transactions; P&L totals come from profit_and_loss, which matches Financials >> P&L; tie the Balance Sheet to QuickBooks with balance_sheet_lines and set_book_balances. New entries go on the account the Financials pages count unless the user names another. Never delete or alter bank-feed rows to make a total match QuickBooks; set the QuickBooks book balance on that line instead. After an action is confirmed its result comes back to you: say what changed in a sentence, and check it with a lookup when the user is reconciling.\n26. WORKSHEET TAGS: a tag like S4, C12 or L13 often covers several line item rows, one per ship-to. To change a tag pass tag and job_id to update_line_item (or filter_tag to bulk_edit_line_items) so every row with the tag changes in one action. Net price or net pricing is the dealer cost (unitCost).\n27. UNDO: when the user says undo, take that back, revert, put it back, or says you made a mistake with something you changed (for example combined two jobs), call undo_last_action (it needs Confirm). It puts back every record from one confirmed step. Use recent_actions first when it is not clear which step they mean. Then say what was put back and anything left alone. An email that was sent cannot be unsent." + (memoryText ? "\n\nBRAIN MEMORY (persistent knowledge):\n" + memoryText : "");
+    return "You are the Midwest Brain -- a full-capability AI assistant powered by Claude, built into the operating system for Midwest Educational Furnishings (Kildeer, IL). Owner: Maureen Welter. Today: " + today + ".\n\nYou are a COMPLETE AI assistant. You can do everything Claude can do: write emails, draft proposals, create content, analyze data, brainstorm ideas, explain concepts, write code, give advice, and more. You happen to ALSO have full access to the live Midwest business database below, so you can weave in real company data when relevant.\n\nIf someone asks you to write an email -- write a great email, using Midwest context if relevant. If they ask for a marketing idea -- give one. If they ask to explain a concept -- explain it. You are not limited to just answering data questions.\n\nBUSINESS CONTEXT:\nSTATS: " + jobs.length + " jobs | Rev $" + Math.round(totalRev) + " | Cost $" + Math.round(totalCost) + " | Margin " + (totalRev>0?Math.round((totalRev-totalCost)/totalRev*100):0) + "% | " + lineItems.length + " line items | " + vendors.length + " vendors | " + customers.length + " customers | " + ((customSops||[]).filter(s=>s.cat==='Prospect').length) + " prospects\n" + vbLine + finLine + catLine + filesLine + "\n\nALL JOBS:\n" + jobSummaries + lineItemDetail + "\n\nVENDORS: " + vendorSummaries + vendorDetail + "\n\nCUSTOMERS: " + custSummaries + "\n\nREPS: " + repSummaries + sopSection + (taskText?"\n\nTASKS:\n"+taskText:"") + "\n\nRULES:\n1. You are a FULL AI assistant. You can write emails, draft documents, create proposals, brainstorm, explain anything, give business advice, and do everything Claude can normally do.\n2. When the question relates to Midwest business data, use the real numbers above. NEVER say you don't have the data.\n3. When writing emails or documents, use Midwest context naturally: 'Midwest Educational Furnishings', Maureen Welter, Kildeer IL, the customer/vendor names from the database.\n4. For 'how do I' questions about business processes: check the RELEVANT SOP DETAILS section. If an SOP covers it, answer FROM the SOP.\n5. For general knowledge questions, advice, brainstorming, writing help: answer like a world-class AI assistant would. You are not limited to business data.\n6. When asked about a job, use its LINE ITEM DETAILS for specific products, vendors, quantities, and costs.\n7. Show your math when doing financial calculations.\n8. Think like a CFO+COO+executive assistant combined.\n9. Keep answers concise but complete. Match the tone to what's being asked -- formal for emails, casual for brainstorming, detailed for analysis.\n10. FORMAT DATA AS TABLES: When showing line items, price comparisons, job lists, vendor data, or any structured data with 3+ rows, ALWAYS use markdown table format (| Col1 | Col2 |). The chat renders markdown tables as styled interactive tables. Include dollar signs for money columns. This is critical for readability.\n11. At the end of business-related answers, suggest 2-3 follow-up questions:\n>> [question 1]\n>> [question 2]\n>> [question 3]\n12. NEVER use emoji. Text only.\n13. When the user asks you to DO something (update, create, mark, change, set, navigate), USE THE TOOLS. Don't just describe what would happen -- call the tool. You will see a confirmation before the action executes.\n14. For job references: match by job ID or by name keywords. If ambiguous, ask which job.\n15. When using tools, briefly explain what you are about to do BEFORE the tool call.\n16. PROACTIVELY USE save_memory to remember important patterns, preferences, decisions, and insights from conversations. Your memory persists forever and makes you smarter over time.\n16. Use detect_anomalies for health checks. Use analyze_trends for patterns. Use summarize_context for briefings. Use predictive_flag for risk assessment.\n17. Use draft_email for professional emails with Midwest branding.\n18. Use database_query for complex data lookups. Use parse_uploaded_file ONLY for files at public URLs.\n19. CRITICAL FILE ATTACHMENT RULE: When a user attaches a file via the paperclip button, the file content is ALREADY EMBEDDED directly in the user message as text or document blocks. You can read it right there. Do NOT call parse_uploaded_file for attached files. The data is already here.\n\nWhen a file is attached, be PROACTIVE about what you can do with it:\n- VENDOR QUOTE (has model numbers, prices, quantities): Extract all line items and use create_job_from_file to build a complete job. Ask for the customer name if not obvious.\n- CUSTOMER LIST (schools, districts, contacts): Use import_customers_from_file to add them to the directory.\n- VENDOR LIST (manufacturers, suppliers): Use import_vendors_from_file to add them.\n- INVOICE/RECEIPT: Extract the data, match to existing jobs, summarize what is owed.\n- PRICE LIST: Compare against existing job prices using compare_quote_to_job.\n- GENERAL DOCUMENT: Analyze thoroughly, extract key data, suggest next actions.\n\nAlways tell the user what you found AND what you can do with it. Don't just describe the file -- offer to take action.\n21. You have WEB SEARCH capability. When asked about current events, market prices, competitor info, or anything needing real-time data, the web_search tool is always available and Claude uses it automatically.\n22. After substantive interactions, consider what should be saved to memory.\n23. LOOKUPS COME BACK TO YOU: read tools (sales_report, profit_and_loss, list_transactions, balance_sheet_lines, get_job_details, and the list_, get_, find_ and search tools) run right away, their output is shown to the user, and the result is sent back to you. Then answer the actual question in a sentence or two with the key numbers. Do not repeat a table the user can already see. When a question needs more than one lookup, make them one after another (up to 6). Never estimate a number a tool can give you, and never say a tool result is missing when it is above.\n24. SALES, GROSS PROFIT, MARGIN OR COMMISSION FOR A REP, QUARTER, YEAR OR DATE RANGE: always call sales_report. Quarters are calendar quarters (Q1 Jan-Mar, Q2 Apr-Jun, Q3 Jul-Sep, Q4 Oct-Dec). Sales are dated by the job report date (the Sales Portal and Financials rule). Commission is earned when a job is paid in full AND closed out, dated by whichever came last (the Commissions page rule). Say which view a number comes from.\n25. BOOKKEEPING (admin): find entries with list_transactions; enter many at once with add_transactions (one confirmation for the whole batch, e.g. every line of a QuickBooks payroll report); change or remove entries with update_transactions or delete_transactions using ids from list_transactions; P&L totals come from profit_and_loss, which matches Financials >> P&L; tie the Balance Sheet to QuickBooks with balance_sheet_lines and set_book_balances. New entries go on the account the Financials pages count unless the user names another. Never delete or alter bank-feed rows to make a total match QuickBooks; set the QuickBooks book balance on that line instead. After an action is confirmed its result comes back to you: say what changed in a sentence, and check it with a lookup when the user is reconciling.\n26. WORKSHEET TAGS: a tag like S4, C12 or L13 often covers several line item rows, one per ship-to. To change a tag pass tag and job_id to update_line_item (or filter_tag to bulk_edit_line_items) so every row with the tag changes in one action. Net price or net pricing is the dealer cost (unitCost).\n27. UNDO: when the user says undo, take that back, revert, put it back, or says you made a mistake with something you changed (for example combined two jobs), call undo_last_action (it needs Confirm). It puts back every record from one confirmed step. Use recent_actions first when it is not clear which step they mean. Then say what was put back and anything left alone. An email that was sent cannot be unsent." + (memoryText ? "\n\nBRAIN MEMORY (persistent knowledge):\n" + memoryText : "");
   };
 
 
@@ -4438,7 +4592,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
   // job (find the entries, fix them, check the total) carries on in one conversation.
   // ==============================================================
   const BRAIN_AGENT_STEPS=6;
-  const _brainReadOnly=new Set(['list_files','search_file_records','get_file_record','load_file','get_job_details','search_and_report','detect_anomalies','analyze_trends','summarize_context','recall_memory','predictive_flag','database_query','compare_quote_to_job','calculate_financials','export_data','get_banking_summary','get_payables_summary','draft_email','send_email','sales_report','profit_and_loss','list_transactions','balance_sheet_lines','list_vendor_bills','get_vendor_bill','search_bills_by_amount','get_bills_summary','list_financials_vendor_bills','list_vendor_credits','find_unmatched_credits','list_pos','get_po','find_pos_awaiting_action','list_invoices','find_overdue_invoices','list_prospects','recent_actions']);
+  const _brainReadOnly=new Set(['list_files','search_file_records','get_file_record','load_file','get_job_details','search_and_report','detect_anomalies','analyze_trends','summarize_context','recall_memory','predictive_flag','database_query','compare_quote_to_job','calculate_financials','export_data','get_banking_summary','get_payables_summary','draft_email','send_email','sales_report','profit_and_loss','list_transactions','balance_sheet_lines','list_vendor_bills','get_vendor_bill','search_bills_by_amount','get_bills_summary','list_financials_vendor_bills','list_vendor_credits','find_unmatched_credits','list_pos','get_po','find_pos_awaiting_action','list_invoices','find_overdue_invoices','list_prospects','recent_actions','list_vendor_catalogs','search_vendor_catalog','get_catalog_product','read_catalog_page']);
   // The assistant turn as the API needs it back: thinking (with its signature), text and
   // tool_use blocks. Web search blocks are left out (they only pair with each other).
   const _brainPassBack=(content)=>(Array.isArray(content)?content:[]).map(b=>{if(!b||typeof b!=='object')return null;if(b.type==='thinking')return b.signature?{type:'thinking',thinking:String(b.thinking||''),signature:String(b.signature)}:null;if(b.type==='redacted_thinking')return b.data?{type:'redacted_thinking',data:b.data}:null;if(b.type==='text')return String(b.text||'').trim()?{type:'text',text:String(b.text)}:null;if(b.type==='tool_use')return {type:'tool_use',id:b.id,name:b.name,input:b.input&&typeof b.input==='object'&&!Array.isArray(b.input)?b.input:{}};return null}).filter(Boolean);
