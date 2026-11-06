@@ -143,9 +143,31 @@ export function getPage(cat, n) {
 }
 
 // ---- text for people and for the Brain ----
+// Where a page can be seen. A big PDF is stored in pieces (storage refuses a single file over about 50 MB),
+// each piece listing the PDF pages it holds; rec.pdfParts = [{url, from, to}]. A small PDF is rec.pdfUrl.
+const pad3 = (n) => String(n).padStart(3, '0');
+const safeAlt = (s) => String(s == null ? '' : s).replace(/[\[\]<>()]/g, ' ').replace(/\s+/g, ' ').trim();
+
+export function pageImageUrl(rec, n) {
+  return rec && rec.pageImgBase ? rec.pageImgBase + 'p-' + pad3(n) + '.jpg' : '';
+}
+
+export function pdfPageUrl(rec, n) {
+  const parts = rec && Array.isArray(rec.pdfParts) ? rec.pdfParts : [];
+  for (const p of parts) if (p && p.url && n >= p.from && n <= p.to) return p.url + '#page=' + (n - p.from + 1);
+  return rec && rec.pdfUrl ? rec.pdfUrl + '#page=' + n : '';
+}
+
+// Buttons for "Open PDF": one link for a single file, one per piece for a split one.
+export function pdfLinks(rec) {
+  const parts = rec && Array.isArray(rec.pdfParts) ? rec.pdfParts.filter((p) => p && p.url) : [];
+  if (parts.length) return parts.map((p) => ({ label: parts.length === 1 ? 'Open PDF' : 'PDF pages ' + p.from + '-' + p.to, url: p.url }));
+  return rec && rec.pdfUrl ? [{ label: 'Open PDF', url: rec.pdfUrl }] : [];
+}
+
 export function pageRef(rec, n) {
-  const url = rec && rec.pdfUrl;
-  return url ? '[page ' + n + '](' + url + '#page=' + n + ')' : 'page ' + n;
+  const url = pdfPageUrl(rec, n);
+  return url ? '[page ' + n + '](' + url + ')' : 'page ' + n;
 }
 
 export function rowsToMarkdown(rows, rec) {
@@ -155,6 +177,49 @@ export function rowsToMarkdown(rows, rec) {
     lines.push('| ' + esc(r.code) + ' | ' + pageRef(rec, r.page) + ' | ' + esc(clip(r.section, 50)) + ' | ' + esc(clip((r.name ? r.name + ' >> ' : '') + r.row + (r.ctx ? ' / ' + r.ctx : ''), MAX_CELL)) + ' |');
   }
   return lines.join('\n');
+}
+
+// A whole page as a card for the Brain chat: the page picture, the model rows on it, and everything printed on it.
+const PAGE_TEXT_MAX = 12000;
+const PAGE_ROWS_MAX = 60;
+export function pageMarkdown(cat, rec, n) {
+  const p = getPage(cat, n);
+  if (!p) return '';
+  const out = [];
+  out.push('### ' + rec.vendorName + ' catalogue, page ' + p.n + (p.pn ? ' (printed page ' + p.pn + ')' : '') + ': ' + p.title);
+  out.push('Section: ' + p.group + ' >> ' + p.section + (cat.hasPrices ? '' : '. This edition has no prices.'));
+  const pdf = pdfPageUrl(rec, p.n);
+  if (pdf) out.push('[Open page ' + p.n + ' in the PDF](' + pdf + ')');
+  const img = pageImageUrl(rec, p.n);
+  if (img) out.push('', '![Page ' + p.n + ' of the ' + safeAlt(rec.vendorName) + ' catalogue](' + img + ')');
+  // rows printed on this page, one line per printed row, with every model code that row carries
+  const groups = new Map();
+  for (const r of cat.rows) {
+    if (r.page !== p.n) continue;
+    const printed = (r.name ? r.name + ' >> ' : '') + r.row + (r.ctx ? ' / ' + r.ctx : '');
+    const g = groups.get(printed) || { printed, codes: [], header: r.header };
+    if (!g.codes.includes(r.code)) g.codes.push(r.code);
+    groups.set(printed, g);
+  }
+  const list = [...groups.values()];
+  if (list.length) {
+    out.push('', '**Models on this page** (' + list.length + ' printed row' + (list.length === 1 ? '' : 's') + ')');
+    const heads = [...new Set(list.map((g) => g.header).filter(Boolean))].slice(0, 4);
+    if (heads.length) out.push('Column headings as printed: ' + heads.map((h) => esc(h)).join(' ;; '));
+    out.push('', '| Model codes | As printed |', '|---|---|');
+    for (const g of list.slice(0, PAGE_ROWS_MAX)) out.push('| ' + esc(g.codes.join(', ')) + ' | ' + esc(clip(g.printed, MAX_CELL)) + ' |');
+    if (list.length > PAGE_ROWS_MAX) out.push('', '_(showing ' + PAGE_ROWS_MAX + ' of ' + list.length + ' rows; the page text below has the rest)_');
+  }
+  const body = String(p.text || '').split('\n').map((l) => l.replace(/ \| /g, '   '));
+  let text = body.join('\n');
+  const cut = p.trunc || text.length > PAGE_TEXT_MAX;
+  if (text.length > PAGE_TEXT_MAX) text = text.slice(0, PAGE_TEXT_MAX);
+  out.push('', '**Everything printed on the page**', text + (cut ? '\n[The page text was cut here. Ask for this page again with a narrower question.]' : ''));
+  const nav = [];
+  if (p.n > 1) nav.push('>> Show page ' + (p.n - 1) + ' of the ' + safeAlt(rec.vendorName) + ' catalogue');
+  if (p.n < cat.pageCount) nav.push('>> Show page ' + (p.n + 1) + ' of the ' + safeAlt(rec.vendorName) + ' catalogue');
+  if (nav.length) out.push('', ...nav);
+  return out.join('\n');
 }
 
 export function overviewMarkdown(cat, rec) {
@@ -195,5 +260,5 @@ export function promptLine(recs) {
     const groups = Array.isArray(r.groups) ? r.groups.join(', ') : '';
     return r.vendorName + ': ' + r.title + ' (edition ' + r.edition + ', ' + r.pageCount + ' pages, ' + r.productCount + ' model rows' + (r.hasPrices ? '' : ', no prices') + (groups ? '; covers ' + groups : '') + ')';
   });
-  return '\n\nVENDOR CATALOGUES: ' + parts.join('; ') + '. Use list_vendor_catalogs for the contents, search_vendor_catalog for models and words, get_catalog_product for one model code, read_catalog_page for a whole page. These are vendor specs from the catalogue. They are not our quotes or our costs, and a catalogue without prices has no prices to report: say so instead of guessing. Always give the page number.';
+  return '\n\nVENDOR CATALOGUES: ' + parts.join('; ') + '. Use list_vendor_catalogs for the contents, search_vendor_catalog for models and words, get_catalog_product for one model code, read_catalog_page for a whole page (it shows the page picture, the model rows and every line printed on the page). These are vendor specs from the catalogue. They are not our quotes or our costs, and a catalogue without prices has no prices to report: say so instead of guessing. When someone asks about a product, section, option, ordering rule or page, give them the actual details from the page (sizes, weights, options, colors, prices when the catalogue has them) in clean tables and short lists. Never answer with only a page number or tell them to go look at a page; the page number is only a reference after the details.';
 }
