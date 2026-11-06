@@ -1,6 +1,7 @@
 import DateInput from './DateInput.jsx';
 import { buildFileIndex, latestVersions, isSpreadsheetFile, searchRecords, quickSearch, recordsToMarkdown, journalToMarkdown, journalFor, describeSheets, fmtUsd as fiUsd, fmtUs as fiUs, KIND_LABEL as FI_KIND } from './fileIndex.js';
-import { catalogRecords, catalogsForVendor, loadCatalog as vcLoad, searchCatalog as vcSearch, getProduct as vcProduct, getPage as vcPage, overviewMarkdown as vcOverview, profileMarkdown as vcProfile, rowsToMarkdown as vcRows, pageRef as vcPageRef, promptLine as vcPromptLine } from './vendorCatalog.js';
+import { catalogRecords, catalogsForVendor, loadCatalog as vcLoad, searchCatalog as vcSearch, getProduct as vcProduct, getPage as vcPage, overviewMarkdown as vcOverview, profileMarkdown as vcProfile, rowsToMarkdown as vcRows, pageRef as vcPageRef, promptLine as vcPromptLine, pageMarkdown as vcPageCard, _resetCatalogCache as vcReset, pdfLinks as vcPdfLinks, pdfPageUrl as vcPdfPage, pageImageUrl as vcImg } from './vendorCatalog.js';
+import { ingestCatalog as ciIngest, todayLocal as ciToday } from './catalogIngest.js';
 import React, { useState, useEffect, useRef } from "react";
 import { db } from "./supabase.js";
 import { useUser, useClerk, SignIn, UserButton, useAuth } from "@clerk/clerk-react";
@@ -566,7 +567,7 @@ function Vendor360Page({jobs,lineItems,vendors,customers,reps,getJobFinancials,g
       <div style={{display:"flex",gap:8}}><Btn onClick={()=>{updateVendor(vendorId,editForm);setEditing(false);notify("Vendor updated")}}>Save</Btn><Btn v="secondary" onClick={()=>setEditing(false)}>Cancel</Btn></div>
     </Card>}
 
-    <VendorCatalogPanel key={vend.id} vendor={vend} customSops={customSops} setPage={setPage}/>
+    <VendorCatalogPanel key={vend.id} vendor={vend} customSops={customSops} setPage={setPage} addSop={addSop} notify={notify}/>
 
 
     <div className="resp-grid-4" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:14,marginBottom:28}}>
@@ -652,7 +653,90 @@ function Vendor360Page({jobs,lineItems,vendors,customers,reps,getJobFinancials,g
 // VENDOR CATALOGUE (Vendor page): the vendor's whole catalogue, searchable. A `VendorCatalog` row in
 // sops links the file to the vendor (see src/vendorCatalog.js). Shows nothing for a vendor with no catalogue.
 // ===============================================================
-function VendorCatalogPanel({vendor,customSops,setPage}){
+// ===============================================================
+// VENDOR CATALOGUE UPLOAD (Directory, vendor page and the Brain share this)
+// ===============================================================
+// Reads the PDF in the browser (no size limit that matters: 150 MB and more work), saves the structured
+// catalogue, a picture of every page and the PDF itself in pieces, then links it to the vendor.
+async function runCatalogIngest({file,vendor,title,edition,hasPrices,onProgress,isCancelled,addSop}){
+  const out=await ciIngest({file,vendor,title,edition,hasPrices,onProgress,isCancelled,deps:{upload:(p,b)=>db.uploadFile('vendor-invoices',p,b),publicUrl:(p)=>db.getPublicUrl('vendor-invoices',p)}});
+  addSop({id:out.id,title:out.rec.title,cat:'VendorCatalog',icon:'book',content:JSON.stringify(out.rec),custom:true});
+  vcReset();
+  return out;
+}
+function CatalogUploadDialog({vendor,customSops,addSop,notify,setPage,onClose}){
+  const [file,setFile]=useState(null);
+  const [title,setTitle]=useState('');
+  const [titleTouched,setTitleTouched]=useState(false);
+  const [edition,setEdition]=useState(ciToday());
+  const [prices,setPrices]=useState('auto');
+  const [busy,setBusy]=useState(false);
+  const [prog,setProg]=useState(null);
+  const [res,setRes]=useState(null);
+  const [err,setErr]=useState('');
+  const stopRef=useRef(false);
+  const pickRef=useRef(null);
+  const mono="'JetBrains Mono',monospace";
+  const existing=catalogsForVendor(customSops,vendor.id);
+  const pick=(f)=>{if(!f)return;setFile(f);setErr('');setRes(null);if(!titleTouched)setTitle(f.name.replace(/\.pdf$/i,''))};
+  const pct=!prog?0:prog.stage==='pages'?Math.round((prog.done/Math.max(1,prog.total))*80):({reading:2,structure:82,saving:88,pdf:94,done:100})[prog.stage]||0;
+  const go=async()=>{
+    if(busy||!file)return;
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(edition.trim())){setErr('Edition date must look like 2026-07-31.');return}
+    setErr('');setRes(null);setBusy(true);stopRef.current=false;setProg({stage:'reading',done:0,total:1,message:'Starting...'});
+    try{
+      const out=await runCatalogIngest({file,vendor,title,edition:edition.trim(),hasPrices:prices,addSop,onProgress:setProg,isCancelled:()=>stopRef.current});
+      setRes(out);notify('Catalogue loaded for '+vendor.name);
+    }catch(e){setErr(String((e&&e.message)||e))}
+    setBusy(false);
+  };
+  const row={display:"flex",flexDirection:"column",gap:4,marginBottom:12};
+  const lab={fontSize:11,color:"#737373",fontWeight:600,textTransform:"uppercase",letterSpacing:0.5};
+  return <div onClick={()=>{if(!busy)onClose()}} style={{position:"fixed",inset:0,zIndex:1200,background:"rgba(0,0,0,0.78)",display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+    <div onClick={e=>e.stopPropagation()} style={{width:"min(580px,94vw)",maxHeight:"92vh",overflowY:"auto",background:"#111111",border:"1px solid rgba(167,139,250,0.25)",borderRadius:14,padding:22}}>
+      <div style={{fontSize:16,fontWeight:700,color:"#f0f0f0"}}>Upload catalogue &gt;&gt; {vendor.name}</div>
+      <div style={{fontSize:12,color:"#9a9a9a",marginTop:4,marginBottom:14}}>Any vendor PDF works, 150 MB and larger too. It is read right here in your browser: every page, model code and price is pulled out so the Brain can answer from it, and the original PDF is kept (in pieces when it is large).</div>
+      {existing.length>0&&<div style={{fontSize:12,color:"#c4c4c4",marginBottom:12,padding:"8px 10px",background:"#0a0a0a",borderRadius:8,border:"1px solid rgba(255,255,255,0.06)"}}>Already loaded: {existing.map(r=>r.title+" (edition "+r.edition+")").join("; ")}. Same title and edition replaces that upload. A newer edition is added and becomes the one in use.</div>}
+      {!res&&<div>
+        <div style={row}><span style={lab}>PDF file</span>
+          <input ref={pickRef} type="file" accept=".pdf,application/pdf" onChange={e=>{pick(e.target.files&&e.target.files[0]);e.target.value=""}} style={{display:"none"}}/>
+          <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}><Btn v="secondary" onClick={()=>{if(!busy&&pickRef.current)pickRef.current.click()}}>{file?"Choose a different PDF":"Choose PDF"}</Btn>{file&&<span style={{fontSize:12,color:"#c4c4c4",wordBreak:"break-all"}}>{file.name} <span style={{fontFamily:mono,color:"#737373"}}>{(file.size/1048576).toFixed(1)} MB</span></span>}</div>
+        </div>
+        <div style={row}><span style={lab}>Catalogue title</span><input value={title} onChange={e=>{setTitle(e.target.value);setTitleTouched(true)}} placeholder="2026 Full Line Catalog" style={inputStyle}/></div>
+        <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+          <div style={{...row,flex:"1 1 160px"}}><span style={lab}>Edition date</span><input value={edition} onChange={e=>setEdition(e.target.value)} placeholder="2026-07-31" style={{...inputStyle,fontFamily:mono}}/></div>
+          <div style={{...row,flex:"1 1 200px"}}><span style={lab}>Prices in this PDF</span><select value={prices} onChange={e=>setPrices(e.target.value)} style={inputStyle}><option value="auto">Detect automatically</option><option value="yes">Yes, it has prices</option><option value="no">No, no prices</option></select></div>
+        </div>
+      </div>}
+      {busy&&prog&&<div style={{margin:"6px 0 14px"}}>
+        <div style={{height:8,borderRadius:6,background:"#1a1a1a",overflow:"hidden"}}><div style={{height:"100%",width:pct+"%",background:"linear-gradient(90deg,#2dd4bf,#a78bfa)",transition:"width 0.3s"}}/></div>
+        <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:"#c4c4c4",marginTop:6}}><span>{prog.message}</span><span style={{fontFamily:mono,color:"#737373"}}>{pct}%</span></div>
+        <div style={{fontSize:11,color:"#737373",marginTop:4}}>Keep this window open until it finishes. A very large PDF can take a few minutes.</div>
+      </div>}
+      {err&&<div style={{fontSize:13,color:"#f87171",margin:"8px 0 12px"}}>{err}</div>}
+      {res&&<div style={{marginBottom:14}}>
+        <div style={{fontSize:14,fontWeight:700,color:"#34d399",marginBottom:8}}>Loaded: {res.rec.title}</div>
+        <div style={{fontSize:13,color:"#c4c4c4",lineHeight:1.7}}>
+          <div><span style={{fontFamily:mono}}>{res.stats.pages}</span> pages, <span style={{fontFamily:mono}}>{res.stats.rows}</span> model rows (<span style={{fontFamily:mono}}>{res.stats.codes}</span> distinct codes), <span style={{fontFamily:mono}}>{res.stats.sections}</span> sections</div>
+          <div>{res.rec.hasPrices?"Prices found ("+res.stats.priceFigures+" dollar figures read). They show on the rows and pages as printed.":"No prices found in this PDF."}</div>
+          <div><span style={{fontFamily:mono}}>{res.stats.images}</span> page pictures saved{res.stats.pdfPieces>1?"; the PDF is kept in "+res.stats.pdfPieces+" pieces":res.stats.pdfPieces===1?"; the PDF is kept":""}.</div>
+        </div>
+        {res.warnings.map((w,i)=><div key={i} style={{fontSize:12,color:"#fbbf24",marginTop:6}}>{w}</div>)}
+        <div style={{fontSize:12,color:"#9a9a9a",marginTop:10}}>The Brain can read it now: ask about any model, series, option or page.</div>
+      </div>}
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
+        {!res&&!busy&&<Btn v="secondary" onClick={onClose}>Cancel</Btn>}
+        {busy&&<Btn v="secondary" onClick={()=>{stopRef.current=true}}>Stop</Btn>}
+        {!res&&<Btn onClick={go} style={{opacity:busy||!file?0.5:1}}>{busy?"Working...":"Upload"}</Btn>}
+        {res&&setPage&&<Btn v="secondary" onClick={()=>{window._viewVendorId=vendor.id;setPage("vendor360");onClose()}}>Open vendor page</Btn>}
+        {res&&setPage&&<Btn v="secondary" onClick={()=>{setPage("brain");onClose()}}>Ask the Brain</Btn>}
+        {res&&<Btn onClick={onClose}>Done</Btn>}
+      </div>
+    </div>
+  </div>;
+}
+
+function VendorCatalogPanel({vendor,customSops,setPage,addSop,notify}){
   const rec=catalogsForVendor(customSops,vendor.id).slice().sort((a,b)=>String(b.edition||'').localeCompare(String(a.edition||'')))[0]||null;
   const url=rec?rec.url:'';
   const [st,setSt]=useState({status:'loading',cat:null,err:''});
@@ -660,6 +744,7 @@ function VendorCatalogPanel({vendor,customSops,setPage}){
   const [q,setQ]=useState('');
   const [sec,setSec]=useState('');
   const [pageN,setPageN]=useState(0);
+  const [showUp,setShowUp]=useState(false);
   useEffect(()=>{
     if(!rec)return;
     let alive=true;
@@ -667,7 +752,13 @@ function VendorCatalogPanel({vendor,customSops,setPage}){
     vcLoad(rec,{fetchImpl:(u)=>fetch(u)}).then(cat=>{if(alive)setSt({status:'ready',cat,err:''})}).catch(e=>{if(alive)setSt({status:'error',cat:null,err:String((e&&e.message)||e)})});
     return ()=>{alive=false};
   },[url,tries]);
-  if(!rec)return null;
+  const upDialog=showUp&&addSop?<CatalogUploadDialog vendor={vendor} customSops={customSops} addSop={addSop} notify={notify||(()=>{})} setPage={setPage} onClose={()=>setShowUp(false)}/>:null;
+  if(!rec)return addSop?<Card style={{marginBottom:28,border:"1px solid rgba(167,139,250,0.18)"}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
+      <div><div style={{fontSize:15,fontWeight:700,color:"#a78bfa"}}>Vendor Catalogue</div><div style={{fontSize:12,color:"#9a9a9a",marginTop:4}}>No catalogue loaded for this vendor yet. Upload the PDF and the Brain can read every page, model and price in it.</div></div>
+      <Btn onClick={()=>setShowUp(true)}>Upload catalogue</Btn>
+    </div>{upDialog}
+  </Card>:null;
   const cat=st.cat;
   const mono="'JetBrains Mono',monospace";
   const co=(cat&&cat.company)||{};
@@ -685,10 +776,12 @@ function VendorCatalogPanel({vendor,customSops,setPage}){
         <div style={{fontSize:12,color:"#9a9a9a",marginTop:2,fontFamily:mono}}>edition {rec.edition} | {rec.pageCount} pages | {rec.productCount} model rows | {rec.hasPrices?"prices included":"no prices in this edition"}</div>
       </div>
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-        {rec.pdfUrl&&<Btn v="secondary" onClick={()=>window.open(rec.pdfUrl,"_blank","noopener")}>Open PDF</Btn>}
+        {vcPdfLinks(rec).map(l=><Btn key={l.url} v="secondary" onClick={()=>window.open(l.url,"_blank","noopener")}>{l.label}</Btn>)}
+        {addSop&&<Btn v="secondary" onClick={()=>setShowUp(true)}>Upload catalogue</Btn>}
         {setPage&&<Btn v="secondary" onClick={()=>setPage("brain")}>Ask the Brain</Btn>}
       </div>
     </div>
+    {upDialog}
     {st.status==="loading"&&<div style={{fontSize:13,color:"#9a9a9a"}}>Loading the catalogue...</div>}
     {st.status==="error"&&<div style={{fontSize:13,color:"#f87171"}}>Could not open the catalogue file ({st.err}). <span style={link} onClick={()=>setTries(tries+1)}>Try again</span></div>}
     {cat&&<div>
@@ -735,11 +828,14 @@ function VendorCatalogPanel({vendor,customSops,setPage}){
           <div style={{display:"flex",gap:8}}>
             {pg.n>1&&<Btn v="secondary" onClick={()=>setPageN(pg.n-1)}>Previous</Btn>}
             {pg.n<cat.pageCount&&<Btn v="secondary" onClick={()=>setPageN(pg.n+1)}>Next</Btn>}
-            {rec.pdfUrl&&<Btn v="secondary" onClick={()=>window.open(rec.pdfUrl+"#page="+pg.n,"_blank","noopener")}>This page in the PDF</Btn>}
+            {vcPdfPage(rec,pg.n)&&<Btn v="secondary" onClick={()=>window.open(vcPdfPage(rec,pg.n),"_blank","noopener")}>This page in the PDF</Btn>}
             <Btn v="secondary" onClick={()=>setPageN(0)}>Close</Btn>
           </div>
         </div>
-        <pre style={{margin:0,whiteSpace:"pre-wrap",wordBreak:"break-word",fontFamily:mono,fontSize:11,lineHeight:1.5,color:"#c4c4c4",maxHeight:460,overflow:"auto"}}>{pg.text}</pre>
+        <div style={{display:"flex",gap:14,flexWrap:"wrap",alignItems:"flex-start"}}>
+          {vcImg(rec,pg.n)&&<a href={vcImg(rec,pg.n)} target="_blank" rel="noopener noreferrer" style={{flex:"1 1 340px",maxWidth:560,borderRadius:8,overflow:"hidden",border:"1px solid rgba(255,255,255,0.08)",background:"#fff"}}><img src={vcImg(rec,pg.n)} alt={"Page "+pg.n} loading="lazy" style={{display:"block",width:"100%",height:"auto"}}/></a>}
+          <pre style={{flex:"1 1 320px",margin:0,whiteSpace:"pre-wrap",wordBreak:"break-word",fontFamily:mono,fontSize:11,lineHeight:1.5,color:"#c4c4c4",maxHeight:640,overflow:"auto"}}>{pg.text}</pre>
+        </div>
       </div>}
       <div style={{fontSize:11,color:"#525252",marginTop:10}}>Read from the vendor's own catalogue. These are the vendor's specs, not our quotes or costs. Page numbers are PDF pages.</div>
     </div>}
@@ -1449,6 +1545,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
   // this PDF to the bill' previously failed. Reported by Maureen Jul 17 2026.
   const brainLastFileRef = useRef(null);
   const brainFileRef = React.useRef(null);
+  const brainCatalogFileRef = React.useRef(null);
   const [brainEmailSending, setBrainEmailSending] = useState(false);
   // Consume pending file from Files page (Read with Brain)
   useEffect(()=>{
@@ -1625,9 +1722,9 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
   const _qbFiles=()=>(customSops||[]).filter(x=>x&&x.cat==='File').map(x=>{try{const d=JSON.parse(x.content);return d&&typeof d==='object'&&!Array.isArray(d)?{id:x.id,...d}:null}catch{return null}}).filter(Boolean);
   const _qbIndex=()=>buildFileIndex(_qbFiles(),{importXlsx:()=>import('xlsx'),fetchImpl:(u)=>fetch(u)});
   // Vendor catalogues (Vendor page and Brain): the file each VendorCatalog row points at. A priced catalogue is kept from the sales role.
-  const _vcRecs=()=>catalogRecords(customSops).filter(r=>!(r.hasPrices&&_bkRole==='sales'));
+  const _vcRecs=()=>catalogRecords(customSops);
   const _vcPick=async(vendor)=>{const recs=_vcRecs();if(!recs.length)return {error:'No vendor catalogues are loaded yet.'};const q=String(vendor==null?'':vendor).trim().toLowerCase();let m=recs;if(q){m=recs.filter(r=>String(r.vendorId||'').toLowerCase()===q||String(r.vendorName||'').toLowerCase().includes(q)||String(r.title||'').toLowerCase().includes(q));if(!m.length)return {error:'No catalogue matches "'+vendor+'". Loaded: '+recs.map(r=>r.vendorName).join(', ')+'.'}}if(m.length>1&&m.every(r=>r.vendorId===m[0].vendorId))m=m.slice().sort((a,b)=>String(b.edition||'').localeCompare(String(a.edition||'')));else if(m.length>1)return {error:'More than one catalogue is loaded. Say which vendor: '+m.map(r=>r.vendorName).join(', ')+'.'};try{return {rec:m[0],cat:await vcLoad(m[0],{fetchImpl:(u)=>fetch(u)})}}catch(e){return {error:'Could not open the '+m[0].vendorName+' catalogue file ('+((e&&e.message)||'error')+'). Try again in a moment.'}}};
-  const _vcSrc=(rec)=>'\n\nSource: '+rec.vendorName+' >> '+rec.title+' (edition '+rec.edition+'). Page numbers are PDF pages.'+(rec.pdfUrl?' [Open the PDF]('+rec.pdfUrl+')':'');
+  const _vcSrc=(rec)=>'\n\nSource: '+rec.vendorName+' >> '+rec.title+' (edition '+rec.edition+'). Page numbers are PDF pages.'+vcPdfLinks(rec).map(l=>' ['+l.label+']('+l.url+')').join('');
   const _bkIso=(d)=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
   const _bkIsDate=(v)=>{const x=String(v==null?'':v);if(!/^\d{4}-\d{2}-\d{2}$/.test(x))return false;const d=parseLocalDate(x);return !!d&&_bkIso(d)===x};
   const _bkMoney=(n)=>{const v=Number(n);return isFinite(v)?Math.round(v*100)/100:0};
@@ -1857,7 +1954,8 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     {name:"list_vendor_catalogs",description:"List the vendor catalogues that are loaded, or show the contents of one: its sections with page ranges and model-row counts, edition, whether it has prices, and the company details. With topic set, returns the catalogue's own company, ordering, warranty, materials and green-initiative pages instead. Use first for 'what do we have for WB', 'what does the WB catalogue cover', 'what is WB's warranty', 'how do I place an order with WB'.",input_schema:{type:"object",properties:{vendor:{type:"string",description:"Vendor name, for example 'WB Mfg'. Optional when only one catalogue is loaded."},topic:{type:"string",description:"Optional. Any text (for example 'company' or 'warranty') returns the catalogue's company, ordering, warranty and policy pages."}},required:[]}},
     {name:"search_vendor_catalog",description:"Search a vendor's catalogue for model codes and words. Returns the matching model rows (model code, PDF page, section, the row as printed: size, weight, description) and the pages that mention the words. Use for 'find ELS7601', 'which WB locker benches do they make', 'what 48 x 72 tables are there', 'WB student desks', 'show every model in the Bookcases section'. A section name with no query lists that section's models. The catalogue has no prices unless list_vendor_catalogs says so.",input_schema:{type:"object",properties:{query:{type:"string",description:"A model code or words. Part of a model code works."},vendor:{type:"string",description:"Vendor name. Optional when only one catalogue is loaded."},section:{type:"string",description:"Optional section or group to search inside, e.g. 'Seating', 'Lockers and Cubbies'"},limit:{type:"number",description:"Rows to return, up to 60 (default 25)"}},required:[]}},
     {name:"get_catalog_product",description:"Look up one model code in a vendor's catalogue: every row it appears in, with page, section, size and weight columns as printed. Use after search_vendor_catalog or when the user gives an exact model code such as EONP401-EJA. Then use read_catalog_page for the options, colors and specs on its page.",input_schema:{type:"object",properties:{code:{type:"string",description:"The model code, e.g. EONP401-EJA"},vendor:{type:"string",description:"Vendor name. Optional when only one catalogue is loaded."}},required:["code"]}},
-    {name:"read_catalog_page",description:"Read the full text of one page of a vendor's catalogue (use the PDF page number the other catalogue tools give). Use to answer questions about the options, configurations, materials, colors, how to build a model number, ordering rules or warranty on a page.",input_schema:{type:"object",properties:{page:{type:"number",description:"PDF page number"},vendor:{type:"string",description:"Vendor name. Optional when only one catalogue is loaded."}},required:["page"]}},
+    {name:"read_catalog_page",description:"Show a whole page of a vendor's catalogue to the user: the page picture, every model row on it with sizes, weights and prices when printed, and every line of text on the page. Use the PDF page number the other catalogue tools give. Use this for any question about a product, series, options, colors, materials, how to build a model number, ordering rules or warranty, then explain what is on the page in your own words without repeating the whole page. Set to for a run of pages (up to 4). Set see to true only when the user asks what the page looks like or when you need the picture itself (layout, colors, diagrams): it lets you look at the page image.",input_schema:{type:"object",properties:{page:{type:"number",description:"PDF page number"},to:{type:"number",description:"Optional last page of a run, up to 3 pages after the first"},see:{type:"boolean",description:"True to look at the page picture yourself (costs more; use only when the picture matters)"},vendor:{type:"string",description:"Vendor name. Optional when only one catalogue is loaded."}},required:["page"]}},
+    {name:"ingest_vendor_catalog",description:"Load the PDF the user attached in this chat as a vendor's catalogue (any size, 150 MB and more is fine). It reads every page, model code and price, saves a picture of each page, keeps the PDF, and links all of it to the vendor so list_vendor_catalogs, search_vendor_catalog and read_catalog_page work on it. Use when the user attaches a catalogue or price list PDF and says it belongs to a vendor ('load this as WB's catalogue'). Needs the vendor to exist in the Directory. If no PDF is attached it says so. Takes a while for a big PDF.",input_schema:{type:"object",properties:{vendor:{type:"string",description:"Vendor name from the Directory, for example 'WB Mfg'"},title:{type:"string",description:"Optional catalogue title, for example '2026 Full Line Catalog'. Defaults to the file name."},edition:{type:"string",description:"Optional edition date as YYYY-MM-DD. Defaults to today."},has_prices:{type:"string",enum:["auto","yes","no"],description:"Whether the PDF has prices. Default auto (detected)."}},required:["vendor"]}},
     // Vendor Bills: queries
     {name:"list_vendor_bills",description:"List vendor bills with rich filters. Returns a markdown table. Use when the user says 'show me unpaid bills', 'what bills are due this week', 'list all bills from Marco Group', 'overdue bills', 'show me bills for the Sandburg job', 'show deleted bills'. Bills include both PO-derived bills (auto-generated from purchase orders) and standalone bills (created ad-hoc). Default behavior with no filters returns the 25 most-due-soon unpaid bills.",input_schema:{type:"object",properties:{vendor_name:{type:"string",description:"Filter by vendor name (partial match, case-insensitive)"},job_id:{type:"string",description:"Filter by job ID or name keywords"},status:{type:"string",description:"unpaid | paid | overdue | check_sent | void | deleted | all (default: unpaid)"},due_within_days:{type:"number",description:"Only show bills due within N days from today"},date_from:{type:"string",description:"Bill date from (YYYY-MM-DD)"},date_to:{type:"string",description:"Bill date to (YYYY-MM-DD)"},has_file:{type:"boolean",description:"true to show only bills with attached invoice files, false to show only bills without"},amount_min:{type:"number",description:"Minimum bill amount"},amount_max:{type:"number",description:"Maximum bill amount"},limit:{type:"number",description:"Max rows to return (default 25)"}}}},
     {name:"get_vendor_bill",description:"Get the full record of a vendor bill by its docNum (e.g. BILL-1234-VENDR or a standalone SB-/VC- id). Returns bill details, line items if PO-derived, payment history, and attached file info. Use when user says 'show me bill BILL-6100-SUKI', 'pull up the Doane Keyes bill on G103', 'get the full record for the Marco credit'.",input_schema:{type:"object",properties:{bill_doc_num:{type:"string",description:"The billDocNum (e.g. BILL-1234-VENDR) or standalone SOP id (e.g. SB-xxxxxx, VC-xxxxxx)"}},required:["bill_doc_num"]}},
@@ -3273,7 +3371,10 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         let msg = '**'+r.total+' model row'+(r.total===1?'':'s')+'** ('+r.codes+' distinct model code'+(r.codes===1?'':'s')+') in the '+p.rec.vendorName+' catalogue';
         if (r.rows.length) msg += '\n\n'+vcRows(r.rows, p.rec)+(r.total>r.rows.length?'\n_(showing '+r.rows.length+' of '+r.total+'; narrow with more words or a section)_':'');
         if (r.pages.length) msg += '\n\n**Pages that mention it ('+r.pageTotal+')**\n'+r.pages.map(x => '- '+vcPageRef(p.rec, x.n)+' >> '+x.title+' ('+x.section+'): '+x.snippet).join('\n');
-        return {success: true, message: msg + _vcSrc(p.rec)};
+        const _pgs = [...new Set(r.rows.map(x => x.page))];
+        const _top = _pgs.length === 1 ? _pgs[0] : (!r.rows.length && r.pages.length ? r.pages[0].n : 0);
+        if (_top) msg += '\n\n'+vcPageCard(p.cat, p.rec, _top);
+        return {success: true, message: msg + _vcSrc(p.rec), modelNote: _top ? 'The page card above is already on the user\'s screen. Explain what matters for their question; do not repeat it and do not just point at the page number.' : (r.rows.length || r.pages.length ? 'These results are only pointers. Call read_catalog_page on the best page or pages so the user sees the actual details; never answer with just a page number.' : '')};
       }
       if (toolName === 'get_catalog_product') {
         const code = String(input.code == null ? '' : input.code).trim();
@@ -3285,17 +3386,42 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         let msg = (g.exact ? '**'+g.rows[0].code+'** is in '+g.rows.length+' row'+(g.rows.length===1?'':'s') : 'No exact match for "'+code+'". '+g.rows.length+' row'+(g.rows.length===1?'':'s')+' start with it')+' in the '+p.rec.vendorName+' catalogue\n\n'+vcRows(g.rows.slice(0, 40), p.rec);
         const hs = [...new Set(g.rows.map(x => x.header).filter(Boolean))].slice(0, 6);
         if (hs.length) msg += '\n\nColumn headings printed above those rows:\n'+hs.map(h => '- '+h).join('\n');
-        msg += '\n\nUse read_catalog_page for the options, colors and specs on the page.';
-        return {success: true, message: msg + _vcSrc(p.rec)};
+        const _gp = [...new Set(g.rows.map(x => x.page))];
+        if (_gp.length === 1) msg += '\n\n'+vcPageCard(p.cat, p.rec, _gp[0]);
+        return {success: true, message: msg + _vcSrc(p.rec), modelNote: _gp.length === 1 ? 'The page card above is already on the user\'s screen. Explain what matters for their question; do not repeat it and do not just point at the page number.' : 'This model is on several pages. Call read_catalog_page for the page that fits the question so the user sees the actual details; never answer with just a page number.'};
       }
       if (toolName === 'read_catalog_page') {
         const n = Number(input.page);
         if (!Number.isInteger(n) || n < 1) return {error: 'Give the PDF page number, for example 12.'};
         const p = await _vcPick(input.vendor);
         if (p.error) return {error: p.error};
-        const pg = vcPage(p.cat, n);
-        if (!pg) return {error: 'The '+p.rec.vendorName+' catalogue has pages 1 to '+p.cat.pageCount+'.'};
-        return {success: true, message: '### '+p.rec.vendorName+' catalogue, page '+pg.n+(pg.pn?' (printed page '+pg.pn+')':'')+': '+pg.title+'\nSection: '+pg.group+' >> '+pg.section+'\n\n'+pg.text+(pg.trunc?'\n[The page text was cut here.]':'') + _vcSrc(p.rec)};
+        if (!vcPage(p.cat, n)) return {error: 'The '+p.rec.vendorName+' catalogue has pages 1 to '+p.cat.pageCount+'.'};
+        let last = Number(input.to); if (!Number.isInteger(last) || last < n) last = n; last = Math.min(last, n + 3, p.cat.pageCount);
+        const nums = []; for (let k = n; k <= last; k++) nums.push(k);
+        const cards = nums.map(k => vcPageCard(p.cat, p.rec, k));
+        const imgs = input.see ? nums.map(k => vcImg(p.rec, k)).filter(Boolean).slice(0, 2) : [];
+        const r = {success: true, message: cards.join('\n\n---\n\n') + _vcSrc(p.rec), modelNote: 'The page card above is already on the user\'s screen. Add a short plain explanation of what matters for their question (the models, sizes, weights, options, colors and any prices that apply). Do not repeat the card and do not just point at the page number.'};
+        if (imgs.length) r.images = imgs;
+        return r;
+      }
+      if (toolName === 'ingest_vendor_catalog') {
+        if (_bkRole === 'sales') return {error: 'Only the office can load vendor catalogues.'};
+        const f = brainCatalogFileRef.current;
+        if (!f) return {error: 'No catalogue PDF is attached. Attach it with the paperclip in this chat (PDFs of 150 MB and more are fine), then ask me again.'};
+        const q = String(input.vendor == null ? '' : input.vendor).trim().toLowerCase();
+        const exact = (vendors || []).filter(v => q && (String(v.id).toLowerCase() === q || String(v.name || '').toLowerCase() === q));
+        const hits = exact.length ? exact : (vendors || []).filter(v => q && String(v.name || '').toLowerCase().includes(q));
+        if (!hits.length) return {error: 'No vendor named "'+String(input.vendor||'').trim()+'" in the Directory. Add the vendor in the Directory first, or check the spelling.'};
+        if (hits.length > 1) return {error: 'More than one vendor matches: '+hits.map(v => v.name).join(', ')+'. Say which one.'};
+        let lastNote = '';
+        try {
+          const out = await runCatalogIngest({file: f, vendor: hits[0], title: input.title, edition: input.edition, hasPrices: input.has_prices === 'yes' || input.has_prices === 'no' ? input.has_prices : 'auto', addSop: _rawAddSop, onProgress: (p) => { const k = p.stage + (p.stage === 'pages' ? Math.floor(p.done / 25) : ''); if (k !== lastNote) { lastNote = k; notify('Catalogue: ' + p.message); } }});
+          brainCatalogFileRef.current = null;
+          const st = out.stats;
+          return {success: true, message: '**Loaded "'+out.rec.title+'" as the '+hits[0].name+' catalogue**\n'+st.pages+' pages, '+st.rows+' model rows ('+st.codes+' distinct model codes), '+st.sections+' sections. '+(out.rec.hasPrices ? 'Prices were found ('+st.priceFigures+' dollar figures) and show on the rows and pages as printed.' : 'No prices were found in this PDF.')+' '+st.images+' page pictures saved; the PDF is kept'+(st.pdfPieces > 1 ? ' in '+st.pdfPieces+' pieces' : '')+'.'+(out.warnings.length ? '\n\n'+out.warnings.map(w => '- '+w).join('\n') : '')+'\n\nYou can ask about any model, series, option or page in it now.'};
+        } catch (e) {
+          return {error: 'Could not load the catalogue: '+String((e && e.message) || e)};
+        }
       }
       // ----------- FILES TAB: QuickBooks exports -----------
       if (toolName === 'list_files') {
@@ -4596,7 +4722,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
   // The assistant turn as the API needs it back: thinking (with its signature), text and
   // tool_use blocks. Web search blocks are left out (they only pair with each other).
   const _brainPassBack=(content)=>(Array.isArray(content)?content:[]).map(b=>{if(!b||typeof b!=='object')return null;if(b.type==='thinking')return b.signature?{type:'thinking',thinking:String(b.thinking||''),signature:String(b.signature)}:null;if(b.type==='redacted_thinking')return b.data?{type:'redacted_thinking',data:b.data}:null;if(b.type==='text')return String(b.text||'').trim()?{type:'text',text:String(b.text)}:null;if(b.type==='tool_use')return {type:'tool_use',id:b.id,name:b.name,input:b.input&&typeof b.input==='object'&&!Array.isArray(b.input)?b.input:{}};return null}).filter(Boolean);
-  const _brainToolResult=(id,r)=>{const ok=!!(r&&r.success);let t=ok?String(r.message==null?'Done.':r.message):String((r&&r.error)||'Failed.');if(!t.trim())t=ok?'Done.':'Failed.';if(t.length>24000)t=t.slice(0,24000)+'\n[The rest was cut to fit. Narrow the lookup to see more.]';const o={type:'tool_result',tool_use_id:id,content:t};if(!ok)o.is_error=true;return o};
+  const _brainToolResult=(id,r)=>{const ok=!!(r&&r.success);let t=ok?String(r.message==null?'Done.':r.message):String((r&&r.error)||'Failed.');if(!t.trim())t=ok?'Done.':'Failed.';if(t.length>24000)t=t.slice(0,24000)+'\n[The rest was cut to fit. Narrow the lookup to see more.]';if(ok&&r&&r.modelNote)t+='\n\n[Note for you, not shown to the user: '+String(r.modelNote)+']';const o={type:'tool_result',tool_use_id:id,content:t};if(ok&&r&&Array.isArray(r.images)&&r.images.length)o.content=[{type:'text',text:t},...r.images.slice(0,2).map(u=>({type:'image',source:{type:'url',url:u}}))];if(!ok)o.is_error=true;return o};
   const runBrainAgent=async(convo0,ctx,step0)=>{
     let convo=convo0;
     for(let step=step0;;step++){
@@ -4906,7 +5032,12 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
       const ctx = buildContext(q);
       // Build message content - include attached file if present
       let userContent = q;
-      if (brainFile) {
+      if (brainFile && /\.pdf$/i.test(brainFile.name)) brainCatalogFileRef.current = brainFile;
+      if (brainFile && /\.pdf$/i.test(brainFile.name) && brainFile.size > 25 * 1024 * 1024) {
+        // a catalogue-sized PDF is never sent to the model; it is held for ingest_vendor_catalog
+        userContent = [{type:'text', text:'[Attached: '+brainFile.name+' ('+(brainFile.size/1048576).toFixed(0)+' MB PDF). It is too big to read page by page here. It is held ready for ingest_vendor_catalog, which loads a PDF as a vendor catalogue.]\n\n'+(q || 'Load this PDF as a vendor catalogue. If I did not say which vendor, ask me.')}];
+        setBrainFileContext(null); setBrainFile(null); setBrainFilePreview(null);
+      } else if (brainFile) {
         try {
           const fileBlocks = await processFileForBrain(brainFile);
           userContent = [...fileBlocks, {type:'text', text:(q || 'A file has been attached. Analyze it thoroughly: identify what type of document this is (quote, invoice, customer list, vendor list, price sheet, etc), extract ALL data including line items/rows/entries, and then tell me what you found and what actions you can take with it (create a job, import customers, import vendors, compare prices, etc). Be specific about the data you extracted.') + '\n\n[SYSTEM: The file content is embedded above. Read it directly. Do NOT call parse_uploaded_file. The data is already here in this message.]'}];
@@ -5013,8 +5144,10 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         }
         const line=lines[i];
         const bold=line.replace(/\*\*([^*]+)\*\*/g,"<strong>$1</strong>").replace(/`([^`]+)`/g,'<code style="background:#1a1a1a;padding:1px 5px;borderRadius:4;fontSize:11;fontFamily:JetBrains Mono,monospace;color:#2dd4bf">$1</code>').replace(/\[([^\]<>]+)\]\((https:\/\/[^)\s"'<>]+)\)/g,'<a href="$2" target="_blank" rel="noopener noreferrer" style="color:#2dd4bf;text-decoration:underline">$1</a>');
+        const _im=/^!\[([^\]<>]*)\]\((https:\/\/kogjthgceejpzxnekprr\.supabase\.co\/storage\/v1\/object\/public\/[^)\s"'<>]+)\)\s*$/.exec(line);
         // Headings
-        if(line.startsWith("### "))result.push(<div key={i} style={{fontSize:14,fontWeight:700,color:"#e5e5e5",margin:"12px 0 4px",borderBottom:"1px solid #1a1a1a",paddingBottom:4}} dangerouslySetInnerHTML={{__html:bold.slice(4)}}/>);
+        if(_im)result.push(<a key={i} href={_im[2]} target="_blank" rel="noopener noreferrer" style={{display:"block",margin:"8px 0",maxWidth:560,borderRadius:10,overflow:"hidden",border:"1px solid rgba(255,255,255,0.08)",background:"#fff"}}><img src={_im[2]} alt={_im[1]} loading="lazy" style={{display:"block",width:"100%",height:"auto"}}/></a>);
+        else if(line.startsWith("### "))result.push(<div key={i} style={{fontSize:14,fontWeight:700,color:"#e5e5e5",margin:"12px 0 4px",borderBottom:"1px solid #1a1a1a",paddingBottom:4}} dangerouslySetInnerHTML={{__html:bold.slice(4)}}/>);
         else if(line.startsWith("## "))result.push(<div key={i} style={{fontSize:15,fontWeight:800,color:"#f0f0f0",margin:"14px 0 6px",borderBottom:"1px solid #222",paddingBottom:6}} dangerouslySetInnerHTML={{__html:bold.slice(3)}}/>);
         // Suggested follow-ups
         else if(line.startsWith(">> "))result.push(<div key={i} onClick={()=>{setBrainQuery(line.slice(3));setTimeout(handleQuery,50)}} style={{padding:"6px 12px",margin:"3px 0",borderRadius:8,border:"1px solid rgba(45,212,191,0.12)",background:"rgba(45,212,191,0.03)",color:"#2dd4bf",fontSize:12,cursor:"pointer",transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.background="rgba(45,212,191,0.08)"}} onMouseLeave={e=>{e.currentTarget.style.background="rgba(45,212,191,0.03)"}}>{line.slice(3)}</div>);
@@ -5134,7 +5267,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         const f=e.target.files?.[0];
         if(f){
           const MAX=30*1024*1024;
-          if(f.size>MAX){notify('File too large: '+(f.size/1024/1024).toFixed(1)+'MB. Max 30MB.','error');e.target.value='';return}
+          if(f.size>MAX&&!/\.pdf$/i.test(f.name)){notify('File too large: '+(f.size/1024/1024).toFixed(1)+'MB. Max 30MB.','error');e.target.value='';return}
           if(f.size===0){notify('File appears to be empty','error');e.target.value='';return}
           setBrainFile(f);setBrainFilePreview(f.name);notify("File attached: "+f.name);
         }
@@ -6254,7 +6387,7 @@ function UserMgmtPage({notify,reps,customSops,addSop,deleteSop}){
 }
 
 
-function DirectoryPage({vendors,customers,reps,updateVendor,addVendor,deleteVendor,forceDeleteVendor,forceDeleteCustomer,forceDeleteRep,updateCustomer,addCustomer,deleteCustomer,updateRep,addRep,deleteRep,notify,jobs,lineItems,getJobFinancials,getJobItems,setPage,confirm}){
+function DirectoryPage({customSops,addSop,vendors,customers,reps,updateVendor,addVendor,deleteVendor,forceDeleteVendor,forceDeleteCustomer,forceDeleteRep,updateCustomer,addCustomer,deleteCustomer,updateRep,addRep,deleteRep,notify,jobs,lineItems,getJobFinancials,getJobItems,setPage,confirm}){
   
   // Custom checkbox component
 
@@ -6271,6 +6404,7 @@ const [tab,setTab]=useState("vendors");
   const [bulkAction,setBulkAction]=useState(null);
   const [custDetail,setCustDetail]=useState(null);
   const [vendorDetail,setVendorDetail]=useState(null);
+  const [catUp,setCatUp]=useState(null);
 
 
   const startEdit=(item)=>{if(editId===item.id){setEditId(null);setForm({});return}setEditId(item.id);setForm({...item,roles:Array.isArray(item.roles)&&item.roles.length>0?item.roles:getRoles(item)});setAdding(false);setSelected(new Set())};
@@ -6701,6 +6835,7 @@ const [tab,setTab]=useState("vendors");
 
 
     {/* Vendor analytics panel */}
+    {catUp&&<CatalogUploadDialog vendor={catUp} customSops={customSops} addSop={addSop} notify={notify} setPage={setPage} onClose={()=>setCatUp(null)}/>}
     {vendorDetail&&tab==="vendors"&&<VendorAnalytics vend={vendorDetail}/>}
 
 
@@ -6733,7 +6868,7 @@ const [tab,setTab]=useState("vendors");
       return <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}><thead><tr>{headers.map((h,i)=><th key={i} style={{padding:"10px 8px",textAlign:"left",fontSize:11,fontWeight:600,color:"#737373",borderBottom:"1px solid #222",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead><tbody>
         {filteredList.map(r=><React.Fragment key={r.id}>
           <tr style={{transition:"background 0.15s",background:editId===r.id?"#0a0a0a":"transparent"}} onMouseEnter={e=>{if(editId!==r.id)e.currentTarget.style.background="#0a0a0a"}} onMouseLeave={e=>{if(editId!==r.id)e.currentTarget.style.background="transparent"}}>
-            {tab==="vendors"&&<><td style={{padding:"10px 8px",borderBottom:"1px solid #111"}}><Check checked={selected.has(r.id)} onChange={()=>toggleSelect(r.id)}/></td><td style={{padding:"10px 8px",borderBottom:"1px solid #111"}}><span onClick={e=>{e.stopPropagation();setVendorDetail(vendorDetail?.id===r.id?null:r)}} style={{fontWeight:600,color:"#2dd4bf",cursor:"pointer"}}>{r.name}</span></td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}}>{r.contact}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#2dd4bf"}}>{r.email}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}}>{r.phone}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}}>{r.category}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",fontSize:11,color:"#737373",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis"}}>{r.address||"--"}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",fontFamily:"'JetBrains Mono',monospace",color:"#34d399",fontWeight:600}}>{r.discountRate?((r.discountType==="reciprocal"&&r.reciprocalTiers)?r.reciprocalTiers:((r.discountRate*100).toFixed(0)+"%")):"--"}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111"}}><Btn v="ghost" style={{fontSize:12,padding:"3px 8px"}} onClick={e=>{e.stopPropagation();startEdit(r)}}>{editId===r.id?"Close":"Edit"}</Btn></td></>}
+            {tab==="vendors"&&<><td style={{padding:"10px 8px",borderBottom:"1px solid #111"}}><Check checked={selected.has(r.id)} onChange={()=>toggleSelect(r.id)}/></td><td style={{padding:"10px 8px",borderBottom:"1px solid #111"}}><span onClick={e=>{e.stopPropagation();setVendorDetail(vendorDetail?.id===r.id?null:r)}} style={{fontWeight:600,color:"#2dd4bf",cursor:"pointer"}}>{r.name}</span></td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}}>{r.contact}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#2dd4bf"}}>{r.email}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}}>{r.phone}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}}>{r.category}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",fontSize:11,color:"#737373",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis"}}>{r.address||"--"}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",fontFamily:"'JetBrains Mono',monospace",color:"#34d399",fontWeight:600}}>{r.discountRate?((r.discountType==="reciprocal"&&r.reciprocalTiers)?r.reciprocalTiers:((r.discountRate*100).toFixed(0)+"%")):"--"}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",whiteSpace:"nowrap"}}><Btn v="ghost" style={{fontSize:12,padding:"3px 8px"}} onClick={e=>{e.stopPropagation();startEdit(r)}}>{editId===r.id?"Close":"Edit"}</Btn>{addSop&&<Btn v="ghost" style={{fontSize:12,padding:"3px 8px",marginLeft:2}} onClick={e=>{e.stopPropagation();setCatUp(r)}}>{catalogsForVendor(customSops,r.id).length?"Catalogue":"+ Catalogue"}</Btn>}</td></>}
             {tab==="customers"&&<><td style={{padding:"10px 8px",borderBottom:"1px solid #111"}}><Check checked={selected.has(r.id)} onChange={()=>toggleSelect(r.id)}/></td><td style={{padding:"10px 8px",borderBottom:"1px solid #111"}}><span onClick={e=>{e.stopPropagation();setCustDetail(custDetail?.id===r.id?null:r)}} style={{fontWeight:600,color:"#2dd4bf",cursor:"pointer"}}>{r.name}</span></td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}}>{r.contact}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#2dd4bf"}}>{r.email}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}}>{r.phone}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111"}}><Badge label={r.type||"--"} color="#a78bfa"/></td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",fontSize:12,color:"#c4c4c4"}}>{r.address||"--"}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111"}}><Btn v="ghost" style={{fontSize:12,padding:"3px 8px"}} onClick={e=>{e.stopPropagation();startEdit(r)}}>{editId===r.id?"Close":"Edit"}</Btn></td></>}
             {tab==="reps"&&<><td style={{padding:"10px 8px",borderBottom:"1px solid #111"}}><Check checked={selected.has(r.id)} onChange={()=>toggleSelect(r.id)}/></td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",fontWeight:600,color:"#e5e5e5"}}>{r.name}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#2dd4bf"}}>{r.email}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",color:"#c4c4c4"}}>{r.territory}</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111"}}><div style={{display:"flex",gap:4,flexWrap:"wrap"}}>{getRoles(r).map(role=><Badge key={role} label={role} color={role==="Owner"?"#fbbf24":role==="Sales"?"#2dd4bf":"#8b5cf6"}/>)}</div></td><td style={{padding:"10px 8px",borderBottom:"1px solid #111",fontFamily:"'JetBrains Mono',monospace",color:"#2dd4bf"}}>{(r.commissionRate*100).toFixed(1)}%</td><td style={{padding:"10px 8px",borderBottom:"1px solid #111"}}><Btn v="ghost" style={{fontSize:12,padding:"3px 8px"}} onClick={e=>{e.stopPropagation();startEdit(r)}}>{editId===r.id?"Close":"Edit"}</Btn></td></>}
           </tr>
