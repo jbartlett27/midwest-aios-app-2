@@ -1,7 +1,7 @@
 import DateInput from './DateInput.jsx';
 import { buildFileIndex, latestVersions, isSpreadsheetFile, searchRecords, quickSearch, recordsToMarkdown, journalToMarkdown, journalFor, describeSheets, fmtUsd as fiUsd, fmtUs as fiUs, KIND_LABEL as FI_KIND } from './fileIndex.js';
 import { catalogRecords, catalogsForVendor, loadCatalog as vcLoad, searchCatalog as vcSearch, getProduct as vcProduct, getPage as vcPage, overviewMarkdown as vcOverview, profileMarkdown as vcProfile, rowsToMarkdown as vcRows, pageRef as vcPageRef, promptLine as vcPromptLine, pageMarkdown as vcPageCard, _resetCatalogCache as vcReset, pdfLinks as vcPdfLinks, pdfPageUrl as vcPdfPage, pageImageUrl as vcImg } from './vendorCatalog.js';
-import { ingestCatalog as ciIngest, todayLocal as ciToday } from './catalogIngest.js';
+import { ingestCatalog as ciIngest, normalizeCatalogEdition as ciEdition } from './catalogIngest.js';
 import React, { useState, useEffect, useRef } from "react";
 import { db } from "./supabase.js";
 import { useUser, useClerk, SignIn, UserButton, useAuth } from "@clerk/clerk-react";
@@ -668,7 +668,7 @@ function CatalogUploadDialog({vendor,customSops,addSop,notify,setPage,onClose}){
   const [file,setFile]=useState(null);
   const [title,setTitle]=useState('');
   const [titleTouched,setTitleTouched]=useState(false);
-  const [edition,setEdition]=useState(ciToday());
+  const [edition,setEdition]=useState('');
   const [prices,setPrices]=useState('auto');
   const [busy,setBusy]=useState(false);
   const [prog,setProg]=useState(null);
@@ -682,10 +682,10 @@ function CatalogUploadDialog({vendor,customSops,addSop,notify,setPage,onClose}){
   const pct=!prog?0:prog.stage==='pages'?Math.round((prog.done/Math.max(1,prog.total))*80):({reading:2,structure:82,saving:88,pdf:94,done:100})[prog.stage]||0;
   const go=async()=>{
     if(busy||!file)return;
-    if(!/^\d{4}-\d{2}-\d{2}$/.test(edition.trim())){setErr('Edition date must look like 2026-07-31.');return}
+    let ed;try{ed=ciEdition(edition)}catch(e){setErr(e.message);return}
     setErr('');setRes(null);setBusy(true);stopRef.current=false;setProg({stage:'reading',done:0,total:1,message:'Starting...'});
     try{
-      const out=await runCatalogIngest({file,vendor,title,edition:edition.trim(),hasPrices:prices,addSop,onProgress:setProg,isCancelled:()=>stopRef.current});
+      const out=await runCatalogIngest({file,vendor,title,edition:ed,hasPrices:prices,addSop,onProgress:setProg,isCancelled:()=>stopRef.current});
       setRes(out);notify('Catalogue loaded for '+vendor.name);
     }catch(e){setErr(String((e&&e.message)||e))}
     setBusy(false);
@@ -696,7 +696,7 @@ function CatalogUploadDialog({vendor,customSops,addSop,notify,setPage,onClose}){
     <div onClick={e=>e.stopPropagation()} style={{width:"min(580px,94vw)",maxHeight:"92vh",overflowY:"auto",background:"#111111",border:"1px solid rgba(167,139,250,0.25)",borderRadius:14,padding:22}}>
       <div style={{fontSize:16,fontWeight:700,color:"#f0f0f0"}}>Upload catalogue &gt;&gt; {vendor.name}</div>
       <div style={{fontSize:12,color:"#9a9a9a",marginTop:4,marginBottom:14}}>Any vendor PDF works, 150 MB and larger too. It is read right here in your browser: every page, model code and price is pulled out so the Brain can answer from it, and the original PDF is kept (in pieces when it is large).</div>
-      {existing.length>0&&<div style={{fontSize:12,color:"#c4c4c4",marginBottom:12,padding:"8px 10px",background:"#0a0a0a",borderRadius:8,border:"1px solid rgba(255,255,255,0.06)"}}>Already loaded: {existing.map(r=>r.title+" (edition "+r.edition+")").join("; ")}. Same title and edition replaces that upload. A newer edition is added and becomes the one in use.</div>}
+      {existing.length>0&&<div style={{fontSize:12,color:"#c4c4c4",marginBottom:12,padding:"8px 10px",background:"#0a0a0a",borderRadius:8,border:"1px solid rgba(255,255,255,0.06)"}}>Already loaded: {existing.map(r=>r.title+" (edition "+(r.edition||'unknown')+")").join("; ")}. Same title and edition replaces that upload. A newer edition is added and becomes the one in use.</div>}
       {!res&&<div>
         <div style={row}><span style={lab}>PDF file</span>
           <input ref={pickRef} type="file" accept=".pdf,application/pdf" onChange={e=>{pick(e.target.files&&e.target.files[0]);e.target.value=""}} style={{display:"none"}}/>
@@ -704,7 +704,7 @@ function CatalogUploadDialog({vendor,customSops,addSop,notify,setPage,onClose}){
         </div>
         <div style={row}><span style={lab}>Catalogue title</span><input value={title} onChange={e=>{setTitle(e.target.value);setTitleTouched(true)}} placeholder="2026 Full Line Catalog" style={inputStyle}/></div>
         <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
-          <div style={{...row,flex:"1 1 160px"}}><span style={lab}>Edition date</span><input value={edition} onChange={e=>setEdition(e.target.value)} placeholder="2026-07-31" style={{...inputStyle,fontFamily:mono}}/></div>
+          <div style={{...row,flex:"1 1 160px"}}><span style={lab}>Edition (optional)</span><input value={edition} onChange={e=>setEdition(e.target.value)} placeholder="2026 or 2026-07-31" style={{...inputStyle,fontFamily:mono}}/><span style={{fontSize:11,color:"#737373"}}>Use the year or date printed in the PDF; leave blank if unknown.</span></div>
           <div style={{...row,flex:"1 1 200px"}}><span style={lab}>Prices in this PDF</span><select value={prices} onChange={e=>setPrices(e.target.value)} style={inputStyle}><option value="auto">Detect automatically</option><option value="yes">Yes, it has prices</option><option value="no">No, no prices</option></select></div>
         </div>
       </div>}
@@ -773,7 +773,7 @@ function VendorCatalogPanel({vendor,customSops,setPage,addSop,notify}){
       <div>
         <div style={{fontSize:15,fontWeight:700,color:"#a78bfa"}}>Vendor Catalogue</div>
         <div style={{fontSize:14,color:"#f0f0f0",fontWeight:600,marginTop:4}}>{rec.title}</div>
-        <div style={{fontSize:12,color:"#9a9a9a",marginTop:2,fontFamily:mono}}>edition {rec.edition} | {rec.pageCount} pages | {rec.productCount} model rows | {rec.hasPrices?"prices included":"no prices in this edition"}</div>
+        <div style={{fontSize:12,color:"#9a9a9a",marginTop:2,fontFamily:mono}}>edition {rec.edition||'unknown'} | {rec.pageCount} pages | {rec.productCount} model rows | {rec.hasPrices?"prices included":"no prices in this edition"}</div>
       </div>
       <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
         {vcPdfLinks(rec).map(l=><Btn key={l.url} v="secondary" onClick={()=>window.open(l.url,"_blank","noopener")}>{l.label}</Btn>)}
@@ -1724,7 +1724,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
   // Vendor catalogues (Vendor page and Brain): the file each VendorCatalog row points at. A priced catalogue is kept from the sales role.
   const _vcRecs=()=>catalogRecords(customSops);
   const _vcPick=async(vendor)=>{const recs=_vcRecs();if(!recs.length)return {error:'No vendor catalogues are loaded yet.'};const q=String(vendor==null?'':vendor).trim().toLowerCase();let m=recs;if(q){m=recs.filter(r=>String(r.vendorId||'').toLowerCase()===q||String(r.vendorName||'').toLowerCase().includes(q)||String(r.title||'').toLowerCase().includes(q));if(!m.length)return {error:'No catalogue matches "'+vendor+'". Loaded: '+recs.map(r=>r.vendorName).join(', ')+'.'}}if(m.length>1&&m.every(r=>r.vendorId===m[0].vendorId))m=m.slice().sort((a,b)=>String(b.edition||'').localeCompare(String(a.edition||'')));else if(m.length>1)return {error:'More than one catalogue is loaded. Say which vendor: '+m.map(r=>r.vendorName).join(', ')+'.'};try{return {rec:m[0],cat:await vcLoad(m[0],{fetchImpl:(u)=>fetch(u)})}}catch(e){return {error:'Could not open the '+m[0].vendorName+' catalogue file ('+((e&&e.message)||'error')+'). Try again in a moment.'}}};
-  const _vcSrc=(rec)=>'\n\nSource: '+rec.vendorName+' >> '+rec.title+' (edition '+rec.edition+'). Page numbers are PDF pages.'+vcPdfLinks(rec).map(l=>' ['+l.label+']('+l.url+')').join('');
+  const _vcSrc=(rec)=>'\n\nSource: '+rec.vendorName+' >> '+rec.title+' (edition '+(rec.edition||'unknown')+'). Page numbers are PDF pages.'+vcPdfLinks(rec).map(l=>' ['+l.label+']('+l.url+')').join('');
   const _bkIso=(d)=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
   const _bkIsDate=(v)=>{const x=String(v==null?'':v);if(!/^\d{4}-\d{2}-\d{2}$/.test(x))return false;const d=parseLocalDate(x);return !!d&&_bkIso(d)===x};
   const _bkMoney=(n)=>{const v=Number(n);return isFinite(v)?Math.round(v*100)/100:0};
@@ -1955,7 +1955,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
     {name:"search_vendor_catalog",description:"Search a vendor's catalogue for model codes and words. Returns the matching model rows (model code, PDF page, section, the row as printed: size, weight, description) and the pages that mention the words. Use for 'find ELS7601', 'which WB locker benches do they make', 'what 48 x 72 tables are there', 'WB student desks', 'show every model in the Bookcases section'. A section name with no query lists that section's models. The catalogue has no prices unless list_vendor_catalogs says so.",input_schema:{type:"object",properties:{query:{type:"string",description:"A model code or words. Part of a model code works."},vendor:{type:"string",description:"Vendor name. Optional when only one catalogue is loaded."},section:{type:"string",description:"Optional section or group to search inside, e.g. 'Seating', 'Lockers and Cubbies'"},limit:{type:"number",description:"Rows to return, up to 60 (default 25)"}},required:[]}},
     {name:"get_catalog_product",description:"Look up one model code in a vendor's catalogue: every row it appears in, with page, section, size and weight columns as printed. Use after search_vendor_catalog or when the user gives an exact model code such as EONP401-EJA. Then use read_catalog_page for the options, colors and specs on its page.",input_schema:{type:"object",properties:{code:{type:"string",description:"The model code, e.g. EONP401-EJA"},vendor:{type:"string",description:"Vendor name. Optional when only one catalogue is loaded."}},required:["code"]}},
     {name:"read_catalog_page",description:"Show a whole page of a vendor's catalogue to the user: the page picture, every model row on it with sizes, weights and prices when printed, and every line of text on the page. Use the PDF page number the other catalogue tools give. Use this for any question about a product, series, options, colors, materials, how to build a model number, ordering rules or warranty, then explain what is on the page in your own words without repeating the whole page. Set to for a run of pages (up to 4). Set see to true only when the user asks what the page looks like or when you need the picture itself (layout, colors, diagrams): it lets you look at the page image.",input_schema:{type:"object",properties:{page:{type:"number",description:"PDF page number"},to:{type:"number",description:"Optional last page of a run, up to 3 pages after the first"},see:{type:"boolean",description:"True to look at the page picture yourself (costs more; use only when the picture matters)"},vendor:{type:"string",description:"Vendor name. Optional when only one catalogue is loaded."}},required:["page"]}},
-    {name:"ingest_vendor_catalog",description:"Load the PDF the user attached in this chat as a vendor's catalogue (any size, 150 MB and more is fine). It reads every page, model code and price, saves a picture of each page, keeps the PDF, and links all of it to the vendor so list_vendor_catalogs, search_vendor_catalog and read_catalog_page work on it. Use when the user attaches a catalogue or price list PDF and says it belongs to a vendor ('load this as WB's catalogue'). Needs the vendor to exist in the Directory. If no PDF is attached it says so. Takes a while for a big PDF.",input_schema:{type:"object",properties:{vendor:{type:"string",description:"Vendor name from the Directory, for example 'WB Mfg'"},title:{type:"string",description:"Optional catalogue title, for example '2026 Full Line Catalog'. Defaults to the file name."},edition:{type:"string",description:"Optional edition date as YYYY-MM-DD. Defaults to today."},has_prices:{type:"string",enum:["auto","yes","no"],description:"Whether the PDF has prices. Default auto (detected)."}},required:["vendor"]}},
+    {name:"ingest_vendor_catalog",description:"Load the PDF the user attached in this chat as a vendor's catalogue (any size, 150 MB and more is fine). It reads every page, model code and price, saves a picture of each page, keeps the PDF, and links all of it to the vendor so list_vendor_catalogs, search_vendor_catalog and read_catalog_page work on it. Use when the user attaches a catalogue or price list PDF and says it belongs to a vendor ('load this as WB's catalogue'). Needs the vendor to exist in the Directory. If no PDF is attached it says so. Takes a while for a big PDF.",input_schema:{type:"object",properties:{vendor:{type:"string",description:"Vendor name from the Directory, for example 'WB Mfg'"},title:{type:"string",description:"Optional catalogue title, for example '2026 Full Line Catalog'. Defaults to the file name."},edition:{type:"string",description:"Optional edition year (YYYY) or date (YYYY-MM-DD), only when stated in the PDF. Omit if unknown; never use the upload date as the edition."},has_prices:{type:"string",enum:["auto","yes","no"],description:"Whether the PDF has prices. Default auto (detected)."}},required:["vendor"]}},
     // Vendor Bills: queries
     {name:"list_vendor_bills",description:"List vendor bills with rich filters. Returns a markdown table. Use when the user says 'show me unpaid bills', 'what bills are due this week', 'list all bills from Marco Group', 'overdue bills', 'show me bills for the Sandburg job', 'show deleted bills'. Bills include both PO-derived bills (auto-generated from purchase orders) and standalone bills (created ad-hoc). Default behavior with no filters returns the 25 most-due-soon unpaid bills.",input_schema:{type:"object",properties:{vendor_name:{type:"string",description:"Filter by vendor name (partial match, case-insensitive)"},job_id:{type:"string",description:"Filter by job ID or name keywords"},status:{type:"string",description:"unpaid | paid | overdue | check_sent | void | deleted | all (default: unpaid)"},due_within_days:{type:"number",description:"Only show bills due within N days from today"},date_from:{type:"string",description:"Bill date from (YYYY-MM-DD)"},date_to:{type:"string",description:"Bill date to (YYYY-MM-DD)"},has_file:{type:"boolean",description:"true to show only bills with attached invoice files, false to show only bills without"},amount_min:{type:"number",description:"Minimum bill amount"},amount_max:{type:"number",description:"Maximum bill amount"},limit:{type:"number",description:"Max rows to return (default 25)"}}}},
     {name:"get_vendor_bill",description:"Get the full record of a vendor bill by its docNum (e.g. BILL-1234-VENDR or a standalone SB-/VC- id). Returns bill details, line items if PO-derived, payment history, and attached file info. Use when user says 'show me bill BILL-6100-SUKI', 'pull up the Doane Keyes bill on G103', 'get the full record for the Marco credit'.",input_schema:{type:"object",properties:{bill_doc_num:{type:"string",description:"The billDocNum (e.g. BILL-1234-VENDR) or standalone SOP id (e.g. SB-xxxxxx, VC-xxxxxx)"}},required:["bill_doc_num"]}},
@@ -3356,7 +3356,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
       if (toolName === 'list_vendor_catalogs') {
         const recs = _vcRecs();
         if (!recs.length) return {success: true, message: 'No vendor catalogues are loaded yet.'};
-        if (!input.vendor && recs.length > 1) return {success: true, message: '**Vendor catalogues**\n'+recs.map(r => '- '+r.vendorName+': '+r.title+' (edition '+r.edition+', '+r.pageCount+' pages, '+r.productCount+' model rows'+(r.hasPrices?'':', no prices')+')').join('\n')+'\n\nName a vendor to see its contents.'};
+        if (!input.vendor && recs.length > 1) return {success: true, message: '**Vendor catalogues**\n'+recs.map(r => '- '+r.vendorName+': '+r.title+' (edition '+(r.edition||'unknown')+', '+r.pageCount+' pages, '+r.productCount+' model rows'+(r.hasPrices?'':', no prices')+')').join('\n')+'\n\nName a vendor to see its contents.'};
         const p = await _vcPick(input.vendor);
         if (p.error) return {error: p.error};
         const topic = String(input.topic||'').trim();

@@ -225,7 +225,7 @@ export function pageMarkdown(cat, rec, n) {
 export function overviewMarkdown(cat, rec) {
   const c = cat.company || {};
   const out = [];
-  out.push('**' + cat.title + '** (' + cat.vendorName + ', edition ' + cat.edition + ')');
+  out.push('**' + cat.title + '** (' + cat.vendorName + ', edition ' + (cat.edition || 'unknown') + ')');
   out.push('Page numbers are PDF pages' + (cat.pageOffset ? ' (the printed page number is the PDF page minus ' + cat.pageOffset + ')' : '') + '.');
   out.push(cat.pageCount + ' pages, ' + cat.sections.length + ' sections, ' + cat.rows.length + ' model rows covering ' + cat.codeCount + ' distinct model codes. ' + (cat.hasPrices ? 'Prices are included.' : 'No prices appear in this edition.'));
   if (c.name) out.push([c.name, c.address, c.phone, c.email, c.web].filter(Boolean).join(' | '));
@@ -258,7 +258,7 @@ export function promptLine(recs) {
   if (!recs.length) return '';
   const parts = recs.map((r) => {
     const groups = Array.isArray(r.groups) ? r.groups.join(', ') : '';
-    return r.vendorName + ': ' + r.title + ' (edition ' + r.edition + ', ' + r.pageCount + ' pages, ' + r.productCount + ' model rows' + (r.hasPrices ? '' : ', no prices') + (groups ? '; covers ' + groups : '') + ')';
+    return r.vendorName + ': ' + r.title + ' (edition ' + (r.edition || 'unknown') + ', ' + r.pageCount + ' pages, ' + r.productCount + ' model rows' + (r.hasPrices ? '' : ', no prices') + (groups ? '; covers ' + groups : '') + ')';
   });
   return '\n\nVENDOR CATALOGUES: ' + parts.join('; ') + '. Use list_vendor_catalogs for the contents, search_vendor_catalog for models and words, get_catalog_product for one model code, read_catalog_page for a whole page (it shows the page picture, the model rows and every line printed on the page). These are vendor specs from the catalogue. They are not our quotes or our costs, and a catalogue without prices has no prices to report: say so instead of guessing. When someone asks about a product, section, option, ordering rule or page, give them the actual details from the page (sizes, weights, options, colors, prices when the catalogue has them) in clean tables and short lists. Never answer with only a page number or tell them to go look at a page; the page number is only a reference after the details.';
 }

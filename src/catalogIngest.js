@@ -35,6 +35,21 @@ export function todayLocal() {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
+// Publication precision belongs to the source; uploadedAt records when it was loaded.
+export function normalizeCatalogEdition(value) {
+  if (value == null) return '';
+  if (typeof value !== 'string') throw new Error('Edition must be a year (2026), a date (2026-07-31), or blank if unknown.');
+  const ed = value.trim();
+  if (!ed || /^[1-9]\d{3}$/.test(ed)) return ed;
+  const m = /^([1-9]\d{3})-(\d{2})-(\d{2})$/.exec(ed);
+  if (m) {
+    const y = Number(m[1]), month = Number(m[2]), day = Number(m[3]);
+    const days = [31, y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    if (month >= 1 && month <= 12 && day >= 1 && day <= days[month - 1]) return ed;
+  }
+  throw new Error('Edition must be a year (2026), a date (2026-07-31), or blank if unknown.');
+}
+
 // ---------- libraries ----------
 let _pdfjs = null;
 export function loadPdfJs({ importer = (u) => import(/* @vite-ignore */ u), fetchImpl = (u) => fetch(u), urlFor = (b) => URL.createObjectURL(b) } = {}) {
@@ -257,6 +272,7 @@ export async function renderPageJpeg(page) {
 export async function ingestCatalog({ file, vendor, title, edition, hasPrices = 'auto', deps = {}, onProgress = () => {}, isCancelled = () => false }) {
   if (!file || !vendor || !vendor.id) throw new Error('Pick a vendor and a PDF.');
   if (!/\.pdf$/i.test(file.name || '') && file.type !== 'application/pdf') throw new Error('Only PDF catalogues can be loaded.');
+  const ed = normalizeCatalogEdition(edition);
   const upload = deps.upload;
   if (typeof upload !== 'function') throw new Error('No place to save the catalogue.');
   const pdfjs = deps.pdfjs || (await loadPdfJs());
@@ -264,9 +280,8 @@ export async function ingestCatalog({ file, vendor, title, edition, hasPrices = 
   const warnings = [];
   const check = () => { if (isCancelled()) throw new Error('Cancelled.'); };
   const retry = (fn) => withRetry(fn, 4, deps.retryDelay == null ? 500 : deps.retryDelay);
-  const ed = String(edition || todayLocal()).trim();
   const ttl = String(title || '').trim() || String(file.name || 'Catalogue').replace(/\.pdf$/i, '');
-  const base = 'catalogs/' + vendor.id + '/' + slugify(ttl) + '-' + slugify(ed) + '/';
+  const base = 'catalogs/' + vendor.id + '/' + slugify(ttl) + '-' + slugify(ed || 'unknown') + '/';
   const baseUrl = (deps.publicUrl || ((p) => p))(base);
 
   onProgress({ stage: 'reading', done: 0, total: 1, message: 'Reading the PDF (' + (file.size / 1048576).toFixed(0) + ' MB)...' });
@@ -401,5 +416,5 @@ export async function ingestCatalog({ file, vendor, title, edition, hasPrices = 
   };
   const stats = { pages: pageCount, rows: products.length, codes: codeSet.size, sections: sections.length, priceFigures: figures, images: imgOk, pdfPieces: link.pdfParts ? link.pdfParts.length : link.pdfUrl ? 1 : 0 };
   onProgress({ stage: 'done', done: 1, total: 1, message: 'Done.' });
-  return { id: 'VCAT-' + vendor.id + '-' + slugify(ttl).slice(0, 20) + '-' + slugify(ed), rec, stats, warnings };
+  return { id: 'VCAT-' + vendor.id + '-' + slugify(ttl).slice(0, 20) + '-' + slugify(ed || 'unknown'), rec, stats, warnings };
 }

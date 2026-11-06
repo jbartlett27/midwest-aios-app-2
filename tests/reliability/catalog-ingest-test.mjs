@@ -6,6 +6,11 @@ import fs from 'node:fs';
 // by in-memory fakes, so this runs offline. The real libraries are exercised by tools/ingest-browser-check.mjs.
 const mutant = process.argv.includes('--mutant');
 const MUTANTS = [
+  ['a missing edition stays unknown', "if (value == null) return '';", "if (value == null) return todayLocal();"],
+  ['blank editions are not replaced with the upload date', 'const ed = normalizeCatalogEdition(edition);', 'const ed = normalizeCatalogEdition(edition || todayLocal());'],
+  ['year-only edition precision is kept', 'if (!ed || /^[1-9]\\d{3}$/.test(ed)) return ed;', "if (!ed || /^[1-9]\\d{3}$/.test(ed)) return ed ? ed + '-01-01' : ed;"],
+  ['impossible edition dates are refused', 'day <= days[month - 1]', 'day <= 31'],
+
   ['a wide gap between words becomes a column break', "if (gap > Math.max(8, row.h * 1.0)) out += ' | ';", "if (false) out += ' | ';"],
   ['lines run top to bottom', 'its.sort((a, b) => b.y - a.y || a.x - b.x);', 'its.sort((a, b) => a.y - b.y || a.x - b.x);'],
   ['a dollar figure is not mistaken for a model code', '(?<![A-Za-z0-9\\-/.$])([A-Z]{1,6}', '(?<![A-Za-z0-9\\-/.])([A-Z]{1,6}'],
@@ -83,6 +88,15 @@ async function suite(M, label) {
   const ok = (cond, msg) => assert.ok(cond, label + ': ' + msg);
   const eq = (a, b, msg) => assert.deepEqual(a, b, label + ': ' + msg);
 
+  for (const bad of ['next week', '2026-02-29', '2024-02-30', '2026-00-01', '2026-13-01', '2026-01-00', '0000', '2026-7-1', 2026, {}, []]) {
+    assert.throws(() => M.normalizeCatalogEdition(bad), /Edition must be/, label + ': invalid edition metadata is refused');
+    const fixture = mkDeps(fakePdf(PAGES));
+    await assert.rejects(M.ingestCatalog({file: mkFile('bad.pdf', 1e6), vendor: VENDOR, edition: bad, deps: fixture.deps}), /Edition must be/, label + ': all upload paths validate before saving');
+    eq(fixture.uploads.size, 0, 'invalid edition metadata never writes files');
+  }
+  eq(M.normalizeCatalogEdition('2000-02-29'), '2000-02-29', 'a leap century is accepted without a timezone conversion');
+  assert.throws(() => M.normalizeCatalogEdition('1900-02-29'), /Edition must be/, 'a non-leap century is refused');
+
   // ---- text ----
   eq(M.linesFromItems([it('Model', 40, 700), it('Size', 140, 700), it('Top', 40, 750)]), ['Top', 'Model | Size'], 'lines run top to bottom and a wide gap is a column break');
   eq(M.linesFromItems([it('AB', 40, 700, 10, 10), it('1000', 50.5, 700, 10, 20)]), ['AB1000'], 'pieces of one word are joined');
@@ -147,6 +161,18 @@ async function suite(M, label) {
   ok(/\$425\.00/.test(VC.pageMarkdown(cat, out.rec, 2)), 'the price is on the page card the Brain shows');
   eq(json.sections.map((s) => s.products), [false, true, false], 'only sections that hold model rows are product sections');
   ok(json.company.name === 'Acme Furniture' && json.company.phone === '555.0100', 'the vendor record fills in the company block');
+
+  // Missing publication metadata must never become the upload date.
+  for (const edition of [undefined, null, '', '   ', '2026', ' 2025 ', '2024-02-29']) {
+    const fixture = mkDeps(fakePdf(PAGES));
+    const result = await M.ingestCatalog({file: mkFile('edition.pdf', 1e6), vendor: VENDOR, edition, deps: fixture.deps});
+    const expected = edition == null ? '' : edition.trim();
+    eq(result.rec.edition, expected, 'the link row preserves unknown, year-only and full edition metadata');
+    const stored = JSON.parse(await [...fixture.uploads.entries()].find(([p]) => p.endsWith('/catalog.json'))[1].text());
+    eq(stored.edition, expected, 'the catalogue JSON preserves the same edition metadata');
+    ok(result.rec.url.includes('-' + (expected || 'unknown') + '/catalog.json'), 'an unknown edition uses an explicit stable storage path');
+    ok(/^\d{4}-\d{2}-\d{2}$/.test(result.rec.uploadedAt), 'the upload date stays separate from publication metadata');
+  }
 
   // prices: detected, and the person can overrule
   const priced = Array.from({length: 3}, () => [...row(750, 'Chair'), ...Array.from({length: 4}, (_, i) => row(700 - i * 10, 'CH100' + i, '$' + (100 + i) + '.00')).flat()]);

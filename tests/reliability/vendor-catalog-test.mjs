@@ -5,6 +5,9 @@ import fs from 'node:fs';
 // Synthetic catalogue only ("Acme Furniture"). A real vendor catalogue is never committed to this public repo.
 const mutant = process.argv.includes('--mutant');
 const MUTANTS = [
+  ['an unknown edition is named in the overview', "(cat.edition || 'unknown')", 'cat.edition'],
+  ['an unknown edition is named in the Brain prompt', "(r.edition || 'unknown')", 'r.edition'],
+
   ['an exact model code ranks first', 'if (code === q) score = 100;', 'if (false) score = 100;'],
   ['a code that starts with the search beats one that only contains it', 'else if (code.startsWith(q)) score = 80;', 'else if (false) score = 80;'],
   ['every word has to match', 'toks.every((t) => r.blob.includes(t))) score = 40', 'toks.some((t) => r.blob.includes(t))) score = 40'],
@@ -183,6 +186,10 @@ async function suite(M, label) {
   const md = M.rowsToMarkdown(M.getProduct(cat, 'AB1000').rows, {});
   ok(md.split('\n').every((l) => l.split('|').length === 6), 'a pipe inside a row never breaks the table');
   ok(/\| AB1000 \| page 3 \| Student Desks: Alpha Desk \|/.test(md), 'the table gives model, page and section');
+  for (const edition of ['', undefined, '2026']) {
+    ok(M.overviewMarkdown({...cat, edition}, {}).includes('edition ' + (edition || 'unknown') + ')'), 'the overview names unknown or year-only editions truthfully');
+    ok(M.promptLine([{vendorName: 'Acme', title: 'Catalogue', edition}]).includes('edition ' + (edition || 'unknown') + ','), 'the Brain prompt preserves edition precision');
+  }
   const ov = M.overviewMarkdown(cat, {});
   ok(/Acme 2026 Catalog/.test(ov) && /edition 2026-01-01/.test(ov), 'overview names the catalogue');
   ok(/Page numbers are PDF pages \(the printed page number is the PDF page minus 2\)/.test(ov), 'overview explains the page numbers');

@@ -7,6 +7,10 @@ import fs from 'node:fs';
 // No client data, no network: fetch is replaced by an in-memory fake and the catalogue is made up.
 const mutantIdx = process.argv.includes('--mutant') ? Number(process.argv[process.argv.indexOf('--mutant') + 1]) : -1;
 const MUTANTS = [
+  ['the edition starts unknown', "const [edition,setEdition]=useState('');", "const [edition,setEdition]=useState('2026-11-06');"],
+  ['the vendor page names unknown editions', "{rec.edition||'unknown'}", '{rec.edition}'],
+  ['the Brain does not invent publication dates', 'Omit if unknown; never use the upload date as the edition.', 'Defaults to today.'],
+
   ['vendor page shows the catalogue', '<VendorCatalogPanel key={vend.id} vendor={vend} customSops={customSops} setPage={setPage} addSop={addSop} notify={notify}/>', ''],
   ['a vendor only sees its own catalogue', 'catalogsForVendor(customSops,vendor.id).slice()', 'catalogRecords(customSops).slice()'],
   ['catalogue tools registered as read-only', "'recent_actions','list_vendor_catalogs','search_vendor_catalog','get_catalog_product','read_catalog_page']);", "'recent_actions']);"],
@@ -26,7 +30,7 @@ const MUTANTS = [
   ['the Directory offers a catalogue upload per vendor', 'e.stopPropagation();setCatUp(r)', 'e.stopPropagation();void 0'],
   ['a vendor with no catalogue offers to upload one', '<Btn onClick={()=>setShowUp(true)}>Upload catalogue</Btn>', ''],
   ['an upload saves the link row to the vendor', "addSop({id:out.id,title:out.rec.title,cat:'VendorCatalog',icon:'book'", "(()=>{})({id:out.id,title:out.rec.title,cat:'VendorCatalog',icon:'book'"],
-  ['the edition date is checked before an upload starts', 'if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(edition.trim())){setErr(', 'if(false){setErr('],
+  ['the edition date is checked before an upload starts', 'ed=ciEdition(edition)', "ed=edition.trim()"],
   ['the Stop button stops an upload', '<Btn v="secondary" onClick={()=>{stopRef.current=true}}>Stop</Btn>', '<Btn v="secondary" onClick={()=>{}}>Stop</Btn>'],
   ['the upload shows what it is doing', '<span>{prog.message}</span>', "<span>{''}</span>"],
   ['upload warnings are shown', '{res.warnings.map((w,i)=>', '{[].map((w,i)=>'],
@@ -39,12 +43,13 @@ const MUTANTS = [
 ];
 const src = '../../src';
 const chartNames = [...new Set(['App.jsx', 'App2.jsx', 'App3.jsx'].flatMap((f) => [...fs.readFileSync(src + '/' + f, 'utf8').matchAll(/import\s*\{([^}]+)\}\s*from\s*["']recharts["']/g)].flatMap((m) => m[1].split(',').map((n) => n.trim().split(/\s+as\s+/)[0]))))];
+const editionSource = fs.readFileSync(src + '/catalogIngest.js', 'utf8').slice(fs.readFileSync(src + '/catalogIngest.js', 'utf8').indexOf('export function normalizeCatalogEdition')).split('// ---------- libraries ----------')[0];
 const stubs = {
   clerk: 'export const ClerkProvider=({children})=>children;export const useUser=()=>({isLoaded:true,isSignedIn:false,user:null});export const useClerk=()=>({signOut:()=>{}});export const useAuth=()=>({getToken:async()=>null});export const SignIn=()=>null;export const UserButton=()=>null;',
   recharts: chartNames.map((n) => 'export const ' + n + '=()=>null;').join('\n'),
   xlsx: 'export const read=(...a)=>globalThis.__XLSX.read(...a);export const utils={sheet_to_json:(...a)=>globalThis.__XLSX.utils.sheet_to_json(...a)};export default {read,utils};',
   db: 'export const db=globalThis.__db;',
-  ci: "export const ingestCatalog=(a)=>globalThis.__ciIngest(a);export const todayLocal=()=>'2026-11-06';",
+  ci: "export const ingestCatalog=(a)=>globalThis.__ciIngest(a);\n" + editionSource,
 };
 if (mutantIdx >= 0) assert.ok(fs.readFileSync(src + '/App2.jsx', 'utf8').includes(MUTANTS[mutantIdx][1]), 'mutation anchor missing: ' + MUTANTS[mutantIdx][0]);
 await build({entryPoints: [src + '/App2.jsx'], bundle: true, format: 'cjs', platform: 'node', jsx: 'automatic', external: ['react', 'react-dom', 'react-dom/client'], define: {'import.meta.env': '{}'}, outfile: 'vendor-catalog-bundle-ui.cjs', plugins: [{name: 'offline-only', setup(b) {
@@ -139,9 +144,15 @@ assert.match(text(), /2 model rows/, 'choosing a section lists its models'); ass
 await act(async () => btn(/^Clear$/).click()); await settle(); assert.match(text(), /Student Desks: Alpha Desk\s*p\.2-4/, 'Clear goes back to the section list');
 await typeInto(box, 'warranty'); await settle(); assert.match(text(), /Pages that mention it \(1\)/); assert.match(text(), /Limited lifetime warranty/);
 await unmount(root);
+for (const edition of ['', undefined, '2026']) {
+  const unknown = linkSop('VCAT-unknown', {...JSON.parse(ACME.content), edition});
+  root = await mountVendor('V-acme', [unknown]);
+  assert.ok(text().includes('edition ' + (edition || 'unknown') + ' | 9 pages'), 'the vendor page shows unknown or year-only edition metadata');
+  await unmount(root);
+}
 // ---- the upload dialog (the real ingest engine is replaced by a fake that the test controls) ----
 let ciArgs = []; let ciRelease = null; let ciFail = null; let ciSawStop = null; const saved = [];
-const ciOut = (a) => ({id: 'VCAT-' + a.vendor.id + '-' + (a.edition || '2026-11-06').slice(0, 4), rec: {vendorId: a.vendor.id, vendorName: a.vendor.name, title: a.title || 'Untitled', edition: a.edition || '2026-11-06', hasPrices: true, pageCount: 12}, stats: {pages: 12, rows: 40, codes: 38, sections: 5, priceFigures: 77, images: 12, pdfPieces: 3}, warnings: ['Pages 9-10 had no readable text.']});
+const ciOut = (a) => ({id: 'VCAT-' + a.vendor.id + '-' + (a.edition == null ? '' : a.edition).slice(0, 4), rec: {vendorId: a.vendor.id, vendorName: a.vendor.name, title: a.title || 'Untitled', edition: a.edition == null ? '' : a.edition, hasPrices: true, pageCount: 12}, stats: {pages: 12, rows: 40, codes: 38, sections: 5, priceFigures: 77, images: 12, pdfPieces: 3}, warnings: ['Pages 9-10 had no readable text.']});
 globalThis.__ciIngest = (a) => {
   ciArgs.push(a); a.onProgress({stage: 'pages', done: 5, total: 10, message: 'Reading page 5 of 10...'});
   return new Promise((res, rej) => { ciRelease = () => { ciSawStop = typeof a.isCancelled === 'function' ? a.isCancelled() : null; if (ciFail) rej(new Error(ciFail)); else res(ciOut(a)); }; });
@@ -155,9 +166,9 @@ await act(async () => btn(/^Upload catalogue$/).click());
 assert.match(text(), /Upload catalogue >> Plain Co/, 'the dialog names the vendor');
 await pickFile(bigPdf('Plain 2026 Full Line.pdf', 148));
 assert.equal(document.querySelector('input[placeholder="2026 Full Line Catalog"]').value, 'Plain 2026 Full Line', 'the title is filled from the file name'); assert.match(text(), /148\.0 MB/, 'the file size shows');
-const edIn = document.querySelector('input[placeholder="2026-07-31"]'); assert.equal(edIn.value, '2026-11-06', 'the edition starts as today');
+const edIn = document.querySelector('input[placeholder="2026 or 2026-07-31"]'); assert.equal(edIn.value, '', 'an unknown edition starts blank, never as today');
 await typeInto(edIn, 'next week'); await act(async () => btn(/^Upload$/).click());
-assert.match(text(), /Edition date must look like 2026-07-31\./, 'a bad edition date is refused'); assert.equal(ciArgs.length, 0, 'and nothing is read');
+assert.match(text(), /Edition must be a year/, 'a bad edition date is refused'); assert.equal(ciArgs.length, 0, 'and nothing is read');
 await typeInto(edIn, '2026-11-06'); await pick(document.querySelectorAll('select')[document.querySelectorAll('select').length - 1], 'yes');
 await act(async () => btn(/^Upload$/).click()); await settle();
 assert.equal(ciArgs.length, 1, 'Upload starts the reading'); assert.equal(ciArgs[0].vendor.id, 'V-plain'); assert.equal(ciArgs[0].title, 'Plain 2026 Full Line'); assert.equal(ciArgs[0].edition, '2026-11-06'); assert.equal(ciArgs[0].hasPrices, 'yes', 'the prices choice is passed on'); assert.equal(ciArgs[0].file.size, 148 * 1048576, 'the big file itself is handed over');
@@ -167,6 +178,19 @@ assert.equal(ciSawStop, true, 'Stop reaches the reader');
 assert.equal(saved.length, 1, 'the finished catalogue is linked to the vendor once'); assert.equal(saved[0].id, 'VCAT-V-plain-2026'); assert.equal(saved[0].cat, 'VendorCatalog'); assert.equal(saved[0].custom, true); assert.equal(JSON.parse(saved[0].content).vendorId, 'V-plain', 'the saved row names the vendor');
 assert.match(text(), /Loaded: Plain 2026 Full Line/); assert.match(text(), /12 pages, 40 model rows \(38 distinct codes\), 5 sections/); assert.match(text(), /Prices found \(77 dollar figures read\)/); assert.match(text(), /the PDF is kept in 3 pieces/); assert.match(text(), /Pages 9-10 had no readable text\./, 'a warning from the reader shows'); assert.match(text(), /The Brain can read it now/);
 await unmount(root);
+// Unknown and year-only editions reach the persisted link row without a made-up date.
+for (const edition of ['', ' 2026 ']) {
+  const editionSaved = []; ciArgs = [];
+  root = await mountVendor('V-plain', [], (x) => editionSaved.push(x));
+  await act(async () => btn(/^Upload catalogue$/).click()); await pickFile(bigPdf('edition.pdf', 3));
+  await typeInto(document.querySelector('input[placeholder="2026 or 2026-07-31"]'), edition);
+  await act(async () => btn(/^Upload$/).click()); await settle();
+  assert.equal(ciArgs.length, 1, 'blank or year-only edition starts an upload');
+  assert.equal(ciArgs[0].edition, edition.trim(), 'the UI preserves source precision');
+  await act(async () => ciRelease()); await settle();
+  assert.equal(JSON.parse(editionSaved[0].content).edition, edition.trim(), 'the saved link row preserves unknown or year-only metadata');
+  await unmount(root);
+}
 // a failed reading shows the reason and saves nothing
 saved.length = 0; ciFail = 'The PDF is damaged.';
 root = await mountVendor('V-plain', [], (x) => saved.push(x));
@@ -310,6 +334,13 @@ assert.ok(bi.asked, 'loading a catalogue asks for a Confirm first');
 assert.equal(bi.ciArgs.length, 1, 'confirming reads the PDF'); assert.equal(bi.ciArgs[0].vendor.id, 'V-plain', 'the vendor is found by a part of its name'); assert.equal(bi.ciArgs[0].title, 'Plain Full Line'); assert.equal(bi.ciArgs[0].edition, '2026-11-06'); assert.equal(bi.ciArgs[0].hasPrices, 'yes'); assert.equal(bi.ciArgs[0].file.size, 150 * 1048576);
 assert.equal(bi.saved.length, 1, 'the catalogue is linked to the vendor'); assert.equal(bi.saved[0].cat, 'VendorCatalog'); assert.equal(JSON.parse(bi.saved[0].content).vendorId, 'V-plain');
 assert.match(bi.text, /Loaded "Plain Full Line" as the Plain Co catalogue/); assert.match(bi.text, /12 pages, 40 model rows \(38 distinct model codes\), 5 sections/); assert.match(bi.text, /Prices were found \(77 dollar figures\)/); assert.match(bi.text, /in 3 pieces/);
+for (const edition of [undefined, '2026']) {
+  const input = {vendor: 'Plain Co', ...(edition === undefined ? {} : {edition})};
+  const result = await brainIngest('admin', input, bigPdf('edition.pdf', 30));
+  assert.equal(result.ciArgs[0].edition, edition, 'the Brain passes unknown or year-only metadata to the shared engine');
+  assert.equal(JSON.parse(result.saved[0].content).edition, edition || '', 'the Brain saves the edition returned by ingestion');
+  assert.match(result.first.tools.find((t) => t.name === 'ingest_vendor_catalog').input_schema.properties.edition.description, /Omit if unknown/, 'the Brain never defaults publication metadata to today');
+}
 bi = await brainIngest('admin', {vendor: 'Plain Co'}, null); assert.match(bi.text, /No catalogue PDF is attached/, 'with no PDF attached the Brain says how to attach one'); assert.equal(bi.saved.length, 0);
 bi = await brainIngest('admin', {vendor: 'Nowhere Inc'}, bigPdf('x.pdf', 30)); assert.match(bi.text, /No vendor named "Nowhere Inc" in the Directory/, 'a vendor that is not in the Directory is refused'); assert.equal(bi.saved.length, 0);
 bi = await brainIngest('admin', {vendor: 'acme'}, bigPdf('x.pdf', 30)); assert.match(bi.text, /More than one vendor matches: Acme Furniture, Acme Seating\. Say which one\./, 'two matching vendors are never guessed'); assert.equal(bi.saved.length, 0); assert.equal(bi.ciArgs.length, 0);
