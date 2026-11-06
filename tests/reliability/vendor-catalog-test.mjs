@@ -16,7 +16,14 @@ const MUTANTS = [
   ['a loaded catalogue is read once', 'if (_cache.has(rec.url)) return _cache.get(rec.url);', ''],
   ['a file that is not a catalogue is refused', 'raw.v !== 1 || ', ''],
   ['a link row without a file address is ignored', '!d.url || !d.vendorId', 'false'],
-  ['a page link opens that page of the PDF', "url + '#page=' + n", "url + '#p=' + n"],
+  ['a page link opens that page of the PDF', "rec.pdfUrl + '#page=' + n", "rec.pdfUrl + '#p=' + n"],
+  ['a split PDF opens the piece that holds the page, at its own page number', "'#page=' + (n - p.from + 1)", "'#page=' + n"],
+  ['each piece of a split PDF gets its own button', "parts.length === 1 ? 'Open PDF' : 'PDF pages ' + p.from + '-' + p.to", "'Open PDF'"],
+  ['the page card shows the page picture', "if (img) out.push(", "if (false) out.push("],
+  ['the page card lists only the rows printed on that page', "if (r.page !== p.n) continue;", ""],
+  ['a very long page is cut with a note', "if (text.length > PAGE_TEXT_MAX) text = text.slice(0, PAGE_TEXT_MAX);", ""],
+  ['the page card offers the next page', "if (p.n < cat.pageCount) nav.push(", "if (false) nav.push("],
+  ['the Brain is told never to answer with only a page number', "Never answer with only a page number", "Answer briefly"],
   ['a pipe in a row cannot break the table', ".replace(/\\|/g, '/')", ''],
   ['an exact model code is not mixed with longer codes', 'if (exact) return { rows: exact, exact: true };', ''],
   ['the Brain is told when a catalogue has no prices', "(r.hasPrices ? '' : ', no prices')", "''"],
@@ -145,6 +152,34 @@ async function suite(M, label) {
   // ---- text for people and the Brain ----
   eq(M.pageRef({pdfUrl: 'https://x.test/a.pdf'}, 12), '[page 12](https://x.test/a.pdf#page=12)', 'a page reference opens that page of the PDF');
   eq(M.pageRef({}, 12), 'page 12', 'without a PDF it is still a page number');
+  const split = {pdfParts: [{url: 'https://x.test/p1.pdf', from: 1, to: 59}, {url: 'https://x.test/p2.pdf', from: 60, to: 102}]};
+  eq(M.pdfPageUrl(split, 61), 'https://x.test/p2.pdf#page=2', 'a split PDF opens the piece that holds the page, at that piece\'s own page number');
+  eq(M.pdfPageUrl(split, 59), 'https://x.test/p1.pdf#page=59', 'the last page of a piece stays in that piece');
+  eq(M.pdfPageUrl(split, 200), '', 'a page no piece holds has no link');
+  eq(M.pageRef(split, 60), '[page 60](https://x.test/p2.pdf#page=1)', 'a page reference uses the right piece');
+  eq(M.pdfLinks(split).map((l) => l.label), ['PDF pages 1-59', 'PDF pages 60-102'], 'each piece of a split PDF gets its own button');
+  eq(M.pdfLinks({pdfUrl: 'https://x.test/a.pdf'}), [{label: 'Open PDF', url: 'https://x.test/a.pdf'}], 'one PDF, one button');
+  eq(M.pdfLinks({}), [], 'no PDF, no button');
+  eq(M.pageImageUrl({pageImgBase: 'https://x.test/pg/'}, 7), 'https://x.test/pg/p-007.jpg', 'a page picture has a numbered address');
+  eq(M.pageImageUrl({}, 7), '', 'no pictures stored, no address');
+  const crec = {vendorName: 'Acme Furniture', pageImgBase: 'https://x.test/pg/', pdfUrl: 'https://x.test/a.pdf'};
+  const card = M.pageMarkdown(cat, crec, 3);
+  ok(/^### Acme Furniture catalogue, page 3 \(printed page 2\): Alpha Desk sizes/.test(card), 'the page card names the catalogue, page, printed page and title');
+  ok(/Section: Desks >> Student Desks: Alpha Desk\. This edition has no prices\./.test(card), 'the page card gives the section and says when there are no prices');
+  ok(/\[Open page 3 in the PDF\]\(https:\/\/x\.test\/a\.pdf#page=3\)/.test(card), 'the page card links to that page of the PDF');
+  ok(/\n!\[Page 3 of the Acme Furniture catalogue\]\(https:\/\/x\.test\/pg\/p-003\.jpg\)\n/.test(card), 'the page card shows the page picture on its own line');
+  ok(/\| Model codes \| As printed \|/.test(card) && /\| AB1000 \| AB1000 \/ 20 x 30 \/ laminate top \|/.test(card) && /\| AB1001 \| AB1001 \/ 22 x 30 \|/.test(card), 'the page card lists the model rows on the page');
+  ok(!/see also|CH100A|MS5000/.test(card.split('Everything printed')[0]), 'the page card lists only rows from that page');
+  ok(/\*\*Everything printed on the page\*\*\nAlpha Desk sizes\nAB1000   20 x 30\nAB1001   22 x 30/.test(card), 'the page card carries every printed line, columns spaced apart');
+  ok(/\n>> Show page 2 of the Acme Furniture catalogue\n>> Show page 4 of the Acme Furniture catalogue$/.test(card), 'the page card offers the previous and next pages');
+  ok(!/!\[/.test(M.pageMarkdown(cat, {vendorName: 'Acme Furniture'}, 3)), 'no pictures stored, no picture line');
+  ok(!/>> Show page 0/.test(M.pageMarkdown(cat, crec, 1)) && !/Show page 10/.test(M.pageMarkdown(cat, crec, 9)), 'the first page has no previous and the last has no next');
+  eq(M.pageMarkdown(cat, crec, 99), '', 'a page that is not there gives nothing');
+  const big = fixture(); big.pages[1].text = 'Alpha Desk\n' + 'x'.repeat(20000);
+  M._resetCatalogCache();
+  const bigCat = await M.loadCatalog({url: 'https://x.test/big.json'}, {fetchImpl: async () => mk(big)});
+  const bigCard = M.pageMarkdown(bigCat, crec, 2);
+  ok(bigCard.length < 15000 && /The page text was cut here/.test(bigCard), 'a very long page is cut with a note so the Brain can still answer');
   const md = M.rowsToMarkdown(M.getProduct(cat, 'AB1000').rows, {});
   ok(md.split('\n').every((l) => l.split('|').length === 6), 'a pipe inside a row never breaks the table');
   ok(/\| AB1000 \| page 3 \| Student Desks: Alpha Desk \|/.test(md), 'the table gives model, page and section');
@@ -155,7 +190,7 @@ async function suite(M, label) {
   ok(/Student Desks: Alpha Desk \(pages 2-3, 3 model rows\)/.test(ov), 'overview lists sections with page ranges and row counts');
   eq(M.promptLine([]), '', 'no catalogue, nothing added to the Brain prompt');
   const pl = M.promptLine([{vendorName: 'Acme Furniture', title: 'Acme 2026 Catalog', edition: '2026-01-01', pageCount: 9, productCount: 10, hasPrices: false, groups: ['Desks', 'Seating']}]);
-  ok(/VENDOR CATALOGUES: Acme Furniture: Acme 2026 Catalog/.test(pl) && /, no prices; covers Desks, Seating/.test(pl) && /search_vendor_catalog/.test(pl) && /Always give the page number/.test(pl), 'the Brain is told what catalogues exist, that there are no prices, and to cite pages');
+  ok(/VENDOR CATALOGUES: Acme Furniture: Acme 2026 Catalog/.test(pl) && /, no prices; covers Desks, Seating/.test(pl) && /search_vendor_catalog/.test(pl) && /Never answer with only a page number/.test(pl), 'the Brain is told what catalogues exist, that there are no prices, and to give the real details instead of a page number');
   const pro = M.profileMarkdown(cat);
   ok(/### Page 1: Welcome to Acme/.test(pro) && /### Page 9: Warranty/.test(pro) && /lifetime warranty/.test(pro), 'company pages come out whole');
 }
