@@ -27,7 +27,7 @@ const MUTANTS = [
   ['every catalogue answer names the PDF pieces', "vcPdfLinks(rec).map(l=>' ['+l.label+']('+l.url+')').join('')", "''"],
   ['the vendor page opens each PDF', '{vcPdfLinks(rec).map(l=><Btn', '{[].map(l=><Btn'],
   ['two catalogues need a vendor name', "else if(m.length>1)return {error:'More than one catalogue is loaded.", "else if(false)return {error:'More than one catalogue is loaded."],
-  ['the Directory offers a catalogue upload per vendor', 'e.stopPropagation();setCatUp(r)', 'e.stopPropagation();void 0'],
+  ['the Directory offers a catalogue upload per vendor', 'else{setCatUp(r)}', 'else{void 0}'],
   ['a vendor with no catalogue offers to upload one', '<Btn onClick={()=>setShowUp(true)}>Upload catalogue</Btn>', ''],
   ['an upload saves the link row to the vendor', "addSop({id:out.id,title:out.rec.title,cat:'VendorCatalog',icon:'book'", "(()=>{})({id:out.id,title:out.rec.title,cat:'VendorCatalog',icon:'book'"],
   ['the edition date is checked before an upload starts', 'ed=ciEdition(edition)', "ed=edition.trim()"],
@@ -41,6 +41,7 @@ const MUTANTS = [
   ['the Brain needs a vendor that is in the Directory', "if (!hits.length) return {error: 'No vendor named", "if (false) return {error: 'No vendor named"],
   ['the Brain will not guess between two vendors', "if (hits.length > 1) return {error: 'More than one vendor matches", "if (false) return {error: 'More than one vendor matches"],
 ];
+MUTANTS.push(['a loaded Directory catalogue opens its vendor page', 'if(catalogsForVendor(customSops,r.id).length){window._viewVendorId=r.id;setPage("vendor360")}else{setCatUp(r)}', 'setCatUp(r)']);
 const src = '../../src';
 const chartNames = [...new Set(['App.jsx', 'App2.jsx', 'App3.jsx'].flatMap((f) => [...fs.readFileSync(src + '/' + f, 'utf8').matchAll(/import\s*\{([^}]+)\}\s*from\s*["']recharts["']/g)].flatMap((m) => m[1].split(',').map((n) => n.trim().split(/\s+as\s+/)[0]))))];
 const editionSource = fs.readFileSync(src + '/catalogIngest.js', 'utf8').slice(fs.readFileSync(src + '/catalogIngest.js', 'utf8').indexOf('export function normalizeCatalogEdition')).split('// ---------- libraries ----------')[0];
@@ -214,8 +215,11 @@ await unmount(root);
   await pickFile(bigPdf('plain.pdf', 160)); ciArgs = []; await act(async () => btn(/^Upload$/).click()); await settle(); await act(async () => { ciRelease(); }); await settle();
   assert.equal(saved2.length, 1, 'uploading from the Directory links the catalogue to that vendor'); assert.equal(JSON.parse(saved2[0].content).vendorId, 'V-plain'); assert.equal(ciArgs[0].file.size, 160 * 1048576, 'a 160 MB PDF is accepted');
   assert.ok(btn(/^Ask the Brain$/), 'a finished upload offers the Brain'); await act(async () => btn(/^Open vendor page$/).click()); assert.equal(window._viewVendorId, 'V-plain', 'Open vendor page selects that vendor'); assert.deepEqual(dirPages, ['vendor360'], 'and goes to the vendor page'); assert.doesNotMatch(text(), /Upload catalogue >> Plain Co/, 'the dialog closes');
-  await act(async () => dbtn(/^Catalogue$/)[0].click()); assert.match(text(), /Upload catalogue >> Acme Furniture/); assert.match(text(), /Already loaded: Acme 2026 Catalog/);
-  await act(async () => btn(/^Cancel$/).click()); assert.doesNotMatch(text(), /Upload catalogue >> Acme Furniture/, 'Cancel leaves the dialog');
+  await act(async () => dbtn(/^Catalogue$/)[0].click());
+  assert.equal(window._viewVendorId, 'V-acme', 'Catalogue selects the vendor with the loaded catalogue');
+  assert.deepEqual(dirPages, ['vendor360', 'vendor360'], 'Catalogue opens the vendor page');
+  assert.doesNotMatch(text(), /Upload catalogue >> Acme Furniture/, 'opening a loaded catalogue does not open upload');
+  assert.equal(saved2.length, 1, 'opening a loaded catalogue does not save anything');
   await unmount(r);
   const r2 = await mountDir({addSop: undefined}); assert.equal(dbtn(/Catalogue/).length, 0, 'without a way to save, no catalogue button is shown'); await unmount(r2);
 }
