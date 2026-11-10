@@ -37,10 +37,23 @@ const MUTANTS = [
   ['a catalogue-sized PDF is never sent to the model', 'brainFile.size > 25 * 1024 * 1024', 'brainFile.size > 25000 * 1024 * 1024'],
   ['a finished upload opens the vendor page', 'window._viewVendorId=vendor.id;setPage("vendor360");onClose()', 'window._viewVendorId=vendor.id;setPage("brain");onClose()'],
   ['only the office loads catalogues through the Brain', "if (_bkRole === 'sales') return {error: 'Only the office can load vendor catalogues.'};", ''],
-  ['the Brain says when no PDF is attached', "if (!f) return {error: 'No catalogue PDF is attached.", "if (false) return {error: 'No catalogue PDF is attached."],
+  ['the Brain says when no PDF is attached', "if (!f && !link) return {error: 'No catalogue PDF is attached", "if (false) return {error: 'No catalogue PDF is attached"],
   ['the Brain needs a vendor that is in the Directory', "if (!hits.length) return {error: 'No vendor named", "if (false) return {error: 'No vendor named"],
   ['the Brain will not guess between two vendors', "if (hits.length > 1) return {error: 'More than one vendor matches", "if (false) return {error: 'More than one vendor matches"],
 ];
+MUTANTS.push(
+  ['a link is downloaded when no file is chosen', 'if(!file&&url){', 'if(false){'],
+  ['a web page with one PDF on it is followed', 'if(dl.links&&dl.links.length===1)dl=await', 'if(false)dl=await'],
+  ['the temporary download is cleared afterwards', '}finally{if(dl)ciClearDownload(', '}finally{if(false)ciClearDownload('],
+  ['product names are read on pages without codes', 'aiProducts:ciAiProducts()', 'aiProducts:undefined'],
+  ['a link catalogue keeps its source link', "sourceUrl:dl?dl.sourceUrl:''", "sourceUrl:''"],
+  ['the dialog lists the PDFs on a web page', 'if(out.links){setChoices(out);', 'if(out.links){setChoices(null);'],
+  ['picking a PDF from the list loads that PDF', 'setTitle(t);go(l.url,t)', 'setTitle(t);go(link,t)'],
+  ['the title is filled from a PDF link', 'const t=linkTitle(v);if(!titleTouched&&t)setTitle(t)', 'const t=""'],
+  ['the Brain uses a pasted link', 'url: link, vendor: hits[0]', "url: '', vendor: hits[0]"],
+  ['the Brain lists the PDFs on a web page', 'if (out.links) return {success: true', 'if (false) return {success: true'],
+  ['a pasted link wins over an attached file', 'const f = link ? null : brainCatalogFileRef.current;', 'const f = brainCatalogFileRef.current;'],
+);
 MUTANTS.push(['a loaded Directory catalogue opens its vendor page', 'if(catalogsForVendor(customSops,r.id).length){window._viewVendorId=r.id;setPage("vendor360")}else{setCatUp(r)}', 'setCatUp(r)']);
 const src = '../../src';
 const chartNames = [...new Set(['App.jsx', 'App2.jsx', 'App3.jsx'].flatMap((f) => [...fs.readFileSync(src + '/' + f, 'utf8').matchAll(/import\s*\{([^}]+)\}\s*from\s*["']recharts["']/g)].flatMap((m) => m[1].split(',').map((n) => n.trim().split(/\s+as\s+/)[0]))))];
@@ -50,7 +63,7 @@ const stubs = {
   recharts: chartNames.map((n) => 'export const ' + n + '=()=>null;').join('\n'),
   xlsx: 'export const read=(...a)=>globalThis.__XLSX.read(...a);export const utils={sheet_to_json:(...a)=>globalThis.__XLSX.utils.sheet_to_json(...a)};export default {read,utils};',
   db: 'export const db=globalThis.__db;',
-  ci: "export const ingestCatalog=(a)=>globalThis.__ciIngest(a);\n" + editionSource,
+  ci: "export const ingestCatalog=(a)=>globalThis.__ciIngest(a);export const fetchCatalogFromLink=(a)=>globalThis.__ciLink(a);export const clearDownload=(a)=>{globalThis.__ciClears.push(a)};export const aiProductsVia=()=>globalThis.__aiFn;\n" + editionSource,
 };
 if (mutantIdx >= 0) assert.ok(fs.readFileSync(src + '/App2.jsx', 'utf8').includes(MUTANTS[mutantIdx][1]), 'mutation anchor missing: ' + MUTANTS[mutantIdx][0]);
 await build({entryPoints: [src + '/App2.jsx'], bundle: true, format: 'cjs', platform: 'node', jsx: 'automatic', external: ['react', 'react-dom', 'react-dom/client'], define: {'import.meta.env': '{}'}, outfile: 'vendor-catalog-bundle-ui.cjs', plugins: [{name: 'offline-only', setup(b) {
@@ -173,7 +186,7 @@ assert.match(text(), /Edition must be a year/, 'a bad edition date is refused');
 await typeInto(edIn, '2026-11-06'); await pick(document.querySelectorAll('select')[document.querySelectorAll('select').length - 1], 'yes');
 await act(async () => btn(/^Upload$/).click()); await settle();
 assert.equal(ciArgs.length, 1, 'Upload starts the reading'); assert.equal(ciArgs[0].vendor.id, 'V-plain'); assert.equal(ciArgs[0].title, 'Plain 2026 Full Line'); assert.equal(ciArgs[0].edition, '2026-11-06'); assert.equal(ciArgs[0].hasPrices, 'yes', 'the prices choice is passed on'); assert.equal(ciArgs[0].file.size, 148 * 1048576, 'the big file itself is handed over');
-assert.match(text(), /Reading page 5 of 10\.\.\./, 'the page being read shows'); assert.match(text(), /40%/, 'the bar moves with the pages'); assert.match(text(), /Working\.\.\./);
+assert.match(text(), /Reading page 5 of 10\.\.\./, 'the page being read shows'); assert.match(text(), /45%/, 'the bar moves with the pages'); assert.match(text(), /Working\.\.\./);
 await act(async () => btn(/^Stop$/).click()); await act(async () => { ciRelease(); }); await settle();
 assert.equal(ciSawStop, true, 'Stop reaches the reader');
 assert.equal(saved.length, 1, 'the finished catalogue is linked to the vendor once'); assert.equal(saved[0].id, 'VCAT-V-plain-2026'); assert.equal(saved[0].cat, 'VendorCatalog'); assert.equal(saved[0].custom, true); assert.equal(JSON.parse(saved[0].content).vendorId, 'V-plain', 'the saved row names the vendor');
@@ -203,6 +216,73 @@ await unmount(root); ciFail = null;
 root = await mountVendor('V-acme', [ACME], () => {});
 await act(async () => btn(/^Upload catalogue$/).click()); assert.match(text(), /Already loaded: Acme 2026 Catalog \(edition 2026-01-01\)/, 'the dialog lists what is already loaded');
 await unmount(root);
+
+// ---- a catalogue from a link (the server download is replaced by a fake the test controls) ----
+let linkArgs = []; let linkAnswers = []; globalThis.__ciClears = []; globalThis.__aiFn = async () => [];
+globalThis.__ciLink = async (a) => { linkArgs.push(a); a.onProgress({stage: 'download', done: 1, total: 2, message: 'Downloading the PDF (150 MB, piece 2 of 4)...'}); const x = linkAnswers.shift(); if (x instanceof Error) throw x; return x; };
+const linkBox = () => document.querySelector('input[placeholder="https://vendor.com/catalog.pdf"]');
+const titleBox = () => document.querySelector('input[placeholder="2026 Full Line Catalog"]');
+{
+  const linkSaved = []; ciArgs = [];
+  root = await mountVendor('V-plain', [], (x) => linkSaved.push(x));
+  await act(async () => btn(/^Upload catalogue$/).click());
+  assert.ok(linkBox(), 'the upload dialog takes a link as well as a file'); assert.match(text(), /Google Drive or Dropbox share link, or the vendor's catalogue web page/);
+  await typeInto(linkBox(), 'https://plain.test/files/Plain_2027_Catalog.pdf');
+  assert.equal(titleBox().value, 'Plain 2027 Catalog', 'the title is filled from the PDF name in the link');
+  const dl = bigPdf('Plain_2027_Catalog.pdf', 150);
+  linkAnswers = [{file: dl, sourceUrl: 'https://plain.test/files/Plain_2027_Catalog.pdf', token: 'tok999aaa', pieces: 4}];
+  await act(async () => btn(/^Upload$/).click()); await settle();
+  assert.equal(linkArgs.length, 1, 'Upload with a link downloads it'); assert.equal(linkArgs[0].url, 'https://plain.test/files/Plain_2027_Catalog.pdf'); assert.equal(linkArgs[0].vendor.id, 'V-plain');
+  assert.equal(ciArgs.length, 1, 'the downloaded PDF is read'); assert.equal(ciArgs[0].file, dl, 'the downloaded PDF is read exactly like an uploaded one'); assert.equal(ciArgs[0].sourceUrl, 'https://plain.test/files/Plain_2027_Catalog.pdf', 'the catalogue remembers the link it came from');
+  assert.equal(ciArgs[0].deps.aiProducts, globalThis.__aiFn, 'product names on pages without model codes are read');
+  assert.match(text(), /Reading page 5 of 10/);
+  await act(async () => ciRelease()); await settle();
+  assert.equal(linkSaved.length, 1, 'the linked catalogue is saved to the vendor'); assert.equal(JSON.parse(linkSaved[0].content).vendorId, 'V-plain');
+  assert.deepEqual(globalThis.__ciClears.map((c) => [c.vendor.id, c.token, c.pieces]), [['V-plain', 'tok999aaa', 4]], 'the temporary download is cleared afterwards');
+  await unmount(root);
+}
+{
+  // a web page with several PDFs: nothing loads until one is picked
+  const pageSaved = []; ciArgs = []; linkArgs = []; globalThis.__ciClears = [];
+  root = await mountVendor('V-plain', [], (x) => pageSaved.push(x));
+  await act(async () => btn(/^Upload catalogue$/).click());
+  await typeInto(linkBox(), 'https://plain.test/catalogs');
+  assert.equal(titleBox().value, '', 'a page link does not invent a title');
+  linkAnswers = [{links: [{url: 'https://plain.test/a/Full_Line_2027.pdf', text: 'Full Line Catalog'}, {url: 'https://plain.test/a/price.pdf', text: 'Price List'}], page: 'https://plain.test/catalogs', title: 'Plain Catalogs'}];
+  await act(async () => btn(/^Upload$/).click()); await settle();
+  assert.match(text(), /That link is a web page \(Plain Catalogs\)\. These PDFs are on it; pick the catalogue:/, 'a web page link lists the PDFs on it'); assert.match(text(), /Full Line Catalog/); assert.match(text(), /Price List/);
+  assert.equal(ciArgs.length, 0, 'nothing is read until a PDF is picked'); assert.equal(pageSaved.length, 0);
+  const uses = [...document.querySelectorAll('button')].filter((b) => /^Use this one$/.test(b.textContent)); assert.equal(uses.length, 2, 'each PDF can be picked');
+  linkAnswers = [{file: bigPdf('Full_Line_2027.pdf', 20), sourceUrl: 'https://plain.test/a/Full_Line_2027.pdf', token: 'tok2bbbbbb', pieces: 1}];
+  await act(async () => uses[0].click()); await settle();
+  assert.equal(linkArgs[1].url, 'https://plain.test/a/Full_Line_2027.pdf', 'picking a PDF downloads that PDF'); assert.equal(ciArgs[0].title, 'Full Line 2027', 'and names the catalogue after it');
+  await act(async () => ciRelease()); await settle();
+  assert.equal(pageSaved.length, 1, 'the picked PDF is saved to the vendor'); assert.equal(globalThis.__ciClears.length, 1);
+  await unmount(root);
+}
+{
+  // a page with exactly one PDF is followed without asking; a link that fails says why
+  const oneSaved = []; ciArgs = []; linkArgs = [];
+  root = await mountVendor('V-plain', [], (x) => oneSaved.push(x));
+  await act(async () => btn(/^Upload catalogue$/).click());
+  await typeInto(linkBox(), 'https://plain.test/catalog-page');
+  linkAnswers = [{links: [{url: 'https://plain.test/only.pdf', text: 'Catalog'}], page: 'https://plain.test/catalog-page', title: ''}, {file: bigPdf('only.pdf', 5), sourceUrl: 'https://plain.test/only.pdf', token: 'tok3ccccc', pieces: 1}];
+  await act(async () => btn(/^Upload$/).click()); await settle();
+  assert.deepEqual(linkArgs.map((a) => a.url), ['https://plain.test/catalog-page', 'https://plain.test/only.pdf'], 'a page with one PDF on it goes straight to that PDF'); assert.equal(ciArgs.length, 1);
+  await act(async () => ciRelease()); await settle(); assert.equal(oneSaved.length, 1);
+  await unmount(root);
+  root = await mountVendor('V-plain', [], (x) => oneSaved.push(x));
+  await act(async () => btn(/^Upload catalogue$/).click());
+  await typeInto(linkBox(), 'https://plain.test/viewer');
+  linkAnswers = [new Error('That link opens a web page, not a PDF, and the page has no PDF link on it.')];
+  await act(async () => btn(/^Upload$/).click()); await settle();
+  assert.match(text(), /no PDF link on it/, 'a link that cannot be read says why'); assert.equal(oneSaved.length, 1, 'and nothing is saved');
+  globalThis.__ciClears = []; ciFail = 'Cancelled.'; linkAnswers = [{file: bigPdf('x.pdf', 5), sourceUrl: 'https://plain.test/x.pdf', token: 'tok4ddddd', pieces: 2}];
+  await typeInto(linkBox(), 'https://plain.test/x.pdf');
+  await act(async () => btn(/^Upload$/).click()); await settle(); await act(async () => ciRelease()); await settle();
+  assert.equal(globalThis.__ciClears.length, 1, 'the temporary download is cleared even when the reading stops'); ciFail = null;
+  await unmount(root);
+}
 
 // ---- the Directory ----
 {
@@ -350,6 +430,20 @@ bi = await brainIngest('admin', {vendor: 'Nowhere Inc'}, bigPdf('x.pdf', 30)); a
 bi = await brainIngest('admin', {vendor: 'acme'}, bigPdf('x.pdf', 30)); assert.match(bi.text, /More than one vendor matches: Acme Furniture, Acme Seating\. Say which one\./, 'two matching vendors are never guessed'); assert.equal(bi.saved.length, 0); assert.equal(bi.ciArgs.length, 0);
 bi = await brainIngest('admin', {vendor: 'Acme Furniture'}, bigPdf('x.pdf', 30)); assert.equal(bi.ciArgs[0].vendor.id, 'V-acme', 'an exact name wins over a longer one that contains it');
 bi = await brainIngest('sales', {vendor: 'Plain Co'}, bigPdf('x.pdf', 30)); assert.equal(bi.ciArgs.length, 0, 'the sales role cannot load a catalogue'); assert.equal(bi.saved.length, 0);
+linkArgs = []; globalThis.__ciClears = [];
+const brainDl = bigPdf('Plain_2027_Catalog.pdf', 150);
+linkAnswers = [{file: brainDl, sourceUrl: 'https://plain.test/files/Plain_2027_Catalog.pdf', token: 'tok5eeeee', pieces: 4}];
+bi = await brainIngest('admin', {vendor: 'Plain Co', url: 'https://plain.test/files/Plain_2027_Catalog.pdf'}, null);
+assert.ok(bi.first.tools.find((t) => t.name === 'ingest_vendor_catalog').input_schema.properties.url, 'the Brain upload takes a link');
+assert.equal(linkArgs[0].url, 'https://plain.test/files/Plain_2027_Catalog.pdf', 'a link pasted in the Brain is downloaded'); assert.equal(bi.ciArgs[0].file, brainDl, 'and read like an attached PDF'); assert.equal(bi.ciArgs[0].title, 'Plain 2027 Catalog', 'the title comes from the link');
+assert.equal(bi.saved.length, 1, 'a linked catalogue is saved to the vendor from the Brain'); assert.match(bi.text, /Loaded "Plain 2027 Catalog" as the Plain Co catalogue/); assert.equal(globalThis.__ciClears.length, 1);
+linkArgs = []; linkAnswers = [{file: bigPdf('linked.pdf', 2), sourceUrl: 'https://plain.test/linked.pdf', token: 'tok6fffff', pieces: 1}];
+bi = await brainIngest('admin', {vendor: 'Plain Co', url: 'https://plain.test/linked.pdf'}, bigPdf('attached.pdf', 30));
+assert.equal(bi.ciArgs[0].file.name, 'linked.pdf', 'a pasted link wins over an attached file');
+linkArgs = []; linkAnswers = [{links: [{url: 'https://plain.test/a/full.pdf', text: 'Full [Line]'}, {url: 'https://plain.test/a/price.pdf', text: 'Price List'}], page: 'https://plain.test/c', title: 'Plain Catalogs'}];
+bi = await brainIngest('admin', {vendor: 'Plain Co', url: 'https://plain.test/c'}, null);
+assert.match(bi.text, /That link is a web page \(Plain Catalogs\), not a PDF\./, 'the Brain says a page link is a web page'); assert.match(bi.text, /1\.\s?Full Line/); assert.match(bi.text, /2\.\s?Price List/); assert.match(bi.text, /Which one is the Plain Co catalogue\?/, 'and asks which PDF is the catalogue');
+assert.equal(bi.saved.length, 0, 'nothing is loaded from a page link until one PDF is picked'); assert.equal(bi.ciArgs.length, 0);
 console.error = origErr;
 
 if (mutantIdx < 0) console.log('PASS vendor page catalogue panel and Brain catalogue tools on a synthetic catalogue (own vendor only, page links, read-only tools, Playbook hides link rows)');
