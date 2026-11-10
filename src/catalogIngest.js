@@ -90,6 +90,15 @@ export function loadPdfLib({ importer = (u) => import(/* @vite-ignore */ u) } = 
 }
 
 // ---------- text ----------
+// Letter-spaced headings ("P A L M A N O V A") come out of the PDF with a space after every letter. Runs of
+// single letters are closed up so the name reads and searches as one word; a double space stays a word break.
+export function unspace(str) {
+  const s = String(str == null ? '' : str);
+  const toks = s.trim().split(/ +/);
+  if (toks.length < 4 || toks.filter((t) => t.length === 1).length < toks.length * 0.75) return s;
+  return s.trim().split(/ {2,}/).map((w) => w.replace(/ /g, '')).join(' ');
+}
+
 // pdf.js text items -> lines. Items on the same baseline form a line; a wide gap becomes " | " so table
 // columns stay apart; lines run top to bottom.
 export function linesFromItems(items) {
@@ -97,7 +106,7 @@ export function linesFromItems(items) {
   for (const it of Array.isArray(items) ? items : []) {
     if (!it || typeof it.str !== 'string' || !it.str.trim() || !Array.isArray(it.transform)) continue;
     const h = Math.abs(Number(it.height) || Number(it.transform[3]) || 10) || 10;
-    its.push({ s: it.str, x: Number(it.transform[4]) || 0, y: Number(it.transform[5]) || 0, w: Number(it.width) || it.str.length * h * 0.5, h });
+    its.push({ s: unspace(it.str), x: Number(it.transform[4]) || 0, y: Number(it.transform[5]) || 0, w: Number(it.width) || it.str.length * h * 0.5, h });
   }
   its.sort((a, b) => b.y - a.y || a.x - b.x);
   const rows = [];
@@ -131,6 +140,10 @@ const CODE_A = /(?<![A-Za-z0-9\-/.$])([A-Z]{1,6}\d[A-Z0-9]*(?:-[A-Z0-9]{1,14}){0
 const CODE_B = /(?<![A-Za-z0-9\-/.$])(\d{1,5}-[A-Z0-9]{2,12}(?:-[A-Z0-9]{1,10}){0,3})(?![A-Za-z0-9])/g;
 // Numeric-leading model IDs keep their suffix and leading zeros (for example 0469JC18).
 const CODE_C = /(?<![A-Za-z0-9\-/.$])(\d{2,7}[A-Z]{2,6}[A-Z0-9]*(?:-[A-Z0-9]{1,14}){0,5})(?![A-Za-z0-9])/g;
+// Hyphenated letter series such as CH-OM-CL-G-12 or CH-OM-LF-C-AD (three or more parts).
+const CODE_D = /(?<![A-Za-z0-9\-/.$#])([A-Z]{1,4}(?:-[A-Z0-9]{1,6}){2,7})(?![A-Za-z0-9\-])/g;
+// Item numbers printed with a number sign, such as #2066, #18116 or #72.91 (stored without the sign).
+const CODE_E = /(?<![A-Za-z0-9&])#\s?((?:\d{2,7}\.\d{1,3}|\d{3,7})[A-Z]{0,3}(?:-[A-Z0-9]{1,6}){0,3})(?![A-Za-z0-9\-])/g;
 const MEASUREMENT_CODE = /^\d+(?:MM|CM|IN|FT|LB|LBS|KG|OZ|VAC|VDC|USB|AC|AMP|AMPS)\d*$/;
 const STOP = /^(ISO|ANSI|BIFMA|ASTM|TSCA|CARB|AWI|NSF|CAL|UL|PO|FAX|TEL|SUITE|PAGE|FORM)/;
 const HEADER_RE = /\b(model|item|part|sku|catalog|description|price|list|net|cost|each|qty|size|dimensions?|wgt|weight|color|finish|width|depth|height)\b/i;
@@ -138,7 +151,7 @@ const PRICEY_HEADER = /\b(price|msrp|your cost)\b/i;
 
 export function codesInLine(line) {
   const out = [];
-  for (const re of [CODE_A, CODE_B, CODE_C]) {
+  for (const re of [CODE_A, CODE_B, CODE_C, CODE_D, CODE_E]) {
     re.lastIndex = 0;
     let m;
     while ((m = re.exec(line))) {
@@ -146,6 +159,7 @@ export function codesInLine(line) {
       if (c.length < 3 || c.length > 30 || STOP.test(c)) continue;
       if (re === CODE_C && MEASUREMENT_CODE.test(c)) continue;
       if (re === CODE_B && !/[A-Z]/.test(c)) continue;
+      if (re === CODE_D && (/^PRE-K/.test(c) || !(/\d/.test(c) || (c.split('-').length >= 4 && c.split('-').every((x) => x.length <= 3))))) continue;
       if (!out.includes(c)) out.push(c);
     }
   }
@@ -184,6 +198,38 @@ export function rowsFromPages(pageLines) {
     }
   }
   return { products, headers, pricedHeaders };
+}
+
+// ---------- products named on pages that print no model code ----------
+// Lookbooks and brochures name their products without codes. A reader (the AI, injected) lists them; only
+// names and codes that are really printed on that page are kept, so nothing invented gets in.
+const normKey = (s) => String(s == null ? '' : s).toUpperCase().replace(/[^A-Z0-9]/g, '');
+export function namedRows(pageLines, items) {
+  const byPage = new Map(pageLines.map((pg) => [pg.n, pg]));
+  const out = [];
+  const seen = new Set();
+  for (const it of Array.isArray(items) ? items : []) {
+    if (!it || typeof it !== 'object') continue;
+    const pg = byPage.get(Number(it.page));
+    if (!pg) continue;
+    const all = normKey(pg.lines.join(' '));
+    const name = String(it.name == null ? '' : it.name).replace(/\s+/g, ' ').trim().slice(0, 80);
+    let code = String(it.code == null ? '' : it.code).replace(/\s+/g, ' ').trim().slice(0, 30);
+    const nk = normKey(name);
+    const ck = normKey(code);
+    if (!(ck.length >= 2 && all.includes(ck))) code = '';
+    const nameOk = nk.length >= 3 && all.includes(nk);
+    if (!nameOk && !code) continue;
+    const key = pg.n + '|' + (code ? ck : nk);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const want = code ? ck : nk;
+    const line = pg.lines.find((l) => normKey(l).includes(want)) || '';
+    const row = { c: code || name, p: pg.n, r: (line || name).slice(0, ROW_MAX), k: 'name' };
+    if (code && nameOk) row.b = name;
+    out.push(row);
+  }
+  return out;
 }
 
 // ---------- sections ----------
@@ -273,7 +319,7 @@ export async function renderPageJpeg(page) {
 // ---------- the whole job ----------
 // file: a File (or any Blob with name). vendor: {id, name, phone?, email?}.
 // deps: {pdfjs, pdflib?, upload(path, blob) -> url|null, publicUrl?(path) -> url, renderPage?, company?}
-export async function ingestCatalog({ file, vendor, title, edition, hasPrices = 'auto', deps = {}, onProgress = () => {}, isCancelled = () => false }) {
+export async function ingestCatalog({ file, vendor, title, edition, hasPrices = 'auto', sourceUrl = '', deps = {}, onProgress = () => {}, isCancelled = () => false }) {
   if (!file || !vendor || !vendor.id) throw new Error('Pick a vendor and a PDF.');
   if (!/\.pdf$/i.test(file.name || '') && file.type !== 'application/pdf') throw new Error('Only PDF catalogues can be loaded.');
   const ed = normalizeCatalogEdition(edition);
@@ -356,6 +402,38 @@ export async function ingestCatalog({ file, vendor, title, edition, hasPrices = 
   for (const p of pageRecs) p.sec = secOf(p.n).id;
 
   const { products, headers, pricedHeaders } = rowsFromPages(pageLines);
+  let named = 0;
+  if (typeof deps.aiProducts === 'function') {
+    const have = new Set(products.map((r) => r.p));
+    const todo = pageLines.filter((pg) => !have.has(pg.n) && pg.lines.join(' ').length >= 80);
+    const batches = [];
+    let cur = [];
+    let size = 0;
+    for (const pg of todo) {
+      const t = pg.lines.join('\n').slice(0, 6000);
+      if (cur.length && (cur.length >= 6 || size + t.length > 16000)) { batches.push(cur); cur = []; size = 0; }
+      cur.push({ n: pg.n, text: t, lines: pg.lines });
+      size += t.length;
+    }
+    if (cur.length) batches.push(cur);
+    let aiFail = 0;
+    let doneB = 0;
+    const work = batches.map((b) => async () => {
+      check();
+      try {
+        const rows = namedRows(b, await deps.aiProducts(b.map((x) => ({ n: x.n, text: x.text }))));
+        products.push(...rows);
+        named += rows.length;
+      } catch (e) { if (/^Cancelled/.test((e && e.message) || '')) throw e; aiFail++; }
+      doneB++;
+      onProgress({ stage: 'products', done: doneB, total: batches.length, message: 'Reading product names on pages without model codes (' + doneB + ' of ' + batches.length + ')...' });
+    });
+    if (batches.length) onProgress({ stage: 'products', done: 0, total: batches.length, message: 'Reading product names on pages without model codes...' });
+    for (let i = 0; i < work.length; i += 3) await Promise.all(work.slice(i, i + 3).map((f) => f()));
+    check();
+    if (aiFail) warnings.push('Product names could not be read on ' + aiFail + ' group' + (aiFail === 1 ? '' : 's') + ' of pages without model codes. Their text and pictures are still saved.');
+    products.sort((a, b) => a.p - b.p);
+  }
   const figures = pageLines.reduce((a, pg) => a + priceFigures(pg.lines.join('\n')), 0);
   const priced = hasPrices === true || hasPrices === 'yes' ? true : hasPrices === false || hasPrices === 'no' ? false : figures >= Math.max(10, pageCount * 0.5) || pricedHeaders >= Math.max(5, pageCount * 0.1);
   const withRows = new Set(products.map((r) => secOf(r.p).id));
@@ -366,7 +444,7 @@ export async function ingestCatalog({ file, vendor, title, edition, hasPrices = 
   const catalog = {
     v: 1, vendorId: vendor.id, vendorName: vendor.name, title: ttl, edition: ed, source: file.name || '', hasPrices: priced, pageOffset: 0, pageCount,
     company: { name: vendor.name, phone: vendor.phone || '', email: vendor.email || '', ...(deps.company || {}) }, profilePages,
-    notes: ['Loaded from the PDF "' + (file.name || ttl) + '" inside the app.', priced ? 'This edition has prices; they appear on the rows and pages as printed.' : 'No prices were found in this edition.'],
+    notes: ['Loaded from the PDF "' + (file.name || ttl) + '" inside the app' + (sourceUrl ? ', downloaded from ' + sourceUrl : '') + '.', priced ? 'This edition has prices; they appear on the rows and pages as printed.' : 'No prices were found in this edition.'],
     sections, pages: pageRecs, headers, products, index: [], generatedAt: todayLocal(),
   };
 
@@ -417,8 +495,57 @@ export async function ingestCatalog({ file, vendor, title, edition, hasPrices = 
     vendorId: vendor.id, vendorName: vendor.name, title: ttl, edition: ed, url: jsonUrl,
     ...link, ...(imgOk ? { pageImgBase: baseUrl + 'pages/' } : {}),
     pageCount, productCount: products.length, sectionCount: sections.length, groups, hasPrices: priced, uploadedAt: todayLocal(),
+    ...(sourceUrl ? { sourceUrl } : {}),
   };
-  const stats = { pages: pageCount, rows: products.length, codes: codeSet.size, sections: sections.length, priceFigures: figures, images: imgOk, pdfPieces: link.pdfParts ? link.pdfParts.length : link.pdfUrl ? 1 : 0 };
+  const stats = { pages: pageCount, rows: products.length, named, codes: codeSet.size, sections: sections.length, priceFigures: figures, images: imgOk, pdfPieces: link.pdfParts ? link.pdfParts.length : link.pdfUrl ? 1 : 0 };
   onProgress({ stage: 'done', done: 1, total: 1, message: 'Done.' });
   return { id: 'VCAT-' + vendor.id + '-' + slugify(ttl).slice(0, 20) + '-' + slugify(ed || 'unknown'), rec, stats, warnings };
+}
+
+// ---------- a catalogue from a link ----------
+// The server downloads the vendor's PDF into storage pieces (see api/catalog.js); here they are joined back
+// into one file that goes through ingestCatalog like an upload. A link to a web page answers with the PDF
+// links found on it instead: {links, page, title}.
+export async function fetchCatalogFromLink({ url, vendor, api = '/api/catalog', fetchImpl = (u, o) => fetch(u, o), onProgress = () => {}, isCancelled = () => false }) {
+  const link = String(url == null ? '' : url).trim();
+  if (!/^https?:\/\/[^\s]+$/i.test(link)) throw new Error('Paste the full link, starting with https://');
+  if (!vendor || !vendor.id) throw new Error('Pick a vendor first.');
+  onProgress({ stage: 'download', done: 0, total: 1, message: 'Getting the catalogue from the link...' });
+  let r;
+  try { r = await fetchImpl(api, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'fetch', url: link, vendorId: vendor.id }) }); } catch (e) { throw new Error('Could not reach the app server (' + ((e && e.message) || 'offline') + ').'); }
+  let j = null;
+  try { j = await r.json(); } catch { j = null; }
+  if (!r.ok || !j || j.error) throw new Error((j && j.error) || 'The link could not be read (HTTP ' + r.status + ').');
+  if (j.kind === 'links') return { links: Array.isArray(j.links) ? j.links : [], page: j.page || link, title: j.title || '' };
+  if (j.kind !== 'pdf' || !Array.isArray(j.parts) || !j.parts.length) throw new Error('The link did not give a PDF.');
+  const blobs = [];
+  for (let i = 0; i < j.parts.length; i++) {
+    if (isCancelled()) throw new Error('Cancelled.');
+    onProgress({ stage: 'download', done: i, total: j.parts.length, message: 'Downloading the PDF (' + Math.round((j.bytes || 0) / 1048576) + ' MB, piece ' + (i + 1) + ' of ' + j.parts.length + ')...' });
+    let pr = null;
+    for (let t = 0; t < 3 && !(pr && pr.ok); t++) { try { pr = await fetchImpl(j.parts[i]); } catch { pr = null; } }
+    if (!pr || !pr.ok) throw new Error('Could not download piece ' + (i + 1) + ' of the PDF. Try again.');
+    blobs.push(await pr.blob());
+  }
+  const name = String(j.name || 'catalogue.pdf');
+  const file = new File(blobs, /\.pdf$/i.test(name) ? name : name + '.pdf', { type: 'application/pdf' });
+  if (j.bytes && file.size !== j.bytes) throw new Error('The download was incomplete (' + file.size + ' of ' + j.bytes + ' bytes). Try again.');
+  return { file, sourceUrl: j.source || link, token: j.token || '', pieces: j.parts.length };
+}
+
+// Empties the temporary download pieces; never throws.
+export async function clearDownload({ vendor, token, pieces, api = '/api/catalog', fetchImpl = (u, o) => fetch(u, o) }) {
+  if (!token || !vendor || !vendor.id) return;
+  try { await fetchImpl(api, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'clear', vendorId: vendor.id, token, count: pieces || 0 }) }); } catch { /* temporary pieces stay; harmless */ }
+}
+
+// The AI reader for pages that name products without codes (api/catalog.js "products").
+export function aiProductsVia(api = '/api/catalog', fetchImpl = (u, o) => fetch(u, o)) {
+  return async (pages) => {
+    const r = await fetchImpl(api, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'products', pages }) });
+    let j = null;
+    try { j = await r.json(); } catch { j = null; }
+    if (!r.ok || !j || !Array.isArray(j.items)) throw new Error((j && j.error) || 'HTTP ' + r.status);
+    return j.items;
+  };
 }
