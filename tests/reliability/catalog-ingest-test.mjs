@@ -6,8 +6,25 @@ import fs from 'node:fs';
 // by in-memory fakes, so this runs offline. The real libraries are exercised by tools/ingest-browser-check.mjs.
 const mutant = process.argv.includes('--mutant');
 const MUTANTS = [
-  ['numeric-leading suffix identifiers are recognized', '[CODE_A, CODE_B, CODE_C]', '[CODE_A, CODE_B]'],
+  ['numeric-leading suffix identifiers are recognized', '[CODE_A, CODE_B, CODE_C, CODE_D, CODE_E]', '[CODE_A, CODE_B, CODE_D, CODE_E]'],
   ['short series identifiers survive the length guard', 'c.length < 3', 'c.length < 4'],
+  ['hyphenated letter series are model codes', '[CODE_A, CODE_B, CODE_C, CODE_D, CODE_E]', '[CODE_A, CODE_B, CODE_C, CODE_E]'],
+  ['number-sign item numbers are model codes', '[CODE_A, CODE_B, CODE_C, CODE_D, CODE_E]', '[CODE_A, CODE_B, CODE_C, CODE_D]'],
+  ['hyphenated words and grade ranges are not codes', "if (re === CODE_D && (/^PRE-K/.test(c) || !(", "if (re === CODE_D && (false || !("],
+  ['letter-free hyphen series need short parts', "c.split('-').every((x) => x.length <= 3)", 'true'],
+  ['item numbers with a decimal part are kept whole', '(?:\\d{2,7}\\.\\d{1,3}|\\d{3,7})', '(?:\\d{3,7})'],
+  ['letter-spaced names are closed up', 's: unspace(it.str)', 's: it.str'],
+  ['a double space in letter-spaced text stays a word break', "split(/ {2,}/).map((w) => w.replace(/ /g, '')).join(' ')", "replace(/ /g, '')"],
+  ['a named product must be printed on its page', 'if (!nameOk && !code) continue;', 'if (!name && !code) continue;'],
+  ['a code the reader gives must be printed on the page', "if (!(ck.length >= 2 && all.includes(ck))) code = '';", ''],
+  ['only pages without model codes go to the name reader', 'const todo = pageLines.filter((pg) => !have.has(pg.n) && pg.lines.join', 'const todo = pageLines.filter((pg) => true && pg.lines.join'],
+  ['named products are counted', 'named += rows.length;', ''],
+  ['a reader failure is reported', "if (aiFail) warnings.push(", "if (false) warnings.push("],
+  ['pages go to the reader six at a time', 'cur.length >= 6 ||', 'cur.length >= 60 ||'],
+  ['link downloads are joined in order', 'blobs.push(await pr.blob());', 'blobs.unshift(await pr.blob());'],
+  ['a short download is refused', 'if (j.bytes && file.size !== j.bytes) throw', 'if (false) throw'],
+  ['a web page link answers with its PDFs', "if (j.kind === 'links') return {", "if (false) return {"],
+  ['a link catalogue remembers its source', '...(sourceUrl ? { sourceUrl } : {}),', ''],
   ['measurements do not become suffix model rows', 're === CODE_C && MEASUREMENT_CODE.test(c)', 'false'],
 
   ['a missing edition stays unknown', "if (value == null) return '';", "if (value == null) return todayLocal();"],
@@ -86,6 +103,7 @@ function mkDeps(pdf, over = {}) {
     },
   };
 }
+const storedJson = async (uploads) => JSON.parse(await uploads.get([...uploads.keys()].find((k) => /catalog\.json$/.test(k))).text());
 const VENDOR = {id: 'V-acme', name: 'Acme Furniture', phone: '555.0100', email: 'a@acme.test'};
 
 async function suite(M, label) {
@@ -169,7 +187,7 @@ async function suite(M, label) {
   eq(out.rec.pdfUrl, 'https://store.test/' + base + 'pdf/catalog.pdf', 'a PDF under the storage limit is stored whole');
   eq(out.rec.pageImgBase, 'https://store.test/' + base + 'pages/', 'page pictures are found under one address');
   eq([out.rec.pageCount, out.rec.productCount, out.rec.sectionCount, out.rec.hasPrices, out.rec.vendorId, out.rec.edition], [3, 2, 3, false, 'V-acme', '2026-01-01'], 'the link row counts pages, rows and sections');
-  eq(out.stats, {pages: 3, rows: 2, codes: 2, sections: 3, priceFigures: 2, images: 3, pdfPieces: 1}, 'the summary counts what was found');
+  eq(out.stats, {pages: 3, rows: 2, named: 0, codes: 2, sections: 3, priceFigures: 2, images: 3, pdfPieces: 1}, 'the summary counts what was found');
   eq(out.id, 'VCAT-V-acme-acme-2026-catalog-2026-01-01', 'the link row has a stable id so a re-upload replaces it');
   ok(marks.includes('reading') && marks.includes('pages') && marks.includes('saving') && marks[marks.length - 1] === 'done', 'progress is reported from reading to done');
   eq(out.warnings, [], 'nothing to warn about');
@@ -252,6 +270,84 @@ async function suite(M, label) {
   await assert.rejects(M.ingestCatalog({file: mkFile('a.pdf', 10), vendor: null, deps}), /Pick a vendor/, label + ': a vendor is required');
   ({ deps } = mkDeps(null, {deps: {pdfjs: {getDocument: () => ({promise: Promise.reject(new Error('Invalid PDF structure'))})}}}));
   await assert.rejects(M.ingestCatalog({file: mkFile('a.pdf', 10), vendor: VENDOR, deps}), /could not be opened \(Invalid PDF structure\)/, label + ': a broken PDF says so');
+
+  // ---- codes printed the way school-furniture and carpet catalogues print them ----
+  eq(M.codesInLine('CH-OM-CL-G-12 | Cantilever Chair | 14" x 13" x 12"'), ['CH-OM-CL-G-12'], 'a hyphenated letter series with a size is a model code (Columbia)');
+  eq(M.codesInLine('CH-OM-LF-C-AD | Pneumatic Computer Chair'), ['CH-OM-LF-C-AD'], 'a hyphenated series of short letter parts is a model code');
+  eq(M.codesInLine('DK-TLG-HEXA-2133-AL | Hexagon table'), ['DK-TLG-HEXA-2133-AL'], 'a long hyphenated series with a number is one code');
+  eq(M.codesInLine('STATE-OF-THE-ART plating, ARTS-AND-CRAFT-ROOM and PRE-K-12 classrooms, K-12'), [], 'hyphenated words and grade ranges are not model codes');
+  eq(M.codesInLine('Colorful Learning #2066 | Around the Block II #2009'), ['2066', '2009'], 'item numbers with a number sign are model codes (Joy, Carpets for Kids)');
+  eq(M.codesInLine('#72.91 | 6 x 9 and #18116 (25)'), ['72.91', '18116'], 'item numbers with a decimal part are kept whole');
+  eq(M.codesInLine('Ranked #1 and #12 in the state; call (503) 232-1203'), [], 'short numbers after a sign and phone numbers are not codes');
+  eq(M.unspace('P A L M A N O V A'), 'PALMANOVA', 'a letter-spaced name is closed up');
+  eq(M.unspace('L U L E A  I L A'), 'LULEA ILA', 'a double space stays a word break');
+  eq(M.unspace('I am a teacher'), 'I am a teacher', 'ordinary words are left alone');
+  eq(M.linesFromItems([it('M E A D O W B R O O K', 40, 700, 8, 95), it('L U C C A', 300, 700, 8, 38)]), ['MEADOWBROOK | LUCCA'], 'letter-spaced headings read as words in the page text');
+
+  // ---- products named on pages without codes (lookbooks) ----
+  const LOOK = [
+    [...row(750, 'SOFT SEATING'), ...row(720, 'HYVE ROCKER'), ...row(700, 'Can be used as a seat or a rocker and hung from backpack hooks.'), ...row(680, 'DuraBench 40'), ...row(660, 'Thirty by forty top size with two ends of storage.')],
+    [...row(750, 'Alpha Desk'), ...row(730, 'A sturdy student desk with a laminate top and steel frame for every classroom.'), ...row(720, 'Model', 'Size'), ...row(700, 'AB1000-RED', '20 x 30')],
+    [...row(750, 'WOOD SEATING'), ...row(720, 'P A L M A N O V A'), ...row(700, 'The Palmanova collection brings elegant styling to any setting.')],
+    [...row(750, '9')],
+  ];
+  const asked = [];
+  const ai = async (pages) => { asked.push(pages.map((p) => p.n)); return [
+    {page: 1, name: 'Hyve Rocker', code: ''}, {page: 1, name: 'DuraBench 40', code: 'DB40'}, {page: 1, name: 'Galaxy Sofa', code: 'GX-9'},
+    {page: 3, name: 'PALMANOVA', code: ''}, {page: 3, name: 'Palmanova', code: ''}, {page: 2, name: 'Beta Desk', code: 'BD2'}, {page: 9, name: 'Ghost', code: ''}, null, 'x'] };
+  const fxL = mkDeps(fakePdf(LOOK), {deps: {aiProducts: ai}});
+  out = await M.ingestCatalog({file: mkFile('look.pdf', 1e6), vendor: VENDOR, deps: fxL.deps});
+  eq(asked, [[1, 3]], 'only pages with text but no model codes go to the reader (page 2 has codes, page 4 is a page number)');
+  const lj = await storedJson(fxL.uploads);
+  const names = lj.products.filter((r) => r.k === 'name').map((r) => r.p + ':' + r.c);
+  eq(names, ['1:Hyve Rocker', '1:DuraBench 40', '3:PALMANOVA'], 'printed names are kept, invented ones and codes not on the page are dropped, duplicates once');
+  const hy = lj.products.find((r) => r.c === 'Hyve Rocker');
+  eq(hy.r, 'HYVE ROCKER', 'a named product keeps the printed line it came from');
+  ok(lj.products.find((r) => r.c === 'PALMANOVA').r === 'PALMANOVA', 'a letter-spaced name matches its page');
+  eq(out.stats.named, 3, 'the summary counts the named products'); eq(out.stats.rows, 4, 'named products and coded rows are both counted');
+  eq(lj.products.map((r) => r.p), [1, 1, 2, 3], 'rows stay in page order');
+  ({ deps } = mkDeps(fakePdf(LOOK), {deps: {aiProducts: async () => { throw new Error('HTTP 502'); }}}));
+  out = await M.ingestCatalog({file: mkFile('look.pdf', 1e6), vendor: VENDOR, deps});
+  ok(out.stats.rows === 1 && out.warnings.some((w) => /Product names could not be read on 1 group/.test(w)), 'a reader failure still loads the catalogue and says so');
+  const big = Array.from({length: 14}, (_, i) => [...row(750, 'Product family ' + (i + 1)), ...row(720, 'A long description of the family that runs well past eighty characters in all.')]);
+  const sizes = [];
+  ({ deps } = mkDeps(fakePdf(big), {deps: {aiProducts: async (pages) => { sizes.push(pages.length); return []; }}}));
+  const stages = [];
+  out = await M.ingestCatalog({file: mkFile('big.pdf', 1e6), vendor: VENDOR, deps, onProgress: (p) => { if (p.stage === 'products') stages.push(p.done + '/' + p.total); }});
+  eq(sizes.sort(), [2, 6, 6], 'pages go to the reader at most six at a time'); ok(stages[0] === '0/3' && stages.includes('3/3'), 'the reading of names shows progress');
+  ({ deps } = mkDeps(fakePdf(LOOK)));
+  out = await M.ingestCatalog({file: mkFile('look.pdf', 1e6), vendor: VENDOR, deps, sourceUrl: 'https://acme.test/cat.pdf'});
+  ok(out.stats.named === 0 && out.rec.sourceUrl === 'https://acme.test/cat.pdf', 'without a reader nothing is named, and a link catalogue remembers where it came from');
+
+  // ---- a catalogue from a link ----
+  const calls = [];
+  const pdfBytes = Uint8Array.from({length: 100}, (_, i) => i);
+  const linkFetch = (answer) => async (u, o) => {
+    calls.push({u, body: o && o.body ? JSON.parse(o.body) : null});
+    if (u === '/api/catalog') return answer;
+    if (/^https:\/\/store\.test\/in\/p[12]$/.test(u)) return {ok: true, blob: async () => new Blob([pdfBytes.subarray(u.endsWith('1') ? 0 : 60, u.endsWith('1') ? 60 : 100)])};
+    return {ok: false};
+  };
+  const jr = (status, j) => ({ok: status < 300, status, json: async () => j});
+  let got = await M.fetchCatalogFromLink({url: ' https://acme.test/Acme%202026.pdf ', vendor: VENDOR, fetchImpl: linkFetch(jr(200, {kind: 'pdf', name: 'Acme 2026.pdf', bytes: 100, parts: ['https://store.test/in/p1', 'https://store.test/in/p2'], token: 'tok12345', source: 'https://acme.test/Acme%202026.pdf'}))});
+  eq(calls[0].body, {action: 'fetch', url: 'https://acme.test/Acme%202026.pdf', vendorId: 'V-acme'}, 'the link goes to the app server for that vendor');
+  ok(got.file.size === 100 && got.file.name === 'Acme 2026.pdf' && got.file.type === 'application/pdf', 'the pieces are joined back into one PDF');
+  eq(new Uint8Array(await got.file.arrayBuffer()), pdfBytes, 'the joined PDF is byte for byte the download');
+  eq([got.token, got.pieces, got.sourceUrl], ['tok12345', 2, 'https://acme.test/Acme%202026.pdf'], 'the download remembers what to clear and where it came from');
+  await assert.rejects(M.fetchCatalogFromLink({url: 'https://acme.test/a.pdf', vendor: VENDOR, fetchImpl: linkFetch(jr(200, {kind: 'pdf', bytes: 101, parts: ['https://store.test/in/p1', 'https://store.test/in/p2']}))}), /incomplete/, label + ': a short download is refused');
+  got = await M.fetchCatalogFromLink({url: 'https://acme.test/catalogs', vendor: VENDOR, fetchImpl: linkFetch(jr(200, {kind: 'links', title: 'Catalogs', links: [{url: 'https://acme.test/a.pdf', text: 'A'}]}))});
+  eq(got, {links: [{url: 'https://acme.test/a.pdf', text: 'A'}], page: 'https://acme.test/catalogs', title: 'Catalogs'}, 'a web page link answers with the PDFs on it');
+  await assert.rejects(M.fetchCatalogFromLink({url: 'https://acme.test/x', vendor: VENDOR, fetchImpl: linkFetch(jr(400, {error: 'That link opens a web page, not a PDF.'}))}), /web page, not a PDF/, label + ': the server reason is shown');
+  await assert.rejects(M.fetchCatalogFromLink({url: 'acme.test/a.pdf', vendor: VENDOR, fetchImpl: linkFetch(jr(200, {}))}), /starting with https/, label + ': a link without https is refused before any download');
+  await assert.rejects(M.fetchCatalogFromLink({url: 'https://acme.test/a.pdf', vendor: VENDOR, isCancelled: () => true, fetchImpl: linkFetch(jr(200, {kind: 'pdf', bytes: 100, parts: ['https://store.test/in/p1']}))}), /Cancelled/, label + ': Stop stops a download');
+  calls.length = 0;
+  await M.clearDownload({vendor: VENDOR, token: 'tok12345', pieces: 2, fetchImpl: linkFetch(jr(200, {}))});
+  eq(calls[0].body, {action: 'clear', vendorId: 'V-acme', token: 'tok12345', count: 2}, 'the temporary pieces are cleared afterwards');
+  await M.clearDownload({vendor: VENDOR, token: 'tok12345', pieces: 2, fetchImpl: async () => { throw new Error('offline'); }});
+  calls.length = 0;
+  const items = await M.aiProductsVia('/api/catalog', linkFetch(jr(200, {items: [{page: 1, name: 'X'}]})))([{n: 1, text: 'X'}]);
+  ok(items.length === 1 && calls[0].body.action === 'products' && calls[0].body.pages[0].n === 1, 'the name reader asks the app server');
+  await assert.rejects(M.aiProductsVia('/api/catalog', linkFetch(jr(502, {error: 'busy'})))([{n: 1, text: 'X'}]), /busy/, label + ': a reader error is raised to the engine');
 }
 
 if (!mutant) { await suite(require(outs[0]), 'real'); console.log('PASS vendor catalogue upload engine on a made-up PDF (text columns, model codes, prices, sections, page pictures, split big PDFs, retries, cancel)'); }
