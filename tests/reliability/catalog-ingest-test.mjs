@@ -53,6 +53,7 @@ const MUTANTS = [
   ['only PDFs are accepted', "if (!/\\.pdf$/i.test(file.name || '') && file.type !== 'application/pdf') throw", "if (false) throw"],
   ['page pictures are saved under numbered names', "'pages/p-' + pad3(n) + '.jpg'", "'pages/' + n + '.jpg'"],
 ];
+MUTANTS.push(['storage namespace unique per upload', "+ uploadId + '/'", "+ 'shared' + '/'"],['row ID unique per upload', "+ '-' + uploadId, rec", ", rec"]);
 const src = fs.readFileSync('../../src/catalogIngest.js', 'utf8');
 if (mutant) { for (const [, from] of MUTANTS) assert.ok(src.includes(from), 'mutation anchor missing: ' + from); }
 const outs = [];
@@ -182,13 +183,14 @@ async function suite(M, label) {
   const marks = [];
   let { deps, uploads } = mkDeps(fakePdf(PAGES, {outline: OUTLINE}));
   let out = await M.ingestCatalog({file: mkFile('Acme 2026.pdf', 5e6), vendor: VENDOR, title: 'Acme 2026 Catalog', edition: '2026-01-01', deps, onProgress: (p) => marks.push(p.stage)});
-  const base = 'catalogs/V-acme/acme-2026-catalog-2026-01-01/';
+  const base = out.rec.url.replace('https://store.test/','').replace(/catalog\.json$/,'');
+  ok(/^catalogs\/V-acme\/acme-2026-catalog-2026-01-01\/[a-f0-9-]{36}\/$/.test(base), 'each upload has an isolated storage namespace');
   eq([...uploads.keys()].sort(), [base + 'catalog.json', base + 'pages/p-001.jpg', base + 'pages/p-002.jpg', base + 'pages/p-003.jpg', base + 'pdf/catalog.pdf'], 'the catalogue file, a picture of every page and the PDF are saved');
   eq(out.rec.pdfUrl, 'https://store.test/' + base + 'pdf/catalog.pdf', 'a PDF under the storage limit is stored whole');
   eq(out.rec.pageImgBase, 'https://store.test/' + base + 'pages/', 'page pictures are found under one address');
   eq([out.rec.pageCount, out.rec.productCount, out.rec.sectionCount, out.rec.hasPrices, out.rec.vendorId, out.rec.edition], [3, 2, 3, false, 'V-acme', '2026-01-01'], 'the link row counts pages, rows and sections');
   eq(out.stats, {pages: 3, rows: 2, named: 0, codes: 2, sections: 3, priceFigures: 2, images: 3, pdfPieces: 1}, 'the summary counts what was found');
-  eq(out.id, 'VCAT-V-acme-acme-2026-catalog-2026-01-01', 'the link row has a stable id so a re-upload replaces it');
+  ok(out.id.startsWith('VCAT-V-acme-acme-2026-catalog-2026-01-01-') && out.id.endsWith(base.split('/').at(-2)), 'the link row identifies the isolated upload');
   ok(marks.includes('reading') && marks.includes('pages') && marks.includes('saving') && marks[marks.length - 1] === 'done', 'progress is reported from reading to done');
   eq(out.warnings, [], 'nothing to warn about');
   const json = JSON.parse(await uploads.get(base + 'catalog.json').text());
@@ -202,6 +204,13 @@ async function suite(M, label) {
   eq(json.sections.map((s) => s.products), [false, true, false], 'only sections that hold model rows are product sections');
   ok(json.company.name === 'Acme Furniture' && json.company.phone === '555.0100', 'the vendor record fills in the company block');
 
+  // Same title/edition uploads never overwrite an existing or archived catalogue's files.
+  const preserved=new Map(uploads);const firstId=out.id,firstUrl=out.rec.url;
+  const second=await M.ingestCatalog({file:mkFile('Acme 2026.pdf',5e6),vendor:VENDOR,title:'Acme 2026 Catalog',edition:'2026-01-01',deps});
+  ok(second.id!==firstId,'same title and edition produce distinct record IDs');
+  ok(second.rec.url!==firstUrl,'same title and edition produce distinct storage paths');
+  for(const [p,b] of preserved)eq(uploads.get(p),b,'all previous file blobs remain byte-for-byte untouched');
+
   // Missing publication metadata must never become the upload date.
   for (const edition of [undefined, null, '', '   ', '2026', ' 2025 ', '2024-02-29']) {
     const fixture = mkDeps(fakePdf(PAGES));
@@ -210,7 +219,7 @@ async function suite(M, label) {
     eq(result.rec.edition, expected, 'the link row preserves unknown, year-only and full edition metadata');
     const stored = JSON.parse(await [...fixture.uploads.entries()].find(([p]) => p.endsWith('/catalog.json'))[1].text());
     eq(stored.edition, expected, 'the catalogue JSON preserves the same edition metadata');
-    ok(result.rec.url.includes('-' + (expected || 'unknown') + '/catalog.json'), 'an unknown edition uses an explicit stable storage path');
+    ok(result.rec.url.includes('-' + (expected || 'unknown') + '/') && /\/[a-f0-9-]{36}\/catalog\.json$/.test(result.rec.url), 'an unknown edition keeps its precision in an isolated storage path');
     ok(/^\d{4}-\d{2}-\d{2}$/.test(result.rec.uploadedAt), 'the upload date stays separate from publication metadata');
   }
 
@@ -249,7 +258,7 @@ async function suite(M, label) {
   // failures
   ({ deps, uploads } = mkDeps(fakePdf(PAGES), {failFor: (p) => /pdf\/catalog\.pdf$/.test(p)}));
   out = await M.ingestCatalog({file: mkFile('a.pdf', 1e6), vendor: VENDOR, title: 'Acme 2026 Catalog', edition: '2026-01-01', deps});
-  ok(!out.rec.pdfUrl && out.warnings.some((w) => /original PDF could not be stored/.test(w)) && uploads.has(base + 'catalog.json'), 'when the PDF will not store the catalogue is still saved and the person is told');
+  ok(!out.rec.pdfUrl && out.warnings.some((w) => /original PDF could not be stored/.test(w)) && uploads.has(out.rec.url.replace('https://store.test/','')), 'when the PDF will not store the catalogue is still saved and the person is told');
   let tries = 0;
   const uploads2 = new Map();
   ({ deps } = mkDeps(fakePdf(PAGES), {deps: {upload: async (p, b) => { if (/p-002/.test(p) && ++tries < 3) return null; uploads2.set(p, b); return 'https://store.test/' + p; }}}));

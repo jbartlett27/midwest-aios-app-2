@@ -331,7 +331,8 @@ export async function ingestCatalog({ file, vendor, title, edition, hasPrices = 
   const check = () => { if (isCancelled()) throw new Error('Cancelled.'); };
   const retry = (fn) => withRetry(fn, 4, deps.retryDelay == null ? 500 : deps.retryDelay);
   const ttl = String(title || '').trim() || String(file.name || 'Catalogue').replace(/\.pdf$/i, '');
-  const base = 'catalogs/' + vendor.id + '/' + slugify(ttl) + '-' + slugify(ed || 'unknown') + '/';
+  const uploadId = globalThis.crypto.randomUUID();
+  const base = 'catalogs/' + vendor.id + '/' + slugify(ttl) + '-' + slugify(ed || 'unknown') + '/' + uploadId + '/';
   const baseUrl = (deps.publicUrl || ((p) => p))(base);
 
   onProgress({ stage: 'reading', done: 0, total: 1, message: 'Reading the PDF (' + (file.size / 1048576).toFixed(0) + ' MB)...' });
@@ -499,7 +500,7 @@ export async function ingestCatalog({ file, vendor, title, edition, hasPrices = 
   };
   const stats = { pages: pageCount, rows: products.length, named, codes: codeSet.size, sections: sections.length, priceFigures: figures, images: imgOk, pdfPieces: link.pdfParts ? link.pdfParts.length : link.pdfUrl ? 1 : 0 };
   onProgress({ stage: 'done', done: 1, total: 1, message: 'Done.' });
-  return { id: 'VCAT-' + vendor.id + '-' + slugify(ttl).slice(0, 20) + '-' + slugify(ed || 'unknown'), rec, stats, warnings };
+  return { id: 'VCAT-' + vendor.id + '-' + slugify(ttl).slice(0, 20) + '-' + slugify(ed || 'unknown') + '-' + uploadId, rec, stats, warnings };
 }
 
 // ---------- a catalogue from a link ----------

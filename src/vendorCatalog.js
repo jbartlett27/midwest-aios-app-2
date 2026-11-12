@@ -20,7 +20,7 @@ export function catalogRecords(sops) {
     let d = null;
     try { d = JSON.parse(s.content); } catch { d = null; }
     if (!d || typeof d !== 'object' || Array.isArray(d) || !d.url || !d.vendorId) continue;
-    out.push({ id: s.id, ...d });
+    out.push({ ...d, id: s.id });
   }
   return out;
 }
@@ -223,9 +223,10 @@ export function pageMarkdown(cat, rec, n) {
 }
 
 export function overviewMarkdown(cat, rec) {
+  const display = {...cat,...rec};
   const c = cat.company || {};
   const out = [];
-  out.push('**' + cat.title + '** (' + cat.vendorName + ', edition ' + (cat.edition || 'unknown') + ')');
+  out.push('**' + display.title + '** (' + display.vendorName + ', edition ' + (display.edition || 'unknown') + ')');
   out.push('Page numbers are PDF pages' + (cat.pageOffset ? ' (the printed page number is the PDF page minus ' + cat.pageOffset + ')' : '') + '.');
   out.push(cat.pageCount + ' pages, ' + cat.sections.length + ' sections, ' + cat.rows.length + ' model rows covering ' + cat.codeCount + ' distinct model codes. ' + (cat.hasPrices ? 'Prices are included.' : 'No prices appear in this edition.'));
   if (c.name) out.push([c.name, c.address, c.phone, c.email, c.web].filter(Boolean).join(' | '));

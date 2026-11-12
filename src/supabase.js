@@ -1,3 +1,4 @@
+import { persistCatalog } from './catalogLifecycle.js';
 import { isBusinessDate } from './businessDate.js';
 // Supabase Client -- Pure fetch(), zero npm packages
 
@@ -445,6 +446,10 @@ export const db = {
   async deleteVendor(id) { return deleteRow('vendors', id); },
   async deleteCustomer(id) { return deleteRow('customers', id); },
   async deleteRep(id) { return deleteRow('reps', id); },
+  async changeVendorCatalog(sop, action, updates) {
+    const result = await persistCatalog({fetchImpl:fetch,baseUrl:URL,headers:hdrs,sop:sopToDb(sop),action,updates});
+    return result.ok ? {...result,row:sopFromDb(result.row)} : result;
+  },
   async saveSop(s) { return upsertRow('sops', sopToDb(s)); },
   async deleteSop(id) { return deleteRow('sops', id); },
   // ---- General ledger (Phase 1) ----

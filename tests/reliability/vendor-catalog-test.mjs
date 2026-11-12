@@ -5,7 +5,7 @@ import fs from 'node:fs';
 // Synthetic catalogue only ("Acme Furniture"). A real vendor catalogue is never committed to this public repo.
 const mutant = process.argv.includes('--mutant');
 const MUTANTS = [
-  ['an unknown edition is named in the overview', "(cat.edition || 'unknown')", 'cat.edition'],
+  ['an unknown edition is named in the overview', "(display.edition || 'unknown')", 'display.edition'],
   ['an unknown edition is named in the Brain prompt', "(r.edition || 'unknown')", 'r.edition'],
 
   ['an exact model code ranks first', 'if (code === q) score = 100;', 'if (false) score = 100;'],
@@ -31,6 +31,7 @@ const MUTANTS = [
   ['an exact model code is not mixed with longer codes', 'if (exact) return { rows: exact, exact: true };', ''],
   ['the Brain is told when a catalogue has no prices', "(r.hasPrices ? '' : ', no prices')", "''"],
 ];
+MUTANTS.push(['catalogue identity is the stored row ID', 'out.push({ ...d, id: s.id });', 'out.push({ id:s.id, ...d });'],['metadata edits override original file title and edition', 'const display = {...cat,...rec};', 'const display = cat;']);
 const src = fs.readFileSync('../../src/vendorCatalog.js', 'utf8');
 if (mutant) { for (const [, from] of MUTANTS) assert.ok(src.includes(from), 'mutation anchor missing: ' + from); }
 const outs = [];
@@ -93,6 +94,7 @@ async function suite(M, label) {
   eq(M.catalogRecords(sops).map((r) => r.id), ['A', 'C', 'D'], 'only well-formed VendorCatalog rows link a catalogue (a row with no file address is ignored)');
   eq(M.catalogsForVendor(sops, 'V-acme').map((r) => r.id), ['A'], 'a vendor sees only its own catalogue');
   eq(M.catalogRecords(null), [], 'no rows is fine');
+  eq(M.catalogRecords([{id:'stored-row',cat:'VendorCatalog',content:JSON.stringify({id:'spoofed',url:'https://files.test/c.json',vendorId:'V-acme'})}])[0].id,'stored-row','embedded JSON cannot override stored row identity');
 
   // ---- loading ----
   M._resetCatalogCache();
@@ -190,6 +192,7 @@ async function suite(M, label) {
     ok(M.overviewMarkdown({...cat, edition}, {}).includes('edition ' + (edition || 'unknown') + ')'), 'the overview names unknown or year-only editions truthfully');
     ok(M.promptLine([{vendorName: 'Acme', title: 'Catalogue', edition}]).includes('edition ' + (edition || 'unknown') + ','), 'the Brain prompt preserves edition precision');
   }
+  ok(M.overviewMarkdown(cat,{title:'Edited title',edition:''}).includes('**Edited title** (Acme Furniture, edition unknown)'), 'persisted metadata overrides original file title/edition without changing file contents');
   const ov = M.overviewMarkdown(cat, {});
   ok(/Acme 2026 Catalog/.test(ov) && /edition 2026-01-01/.test(ov), 'overview names the catalogue');
   ok(/Page numbers are PDF pages \(the printed page number is the PDF page minus 2\)/.test(ov), 'overview explains the page numbers');

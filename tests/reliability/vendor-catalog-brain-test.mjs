@@ -11,14 +11,14 @@ const MUTANTS = [
   ['the vendor page names unknown editions', "{rec.edition||'unknown'}", '{rec.edition}'],
   ['the Brain does not invent publication dates', 'Omit if unknown; never use the upload date as the edition.', 'Defaults to today.'],
 
-  ['vendor page shows the catalogue', '<VendorCatalogPanel key={vend.id} vendor={vend} customSops={customSops} setPage={setPage} addSop={addSop} notify={notify}/>', ''],
+  ['vendor page shows the catalogue', '<VendorCatalogPanel key={vend.id} vendor={vend} customSops={customSops} setPage={setPage} addSop={addSop} notify={notify} changeVendorCatalog={changeVendorCatalog}/>', ''],
   ['a vendor only sees its own catalogue', 'catalogsForVendor(customSops,vendor.id).slice()', 'catalogRecords(customSops).slice()'],
   ['catalogue tools registered as read-only', "'recent_actions','list_vendor_catalogs','search_vendor_catalog','get_catalog_product','read_catalog_page']);", "'recent_actions']);"],
   ['Brain told about the catalogues', '+ catLine + filesLine +', '+ filesLine +'],
-  ['catalogue rows hidden from the Playbook', '"Invoice","VendorBill","VendorCatalog"]);', '"Invoice","VendorBill"]);'],
+  ['catalogue rows hidden from the Playbook', '"Invoice","VendorBill","VendorCatalog","VendorCatalogDeleted"]);', '"Invoice","VendorBill"]);'],
   ['product lookup finds the page', 'const g = vcProduct(p.cat, code);', 'const g = vcProduct(p.cat, code + "zz");'],
   ['the vendor page shows the whole page text', '{pg.text}</pre>', "{''}</pre>"],
-  ['catalogue link rows kept out of the Brain procedure list', '"HistoricalDoc","Settings","VendorCatalog"].includes(s.cat)', '"HistoricalDoc","Settings"].includes(s.cat)'],
+  ['catalogue link rows kept out of the Brain procedure list', '"HistoricalDoc","Settings","VendorCatalog","VendorCatalogDeleted"].includes(s.cat)', '"HistoricalDoc","Settings"].includes(s.cat)'],
   ['the vendor page shows the page picture', '{vcImg(rec,pg.n)&&<a href=', '{false&&<a href='],
   ['the Brain chat shows a catalogue page picture', 'if(_im)result.push(', 'if(false)result.push('],
   ['the Brain can look at a page picture when asked', 'if(ok&&r&&Array.isArray(r.images)&&r.images.length)o.content=', 'if(false)o.content='],
@@ -29,7 +29,7 @@ const MUTANTS = [
   ['two catalogues need a vendor name', "else if(m.length>1)return {error:'More than one catalogue is loaded.", "else if(false)return {error:'More than one catalogue is loaded."],
   ['the Directory offers a catalogue upload per vendor', 'else{setCatUp(r)}', 'else{void 0}'],
   ['a vendor with no catalogue offers to upload one', '<Btn onClick={()=>setShowUp(true)}>Upload catalogue</Btn>', ''],
-  ['an upload saves the link row to the vendor', "addSop({id:out.id,title:out.rec.title,cat:'VendorCatalog',icon:'book'", "(()=>{})({id:out.id,title:out.rec.title,cat:'VendorCatalog',icon:'book'"],
+  ['an upload saves the link row to the vendor', "await addSop({id:out.id,title:out.rec.title,cat:'VendorCatalog',icon:'book'", "(()=>{})({id:out.id,title:out.rec.title,cat:'VendorCatalog',icon:'book'"],
   ['the edition date is checked before an upload starts', 'ed=ciEdition(edition)', "ed=edition.trim()"],
   ['the Stop button stops an upload', '<Btn v="secondary" onClick={()=>{stopRef.current=true}}>Stop</Btn>', '<Btn v="secondary" onClick={()=>{}}>Stop</Btn>'],
   ['the upload shows what it is doing', '<span>{prog.message}</span>', "<span>{''}</span>"],
@@ -54,7 +54,8 @@ MUTANTS.push(
   ['the Brain lists the PDFs on a web page', 'if (out.links) return {success: true', 'if (false) return {success: true'],
   ['a pasted link wins over an attached file', 'const f = link ? null : brainCatalogFileRef.current;', 'const f = brainCatalogFileRef.current;'],
 );
-MUTANTS.push(['a loaded Directory catalogue opens its vendor page', 'if(catalogsForVendor(customSops,r.id).length){window._viewVendorId=r.id;setPage("vendor360")}else{setCatUp(r)}', 'setCatUp(r)']);
+MUTANTS.push(['a loaded Directory catalogue opens its vendor page', 'if(catalogsForVendor(customSops,r.id).length||archivedCatalogRecords(customSops,r.id).length){window._viewVendorId=r.id;setPage("vendor360")}else{setCatUp(r)}', 'setCatUp(r)']);
+MUTANTS.push(['exact catalogue ID selects the intended upload', 'const exactId=recs.filter(r=>String(r.id).toLowerCase()===q);', 'const exactId=[];']);
 const src = '../../src';
 const chartNames = [...new Set(['App.jsx', 'App2.jsx', 'App3.jsx'].flatMap((f) => [...fs.readFileSync(src + '/' + f, 'utf8').matchAll(/import\s*\{([^}]+)\}\s*from\s*["']recharts["']/g)].flatMap((m) => m[1].split(',').map((n) => n.trim().split(/\s+as\s+/)[0]))))];
 const editionSource = fs.readFileSync(src + '/catalogIngest.js', 'utf8').slice(fs.readFileSync(src + '/catalogIngest.js', 'utf8').indexOf('export function normalizeCatalogEdition')).split('// ---------- libraries ----------')[0];
@@ -189,6 +190,8 @@ assert.equal(ciArgs.length, 1, 'Upload starts the reading'); assert.equal(ciArgs
 assert.match(text(), /Reading page 5 of 10\.\.\./, 'the page being read shows'); assert.match(text(), /45%/, 'the bar moves with the pages'); assert.match(text(), /Working\.\.\./);
 await act(async () => btn(/^Stop$/).click()); await act(async () => { ciRelease(); }); await settle();
 assert.equal(ciSawStop, true, 'Stop reaches the reader');
+assert.equal(saved.length,0,'Stop before persistence must not publish');
+await act(async()=>btn(/^Upload$/).click());await act(async()=>ciRelease());await settle();
 assert.equal(saved.length, 1, 'the finished catalogue is linked to the vendor once'); assert.equal(saved[0].id, 'VCAT-V-plain-2026'); assert.equal(saved[0].cat, 'VendorCatalog'); assert.equal(saved[0].custom, true); assert.equal(JSON.parse(saved[0].content).vendorId, 'V-plain', 'the saved row names the vendor');
 assert.match(text(), /Loaded: Plain 2026 Full Line/); assert.match(text(), /12 pages, 40 model rows \(38 distinct codes\), 5 sections/); assert.match(text(), /Prices found \(77 dollar figures read\)/); assert.match(text(), /the PDF is kept in 3 pieces/); assert.match(text(), /Pages 9-10 had no readable text\./, 'a warning from the reader shows'); assert.match(text(), /The Brain can read it now/);
 await unmount(root);
@@ -365,6 +368,8 @@ res = await askBrain('admin', [ACME], 'wrong vendor', [['search_vendor_catalog',
 res = await askBrain('admin', [ACME, ZETA], 'both', [['list_vendor_catalogs', {}]]);
 t0 = ok1(res); assert.match(t0, /- Acme Furniture: Acme 2026 Catalog/); assert.match(t0, /- Zeta Supply: Zeta Priced Catalog/); assert.match(t0, /Name a vendor/);
 res = await askBrain('admin', [ACME, ZETA], 'which one', [['search_vendor_catalog', {query: 'AB1000'}]]); bad1(res, /More than one catalogue is loaded\. Say which vendor: Acme Furniture, Zeta Supply/);
+res = await askBrain('admin', [ACME, ZETA], 'exact catalogue ID', [['search_vendor_catalog', {query:'AB1000',vendor:ACME.id}]]);
+t0=ok1(res);assert.match(t0,/Acme Furniture catalogue/);
 res = await askBrain('admin', [ACME, ZETA], 'zeta', [['search_vendor_catalog', {query: 'ZEDESK1', vendor: 'zeta'}]]);
 t0 = ok1(res); assert.match(t0, /ZEDESK1/); assert.match(t0, /Zeta Priced Catalog/);
 assert.match(res.bodies[0].system, /Zeta Supply: Zeta Priced Catalog \(edition 2026-01-01, 9 pages, 5 model rows; covers/, 'a catalogue with prices is not described as having none');
