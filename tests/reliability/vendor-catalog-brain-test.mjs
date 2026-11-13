@@ -56,15 +56,27 @@ MUTANTS.push(
 );
 MUTANTS.push(['a loaded Directory catalogue opens its vendor page', 'if(catalogsForVendor(customSops,r.id).length||archivedCatalogRecords(customSops,r.id).length){window._viewVendorId=r.id;setPage("vendor360")}else{setCatUp(r)}', 'setCatUp(r)']);
 MUTANTS.push(['exact catalogue ID selects the intended upload', 'const exactId=recs.filter(r=>String(r.id).toLowerCase()===q);', 'const exactId=[];']);
+MUTANTS.push(
+  ['the Brain answer is checked against its sources', 'if(_gr.any&&!_grRetried){', 'if(false){'],
+  ['an unverified code is flagged under the answer', '+(_gr.any?groundingNotice(_gr):"")', '+""'],
+  ['the check reads the catalogue tool results', 'groundingSources(ctx,convo)', 'groundingSources(ctx,[])'],
+  ['the Brain is sent back only once', '_grRetried=true;', ''],
+  ['the Brain is told to ground every fact', 'GROUNDING (this overrides every other rule below)', 'NOTES'],
+  ['vendor questions go to the catalogue tools first', 'is answered ONLY from the vendor catalogue tools. Call list_vendor_catalogs', 'is answered from what you know. Call list_vendor_catalogs'],
+  ['the Brain may say the data is not there', "When the data is not above and no tool has it, say so plainly; never fill the gap with a guess.", "NEVER say you don't have the data."],
+  ['a search that finds nothing tells the Brain not to fill the gap', "modelNote: 'Nothing was found. If another search", "modelNoteX: 'Nothing was found. If another search"],
+  ['a hallucinated answer is taken off the screen', 'if(data._brainStreamedTextOnly)setHistory(p=>{for(let k=p.length-1;k>=0;k--)', 'if(false)setHistory(p=>{for(let k=p.length-1;k>=0;k--)'],
+);
 const src = '../../src';
 const chartNames = [...new Set(['App.jsx', 'App2.jsx', 'App3.jsx'].flatMap((f) => [...fs.readFileSync(src + '/' + f, 'utf8').matchAll(/import\s*\{([^}]+)\}\s*from\s*["']recharts["']/g)].flatMap((m) => m[1].split(',').map((n) => n.trim().split(/\s+as\s+/)[0]))))];
 const editionSource = fs.readFileSync(src + '/catalogIngest.js', 'utf8').slice(fs.readFileSync(src + '/catalogIngest.js', 'utf8').indexOf('export function normalizeCatalogEdition')).split('// ---------- libraries ----------')[0];
+const codeReaderSource = fs.readFileSync(src + '/catalogIngest.js', 'utf8').split('// ---------- model rows ----------')[1].split('// pageLines:')[0];
 const stubs = {
   clerk: 'export const ClerkProvider=({children})=>children;export const useUser=()=>({isLoaded:true,isSignedIn:false,user:null});export const useClerk=()=>({signOut:()=>{}});export const useAuth=()=>({getToken:async()=>null});export const SignIn=()=>null;export const UserButton=()=>null;',
   recharts: chartNames.map((n) => 'export const ' + n + '=()=>null;').join('\n'),
   xlsx: 'export const read=(...a)=>globalThis.__XLSX.read(...a);export const utils={sheet_to_json:(...a)=>globalThis.__XLSX.utils.sheet_to_json(...a)};export default {read,utils};',
   db: 'export const db=globalThis.__db;',
-  ci: "export const ingestCatalog=(a)=>globalThis.__ciIngest(a);export const fetchCatalogFromLink=(a)=>globalThis.__ciLink(a);export const clearDownload=(a)=>{globalThis.__ciClears.push(a)};export const aiProductsVia=()=>globalThis.__aiFn;\n" + editionSource,
+  ci: "export const ingestCatalog=(a)=>globalThis.__ciIngest(a);export const fetchCatalogFromLink=(a)=>globalThis.__ciLink(a);export const clearDownload=(a)=>{globalThis.__ciClears.push(a)};export const aiProductsVia=()=>globalThis.__aiFn;\n" + editionSource + codeReaderSource,
 };
 if (mutantIdx >= 0) assert.ok(fs.readFileSync(src + '/App2.jsx', 'utf8').includes(MUTANTS[mutantIdx][1]), 'mutation anchor missing: ' + MUTANTS[mutantIdx][0]);
 await build({entryPoints: [src + '/App2.jsx'], bundle: true, format: 'cjs', platform: 'node', jsx: 'automatic', external: ['react', 'react-dom', 'react-dom/client'], define: {'import.meta.env': '{}'}, outfile: 'vendor-catalog-bundle-ui.cjs', plugins: [{name: 'offline-only', setup(b) {
@@ -111,7 +123,7 @@ const files = {'https://files.test/acme.json': catFile('V-acme', 'Acme Furniture
 let fetchLog = []; let opened = []; let brainPlan = []; let brainBodies = [];
 globalThis.fetch = async (url, opts) => {
   fetchLog.push(String(url));
-  if (String(url) === '/api/brain') { brainBodies.push(JSON.parse(opts.body)); const step = brainPlan.shift() || {content: [{type: 'text', text: 'done'}], stop_reason: 'end_turn'}; return {ok: true, status: 200, headers: {get: () => 'application/json'}, json: async () => step}; }
+  if (String(url) === '/api/brain') { brainBodies.push(JSON.parse(opts.body)); const step = brainPlan.shift() || {content: [{type: 'text', text: 'done'}], stop_reason: 'end_turn'}; if (step.sse) { const ev = [{type: 'message_start', message: {id: 'm', role: 'assistant', model: 'x'}}, {type: 'content_block_start', index: 0, content_block: {type: 'text', text: ''}}, {type: 'content_block_delta', index: 0, delta: {type: 'text_delta', text: step.sse}}, {type: 'content_block_stop', index: 0}, {type: 'message_delta', delta: {stop_reason: 'end_turn'}}, {type: 'message_stop'}].map((e) => 'event: ' + e.type + '\ndata: ' + JSON.stringify(e) + '\n\n').join(''); const parts = ev.split(/(?<=\n\n)/); return {ok: true, status: 200, headers: {get: () => 'text/event-stream'}, body: {getReader: () => ({read: async () => { await new Promise((r) => setTimeout(r, 5)); return parts.length ? {done: false, value: new TextEncoder().encode(parts.shift())} : {done: true}; }})}}; } return {ok: true, status: 200, headers: {get: () => 'application/json'}, json: async () => step}; }
   if (files[url]) return {ok: true, status: 200, json: async () => files[url]};
   return {ok: false, status: 404};
 };
@@ -449,6 +461,41 @@ linkArgs = []; linkAnswers = [{links: [{url: 'https://plain.test/a/full.pdf', te
 bi = await brainIngest('admin', {vendor: 'Plain Co', url: 'https://plain.test/c'}, null);
 assert.match(bi.text, /That link is a web page \(Plain Catalogs\), not a PDF\./, 'the Brain says a page link is a web page'); assert.match(bi.text, /1\.\s?Full Line/); assert.match(bi.text, /2\.\s?Price List/); assert.match(bi.text, /Which one is the Plain Co catalogue\?/, 'and asks which PDF is the catalogue');
 assert.equal(bi.saved.length, 0, 'nothing is loaded from a page link until one PDF is picked'); assert.equal(bi.ciArgs.length, 0);
+// ---- grounding: the Brain never states a model code or catalogue price that is in no source ----
+async function askPlan(customSops, question, plan) {
+  brainPlan = plan.slice(); brainBodies = [];
+  const r = createRoot(document.getElementById('root'));
+  await act(async () => r.render(React.createElement(Host, {customSops, currentUser: {name: 'Tester', email: 'tester@example.test', role: 'admin'}, userRole: 'admin', brainQuery: question})));
+  const input = document.querySelector('input[placeholder]:not([type=file])') || document.querySelector('input');
+  await act(async () => { input.dispatchEvent(new window.KeyboardEvent('keydown', {key: 'Enter', bubbles: true})); }); await settle(); await settle();
+  const out = {text: document.body.textContent, bodies: brainBodies}; await unmount(r); return out;
+}
+const tu = (name, input) => ({content: [{type: 'tool_use', id: 'g' + Math.random().toString(36).slice(2, 8), name, input}], stop_reason: 'tool_use'});
+const say = (t) => ({content: [{type: 'text', text: t}], stop_reason: 'end_turn'});
+const lastUserText = (b) => { const m = b.messages[b.messages.length - 1]; return (Array.isArray(m.content) ? m.content : [{text: m.content}]).map((c) => c.text || '').join(' '); };
+let gr = await askPlan([ACME], 'what desks does Acme make', [tu('search_vendor_catalog', {query: 'AB1000'}), say('Acme 2026 Catalog, page 3: AB1000, 20 x 30.')]);
+assert.match(gr.bodies[0].system, /GROUNDING \(this overrides every other rule below\)/, 'the Brain is told every fact needs a source');
+assert.match(gr.bodies[0].system, /is answered ONLY from the vendor catalogue tools\. Call list_vendor_catalogs, search_vendor_catalog, get_catalog_product or read_catalog_page before you answer/, 'vendor questions go to the catalogue tools first');
+assert.match(gr.bodies[0].system, /Cite each catalogue fact with the vendor, the catalogue title and edition, and the PDF page/, 'catalogue facts are cited');
+assert.match(gr.bodies[0].system, /When the data is not above and no tool has it, say so plainly; never fill the gap with a guess\./); assert.doesNotMatch(gr.bodies[0].system, /NEVER say you don't have the data/, 'the Brain is allowed to say the data is not there');
+assert.equal(gr.bodies.length, 2, 'a grounded answer goes straight through'); assert.match(gr.text, /page 3: AB1000, 20 x 30/); assert.doesNotMatch(gr.text, /Not verified/, 'and carries no warning');
+gr = await askPlan([ACME], 'what desks does Acme make', [tu('search_vendor_catalog', {query: 'AB1000'}), say('Acme makes AB1000 and the ZZ9999 standing desk.'), say('Acme 2026 Catalog, page 3: AB1000. The loaded catalogue shows no standing desk.')]);
+assert.equal(gr.bodies.length, 3, 'a made-up model code sends the Brain back once'); assert.match(lastUserText(gr.bodies[2]), /Automatic grounding check[\s\S]*ZZ9999/, 'naming the code that is in no source');
+assert.doesNotMatch(gr.text, /ZZ9999/, 'the made-up code never reaches the screen'); assert.match(gr.text, /The loaded catalogue shows no standing desk/, 'the corrected answer does'); assert.doesNotMatch(gr.text, /Not verified/);
+gr = await askPlan([ACME], 'what desks does Acme make', [tu('search_vendor_catalog', {query: 'AB1000'}), say('Acme makes the ZZ9999 desk.'), say('Acme also makes the ZZ9999 desk.')]);
+assert.equal(gr.bodies.length, 3, 'the Brain is sent back only once'); assert.match(gr.text, /Not verified: ZZ9999 is not in any loaded vendor catalogue or Midwest record\. Treat it as unconfirmed\./, 'a code it will not take out is flagged under the answer');
+gr = await askPlan([ACME], 'does Acme make a standing desk', [say('Yes, Acme makes the QX500 standing desk.'), tu('search_vendor_catalog', {query: 'standing'}), say('The loaded Acme Furniture catalogue has no standing desk.')]);
+assert.equal(gr.bodies.length, 3, 'an answer about a catalogue vendor with no lookup is checked too'); assert.match(lastUserText(gr.bodies[1]), /QX500/); assert.doesNotMatch(gr.text, /QX500/); assert.match(gr.text, /has no standing desk/);
+gr = await askPlan([ACME], 'how much is AB1000', [tu('read_catalog_page', {page: 3}), say('AB1000 is $450 each.'), say('Acme 2026 Catalog, page 3 lists AB1000 (20 x 30) with no price. This catalogue has no prices.')]);
+assert.match(lastUserText(gr.bodies[2]), /prices that are printed in no catalogue page[\s\S]*\$450/, 'a price printed nowhere sends the Brain back'); assert.doesNotMatch(gr.text, /\$450/); assert.match(gr.text, /This catalogue has no prices/);
+gr = await askPlan([ACME], 'standing desks', [tu('search_vendor_catalog', {query: 'standing desk'}), say('Not in the loaded catalogue.')]);
+const nothing = gr.bodies[1].messages.flatMap((m) => (Array.isArray(m.content) ? m.content : []).filter((c) => c.type === 'tool_result'))[0].content;
+assert.match(nothing, /Nothing in the Acme Furniture catalogue matches "standing desk"/); assert.match(nothing, /Note for you, not shown to the user: Nothing was found\. If another search does not find it either, tell the user it is not in the loaded Acme Furniture catalogue\. Do not answer from general knowledge or the web\./, 'a search that finds nothing tells the Brain not to fill the gap');
+gr = await askPlan([ACME], 'what desks does Acme make', [tu('search_vendor_catalog', {query: 'AB1000'}), {sse: 'Acme makes the ZZ9999 standing desk.'}, {sse: 'Acme 2026 Catalog, page 3: AB1000. No standing desk is in the loaded catalogue.'}]);
+assert.equal(gr.bodies.length, 3, 'a streamed answer is checked too'); assert.doesNotMatch(gr.text, /ZZ9999/, 'a streamed made-up answer is taken off the screen'); assert.equal(gr.text.split('No standing desk is in the loaded catalogue').length - 1, 1, 'and the corrected one replaces it, once');
+gr = await askPlan([ACME], 'what is a 1099', [say('A 1099-NEC reports contractor pay.')]);
+assert.equal(gr.bodies.length, 1, 'an answer that is not about vendor products is left alone');
+
 console.error = origErr;
 
 if (mutantIdx < 0) console.log('PASS vendor page catalogue panel and Brain catalogue tools on a synthetic catalogue (own vendor only, page links, read-only tools, Playbook hides link rows)');
