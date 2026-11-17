@@ -3,7 +3,7 @@ process.chdir(path.dirname(fileURLToPath(import.meta.url)));
 function run(args,{fail=false,env={}}={}){const result=spawnSync(process.execPath,args,{encoding:'utf8',env:{...process.env,...env},timeout:60000});if(result.error)throw result.error;if(fail&&/mutation anchor|mutant anchor|callback-wire mutation/.test((result.stdout||'')+(result.stderr||'')))throw new Error('Mutant setup failed rather than a behavioral assertion: '+args.join(' '));const ok=fail?result.status!==0:result.status===0;if(!ok){process.stdout.write(result.stdout||'');process.stderr.write(result.stderr||'');throw new Error((fail?'Mutant survived: ':'Check failed: ')+args.join(' '));}if(!fail)process.stdout.write(result.stdout||'');else console.log('KILLED '+args.join(' '));}
 run(['invariants.mjs']);
 for(const tz of ['UTC','America/Chicago','America/Los_Angeles']){console.log('Timezone '+tz);for(const file of ['date-test.mjs','invoice-dates-test.mjs','ledger-test.mjs'])run([file],{env:{TZ:tz}})}
-run(['job-patch-test.mjs']);run(['build-harness.mjs']);run(['render-test.mjs']);
+run(['job-patch-test.mjs']);run(['build-harness.mjs']);run(['render-test.mjs']);run(['project-due-date-test.mjs']);
 run(['file-index-test.mjs']);run(['files-brain-test.mjs']);run(['vendor-catalog-test.mjs']);run(['catalog-ingest-test.mjs']);run(['catalog-api-test.mjs']);run(['vendor-catalog-brain-test.mjs']);
 run(['brain-grounding-test.mjs']);for(let i=0;i<9;i++)run(['brain-grounding-test.mjs','--mutant',String(i)],{fail:true});
 run(['catalog-lifecycle-test.mjs']);run(['catalog-controls-ui-test.mjs']);run(['catalog-brain-controls-test.mjs']);
