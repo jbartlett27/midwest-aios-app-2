@@ -1,6 +1,7 @@
 import { invoiceCheckoutPayload, matchingInvoicePaymentLink } from './invoicePayments.js';
 import { resolveInvoiceDates, invoiceTermsDays } from './invoiceDates.js';
 import { isBusinessDate, businessDayAfter } from './businessDate.js';
+import { poBillAmount } from './poBill.js';
 import DateInput from './DateInput.jsx';
 import { BrainPage, CommissionsPage, Customer360Page, DirectoryPage, ExitReadinessPage, FilesPage, FinancialsPage, NotesPage, PlaybookPage, ProspectsPage, SalesPortalPage, TasksPage, UserMgmtPage, Vendor360Page } from "./App2.jsx";
 import React, { useState, useEffect, useRef } from "react";
@@ -4907,7 +4908,10 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           // arrived. The Delivery Tracker had the correct received counts; the bill
           // just wasn't reading from them. With this change, as items are received via
           // Delivery Tracker the bill amount climbs to match -- no manual override needed.
-          const cost=vItems.reduce((s,i)=>s+(i.unitCost||0)*(Number(i.qtyReceived)||0),0);
+          // The amount on the vendor's invoice wins when the office entered one (a vendor that
+          // invoices each shipment separately); otherwise the bill follows what was received.
+          const _billAmt=poBillAmount(vItems,(()=>{const d=docStatuses['BILL-'+poDocNum.replace('PO-','')];return d&&typeof d==='object'?d:{}})());
+          const cost=_billAmt.cost;
           // orderValue = the full PO commitment (unitCost * qtyOrdered). Surfaced on the
           // bill object so any UI that wants to show "currently owed $X of $Y total" has
           // access to both numbers. Also drives the structurally-empty PO guard below.
@@ -4983,7 +4987,7 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           // surfaces that read bill.checkNum / bill.payDate. The Payment Trail card shows
           // the full history; everywhere else continues to show "the latest payment".
           const _lastPay = _payments.length > 0 ? _payments[_payments.length-1] : null;
-          allBills.push({job,vendor:v,vendorId:vid,vendorName:v?.name||'Unknown',items:vItems,cost,orderValue,poDocNum,billDocNum,poDate,
+          allBills.push({job,vendor:v,vendorId:vid,vendorName:v?.name||'Unknown',items:vItems,cost,receivedValue:_billAmt.received,invoicedAmount:_billAmt.invoiced,orderValue,poDocNum,billDocNum,poDate,
             dueDate:_safeDueDateStr,daysUntil,paid,voided:isVoidBill,itemCount:vItems.length,entered:!!(billData.status||billData.vendorInvNum||(_payments&&_payments.length>0)),
             vendorInvNum:billData.vendorInvNum||'',
             checkNum:_lastPay?.checkNum||billData.checkNum||'',
@@ -6041,6 +6045,11 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
                 <div><label style={{fontSize:13,color:"#e5e5e5",fontWeight:600,display:"block",marginBottom:4}}>Bill Date</label><DateInput type="date" value={docStatuses[bill.billDocNum+'__date']||''} onChange={e=>{setDocStatus(bill.billDocNum+'__date',e.target.value);if(e.target.value&&!docStatuses[bill.billDocNum+'__due']){const d=new Date(e.target.value+'T12:00:00');d.setDate(d.getDate()+30);setDocStatus(bill.billDocNum+'__due',d.toISOString().split('T')[0])}}} style={{...inputStyle,fontSize:13,padding:"6px 10px"}}/></div>
                 <div><label style={{fontSize:13,color:"#e5e5e5",fontWeight:600,display:"block",marginBottom:4}}>Due Date Override</label><DateInput type="date" value={docStatuses[bill.billDocNum+'__due']||''} onChange={e=>setDocStatus(bill.billDocNum+'__due',e.target.value)} style={{...inputStyle,fontSize:13,padding:"6px 10px"}}/></div>
               </div>
+              {typeof bill.receivedValue==='number'&&<div style={{marginTop:10,paddingTop:10,borderTop:"1px solid #1a1a1a"}}>
+                <label style={{fontSize:13,color:"#e5e5e5",fontWeight:600,display:"block",marginBottom:4}}>Amount on Vendor Invoice</label>
+                <input key={bill.billDocNum+':'+(bill.invoicedAmount==null?'':bill.invoicedAmount)} inputMode="decimal" defaultValue={bill.invoicedAmount==null?'':bill.invoicedAmount.toFixed(2)} placeholder={"Blank = what has been received ("+fmt(bill.receivedValue)+")"} onKeyDown={e=>{if(e.key==='Enter')e.currentTarget.blur()}} onBlur={e=>{const raw=e.target.value.trim().replace(/[$,\s]/g,'');const existing=typeof docStatuses[bill.billDocNum]==='object'&&docStatuses[bill.billDocNum]?docStatuses[bill.billDocNum]:{};if(raw===''){if(existing.invoicedAmount===undefined)return;const next={...existing};delete next.invoicedAmount;setDocStatus(bill.billDocNum,next);setBillDetail({...bill,invoicedAmount:null,cost:bill.receivedValue,balance:Math.max(0,bill.receivedValue-(bill.totalPaid||0))});notify('Bill now follows what has been received: '+fmt(bill.receivedValue));return}if(!/^\d+(\.\d{1,2})?$/.test(raw)){notify('Enter the dollar amount printed on the vendor invoice, for example 3377.80','error');e.target.value=bill.invoicedAmount==null?'':bill.invoicedAmount.toFixed(2);return}const amt=Math.round(Number(raw)*100)/100;if(existing.invoicedAmount===amt)return;setDocStatus(bill.billDocNum,{...existing,invoicedAmount:amt});setBillDetail({...bill,invoicedAmount:amt,cost:amt,balance:Math.max(0,amt-(bill.totalPaid||0))});notify('Bill set to the vendor invoice amount: '+fmt(amt))}} style={{...inputStyle,fontSize:13,padding:"6px 10px",fontFamily:"'JetBrains Mono',monospace"}}/>
+                <div style={{fontSize:11,color:"#737373",marginTop:4,lineHeight:1.5}}>Received so far on this PO: {fmt(bill.receivedValue)}. When a vendor sends a separate invoice for each shipment, enter the total printed on this invoice; the bill stays at that amount and a later shipment goes on its own bill. Leave blank to follow what has been received.</div>
+              </div>}
             </Card>
           </div>
 

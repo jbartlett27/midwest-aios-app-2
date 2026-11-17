@@ -1,6 +1,7 @@
 import {CatalogControls} from './CatalogControls.jsx';
 import {archivedCatalogRecords, catalogChange, catalogData, selectCatalog} from './catalogLifecycle.js';
 import DateInput from './DateInput.jsx';
+import { poBillAmount } from './poBill.js';
 import { buildFileIndex, latestVersions, isSpreadsheetFile, searchRecords, quickSearch, recordsToMarkdown, journalToMarkdown, journalFor, describeSheets, fmtUsd as fiUsd, fmtUs as fiUs, KIND_LABEL as FI_KIND } from './fileIndex.js';
 import { catalogRecords, catalogsForVendor, loadCatalog as vcLoad, searchCatalog as vcSearch, getProduct as vcProduct, getPage as vcPage, overviewMarkdown as vcOverview, profileMarkdown as vcProfile, rowsToMarkdown as vcRows, pageRef as vcPageRef, promptLine as vcPromptLine, pageMarkdown as vcPageCard, _resetCatalogCache as vcReset, pdfLinks as vcPdfLinks, pdfPageUrl as vcPdfPage, pageImageUrl as vcImg } from './vendorCatalog.js';
 import { groundingSources, groundingGaps, groundingNudge, groundingNotice } from './brainGrounding.js';
@@ -3226,7 +3227,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
             // Match the UI: bill on RECEIVED quantity, not ordered. Vendors invoice on
             // shipment, so the bill amount is unitCost * qtyReceived. The full PO
             // commitment is also exposed as orderValue.
-            const cost = vItems.reduce((s,i) => s + (i.unitCost||0)*(Number(i.qtyReceived)||0), 0);
+            const cost = poBillAmount(vItems, (() => { const d = docStatuses['BILL-'+poDocNum.replace('PO-','')]; return d && typeof d === 'object' ? d : {}; })()).cost;
             const orderValue = vItems.reduce((s,i) => s + (i.unitCost||0)*(Number(i.qtyOrdered)||0), 0);
             // Structurally-empty PO guard: skip only if no value committed at all. A PO
             // with value committed but nothing yet received is a valid $0-currently-owed
@@ -3871,7 +3872,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         });
         if (input.bill_date) _setDocStatusBrain(billDocNum+'__date', input.bill_date);
         if (input.due_date) _setDocStatusBrain(billDocNum+'__due', input.due_date);
-        const costRecv = (poObj.items||[]).reduce((s,i)=>s+(i.unitCost||0)*(Number(i.qtyReceived)||0),0);
+        const costRecv = poBillAmount(poObj.items, existing).cost;
         const orderVal = (poObj.items||[]).reduce((s,i)=>s+(i.unitCost||0)*(Number(i.qtyOrdered)||0),0);
         return {success: true, message: 'Recorded bill '+billDocNum+' against '+poDocNum+' ('+(poObj.vendor?.name||'Unknown')+' on '+poObj.job.name+')'+(input.vendor_invoice_num?', vendor invoice #'+input.vendor_invoice_num:'')+'. Currently owed $'+costRecv.toFixed(2)+' of the $'+orderVal.toFixed(2)+' PO total (bill amounts track received quantities). The bill reconciles against the job\'s existing line-item cost -- nothing was added to job cost. Record payments with mark_bill_paid.'};
       }

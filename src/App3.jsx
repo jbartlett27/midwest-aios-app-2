@@ -1,4 +1,5 @@
 import DateInput from './DateInput.jsx';
+import { poBillAmount } from './poBill.js';
 import React, { useState, useEffect, useRef } from "react";
 import { db } from "./supabase.js";
 import { useUser, useClerk, SignIn, UserButton, useAuth } from "@clerk/clerk-react";
@@ -424,7 +425,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
         const poStatus=_finDocStatuses[poDocNum];
         const anyReceived=g.items.some(i=>(Number(i.qtyReceived)||0)>0);
         if(!(poStatus&&poStatus!=='new')&&!anyReceived)return;
-        const cost=g.items.reduce((s,i)=>s+(i.unitCost||0)*(Number(i.qtyReceived)||0),0);
+        const cost=poBillAmount(g.items,(()=>{const d=_finDocStatuses['BILL-'+poDocNum.replace('PO-','')];return d&&typeof d==='object'?d:{}})()).cost;
         const orderValue=g.items.reduce((s,i)=>s+(i.unitCost||0)*(Number(i.qtyOrdered)||0),0);
         if(orderValue<=0)return;
         const billDocNum='BILL-'+poDocNum.replace('PO-','');
