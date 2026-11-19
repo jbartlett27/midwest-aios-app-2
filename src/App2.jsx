@@ -2,6 +2,7 @@ import {CatalogControls} from './CatalogControls.jsx';
 import {archivedCatalogRecords, catalogChange, catalogData, selectCatalog} from './catalogLifecycle.js';
 import DateInput from './DateInput.jsx';
 import { poBillAmount } from './poBill.js';
+import { DOCUMENT_STATUSES_ID, documentStatusChanges, parseDocumentStatuses, readDocumentStatuses } from './documentStatuses.js';
 import { buildFileIndex, latestVersions, isSpreadsheetFile, searchRecords, quickSearch, recordsToMarkdown, journalToMarkdown, journalFor, describeSheets, fmtUsd as fiUsd, fmtUs as fiUs, KIND_LABEL as FI_KIND } from './fileIndex.js';
 import { catalogRecords, catalogsForVendor, loadCatalog as vcLoad, searchCatalog as vcSearch, getProduct as vcProduct, getPage as vcPage, overviewMarkdown as vcOverview, profileMarkdown as vcProfile, rowsToMarkdown as vcRows, pageRef as vcPageRef, promptLine as vcPromptLine, pageMarkdown as vcPageCard, _resetCatalogCache as vcReset, pdfLinks as vcPdfLinks, pdfPageUrl as vcPdfPage, pageImageUrl as vcImg } from './vendorCatalog.js';
 import { groundingSources, groundingGaps, groundingNudge, groundingNotice } from './brainGrounding.js';
@@ -37,11 +38,13 @@ function CommissionsPage({jobs,reps,customers,updateRep,addRep,deleteRep,getJobF
   const docStatuses={...allDocStatuses,...sopStatuses,...lsFallback};
   const stableNum=(prefix,a,b)=>prefix+(a||'').replace(/[^A-Z0-9]/gi,'').slice(-4).toUpperCase()+'-'+(b||'').replace(/[^A-Z0-9]/gi,'').slice(-4).toUpperCase();
   const StatusBadge=({docNum})=>{const s=docStatuses[docNum];if(!s)return <Badge label="new" color="#525252"/>;if(s==="drafted")return <Badge label="drafted" color="#fbbf24"/>;if(s==="sent")return <Badge label="sent" color="#34d399"/>;if(s==="approved")return <Badge label="approved" color="#a78bfa"/>;return <Badge label={s} color="#525252"/>};
-  const setCommDocStatus=(docNum,status)=>{
+  const setCommDocStatus=async(docNum,status)=>{
     // Write to SOP record (cross-device) and localStorage backup. Same persistence
     // pattern as DocumentsPage so status reads merge correctly across both pages.
     const updated={...sopStatuses,[docNum]:status};
-    addSop({id:"DOC_STATUSES_GLOBAL",title:"Document Statuses",cat:"DocStatuses",icon:"file",content:JSON.stringify(updated),custom:true});
+    const result = await addSop({id: DOCUMENT_STATUSES_ID, title: 'Document Statuses', cat: 'DocStatuses',
+      icon: 'file', content: JSON.stringify(updated), custom: true}, documentStatusChanges(sopStatuses, updated, [docNum]));
+    if (result?.ok === false) return;
     try{const fb=JSON.parse(localStorage.getItem("mw_doc_statuses_fallback")||"{}");fb[docNum]=status;localStorage.setItem("mw_doc_statuses_fallback",JSON.stringify(fb))}catch{}
   };
 
@@ -1870,18 +1873,25 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
   // refuse re-entering the same row. It did not exist before the Brain added it, so the undo allows it again.
   const _uReleaseTombs=async(ids)=>{const want=new Set(ids);for(let t=0;t<6&&want.size;t++){await new Promise(r=>setTimeout(r,t?900:400));let tb=null;try{tb=await db.fetchTombstones()}catch{tb=null}(Array.isArray(tb)?tb:[]).forEach(x=>{if(x&&want.has(x.sopId)&&x.id!=null){want.delete(x.sopId);Promise.resolve(db.restoreTombstone(x.id)).catch(()=>{})}})}};
   const _uLiName=(i)=>'line item '+String((i&&i.description)||'').split('\n')[0].slice(0,40)+(i&&i.tag?' ('+i.tag+')':'');
-  const _undoApply=(grp)=>{
+  const _undoApply=async(grp)=>{
     const done=[],skipped=[],release=[];const gone=new Set(),back=new Set(),goneJobs=new Set(),stuck=new Set();
     const liNow=(id)=>back.has(id)||(!gone.has(id)&&(lineItems||[]).some(i=>i&&i.id===id));
     const liCur=(id)=>gone.has(id)?null:(lineItems||[]).find(i=>i&&i.id===id)||null;
     const changed=(cur,after)=>Object.keys(after||{}).filter(f=>!_uSame(cur[f],after[f]));
     const patchOf=(e)=>{const o={};Object.keys(e.before).forEach(f=>{o[f]=_uVal(e.before[f],e.after[f])});return o};
-    [...grp.entries].reverse().forEach(e=>{try{
+    for (const entry of [...grp.entries].reverse()) await (async e => {try{
       if(e.k==='sop'){
         const cur=(customSops||[]).find(x=>x&&x.id===e.id)||null;const nm=_uSopName(e.before||e.after||cur);
         if(e.after===null){if(cur){if(e.before&&_uSame(cur.content,e.before.content))return done.push(nm);return skipped.push(nm+': it was added again since')}}
         else if(!cur||!_uSame(cur.content,e.after.content))return skipped.push(nm+': it has changed since');
         const lk=_uLock(e.before)||_uLock(e.after);if(lk)return skipped.push(nm+': '+lk);
+        if(e.id===DOCUMENT_STATUSES_ID){
+          const before=parseDocumentStatuses(cur?.content);
+          const after=parseDocumentStatuses(e.before?.content);
+          const keys=new Set([...Object.keys(before),...Object.keys(after)].filter(key=>!_uSame(before[key],after[key])));
+          const saved=await _rawAddSop(e.before||cur,documentStatusChanges(before,after,keys));
+          return saved?.ok===false?skipped.push(nm+': the save was not confirmed'):done.push(nm);
+        }
         if(e.before)_rawAddSop(e.before);else{_rawDeleteSop(e.id);if(e.after&&e.after.cat==='ManualTxn')release.push(e.id)}
         return done.push(nm);
       }
@@ -1904,7 +1914,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         if(e.op==='add'){if(!cur)return done.push(nm+' (already removed)');const used=e.k==='vend'?(lineItems||[]).some(i=>i&&i.vendor===e.id&&!gone.has(i.id)):(jobs||[]).some(j=>j&&!goneJobs.has(j.id)&&(e.k==='cust'?j.customer===e.id:j.salesRep===e.id));if(used)return skipped.push(nm+': other records use it now');if(!del)return skipped.push(nm+': cannot be removed from here');del(e.id);return done.push('removed '+nm)}
       }
       if(e.k==='ls'){try{const fb=JSON.parse(localStorage.getItem(e.key)||'{}');if(e.had)fb[e.field]=e.before;else delete fb[e.field];localStorage.setItem(e.key,JSON.stringify(fb))}catch{}return}
-    }catch(err){skipped.push('one record could not be put back ('+((err&&err.message)||err)+')')}});
+    }catch(err){skipped.push('one record could not be put back ('+((err&&err.message)||err)+')')}})(entry);
     return {done,skipped,release};
   };
   // Effects outside the AIOS records that an undo cannot take back.
@@ -2226,7 +2236,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         if(input&&input.group_id){g=groups.find(x=>x.id===String(input.group_id));if(!g)return{error:'No change with id '+input.group_id+' in the Brain\'s history (it keeps its last 10).'};if(g.undone)return{error:'That change was already undone on '+_uWhen(g.undoneAt)+'.'};if(!mine(g))return{error:'Only an admin can undo a change someone else made.'}}
         else g=groups.filter(x=>!x.undone&&mine(x)).pop()||null;
         if(!g)return{error:'There is no change from the Brain left to undo. It keeps its last 10 confirmed changes.'};
-        const r=_undoApply(g);
+        const r=await _undoApply(g);
         if(r.release.length)_uReleaseTombs(r.release).catch(()=>{});
         // A step where nothing could be put back stays undoable (e.g. after its month is reopened).
         if(r.done.length)_undoWrite(groups.map(x=>x.id===g.id?{...x,undone:true,undoneAt:new Date().toISOString(),undoneBy:me,undoSkipped:r.skipped}:x));
@@ -3185,24 +3195,29 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
           };
         });
       };
-      const _getDocStatusesBrain = () => {
-        const allDS = jobs.reduce((acc, j) => ({...acc, ...(j.docStatuses || {})}), {});
-        const sopRec = (customSops||[]).find(s=>s.id==='DOC_STATUSES_GLOBAL');
-        let sopDS = {};
-        if (sopRec) { try { sopDS = JSON.parse(sopRec.content||'{}'); } catch {} }
-        let lsDS = {};
-        try { lsDS = JSON.parse(localStorage.getItem('mw_doc_statuses_fallback')||'{}'); } catch {}
-        return {...allDS, ...sopDS, ...lsDS};
-      };
-      const _setDocStatusBrain = (docNum, value) => {
-        // Upsert into DOC_STATUSES_GLOBAL SOP (durable cross-browser source).
-        const merged = _getDocStatusesBrain();
-        const next = {...merged, [docNum]: value};
-        addSop({id:'DOC_STATUSES_GLOBAL',title:'Document Statuses',cat:'DocStatuses',icon:'file',content:JSON.stringify(next),custom:true});
-        // Also update localStorage so it doesn't shadow our write on next read in this browser.
+      const _getDocStatusesBrain = () => readDocumentStatuses(jobs, customSops);
+      const _setDocStatusBrain = async (docNum, value) => {
+        const sop = customSops?.find(row => row.id === DOCUMENT_STATUSES_ID);
+        const before = parseDocumentStatuses(sop?.content);
+        const changes = documentStatusChanges(before, {[docNum]: value}, [docNum]);
+        const next = {...before, [docNum]: value};
+        const record = {id: DOCUMENT_STATUSES_ID, title: 'Document Statuses', cat: 'DocStatuses',
+          icon: 'file', content: JSON.stringify(next), custom: true};
+        const saved = await _rawAddSop(record, changes);
+        if (saved?.ok === false) throw new Error('Document save not confirmed. Review the latest details before trying again.');
+        const group = _uRec();
+        if (group) {
+          const current = saved?.row || record;
+          const previous = {...parseDocumentStatuses(current.content)};
+          if (Object.hasOwn(before, docNum)) previous[docNum] = before[docNum];
+          else delete previous[docNum];
+          const existing = group.entries.find(entry => entry.k === 'sop' && entry.id === DOCUMENT_STATUSES_ID);
+          if (existing) existing.after = _uClone(current);
+          else group.entries.push({k:'sop',id:DOCUMENT_STATUSES_ID,before:{...current,content:JSON.stringify(previous)},after:_uClone(current)});
+        }
         try {
-          const fb = JSON.parse(localStorage.getItem('mw_doc_statuses_fallback')||'{}');
-          const _ug = _uRec(); if (_ug && !_ug.entries.some(z=>z.k==='ls'&&z.field===docNum)) _ug.entries.push({k:'ls',key:'mw_doc_statuses_fallback',field:docNum,had:Object.prototype.hasOwnProperty.call(fb,docNum),before:_uClone(fb[docNum])});
+          const fb = parseDocumentStatuses(localStorage.getItem('mw_doc_statuses_fallback'));
+          if (group && !group.entries.some(z=>z.k==='ls'&&z.field===docNum)) group.entries.push({k:'ls',key:'mw_doc_statuses_fallback',field:docNum,had:Object.hasOwn(fb,docNum),before:_uClone(fb[docNum])});
           fb[docNum] = value;
           localStorage.setItem('mw_doc_statuses_fallback', JSON.stringify(fb));
         } catch {}
@@ -3642,7 +3657,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
             method: 'brain'
           };
           const newPayments = bal > 0.005 ? [...prevPayments, newPayment] : prevPayments;
-          _setDocStatusBrain(b.billDocNum, {
+          await _setDocStatusBrain(b.billDocNum, {
             ...existing,
             payments: newPayments,
             status:'paid', paid:true,
@@ -3678,10 +3693,10 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         const ds = _getDocStatusesBrain();
         const existing = typeof ds[b.billDocNum] === 'object' ? ds[b.billDocNum] : {};
         if (toolName === 'void_bill') {
-          _setDocStatusBrain(b.billDocNum, {...existing, status:'void', paid:false, memo: input.memo || existing.memo || ''});
+          await _setDocStatusBrain(b.billDocNum, {...existing, status:'void', paid:false, memo: input.memo || existing.memo || ''});
           return {success: true, message: 'Voided: '+b.billDocNum};
         } else {
-          _setDocStatusBrain(b.billDocNum, {...existing, status:'unpaid', paid:false});
+          await _setDocStatusBrain(b.billDocNum, {...existing, status:'unpaid', paid:false});
           return {success: true, message: 'Unvoided: '+b.billDocNum+' (now unpaid)'};
         }
       }
@@ -3690,17 +3705,17 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         const existing = typeof ds[input.bill_doc_num] === 'object' ? ds[input.bill_doc_num] : {};
         if (existing.deleted !== true) return {error: 'Bill is not deleted: '+input.bill_doc_num};
         const {deleted:_d, ...rest} = existing;
-        _setDocStatusBrain(input.bill_doc_num, rest);
+        await _setDocStatusBrain(input.bill_doc_num, rest);
         return {success: true, message: 'Restored bill (kept prior data): '+input.bill_doc_num};
       }
       if (toolName === 'reset_and_restore_bill') {
         const ds = _getDocStatusesBrain();
         const existing = typeof ds[input.bill_doc_num] === 'object' ? ds[input.bill_doc_num] : {};
         if (existing.deleted !== true) return {error: 'Bill is not deleted: '+input.bill_doc_num};
-        _setDocStatusBrain(input.bill_doc_num, {});
+        await _setDocStatusBrain(input.bill_doc_num, {});
         // Also clear date/due overrides
-        if (ds[input.bill_doc_num+'__date'] !== undefined) _setDocStatusBrain(input.bill_doc_num+'__date', '');
-        if (ds[input.bill_doc_num+'__due'] !== undefined) _setDocStatusBrain(input.bill_doc_num+'__due', '');
+        if (ds[input.bill_doc_num+'__date'] !== undefined) await _setDocStatusBrain(input.bill_doc_num+'__date', '');
+        if (ds[input.bill_doc_num+'__due'] !== undefined) await _setDocStatusBrain(input.bill_doc_num+'__due', '');
         return {success: true, message: 'Reset and restored as fresh unpaid bill: '+input.bill_doc_num+' (all prior payment data, attachments, and overrides wiped)'};
       }
       if (toolName === 'attach_file_to_bill') {
@@ -3745,7 +3760,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
           } else {
             const ds = _getDocStatusesBrain();
             const existing = typeof ds[b.billDocNum] === 'object' ? ds[b.billDocNum] : {};
-            _setDocStatusBrain(b.billDocNum, {...existing, invoiceFileUrl:url, invoiceFileName:fileName, invoiceUploadDate: new Date().toISOString()});
+            await _setDocStatusBrain(b.billDocNum, {...existing, invoiceFileUrl:url, invoiceFileName:fileName, invoiceUploadDate: new Date().toISOString()});
           }
           return {success: true, message: 'Attached '+fileName+' to '+b.billDocNum};
         } catch (e) { return {error: 'Attach failed: '+(e.message||String(e))}; }
@@ -3765,9 +3780,9 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         // An update on a never-entered bill also marks it entered (status unpaid),
         // matching what the UI's bill-entry screen does.
         if (!patch.status) { patch.status = 'unpaid'; patch.paid = false; }
-        _setDocStatusBrain(b.billDocNum, patch);
-        if (input.bill_date) _setDocStatusBrain(b.billDocNum+'__date', String(input.bill_date).trim());
-        if (input.due_date) _setDocStatusBrain(b.billDocNum+'__due', String(input.due_date).trim());
+        await _setDocStatusBrain(b.billDocNum, patch);
+        if (input.bill_date) await _setDocStatusBrain(b.billDocNum+'__date', String(input.bill_date).trim());
+        if (input.due_date) await _setDocStatusBrain(b.billDocNum+'__due', String(input.due_date).trim());
         return {success: true, message: 'Updated '+b.billDocNum+(input.vendor_invoice_num!==undefined?' -- vendor invoice #'+input.vendor_invoice_num:'')+(input.bill_date?', bill date '+input.bill_date:'')+(input.due_date?', due '+input.due_date:'')+(input.memo!==undefined?', memo saved':'')+'.'};
       }
       if (toolName === 'update_bill_due_date') {
@@ -3776,7 +3791,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         if (b._isStandalone) return {error: 'Due date override is only supported for PO-derived bills. For standalone records, use update_vendor_credit with credit_date.'};
         const due = (input.due_date||'').trim();
         if (due && !/^\d{4}-\d{2}-\d{2}$/.test(due)) return {error: 'due_date must be YYYY-MM-DD format or empty string to clear'};
-        _setDocStatusBrain(b.billDocNum+'__due', due);
+        await _setDocStatusBrain(b.billDocNum+'__due', due);
         return {success: true, message: due ? ('Due date set to '+due+' for '+b.billDocNum) : ('Cleared due date override for '+b.billDocNum)};
       }
       if (toolName === 'batch_mark_paid') {
@@ -3803,10 +3818,10 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         const method = input.method || (checkNum ? 'check' : 'ach');
         const memo = input.memo || ('Batch '+method+(checkNum?' #'+checkNum:''));
         let n = 0;
-        bills.forEach(b => {
+        for (const b of bills) {
           if (b._isStandalone) {
             const sop = (customSops||[]).find(s => s.id === b._sopId);
-            if (!sop) return;
+            if (!sop) continue;
             let d = {}; try { d = JSON.parse(sop.content||'{}'); } catch {}
             d.paid = true; d.payDate = today; if (checkNum) d.checkNum = checkNum; d.memo = memo;
             addSop({...sop, content: JSON.stringify(d)});
@@ -3821,10 +3836,10 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
             const newPayments = bal > 0.005
               ? [...prevPayments, {date: today, amount: bal, checkNum: checkNum||'', memo, method: method||'check'}]
               : prevPayments;
-            _setDocStatusBrain(b.billDocNum, {...existing, payments: newPayments, status:'paid', paid:true, payDate:today, checkNum:checkNum||existing.checkNum||'', memo});
+            await _setDocStatusBrain(b.billDocNum, {...existing, payments: newPayments, status:'paid', paid:true, payDate:today, checkNum:checkNum||existing.checkNum||'', memo});
           }
           n++;
-        });
+        }
         return {success: true, message: 'Marked '+n+' bill'+(n===1?'':'s')+' paid via '+method+' (total $'+total.toFixed(2)+', date '+today+(checkNum?', check #'+checkNum:'')+')'};
       }
 
@@ -3861,17 +3876,17 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         // Activate the PO if still new/unset -- bills only render in the Vendor Bills
         // tab for active or received POs, so this guarantees the entered bill is visible.
         const poStatus = dsPO[poDocNum];
-        if (!poStatus || poStatus === 'new') _setDocStatusBrain(poDocNum, 'drafted');
+        if (!poStatus || poStatus === 'new') await _setDocStatusBrain(poDocNum, 'drafted');
         const newStatus = (existing.status && existing.status !== 'void') ? existing.status : 'unpaid';
-        _setDocStatusBrain(billDocNum, {
+        await _setDocStatusBrain(billDocNum, {
           ...existing,
           status: newStatus,
           paid: newStatus === 'paid',
           vendorInvNum: input.vendor_invoice_num || existing.vendorInvNum || '',
           memo: input.memo || existing.memo || ''
         });
-        if (input.bill_date) _setDocStatusBrain(billDocNum+'__date', input.bill_date);
-        if (input.due_date) _setDocStatusBrain(billDocNum+'__due', input.due_date);
+        if (input.bill_date) await _setDocStatusBrain(billDocNum+'__date', input.bill_date);
+        if (input.due_date) await _setDocStatusBrain(billDocNum+'__due', input.due_date);
         const costRecv = poBillAmount(poObj.items, existing).cost;
         const orderVal = (poObj.items||[]).reduce((s,i)=>s+(i.unitCost||0)*(Number(i.qtyOrdered)||0),0);
         return {success: true, message: 'Recorded bill '+billDocNum+' against '+poDocNum+' ('+(poObj.vendor?.name||'Unknown')+' on '+poObj.job.name+')'+(input.vendor_invoice_num?', vendor invoice #'+input.vendor_invoice_num:'')+'. Currently owed $'+costRecv.toFixed(2)+' of the $'+orderVal.toFixed(2)+' PO total (bill amounts track received quantities). The bill reconciles against the job\'s existing line-item cost -- nothing was added to job cost. Record payments with mark_bill_paid.'};
@@ -4093,7 +4108,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         const valid = ['new','drafted','sent','approved'];
         const newStatus = String(input.status||'').toLowerCase();
         if (!valid.includes(newStatus)) return {error:'Invalid status: '+input.status+'. Must be one of: '+valid.join(', ')};
-        _setDocStatusBrain(po.docNum, newStatus);
+        await _setDocStatusBrain(po.docNum, newStatus);
         return {success:true, message:'PO '+po.docNum+' status: '+po.status+' >> '+newStatus};
       }
       if (toolName === 'mark_items_received') {
@@ -4157,13 +4172,13 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         if (pos.length === 0) return {error:'No line items on this job -- nothing to PO'};
         let drafted = 0;
         const promoted = [];
-        pos.forEach(po => {
+        for (const po of pos) {
           const cur = ds[po.docNum];
-          if (cur === 'drafted' || cur === 'sent' || cur === 'approved') return;
-          _setDocStatusBrain(po.docNum, 'drafted');
+          if (cur === 'drafted' || cur === 'sent' || cur === 'approved') continue;
+          await _setDocStatusBrain(po.docNum, 'drafted');
           drafted++;
           promoted.push(po.docNum+' ('+(po.vendor?.name||'?')+', $'+(po.total||0).toFixed(2)+')');
-        });
+        }
         if (drafted === 0) return {success:true, message:'All '+pos.length+' POs on '+job.name+' are already drafted/sent/approved'};
         return {success:true, message:'Drafted '+drafted+' PO'+(drafted===1?'':'s')+' on '+job.name+':\n- '+promoted.join('\n- ')};
       }
@@ -4276,7 +4291,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         const inv = _genInvoiceForJob(job, full);
         if (mode === 'partial' && inv.items.length === 0) return {error:'No items ready to invoice (no qtyReceived > qtyInvoiced delta). Use mode=advance for prepay scenarios, or mark items received first.'};
         if (inv.total <= 0 && mode !== 'credit_memo') return {error:'Invoice total is $0 -- nothing to invoice'};
-        _setDocStatusBrain(inv.docNum, 'drafted');
+        await _setDocStatusBrain(inv.docNum, 'drafted');
         const shouldMark = (typeof input.mark_qty_invoiced === 'boolean')
           ? input.mark_qty_invoiced
           : (mode === 'advance');
@@ -4350,7 +4365,7 @@ function BrainPage({jobs,reps,lineItems,vendors,customers,getJobFinancials,getJo
         const invDocNum = _stableNumBrain('INV-', job.id, job.customer);
         // Log the payment as a docStatuses entry keyed PAY-<docNum>-<timestamp> for audit trail.
         const payId = 'PAY-'+invDocNum+'-'+Date.now();
-        _setDocStatusBrain(payId, {
+        await _setDocStatusBrain(payId, {
           jobId: job.id,
           customer: (customers.find(c => c.id === job.customer)||{}).name || '',
           jobName: job.name,

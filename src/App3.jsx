@@ -1,5 +1,6 @@
 import DateInput from './DateInput.jsx';
 import { poBillAmount } from './poBill.js';
+import { readDocumentStatuses } from './documentStatuses.js';
 import React, { useState, useEffect, useRef } from "react";
 import { db } from "./supabase.js";
 import { useUser, useClerk, SignIn, UserButton, useAuth } from "@clerk/clerk-react";
@@ -381,7 +382,7 @@ function FinancialsPage({jobs,lineItems,vendors,customers,reps,getJobFinancials,
   // _stableNumFin and _finDocStatuses were previously declared further down (AP
   // section); they are declared here instead so the AR block can use them too.
   const _stableNumFin=(prefix,a,b)=>prefix+(a||'').replace(/[^A-Z0-9]/gi,'').slice(-4).toUpperCase()+'-'+(b||'').replace(/[^A-Z0-9]/gi,'').slice(-4).toUpperCase();
-  const _finDocStatuses=(()=>{const allDS=jobs.reduce((acc,j)=>({...acc,...(j.docStatuses||{})}),{});const rec=(customSops||[]).find(s=>s.id==='DOC_STATUSES_GLOBAL');let sopDS={};if(rec){try{sopDS=JSON.parse(rec.content||'{}')}catch{}}let lsDS={};try{lsDS=JSON.parse(localStorage.getItem('mw_doc_statuses_fallback')||'{}')}catch{}return {...allDS,...sopDS,...lsDS};})();
+  const _finDocStatuses=readDocumentStatuses(jobs,customSops);
   const _jobInvoiced=(j,f)=>{if((f.totalInvoiced||0)>0)return true;const raw=_finDocStatuses[_stableNumFin('INV-',j.id,j.customer)];const st=(raw&&typeof raw==='object')?raw.status:raw;return !!st&&st!=='new';};
   const arAging={current:0,t30:0,t60:0,t90:0,over90:0};
   filteredJobs.filter(j=>j.paymentStatus!=="paid").forEach(j=>{const f=getJobFinancials(j.id);if(!_jobInvoiced(j,f))return;const inv=j.dueDate?new Date(j.dueDate):new Date(j.createdDate||now);const days=Math.floor((now-inv)/86400000);if(days<=0)arAging.current+=f.totalRevenue;else if(days<=30)arAging.t30+=f.totalRevenue;else if(days<=60)arAging.t60+=f.totalRevenue;else if(days<=90)arAging.t90+=f.totalRevenue;else arAging.over90+=f.totalRevenue});

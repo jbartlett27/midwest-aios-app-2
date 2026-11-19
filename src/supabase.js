@@ -450,6 +450,18 @@ export const db = {
     const result = await persistCatalog({fetchImpl:fetch,baseUrl:URL,headers:hdrs,sop:sopToDb(sop),action,updates});
     return result.ok ? {...result,row:sopFromDb(result.row)} : result;
   },
+  async saveDocumentStatusChanges(changes) {
+    try {
+      const response = await fetch(URL + '/rpc/save_document_status_changes', {
+        method: 'POST', headers: hdrs, body: JSON.stringify({changes}),
+      });
+      if (!response.ok) return {ok: false};
+      const result = await response.json();
+      return {...result, row: result.row ? sopFromDb(result.row) : null};
+    } catch {
+      return {ok: false};
+    }
+  },
   async saveSop(s) { return upsertRow('sops', sopToDb(s)); },
   async deleteSop(id) { return deleteRow('sops', id); },
   // ---- General ledger (Phase 1) ----

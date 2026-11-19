@@ -49,12 +49,23 @@ const vendor={id:'V-ef3i8suki',name:'Doane Keyes Associates'};
 const PO='PO-6963-SUKI',BILL='BILL-6963-SUKI';
 const items=[{id:'L1',jobId:job.id,vendor:vendor.id,description:'Box Arm Accent Chair',qtyOrdered:20,qtyReceived:20,qtyInvoiced:0,unitPrice:250,unitCost:171.2,deliveryDate:'2026-10-26'},{id:'L2',jobId:job.id,vendor:vendor.id,description:'Freight',qtyOrdered:1,qtyReceived:1,qtyInvoiced:0,unitPrice:150,unitCost:125}];
 const standalone={id:'SB-1',cat:'StandaloneBill',title:'774970',content:JSON.stringify({vendorId:vendor.id,vendorName:vendor.name,jobId:job.id,jobName:job.name,amount:171.2,creditDate:'2026-10-26',refNumber:'774970',memo:'Backordered chair',paid:false})};
-async function mount(billData){
+async function mount(billData, cachedBill){
   const statuses={[PO]:'approved',[BILL]:billData,[BILL+'__date']:'2026-10-19',[BILL+'__due']:'2026-11-18'};
   const saved=[];
   const props={jobs:[job],lineItems:items,vendors:[vendor],customers:[{id:job.customer,name:'Waterford'}],reps:[{id:'S1',name:'Rep'}],getJobItems:id=>items.filter(i=>i.jobId===id),getJobFinancials:()=>({totalRevenue:5150,totalCost:3549,margin:31,totalOrdered:21,totalReceived:21}),_commissionFor:()=>0,setJobs:()=>{},setPage:()=>{},updateJob:()=>{},updateLineItem:()=>{},notify:()=>{},triggerPrint:()=>{},customSops:[{id:'DOC_STATUSES_GLOBAL',cat:'DocStatuses',content:JSON.stringify(statuses)},standalone],addSop:r=>saved.push(r),deleteSop:()=>{},lineItemShipTos:{},setLineItemShipTo:()=>{},confirm:async()=>false};
   document.body.innerHTML='<div id="root"></div>';localStorage.clear();
-  const root=createRoot(document.getElementById('root'));await act(async()=>root.render(React.createElement(DocumentsPage,props)));
+  if(cachedBill)localStorage.setItem('mw_doc_statuses_fallback',JSON.stringify({[BILL]:cachedBill}));
+  function Fixture(){
+    const [rows,setRows]=React.useState(props.customSops);
+    const addSop=(record,changes)=>{
+      saved.push(record);
+      assert.ok(changes, 'write carries only the edited document keys');
+      setRows(prev=>[record,...prev.filter(row=>row.id!==record.id)]);
+      return {ok:true};
+    };
+    return React.createElement(DocumentsPage,{...props,customSops:rows,addSop});
+  }
+  const root=createRoot(document.getElementById('root'));await act(async()=>root.render(React.createElement(Fixture)));
   const tab=[...document.querySelectorAll('button')].find(b=>b.textContent.startsWith('Vendor Bills'));assert.ok(tab,'Vendor Bills tab');await act(async()=>tab.click());
   return {root,saved};
 }
@@ -72,6 +83,18 @@ m=await mount({vendorInvNum:'774758',status:'unpaid',invoicedAmount:3377.8});
 assert.match(billRow().textContent,/\$3,377\.80/,'the bill stays at the amount on vendor invoice 774758 after the last chair is received');
 assert.doesNotMatch(billRow().textContent,/\$3,549\.00/);
 assert.match(text(),/\$3,549\.00/,'the two vendor invoices together owe $3,549.00 (3,377.80 + 171.20)');
+
+// A browser that last saw an open bill must show the saved partial payment.
+await act(async()=>m.root.unmount());
+const staleMount=await mount({
+  vendorInvNum:'774758',status:'partial',payments:[{date:'2026-11-11',amount:3377.8,checkNum:'9516',method:'check'}],
+},{vendorInvNum:'774758',status:'unpaid',payments:[]});
+await act(async()=>[...billRow().querySelectorAll('td')].find(td=>td.textContent.includes(PO)).click());
+assert.match(text(),/check #9516/,'the shared payment trail wins over the old browser snapshot');
+assert.match(text(),/PARTIAL/);
+assert.match(text(),/\$171\.20/);
+await act(async()=>staleMount.root.unmount());
+m=await mount({vendorInvNum:'774758',status:'unpaid',invoicedAmount:3377.8});
 
 // The bill detail lets the office set and clear the amount.
 await act(async()=>[...billRow().querySelectorAll('td')].find(td=>td.textContent.includes('PO-6963-SUKI')).click());

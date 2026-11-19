@@ -2,6 +2,7 @@ import { invoiceCheckoutPayload, matchingInvoicePaymentLink } from './invoicePay
 import { resolveInvoiceDates, invoiceTermsDays } from './invoiceDates.js';
 import { isBusinessDate, businessDayAfter } from './businessDate.js';
 import { poBillAmount } from './poBill.js';
+import { DOCUMENT_STATUSES_ID, documentStatusChanges, parseDocumentStatuses, readDocumentStatuses } from './documentStatuses.js';
 import DateInput from './DateInput.jsx';
 import { BrainPage, CommissionsPage, Customer360Page, DirectoryPage, ExitReadinessPage, FilesPage, FinancialsPage, NotesPage, PlaybookPage, ProspectsPage, SalesPortalPage, TasksPage, UserMgmtPage, Vendor360Page } from "./App2.jsx";
 import React, { useState, useEffect, useRef } from "react";
@@ -2367,13 +2368,30 @@ function MidwestAIOSInner() {
   };
   const deleteCustomer = async (id) => { if (!await confirm("Delete this customer? Their jobs will be unlinked.")) return; setCustomers(p => p.filter(c => c.id !== id)); db.deleteCustomer(id); };
   const forceDeleteCustomer = (id) => { setCustomers(p => p.filter(c => c.id !== id)); db.deleteCustomer(id); };
+  const documentStatusQueue = useRef(Promise.resolve());
+  const saveDocumentStatusChanges = changes => {
+    const save = documentStatusQueue.current.then(async () => {
+      const result = await db.saveDocumentStatusChanges(changes);
+      if (result.row) {
+        const row = result.row;
+        setCustomSops(rows => rows.some(r => r.id === row.id)
+          ? rows.map(r => r.id === row.id ? row : r) : [...rows, row]);
+      }
+      if (!result.ok) notify(result.conflict
+        ? 'This document changed in another session. Review the latest details and try again.'
+        : 'Save could not be confirmed. Refresh and check the document before trying again.', 'error');
+      return result;
+    });
+    documentStatusQueue.current = save.catch(() => {});
+    return save;
+  };
   const changeVendorCatalog = async (sop, action, updates) => {
     const result = await db.changeVendorCatalog(sop, action, updates);
     if (!result?.ok) throw new Error(result?.error || "Could not save the catalogue change.");
     setCustomSops(rows => rows.some(row => row.id === result.row.id) ? rows.map(row => row.id === result.row.id ? result.row : row) : [...rows,result.row]);
     return result.row;
   };
-  const addSop = (sop) => { if(sop.cat === 'VendorCatalog') return changeVendorCatalog(sop,'insert'); setCustomSops(p => { const exists = p.findIndex(s => s.id === sop.id); if (exists >= 0) { const updated = [...p]; updated[exists] = sop; return updated; } return [...p, sop]; }); db.deleteSop(sop.id).then(()=>db.saveSop(sop)); };
+  const addSop = (sop, changes) => { if(sop.cat === 'VendorCatalog') return changeVendorCatalog(sop,'insert'); if (sop.id === DOCUMENT_STATUSES_ID) return saveDocumentStatusChanges(changes); setCustomSops(p => { const exists = p.findIndex(s => s.id === sop.id); if (exists >= 0) { const updated = [...p]; updated[exists] = sop; return updated; } return [...p, sop]; }); db.deleteSop(sop.id).then(()=>db.saveSop(sop)); };
   // Line-item ship-to override store: persists per-line shipTo addresses in a dedicated
   // sops record (LINE_ITEM_SHIP_TO_GLOBAL). This sidesteps the supabase.js line_items
   // write path which currently drops the ship_to column on save. The sops table is known
@@ -4568,28 +4586,42 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
   const histExcelRef=useRef(null);
   const histBulkExcelRef=useRef(null);
   const activeHidden=(previewDoc?.job?.docStatuses||{}).__qcv||previewDoc?.data?.hiddenCols||hiddenCols;const visibleCols=allQuoteCols.filter(c=>!activeHidden[c.key]);
-  // Doc statuses stored IN each job record in Supabase -- persists across browsers, deploys, cache clears
-  const allDocStatuses = jobs.reduce((acc, j) => ({...acc, ...(j.docStatuses || {})}), {});
-  // Also load from sops table backup (cat="DocStatuses")
-  const sopStatusRecord = (customSops||[]).find(s=>s.id==="DOC_STATUSES_GLOBAL");
-  const sopStatuses = sopStatusRecord ? (()=>{try{return JSON.parse(sopStatusRecord.content)}catch{return {}}})() : {};
-  // Also load from localStorage
-  const lsFallback = (()=>{try{return JSON.parse(localStorage.getItem("mw_doc_statuses_fallback")||"{}")}catch{return {}}})();
-  // Merge: sops backup overrides jobs, localStorage overrides sops
-  const mergedDocStatuses = {...allDocStatuses, ...sopStatuses, ...lsFallback};
+  const sopStatusRecord = customSops?.find(s => s.id === DOCUMENT_STATUSES_ID);
+  const sopStatuses = parseDocumentStatuses(sopStatusRecord?.content);
+  const mergedDocStatuses = readDocumentStatuses(jobs, customSops);
   const [localStatuses, setLocalStatuses] = useState({});
   const lsApprovals=(()=>{try{const a={};Object.keys(localStorage).filter(k=>k.startsWith("quote_approved_")).forEach(k=>{const dn=k.replace("quote_approved_","");if(dn)a[dn]="approved"});return a}catch{return {}}})();
   const docStatuses = {...mergedDocStatuses, ...localStatuses, ...lsApprovals};
-  const statusEdits=useRef({});
-  const setDocStatuses = (patch) => {
-    statusEdits.current={...statusEdits.current,...patch};
-    setLocalStatuses({...statusEdits.current});
-    const allStatuses={...mergedDocStatuses,...localStatuses,...statusEdits.current};
-    addSop({id:"DOC_STATUSES_GLOBAL",title:"Document Statuses",cat:"DocStatuses",icon:"file",content:JSON.stringify(allStatuses),custom:true});
-    for(const job of jobs){const own={};const bases=[stableNum('QT-',job.id,job.customer),stableNum('INV-',job.id,job.customer),stableNum('COMM-',job.salesRep,'stmt'),...getJobItems(job.id).map(i=>stableNum('PO-',job.id,i.vendor))];for(const [key,value] of Object.entries(statusEdits.current)){const rec=invoiceRecords.find(r=>r.jobId===job.id&&(key===r.invoiceNum||key.startsWith(r.invoiceNum+'__')));if(rec||Object.prototype.hasOwnProperty.call(job.docStatuses||{},key)||bases.some(base=>key===base||key.startsWith(base+'__')||key.startsWith(base+'-')))own[key]=value}if(Object.keys(own).length)updateJob(job.id,{docStatuses:{...(job.docStatuses||{}),...own}})}
-    try{localStorage.setItem("mw_doc_statuses_fallback",JSON.stringify(allStatuses))}catch{}
+  const statusEdits = useRef({});
+  const setDocStatuses = async patch => {
+    const keys = Object.keys(patch);
+    const pendingBefore = Object.fromEntries(Object.entries(statusEdits.current).map(([key, edit]) => [key, edit.value]));
+    const changes = documentStatusChanges({...sopStatuses, ...pendingBefore}, patch, keys);
+    const edits = Object.fromEntries(keys.map(key => [key, {value: patch[key]}]));
+    Object.assign(statusEdits.current, edits);
+    const renderPending = () => setLocalStatuses(Object.fromEntries(
+      Object.entries(statusEdits.current).map(([key, edit]) => [key, edit.value])
+    ));
+    renderPending();
+    const allStatuses = {...mergedDocStatuses, ...pendingBefore, ...patch};
+    const result = await addSop({id: DOCUMENT_STATUSES_ID, title: 'Document Statuses', cat: 'DocStatuses',
+      icon: 'file', content: JSON.stringify(allStatuses), custom: true}, changes);
+    if (result?.ok !== false) {
+      for(const job of jobs){const own={};const bases=[stableNum('QT-',job.id,job.customer),stableNum('INV-',job.id,job.customer),stableNum('COMM-',job.salesRep,'stmt'),...getJobItems(job.id).map(i=>stableNum('PO-',job.id,i.vendor))];for(const [key,value] of Object.entries(patch)){const rec=invoiceRecords.find(r=>r.jobId===job.id&&(key===r.invoiceNum||key.startsWith(r.invoiceNum+'__')));if(rec||Object.prototype.hasOwnProperty.call(job.docStatuses||{},key)||bases.some(base=>key===base||key.startsWith(base+'__')||key.startsWith(base+'-')))own[key]=value}if(Object.keys(own).length)updateJob(job.id,{docStatuses:{...(job.docStatuses||{}),...own}})}
+      try {
+        const fallback = parseDocumentStatuses(localStorage.getItem('mw_doc_statuses_fallback'));
+        localStorage.setItem('mw_doc_statuses_fallback', JSON.stringify({...fallback, ...patch}));
+      } catch {}
+    }
+    for (const key of keys) if (statusEdits.current[key] === edits[key]) delete statusEdits.current[key];
+    renderPending();
+    return result?.ok !== false;
   };
-  const setDocStatus = (docNum, status) => {setDocStatuses({[docNum]:status});try{localStorage.removeItem("quote_approved_"+docNum)}catch{}};
+  const setDocStatus = (docNum, status) => {
+    const save = setDocStatuses({[docNum]: status});
+    try { localStorage.removeItem('quote_approved_' + docNum); } catch {}
+    return save;
+  };
 
 
 
@@ -5255,19 +5287,13 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
       // Mark Paid (no check printed). Credits picked in the Apply Credits window settle part
       // or all of each bill; PO bills get a credit line per credit plus the cash balance on
       // their Payment Trail, standalone bills are marked paid with the credit noted.
-      const _markBillsPaid = (bills, picks) => {
+      const _markBillsPaid = async (bills, picks) => {
         const today = _localIso();
         const {plan, creditConsumes, totalCredit} = _planCreditApplication(bills, picks);
+        const patch = {};
         plan.forEach(p => {
           const {bill, payAmt, creditsApplied} = p;
-          if (bill._standalone) {
-            if (creditsApplied.length) { _settleStandaloneBill(bill, {todayIso: today, checkNo: '', label: 'Marked paid', creditsApplied}); return; }
-            const sop = (customSops || []).find(s => s.id === bill._sopId);
-            if (!sop) return;
-            let d = {}; try { d = JSON.parse(sop.content || '{}'); } catch {}
-            addSop({id: sop.id, title: sop.title, cat: sop.cat, icon: sop.icon, content: JSON.stringify({...d, paid: true, payDate: today}), custom: true});
-            return;
-          }
+          if (bill._standalone) return;
           const existing = typeof docStatuses[bill.billDocNum]==='object' ? docStatuses[bill.billDocNum] : {};
           const prevPayments = _getBillPayments(existing, bill.cost);
           const newEntries = [];
@@ -5281,7 +5307,18 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           const newPayments = [...prevPayments, ...newEntries];
           const total = _sumPayments(newPayments);
           const fullyPaid = total >= bill.cost - 0.005;
-          setDocStatus(bill.billDocNum,{...existing, payments: newPayments, paid: fullyPaid, payDate: today, vendorInvNum: bill.vendorInvNum, checkNum: existing.checkNum||'', memo: 'Batch payment', status: fullyPaid?'paid':'partial'});
+          patch[bill.billDocNum] = {...existing, payments: newPayments, paid: fullyPaid, payDate: today, vendorInvNum: bill.vendorInvNum, checkNum: existing.checkNum||'', memo: 'Batch payment', status: fullyPaid?'paid':'partial'};
+        });
+        if (Object.keys(patch).length && !await setDocStatuses(patch)) return;
+        plan.forEach(({bill, creditsApplied}) => {
+          if (bill._standalone) {
+            if (creditsApplied.length) { _settleStandaloneBill(bill, {todayIso: today, checkNo: '', label: 'Marked paid', creditsApplied}); return; }
+            const sop = (customSops || []).find(s => s.id === bill._sopId);
+            if (!sop) return;
+            let d = {}; try { d = JSON.parse(sop.content || '{}'); } catch {}
+            addSop({id: sop.id, title: sop.title, cat: sop.cat, icon: sop.icon, content: JSON.stringify({...d, paid: true, payDate: today}), custom: true});
+            return;
+          }
         });
         _consumeCreditSops(creditConsumes, today, '');
         const n = plan.length;
@@ -5425,7 +5462,7 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
       const printBatchCheck=()=>_startBillPayment('check',Array.from(billSelected).map(i=>unpaidBills[i]));
       // Prints one check for these bills less the credits picked in the Apply Credits
       // window (picks, see _planCreditApplication), then records the payment.
-      const _printBatchCheckFor=(selectedNonCredits, picks)=>{
+      const _printBatchCheckFor=async(selectedNonCredits, picks)=>{
         if (selectedNonCredits.length === 0) {
           notify('Select at least one non-credit bill to print a check','error');
           return;
@@ -5443,20 +5480,21 @@ function DocumentsPage({jobs,setJobs,lineItems,vendors,customers,reps,getJobItem
           // Credits cover everything. Settle the bills with credit-only payments,
           // consume the credits, no check printed. Notify Maureen so she knows
           // why no check came out of the printer.
+          const patch = {};
           plan.forEach(p => {
             const {bill, creditsApplied} = p;
-            // Standalone vendor bills are flat paid/unpaid SOP records with no
-            // payments[] history, so they settle on the SOP. Writing a docStatus
-            // keyed by their SOP id would print them on the check and leave them
-            // showing as unpaid forever.
-            if (bill._standalone) { _settleStandaloneBill(bill, {todayIso, checkNo: '', label: 'Credit settled', creditsApplied}); return; }
+            if (bill._standalone) return;
             const existing = typeof docStatuses[bill.billDocNum]==='object' ? docStatuses[bill.billDocNum] : {};
             const prevPayments = _getBillPayments(existing, bill.cost);
             const newEntries = creditsApplied.map(ca => ({date: todayIso, amount: ca.creditedAmt, checkNum: '', memo: 'Credit '+(ca.refNumber?'#'+ca.refNumber+' ':'')+'from '+ca.vendorName, method: 'credit'}));
             const newPayments = [...prevPayments, ...newEntries];
             const total = _sumPayments(newPayments);
             const fullyPaid = total >= bill.cost - 0.005;
-            setDocStatus(bill.billDocNum,{...existing, payments: newPayments, paid: fullyPaid, payDate: todayIso, vendorInvNum: bill.vendorInvNum, memo: 'Credit settled', status: fullyPaid?'paid':'partial'});
+            patch[bill.billDocNum] = {...existing, payments: newPayments, paid: fullyPaid, payDate: todayIso, vendorInvNum: bill.vendorInvNum, memo: 'Credit settled', status: fullyPaid?'paid':'partial'};
+          });
+          if (Object.keys(patch).length && !await setDocStatuses(patch)) return;
+          plan.forEach(({bill, creditsApplied}) => {
+            if (bill._standalone) _settleStandaloneBill(bill, {todayIso, checkNo: '', label: 'Credit settled', creditsApplied});
           });
           _consumeCreditSops(creditConsumes, todayIso);
           notify('Bills fully settled by '+fmt(totalCredit)+' in credits -- no check needed');
@@ -5568,16 +5606,16 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
 </div>
 </body></html>`;
         const w=window.open('','_blank');
-        if(!w){notify('Popup blocked. Please allow popups for this site and try again.','error')}
-        else{w.document.write(html);w.document.close();setTimeout(()=>{try{w.focus();w.print()}catch(e2){}},1000)}
+        if (!w) { notify('Popup blocked. Please allow popups for this site and try again.', 'error'); return; }
         // Apply the plan: for each bill, append credit entries + the residual cash
         // payment with the check number stamped. This way the bill's Payment Trail
         // shows the credits and the check as separate entries, which makes bank-
         // statement reconciliation trivial (the cash entry matches the check; the
         // credit entries explain why the check was smaller than the bill total).
+        const patch = {};
         plan.forEach(p => {
           const {bill, payAmt, creditsApplied} = p;
-          if (bill._standalone) { _settleStandaloneBill(bill, {todayIso, checkNo, label: 'Batch check #'+checkNo, creditsApplied}); return; }
+          if (bill._standalone) return;
           const existing = typeof docStatuses[bill.billDocNum]==='object' ? docStatuses[bill.billDocNum] : {};
           const prevPayments = _getBillPayments(existing, bill.cost);
           const newEntries = [];
@@ -5590,8 +5628,13 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
           const newPayments = [...prevPayments, ...newEntries];
           const total = _sumPayments(newPayments);
           const fullyPaid = total >= bill.cost - 0.005;
-          setDocStatus(bill.billDocNum,{...existing, payments: newPayments, paid: fullyPaid, checkNum: checkNo, checkPrinted: new Date().toISOString(), payDate: todayIso, vendorInvNum: bill.vendorInvNum, memo: existing.memo||'Batch check #'+checkNo, status: fullyPaid?'paid':'partial'});
+          patch[bill.billDocNum] = {...existing, payments: newPayments, paid: fullyPaid, checkNum: checkNo, checkPrinted: new Date().toISOString(), payDate: todayIso, vendorInvNum: bill.vendorInvNum, memo: existing.memo||'Batch check #'+checkNo, status: fullyPaid?'paid':'partial'};
         });
+        if (Object.keys(patch).length && !await setDocStatuses(patch)) { w.close(); return; }
+        plan.forEach(({bill, creditsApplied}) => {
+          if (bill._standalone) _settleStandaloneBill(bill, {todayIso, checkNo, label: 'Batch check #'+checkNo, creditsApplied});
+        });
+        w.document.write(html);w.document.close();setTimeout(()=>{try{w.focus();w.print()}catch(e2){}},1000);
         // Mark applied credits as consumed.
         _consumeCreditSops(creditConsumes, todayIso, checkNo);
         const creditMsg = totalCredit > 0 ? ' (with '+fmt(totalCredit)+' in credits applied)' : '';
@@ -5718,12 +5761,13 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
       // updated payments[] back to docStatuses and recompute paid/status from the new
       // running total. The display-default flat fields (payDate, checkNum, memo) get
       // resynced to the most recent payment so other UI surfaces stay consistent.
-      const _persistPayments = (bill, newPayments) => {
+      const _persistPayments = async (bill, newPayments) => {
+        if (statusEdits.current[bill.billDocNum]) return false;
         const existing=typeof docStatuses[bill.billDocNum]==='object'?docStatuses[bill.billDocNum]:{};
         const total = _sumPayments(newPayments);
         const fullyPaid = total >= bill.cost - 0.005;
         const last = newPayments.length > 0 ? newPayments[newPayments.length-1] : null;
-        setDocStatus(bill.billDocNum, {
+        const saved = await setDocStatus(bill.billDocNum, {
           ...existing,
           payments: newPayments,
           paid: fullyPaid,
@@ -5732,34 +5776,12 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
           checkNum: last?.checkNum || '',
           memo: last?.memo || existing.memo || ''
         });
-        // CRITICAL: also refresh the open bill detail panel with the new derived
-        // state. setDocStatus triggers a re-render, but billDetail still holds the
-        // STALE bill snapshot from when the panel was opened, so the Payment Trail
-        // would display old payments[] / balance / isPartiallyPaid until the user
-        // closes and reopens. Patching billDetail here makes Edit/Add/Remove
-        // changes appear immediately in the same panel.
-        if (billDetail && billDetail.billDocNum === bill.billDocNum) {
-          const newBalance = Math.max(0, bill.cost - total);
-          const newIsPartial = total > 0.005 && !fullyPaid;
-          setBillDetail({
-            ...bill,
-            payments: newPayments,
-            totalPaid: total,
-            balance: newBalance,
-            isPartiallyPaid: newIsPartial,
-            paid: fullyPaid,
-            payDate: last?.date || '',
-            checkNum: last?.checkNum || ''
-          });
-          // Also re-seed the Record-a-Payment form's Amount input to the new balance,
-          // so when an Edit reopens the balance (e.g., legacy correction drops paid
-          // from $4678 down to $2230, opening a $2448 balance) the form is ready to
-          // fill in for the next check rather than holding the old (zero) value.
-          setBillPayAmount(newBalance > 0.005 ? String(newBalance.toFixed(2)) : '');
-          setBillPayInputDate(new Date().toISOString().split('T')[0]);
-        }
+        if (!saved) return false;
+        setBillPayAmount('');
+        setBillPayInputDate(new Date().toISOString().split('T')[0]);
+        return true;
       };
-      const addPayment = (bill, {date, amount, checkNum, memo, method, vendorInvNum}) => {
+      const addPayment = async (bill, {date, amount, checkNum, memo, method, vendorInvNum}) => {
         // Standalone bills don't use payment history -- they're flat single records.
         // Just toggle their flat paid flag via the existing path.
         if (bill._standalone) {
@@ -5769,7 +5791,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
           const updated={...d,paid:true,payDate:date||new Date().toISOString().split('T')[0],checkNum:checkNum||d.checkNum||''};
           addSop({id:sop.id,title:sop.title,cat:sop.cat,icon:sop.icon,content:JSON.stringify(updated),custom:true});
           notify('Standalone bill marked paid: '+(d.vendorName||'vendor'));
-          return;
+          return true;
         }
         const amt = Number(amount)||0;
         if (amt <= 0) { notify('Payment amount must be greater than zero','error'); return; }
@@ -5782,20 +5804,21 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
           method: method || 'check'
         };
         const newPayments = [...(bill.payments||[]), newPayment];
-        _persistPayments(bill, newPayments);
+        if (!await _persistPayments(bill, newPayments)) return false;
         const total = _sumPayments(newPayments);
         const fullyPaid = total >= bill.cost - 0.005;
         notify('Payment recorded: '+fmt(amt)+(fullyPaid?' >> bill fully paid':' >> '+fmt(bill.cost-total)+' remaining'));
+        return true;
       };
-      const removePayment = (bill, idx) => {
+      const removePayment = async (bill, idx) => {
         if (bill._standalone) { notify('Standalone bills do not have payment history','error'); return; }
         const cur = bill.payments || [];
         if (idx<0 || idx>=cur.length) return;
         const newPayments = cur.filter((_,i)=>i!==idx);
-        _persistPayments(bill, newPayments);
+        if (!await _persistPayments(bill, newPayments)) return false;
         notify('Payment removed');
       };
-      const editPayment = (bill, idx, patch) => {
+      const editPayment = async (bill, idx, patch) => {
         if (bill._standalone) { notify('Standalone bills do not have payment history','error'); return; }
         const cur = bill.payments || [];
         if (idx<0 || idx>=cur.length) return;
@@ -5805,13 +5828,13 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
         if (updated.method === 'legacy') updated.method = 'check';
         updated.amount = Number(updated.amount)||0;
         const newPayments = cur.map((p,i)=>i===idx?updated:p);
-        _persistPayments(bill, newPayments);
+        if (!await _persistPayments(bill, newPayments)) return false;
         notify('Payment updated');
       };
 
 
       // Detail view for a single bill
-      if(billDetail){const bill=billDetail;const pos=genPOs?genPOs(bill.job):[];const thisPO=pos.find(p=>p.docNum===bill.poDocNum);
+      if(billDetail){const bill=allBills.find(b=>b.billDocNum===billDetail.billDocNum)||billDetail;const pos=genPOs?genPOs(bill.job):[];const thisPO=pos.find(p=>p.docNum===bill.poDocNum);
         const billData=typeof docStatuses[bill.billDocNum]==='object'?docStatuses[bill.billDocNum]:{};
         const currentStatus=billData.status||(bill.paid?'paid':(billData.checkPrinted||billData.checkNum)?'check_sent':'unpaid');
         const isVoid=currentStatus==='void';
@@ -6223,7 +6246,7 @@ body{font-family:'Arial',sans-serif;color:#111;width:8.5in;margin:0 auto}
                 <div><label style={{fontSize:10,color:"#737373",display:"block",marginBottom:2}}>Memo</label><input value={billPayMemoInput} onChange={e=>setBillPayMemoInput(e.target.value)} placeholder="optional" style={inputStyle}/></div>
               </div>
               <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-                <button onClick={()=>{const amt=Number(billPayAmount)||bill.balance;if(amt<=0){notify('Enter a payment amount','error');return}addPayment(bill,{date:billPayInputDate||new Date().toISOString().split('T')[0],amount:amt,checkNum:billPayCheckInput,memo:billPayMemoInput,method:'check',vendorInvNum:billPayInvInput});setBillPayAmount('');setBillPayCheckInput('');setBillPayInvInput('');setBillPayMemoInput('');setBillPayInputDate(new Date().toISOString().split('T')[0])}} style={{padding:"6px 14px",borderRadius:6,border:"1px solid #34d39940",background:"#34d39915",color:"#34d399",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>+ Record Payment</button>
+                <button disabled={Object.hasOwn(localStatuses,bill.billDocNum)} onClick={async()=>{const amt=Number(billPayAmount)||bill.balance;if(amt<=0){notify('Enter a payment amount','error');return}if(!await addPayment(bill,{date:billPayInputDate||new Date().toISOString().split('T')[0],amount:amt,checkNum:billPayCheckInput,memo:billPayMemoInput,method:'check',vendorInvNum:billPayInvInput}))return;setBillPayAmount('');setBillPayCheckInput('');setBillPayInvInput('');setBillPayMemoInput('');setBillPayInputDate(new Date().toISOString().split('T')[0])}} style={{padding:"6px 14px",borderRadius:6,border:"1px solid #34d39940",background:"#34d39915",color:"#34d399",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>+ Record Payment</button>
                 <span style={{fontSize:11,color:"#737373"}}>Default fills the full balance ({fmt(bill.balance)}). Enter a smaller amount for partial payments.</span>
               </div>
             </div>}
