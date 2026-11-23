@@ -1,11 +1,16 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import App from './App.jsx'
 import { ClerkProvider } from '@clerk/clerk-react'
 
 const CLERK_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
 
 const root = ReactDOM.createRoot(document.getElementById('root'))
+
+// The public Furniture Planner (/plan) is its own small page: no staff sign-in, and none of the staff app is loaded.
+const planner = /^\/plan(\/|$)/.test(window.location.pathname)
+if (planner) {
+  import('./planner/Planner.jsx').then(({ default: Planner }) => root.render(<React.StrictMode><Planner /></React.StrictMode>))
+} else import('./App.jsx').then(({ default: App }) => {
 
 if (CLERK_KEY) {
   root.render(
@@ -25,3 +30,4 @@ if (CLERK_KEY) {
     </React.StrictMode>
   )
 }
+})

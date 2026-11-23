@@ -4,6 +4,8 @@
     { "path": "/api/task-reminders", "schedule": "0 12 * * *" }
   ],
   "rewrites": [
+    { "source": "/plan", "destination": "/index.html" },
+    { "source": "/plan/:path*", "destination": "/index.html" },
     { "source": "/mcp", "destination": "/api/index?route=mcp" },
     { "source": "/register", "destination": "/api/index?route=register" },
     { "source": "/authorize", "destination": "/api/index?route=authorize" },
