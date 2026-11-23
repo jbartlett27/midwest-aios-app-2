@@ -1,0 +1,48 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import { createHash, createHmac } from 'node:crypto';
+let source = await fs.readFile(new URL('../../api/enterprise-network.js', import.meta.url), 'utf8');
+if (process.argv.includes('--mutant')) source = source.replace("env.ENTERPRISE_NETWORK_PREVIEW !== 'on'", 'false');
+const { enterpriseBroker } = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
+const env = { ENTERPRISE_NETWORK_PREVIEW: 'on', ENTERPRISE_APP_ORIGIN: 'https://midwest.example', ENTERPRISE_INSTALLATION_ID: 'midwest', ENTERPRISE_BROKER_KEY: 'synthetic-test-key-with-more-than-32-characters', ENTERPRISE_NETWORK_ENDPOINT: 'https://network.example/api/enterprise-network' };
+let sent, calls = 0;
+const remote = async (url, init) => {
+  calls++;
+  sent = JSON.parse(init.body);
+  assert.equal(url, env.ENTERPRISE_NETWORK_ENDPOINT);
+  assert.equal(init.redirect, 'error');
+  const digest = createHash('sha256').update(JSON.stringify(sent.request)).digest('hex');
+  const signed = ['dyfrent.enterprise/1', sent.installation, sent.nonce, sent.issued_at, digest].join('\n');
+  assert.equal(init.headers['X-Enterprise-Signature'], createHmac('sha256', env.ENTERPRISE_BROKER_KEY).update(signed).digest('hex'));
+  return { ok: true, status: 200, json: async () => ({ ok: true, member: { id: 'canonical-member' } }) };
+};
+const request = { method: 'POST', headers: { origin: env.ENTERPRISE_APP_ORIGIN, authorization: 'Bearer synthetic.jwt.signature' }, body: { op: 'session' } };
+async function run(req = request, overrides = {}) {
+  const response = { headers: {}, setHeader(k, v) { this.headers[k] = v; }, status(code) { this.code = code; return this; }, json(value) { this.body = value; return this; } };
+  await enterpriseBroker({ ...env, ...overrides }, remote)(req, response);
+  return response;
+}
+assert.equal((await run(request, { ENTERPRISE_NETWORK_PREVIEW: '' })).code, 403);
+assert.equal(calls, 0);
+assert.equal((await run({ ...request, headers: { ...request.headers, origin: 'https://attacker.example' } })).code, 403);
+assert.equal((await run({ ...request, headers: { origin: env.ENTERPRISE_APP_ORIGIN } })).code, 401);
+assert.equal((await run({ ...request, body: { op: 'session', actor: 'maureen', role: 'admin' } })).code, 400);
+assert.equal((await run({ ...request, body: { op: 'call', action: 'read_bills', payload: {} } })).code, 400);
+assert.equal((await run(request, { ENTERPRISE_NETWORK_ENDPOINT: 'http://network.example/api/enterprise-network' })).code, 503);
+assert.equal((await run(request, { ENTERPRISE_BROKER_KEY: '' })).code, 503);
+assert.equal(calls, 0);
+const result = await run();
+assert.equal(sent.installation, 'midwest');
+assert.equal(sent.request.action, 'session');
+assert.equal(sent.request.token, 'synthetic.jwt.signature');
+assert.equal(result.code, 503);
+assert.equal(result.body.code, 'source_adapter_pending');
+assert.equal(JSON.stringify(result.body).includes(sent.request.token), false);
+assert.equal(JSON.stringify(result.body).includes(env.ENTERPRISE_BROKER_KEY), false);
+assert.equal(result.headers['Cache-Control'], 'no-store');
+const firstNonce = sent.nonce;
+await run();
+assert.notEqual(sent.nonce, firstNonce);
+assert.equal((await run({ ...request, body: { op: 'call', action: 'net_overview', payload: {}, request_id: 'request-1' } })).code, 200);
+assert.equal(sent.request.action, 'net_overview');
+console.log('PASS enterprise BFF: gate, origin, identity-only transport, signatures, bounds and pending UI');
