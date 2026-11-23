@@ -22,7 +22,7 @@ export function looksLikeProse(name) {
   if (!t) return true;
   return /^[a-z](?!\/)/.test(t) || /[,;:]$/.test(t) || /\b(a|an|the|with|and|or|of|to|for|is|are|that|any)$/i.test(t) || /[a-z]{2}\.\s+[A-Z][a-z]/.test(t) || t.split(/\s+/).length > 14 || /^(the|this|these|our|with|full)\s/i.test(t) && /\b(is|are|built|designed|provides|offers)\b/i.test(t);
 }
-const usable = (t) => { const x = String(t || '').trim(); return x.length <= 90 && (x.match(/[A-Za-z]/g) || []).length >= 3 && !looksLikeProse(x) && !/^pages?\s+\d|selection guide|table of contents|^index$|^new!?$|^catalog(ue)?$|^collection$/i.test(x); };
+const usable = (t) => { const x = String(t || '').trim(); return x.length <= 90 && (x.match(/[A-Za-z]/g) || []).length >= 3 && !looksLikeProse(x) && !/^pages?\s+\d|selection guide|table of contents|^index$|^new!?$|^catalog(ue)?$|^collection$/i.test(x) && !/_pages?[-_]?\d|\w_\w+_|\.pdf$/i.test(x); };
 const cleanLabel = (t) => String(t || '').split(' | ')[0].replace(/^section\s+[ivxlc ]+:\s*/i, '').trim();
 export function productName(row) {
   if (usable(row.name)) return String(row.name).trim();
