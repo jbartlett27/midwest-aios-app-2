@@ -24,11 +24,23 @@ export function looksLikeProse(name) {
 }
 const usable = (t) => { const x = String(t || '').trim(); return x.length <= 90 && (x.match(/[A-Za-z]/g) || []).length >= 3 && !looksLikeProse(x) && !/^pages?\s+\d|selection guide|table of contents|^index$|^new!?$|^catalog(ue)?$|^collection$/i.test(x) && !/_pages?[-_]?\d|\w_\w+_|\.pdf$/i.test(x); };
 const cleanLabel = (t) => String(t || '').split(' | ')[0].replace(/^section\s+[ivxlc ]+:\s*/i, '').trim();
+// A row segment reads as a name: at least two real words and mostly letters (not a size or a code list).
+const wordy = (t) => (t.match(/[A-Za-z]{3,}/g) || []).length >= 2 && (t.match(/[A-Za-z]/g) || []).length >= t.replace(/\s/g, '').length * 0.6;
 export function productName(row) {
   if (usable(row.name)) return String(row.name).trim();
   // A bare size ("48 x 20\"") stays, after the series it belongs to.
   const size = /^[\d\s.\/\u2044x\u00d7'"\u2019\u201d\u02dd-]{2,14}$/i.test(String(row.name || '').trim()) && /["'\u2019\u201d\u02dd\u00d7x]/i.test(row.name) ? ' ' + String(row.name).trim() : '';
-  for (const alt of [row.series, row.section, row.group].map(cleanLabel)) if (usable(alt)) return alt + size;
+  const section = cleanLabel(row.section), group = cleanLabel(row.group), series = cleanLabel(row.series);
+  const generic = (t) => { const x = t.toLowerCase(); return x === section.toLowerCase() || x === group.toLowerCase(); };
+  if (usable(series) && !generic(series)) return series + size;
+  // The catalogue row as printed often carries the real name ("Tables | 59TV \u2022 Mobile Cafeteria Table with Benches").
+  const code = String(row.code || '').trim();
+  const fromRow = String(row.row || '').split(' | ')
+    .map((seg) => seg.trim().replace(code ? new RegExp('^' + code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b') : /^$/, '').replace(/^[\s\u2022\u00b7*>-]+/, '').trim())
+    .filter((seg) => usable(seg) && !generic(seg) && seg.toLowerCase() !== code.toLowerCase() && wordy(seg))
+    .sort((a, b) => b.length - a.length)[0];
+  if (fromRow) return fromRow + size;
+  for (const alt of [section, group]) if (usable(alt)) return alt + size;
   return 'Model ' + (row.code || '');
 }
 export function publicProduct(rec, row) {
@@ -48,6 +60,7 @@ export function publicCatalogs(recs) {
 }
 // The plan line a customer keeps: only what the catalogue confirms, plus their own quantity and note.
 export function cleanPlanItem(item, product) {
-  const qty = Math.max(1, Math.min(10000, Math.round(Number(item && item.qty) || 1)));
-  return { ...product, qty, note: clip(item && item.note, 200), confirmed: true };
+  const qty = Math.max(1, Math.min(100000, Math.round(Number(item && item.qty) || 1)));
+  const area = clip(item && item.area, 80);
+  return { ...product, qty, note: clip(item && item.note, 200), ...(area ? { area } : {}), confirmed: true };
 }

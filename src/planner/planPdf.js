@@ -70,7 +70,17 @@ export async function buildPlanPdf({ plan, contact, logoBytes, refId, date = new
     const det = extra ? wrap(extra, reg, 8.5, cols[1].w - 12) : [];
     const ven = wrap(it.vendor || '', reg, 9, cols[2].w - 12).concat(wrap('Model ' + (it.code || ''), bold, 9, cols[2].w - 12), wrap((it.catalog ? it.catalog + ', ' : '') + 'page ' + (it.page || '-'), reg, 8, cols[2].w - 12));
     const h = Math.max(prod.length * 12 + det.length * 11, ven.length * 11.5) + 12;
-    if (y - h < 64) { newPage(); head(); }
+    // A new area (for example "Grade 3 classrooms (12 rooms)") starts with a band, never alone at the bottom of a page.
+    let band = it.area && (idx === 0 || items[idx - 1].area !== it.area) ? 26 : 0;
+    let cont = false;
+    if (y - h - band < 64) { newPage(); head(); if (it.area && !band) { band = 26; cont = true; } }
+    if (band) {
+      const n = items.filter((x) => x.area === it.area).reduce((t, x) => t + (Number(x.qty) || 0), 0) + ' pieces';
+      page.drawRectangle({ x: M, y: y - 20, width: W - 2 * M, height: 20, color: rgb(0.93, 0.95, 0.97) });
+      page.drawText((safe(it.area).slice(0, 90) + (cont ? ' (continued)' : '')), { x: M + 6, y: y - 14, size: 9.5, font: bold, color: INK });
+      page.drawText(n, { x: W - M - 6 - reg.widthOfTextAtSize(n, 8.5), y: y - 14, size: 8.5, font: reg, color: SOFT });
+      y -= band;
+    }
     if (idx % 2) page.drawRectangle({ x: M, y: y - h + 4, width: W - 2 * M, height: h, color: rgb(0.985, 0.988, 0.992) });
     page.drawText(String(it.qty || 1), { x: M + 6, y: y - 12, size: 11, font: bold, color: INK });
     let yy = y - 12; prod.forEach((l) => { page.drawText(l, { x: M + 46, y: yy, size: 9.5, font: bold, color: INK }); yy -= 12; });

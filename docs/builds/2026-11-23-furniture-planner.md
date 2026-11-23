@@ -55,3 +55,14 @@ A public page where a school or business plans a space with a scoped Midwest Bra
 Ask: Jim Lindner (sales) looked up purchase history for a vendor and saw only his own purchases; Maureen wants everyone to see the company's full history with each vendor.
 Cause: sales logins get role-filtered jobs, and both the Brain (pre-filtered data) and the Directory vendor panel built the history from those.
 Fix: `src/vendorHistory.js` (company history and vendor ranking), a read-only Brain tool `vendor_purchase_history` fed from the whole company (captured before the sales filter), and the Directory vendor panel counting every company job with a "Most ordered products" list. Sales logins see it without dollars (units instead of cost; spend and margin cards hidden for them; jobs on other reps' accounts are listed but not clickable). Tests: `vendor-history-test.mjs`, 6 mutants.
+
+## Round 3 from J's iPad review
+
+- Any size of project: plan lines up to 250, quantities up to 100,000, an `area` on each line ("Grade 3 classrooms (12 rooms)", "Cafeteria"), model room 8000 tokens and 10 tool rounds. The prompt plans big projects by area (a standard room package times the room count) and asks about room counts and phases.
+- Iteration: any change the customer asks for is saved to the quote in the same turn (update_plan with the full list); notes and areas already on screen are kept when the model re-sends a line.
+- Product names: a nameless line takes its name from the catalogue row before falling back to the section ("Mobile CafeteriaTable with Benches or Stools", not "Tables").
+- Quote screen: lines grouped under area bands; project details and notes wrap onto as many lines as they need; roomy line layout when the quote pane is narrow.
+- PDF: opens in a new tab every time it is pressed (the tab opens at the tap, so Safari never blocks it; falls back to a download); area bands, repeated as "(continued)" across pages.
+- "Request a priced quote" comes first.
+- Planner link bar redesigned: icon, link, Copy link with a Copied state (and fallbacks), Open planner in a new tab; checked in a browser at desktop and phone width.
+- 24 planner mutants; browser check 94 of 94.

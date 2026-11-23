@@ -17,6 +17,14 @@ const MUTANTS=[
   ['saving keeps every line on screen','api/plan.js',"- update_plan replaces the whole list: always send every line that should stay","- update_plan saves the list: send the lines"],
   ['the reply counts the lines it added','api/plan.js',"added: addedLines(current, nextPlan) };\n    }","added: 0 };\n    }"],
   ['no placeholder facts','api/plan.js'," Save only what the customer actually said; leave a fact out until they tell you"," Save"],
+  ['a line keeps its area','src/planCatalog.js',"...(area ? { area } : {}), confirmed: true","confirmed: true"],
+  ['plans hold 250 lines','api/plan.js',"export const PLAN_LINES = 250;","export const PLAN_LINES = 60;"],
+  ['every change updates the quote','api/plan.js',"- ITERATION: whenever the customer asks for any change at all","- When the customer asks for a change"],
+  ['big projects by area','api/plan.js',"- For a large project, plan by area","- For a large project, plan"],
+  ['room to write a big plan','api/plan.js',"max_tokens: 8000, system: sys,","max_tokens: 2000, system: sys,"],
+  ['names from the catalogue row','src/planCatalog.js',"  if (fromRow) return fromRow + size;",""],
+  ['a change keeps notes and areas','api/plan.js',"keepNotes(v, current); ",""],
+  ['quantities up to 100,000','src/planCatalog.js',"Math.min(100000, Math.round(Number(item && item.qty) || 1))","Math.min(10000, Math.round(Number(item && item.qty) || 1))"],
   ['the model gets only catalogue tools','api/plan.js',"{ name: 'get_product',","{ name: 'get_job', description: 'x', input_schema: { type: 'object', properties: {} } },\n  { name: 'get_product',"],
 ];
 const read=(f)=>{const t=fs.readFileSync('../../'+f,'utf8');if(mutantIdx<0||MUTANTS[mutantIdx][1]!==f)return t;assert.ok(t.includes(MUTANTS[mutantIdx][2]),'mutation anchor missing: '+MUTANTS[mutantIdx][0]);return t.replace(MUTANTS[mutantIdx][2],MUTANTS[mutantIdx][3]);};
@@ -25,9 +33,9 @@ const r=await build({stdin:{contents:read('api/plan.js'),resolveDir:'../../api',
 fs.writeFileSync('./.plan-bundle.mjs',r.outputFiles[0].text);const P=await import('./.plan-bundle.mjs?'+Date.now());fs.rmSync('./.plan-bundle.mjs');
 
 // ---- a made-up catalogue (one with prices in its rows) ----
-const CAT={v:1,headers:['Model | Description | Size | List'],sections:[{id:1,title:'Student Desks',group:'Desks'},{id:2,title:'Chairs',group:'Seating'}],
-  pages:[{n:4,sec:1,title:'Flex Desk Series',text:'Flex desk adjustable height student desk list $412.00'},{n:7,sec:1,title:'2026_Section1_pages-001-049_02',text:'desks'},{n:9,sec:2,title:'Stack Chair',text:'Stack chair 18 inch seat'}],
-  products:[{c:'FD-2030',p:4,b:'Flex Desk 20x30 adjustable',r:'FD-2030 | Adjustable student desk | 20x30 | $412.00',h:0},{c:'EL-1',p:7,b:'ideal for any classroom.',r:'EL-1 | desk',h:0},{c:'FD-99',p:4,b:'withstand heavy loads and daily wear. A',r:'FD-99 | heavy duty top',h:0},{c:'SC-18',p:9,b:'Stack Chair 18"',r:'SC-18 | Stack chair | 18" seat | 129.00',h:0}]};
+const CAT={v:1,headers:['Model | Description | Size | List'],sections:[{id:1,title:'Student Desks',group:'Desks'},{id:2,title:'Chairs',group:'Seating'},{id:3,title:'Tables',group:'Tables'}],
+  pages:[{n:4,sec:1,title:'Flex Desk Series',text:'Flex desk adjustable height student desk list $412.00'},{n:7,sec:1,title:'2026_Section1_pages-001-049_02',text:'desks'},{n:14,sec:3,title:'Tables',text:'mobile cafeteria table'},{n:9,sec:2,title:'Stack Chair',text:'Stack chair 18 inch seat'}],
+  products:[{c:'FD-2030',p:4,b:'Flex Desk 20x30 adjustable',r:'FD-2030 | Adjustable student desk | 20x30 | $412.00',h:0},{c:'59TV',p:14,b:'',r:'Tables | 59TV \u2022 Mobile CafeteriaTable with Benches or Stools',h:-1},{c:'EL-1',p:7,b:'ideal for any classroom.',r:'EL-1 | desk',h:0},{c:'FD-99',p:4,b:'withstand heavy loads and daily wear. A',r:'FD-99 | heavy duty top',h:0},{c:'SC-18',p:9,b:'Stack Chair 18"',r:'SC-18 | Stack chair | 18" seat | 129.00',h:0}]};
 const REC={vendorId:'V1',vendorName:'Acme Seating',title:'Acme 2026 Catalog',url:'https://x/acme.json',productCount:2,pageImgBase:'https://x/pages/',hasPrices:false};
 let saved=[];const db={catalogRows:async()=>[{id:'VCAT-1',cat:'VendorCatalog',content:JSON.stringify(REC)}],prospects:async()=>saved.map(p=>({id:p.id,content:JSON.stringify(p.data)})),
   settings:async()=>({booking:{defaultRep:'S001',reps:{S001:{url:'https://calendly.com/dave/intro',hostEmails:['dave@mwf.test']},S004:{url:'',hostEmails:['jim@mwf.test']}}}}),
@@ -42,12 +50,15 @@ assert.equal(found[0].code,'FD-2030','a search finds the real product');
 {const calls=[];const big=P.makeDb(async(u)=>{calls.push(u);const off=Number(new URL(u).searchParams.get('offset'));const n=off===0?1000:off===1000?156:0;const rows=Array.from({length:n},(_,i)=>({id:'P'+(off+i),content:'{}'}));return{ok:true,text:async()=>JSON.stringify(rows)};});
  assert.equal((await big.prospects()).length,1156,'duplicate and repeat checks see every Prospect card, past the 1000-row page');}
 assert.equal(P.findProduct(cats,'VCAT-1','FD-99').name,'Flex Desk Series','a customer sees a product name, never a sentence fragment from the catalogue');
+assert.equal(P.findProduct(cats,'VCAT-1','59TV').name,'Mobile CafeteriaTable with Benches or Stools','a product with no name takes it from the catalogue row, not the section word');
 assert.equal(P.findProduct(cats,'VCAT-1','EL-1').name,'Student Desks','a page titled with a file name never becomes a product name');
 assert.ok(!/412|\$/.test(JSON.stringify(found)),'no price reaches a customer, in specs or anywhere in the product');
 assert.ok(!/129/.test(JSON.stringify(P.searchAll(cats,'stack chair'))),'a price written without a dollar sign is removed too');
 assert.equal(P.findProduct(cats,'VCAT-1','NOPE-1'),null,'an unknown code is not a product');
 const v=P.validatePlan(cats,{project:{room:'Grade 3 classroom',headcount:'28',cost:'$9000'},items:[{catalog_id:'VCAT-1',code:'FD-2030',qty:28},{catalog_id:'VCAT-1',code:'MADE-UP-9',qty:3}],assumptions:['28 students']});
 assert.deepEqual([v.items.length,v.items[0].qty,v.unknown],[1,28,['MADE-UP-9']],'a plan keeps catalogue lines only and reports the invented one');
+{const big=P.validatePlan(cats,{items:Array.from({length:200},(_,k)=>({catalog_id:'VCAT-1',code:'FD-2030',qty:k===0?150000:2,area:k<100?'Grade 3 classrooms (12 rooms)':'Cafeteria'}))});
+ assert.deepEqual([big.items.length,big.items[0].area,(big.items[150]||{}).area,big.items[0].qty],[200,'Grade 3 classrooms (12 rooms)','Cafeteria',100000],'a district-size plan keeps every line, its area and quantities up to 100,000');}
 assert.equal(v.project.cost,undefined,'a plan carries only the project fields the planner knows');
 assert.deepEqual(P.vendorList(cats).map(x=>x.vendor),['Acme Seating'],'the brands list names the loaded vendors');
 
@@ -61,6 +72,12 @@ const model=async(url,init)=>{if(url==='https://x/acme.json')return fetcher(url)
 const out=await P.runChat({env:{ANTHROPIC_API_KEY:'k'},db,fetcher:model,messages:[{role:'user',text:'A 3rd grade classroom for 28'}],plan:{}});
 assert.deepEqual(seen.tools.map(t=>t.name).sort(),['get_product','list_vendors','search_products','update_plan'],'the public model has four tools, all over the catalogues');
 assert.equal(out.reply,'Here is a start, 28 Flex Desks.','the customer never sees an em dash from the model');
+assert.equal(seen.max_tokens,8000,'the planner has room to write a large plan in one turn');
+assert.ok(/ITERATION: whenever the customer asks for any change at all/.test(seen.system)&&/Never say you changed the plan without calling update_plan/.test(seen.system),'every change the customer asks for updates the quote in the same turn');
+assert.ok(/Any size, from one chair to a whole district/.test(seen.system)&&/For a large project, plan by area/.test(seen.system),'big projects are planned area by area');
+{const m2=async(url,init)=>{if(url==='https://x/acme.json')return fetcher(url);const b=JSON.parse(init.body);return{ok:true,json:async()=>(b.messages.length===1?{stop_reason:'tool_use',usage:{},content:[{type:'tool_use',id:'k1',name:'update_plan',input:{items:[{catalog_id:'VCAT-1',code:'FD-2030',qty:30}]}}]}:{stop_reason:'end_turn',usage:{},content:[{type:'text',text:'I changed it to 30.'}]})};};
+ const o2=await P.runChat({env:{ANTHROPIC_API_KEY:'k'},db,fetcher:m2,messages:[{role:'user',text:'make it 30 desks'}],plan:{items:[{catalog_id:'VCAT-1',code:'FD-2030',qty:28,note:'by the windows',area:'Room 12'}]}});
+ assert.deepEqual([o2.plan.items[0].qty,o2.plan.items[0].note,o2.plan.items[0].area],[30,'by the windows','Room 12'],'a change keeps the customer\'s note and area on the line');}
 assert.ok(P.SYSTEM.includes('leave a fact out until they tell you'),'the planner never fills a project detail with a placeholder');
 assert.equal(P.plainDashes('Plan saved \u2014 28 desks, 22\u201330 in'),'Plan saved, 28 desks, 22-30 in','replies never carry em or en dashes');
 assert.ok(db.spent>0,'every model call adds to today\'s spend');
@@ -120,4 +137,6 @@ const s=app2.indexOf('const _normProspectText='),e=app2.indexOf('// Build a Set 
 const pageKeys=new Function(app2.slice(s,e)+';return _prospectKeys;')();
 const {prospectKeys}=await import('../../src/prospectKeys.js');
 for(const p of [{name:"Bobby's School",company:'The ABC Schools, Inc.'},{email:' A@B.com '},{phone:'(312) 555-0100 x1',name:'A'},{name:'John Smith'},{linkedin:'https://www.linkedin.com/in/x/'}])assert.deepEqual(prospectKeys(p),pageKeys(p),'the server\'s duplicate keys equal the Prospects page\'s');
+{await P.saveRequest({db,body:{requestId:'dddddddd-1111-2222-3333-444444444444',contact:{name:'Big District',email:'big@district.test',company:'Big District'},plan:{project:{},items:Array.from({length:200},()=>({vendor:'Acme Seating',code:'FD-2030',name:'Flex Desk',qty:5,area:'Classrooms'})),assumptions:[]}}});
+ const bc=saved.find(p=>p.data.email==='big@district.test').data;assert.deepEqual([bc.planRequests[0].items.length,bc.planRequests[0].items[0].area],[200,'Classrooms'],'a large request reaches the card with every line and its area');}
 console.log('PASS Furniture Planner server ('+(mutantIdx<0?'source':'mutant '+mutantIdx)+')');
