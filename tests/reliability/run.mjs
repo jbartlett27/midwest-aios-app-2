@@ -6,6 +6,7 @@ for(const tz of ['UTC','America/Chicago','America/Los_Angeles']){console.log('Ti
 run(['job-patch-test.mjs']);run(['build-harness.mjs']);run(['render-test.mjs']);run(['project-due-date-test.mjs']);run(['po-bill-amount-test.mjs']);for(let i=0;i<8;i++)run(['po-bill-amount-test.mjs','--mutant',String(i)],{fail:true});
 run(['file-index-test.mjs']);run(['files-brain-test.mjs']);run(['vendor-catalog-test.mjs']);run(['catalog-ingest-test.mjs']);run(['catalog-api-test.mjs']);run(['vendor-catalog-brain-test.mjs']);
 run(['brain-grounding-test.mjs']);for(let i=0;i<9;i++)run(['brain-grounding-test.mjs','--mutant',String(i)],{fail:true});
+run(['enterprise-network-test.mjs']);for(let i=0;i<8;i++)run(['enterprise-network-test.mjs','--mutant',String(i)],{fail:true});
 run(['catalog-lifecycle-test.mjs']);run(['catalog-controls-ui-test.mjs']);run(['catalog-brain-controls-test.mjs']);
 for(let i=0;i<11;i++)run(['catalog-lifecycle-test.mjs','--mutant',String(i)],{fail:true});
 for(let i=0;i<2;i++)run(['catalog-controls-ui-test.mjs','--mutant',String(i)],{fail:true});for(let i=0;i<8;i++)run(['catalog-brain-controls-test.mjs','--mutant',String(i)],{fail:true});
@@ -14,4 +15,4 @@ run(['file-index-test.mjs','--mutant'],{fail:true});for(let i=0;i<6;i++)run(['fi
 run(['vendor-catalog-test.mjs','--mutant'],{fail:true});run(['catalog-ingest-test.mjs','--mutant'],{fail:true});run(['catalog-api-test.mjs','--mutant'],{fail:true});for(let i=0;i<54;i++)run(['vendor-catalog-brain-test.mjs','--mutant',String(i)],{fail:true});
 for(const mutation of ['stripe','dashboard','proforma']){run(['build-harness.mjs',mutation]);run(['render-test.mjs'],{fail:true})}
 run(['build-harness.mjs']);run(['render-test.mjs']);
-console.log('PASS complete reliability battery; all deliberate mutants rejected (7 invoice/date/dashboard, 8 file-index, 6 Files tab and Brain, 26 vendor catalogue module, 46 catalogue upload engine, 13 catalogue link and product-name server, 54 vendor catalogue page, upload dialog, Directory, Brain and grounding; 9 Brain grounding check; 21 catalogue lifecycle/controls/Brain; 8 PO bill vendor invoice amount)');
+console.log('PASS complete reliability battery; all deliberate mutants rejected (7 invoice/date/dashboard, 8 file-index, 6 Files tab and Brain, 26 vendor catalogue module, 46 catalogue upload engine, 13 catalogue link and product-name server, 54 vendor catalogue page, upload dialog, Directory, Brain and grounding; 9 Brain grounding check; 21 catalogue lifecycle/controls/Brain; 8 PO bill vendor invoice amount; 8 DYFRENT Network broker and tabs)');
