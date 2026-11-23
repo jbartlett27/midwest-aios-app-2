@@ -49,3 +49,9 @@ A public page where a school or business plans a space with a scoped Midwest Bra
 - Composer hint fits on one line; safe-area padding only on phones; "New plan" shows as "New" on narrow phones; Start planning always opens the chat.
 - Sales Portal and Users & Permissions have a Furniture Planner bar with Open planner (new tab) and Copy link.
 - 15 planner mutants; browser check 74 of 74.
+
+## Vendor purchase history for every login (Maureen, Nov 23 2026)
+
+Ask: Jim Lindner (sales) looked up purchase history for a vendor and saw only his own purchases; Maureen wants everyone to see the company's full history with each vendor.
+Cause: sales logins get role-filtered jobs, and both the Brain (pre-filtered data) and the Directory vendor panel built the history from those.
+Fix: `src/vendorHistory.js` (company history and vendor ranking), a read-only Brain tool `vendor_purchase_history` fed from the whole company (captured before the sales filter), and the Directory vendor panel counting every company job with a "Most ordered products" list. Sales logins see it without dollars (units instead of cost; spend and margin cards hidden for them; jobs on other reps' accounts are listed but not clickable). Tests: `vendor-history-test.mjs`, 6 mutants.
