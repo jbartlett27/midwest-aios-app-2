@@ -4,6 +4,7 @@ import { isBusinessDate, businessDayAfter } from './businessDate.js';
 import { poBillAmount } from './poBill.js';
 import { DOCUMENT_STATUSES_ID, documentStatusChanges, parseDocumentStatuses, readDocumentStatuses } from './documentStatuses.js';
 import DateInput from './DateInput.jsx';
+import { NETWORK_PAGES, NetworkPage, useNetworkPilot, networkSignIn, networkSignOut } from './enterprise.jsx';
 import { BrainPage, CommissionsPage, Customer360Page, DirectoryPage, ExitReadinessPage, FilesPage, FinancialsPage, NotesPage, PlaybookPage, ProspectsPage, SalesPortalPage, TasksPage, UserMgmtPage, Vendor360Page } from "./App2.jsx";
 import React, { useState, useEffect, useRef } from "react";
 import { db } from "./supabase.js";
@@ -1686,10 +1687,11 @@ function MidwestAIOSInner() {
   },[clerkUser.isLoaded,clerkUser.isSignedIn]);
   const userRole = currentUser?.role || null; // admin, office, sales
   const userRepId = currentUser?.rep_id || null;
-  const logout = () => { setCurrentUser(null); sessionStorage.removeItem("mw_user"); if(clerkEnabled&&clerkAuth.isSignedIn)clerkSignOut().catch(()=>{}); };
+  const logout = () => { networkSignOut(); setCurrentUser(null); sessionStorage.removeItem("mw_user"); if(clerkEnabled&&clerkAuth.isSignedIn)clerkSignOut().catch(()=>{}); };
 
 
   const [page, setPage] = useState("dashboard");
+  const [networkPilot, setNetworkPilot] = useNetworkPilot(currentUser);   // DYFRENT Network tabs (issue 3): pilot logins only
   useEffect(()=>{if(page==="jobs"&&window._brainNavJob){setSelectedJob(window._brainNavJob);window._brainNavJob=null}},[page]);
 
 
@@ -2509,7 +2511,7 @@ function MidwestAIOSInner() {
     // (Maureen 8/7). Per-user pages set in Users & Permissions still override this.
     if (userRole === "sales") return ["dashboard","jobs","documents","deliveries","tasks","notes","brain","salesportal","prospects","directory","playbook"].includes(item.id);
     return true;
-  });
+  }).concat(networkPilot.pilot ? NETWORK_PAGES.map(p => ({ id: p.id, label: p.label, icon: p.icon })) : []);
 
 
   
@@ -2587,7 +2589,7 @@ function MidwestAIOSInner() {
           <div style={{marginBottom:16}}><label style={{fontSize:13,color:"#c4c4c4",display:"block",marginBottom:6}}>Username</label><input id="lu" placeholder="Enter username" autoFocus autoComplete="username" style={{width:"100%",padding:"14px 16px",background:"rgba(0,0,0,0.5)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,color:"#f0f0f0",fontSize:16,fontFamily:"'Satoshi',sans-serif",outline:"none",boxSizing:"border-box",transition:"border 0.2s"}} onFocus={e=>e.target.style.borderColor="rgba(45,212,191,0.4)"} onBlur={e=>e.target.style.borderColor="rgba(255,255,255,0.08)"}/></div>
           <div style={{marginBottom:24}}><label style={{fontSize:13,color:"#c4c4c4",display:"block",marginBottom:6}}>Password</label><input id="lp" type="password" placeholder="Enter password" autoComplete="current-password" style={{width:"100%",padding:"14px 16px",background:"rgba(0,0,0,0.5)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:12,color:"#f0f0f0",fontSize:16,fontFamily:"'Satoshi',sans-serif",outline:"none",boxSizing:"border-box",transition:"border 0.2s"}} onFocus={e=>e.target.style.borderColor="rgba(45,212,191,0.4)"} onBlur={e=>e.target.style.borderColor="rgba(255,255,255,0.08)"} onKeyDown={e=>{if(e.key==="Enter")document.getElementById("loginBtn").click()}}/></div>
           {loginError&&<div style={{fontSize:13,color:"#f87171",marginBottom:16,textAlign:"center",padding:"10px 14px",background:"rgba(248,113,113,0.06)",borderRadius:10,border:"1px solid rgba(248,113,113,0.12)"}}>{loginError}</div>}
-          <button id="loginBtn" onClick={async()=>{setLoginError("");const u=document.getElementById("lu").value.trim().toLowerCase();const p=document.getElementById("lp").value;if(!u||!p){setLoginError("Enter username and password");return}const user=await db.loginUser(u,p);if(user){setCurrentUser(user);sessionStorage.setItem("mw_user",JSON.stringify(user))}else{setLoginError("Invalid username or password")}}} style={{width:"100%",padding:"14px",borderRadius:12,border:"none",background:"linear-gradient(135deg,#2dd4bf,#14b8a6)",color:"#000",fontSize:15,fontWeight:700,cursor:"pointer",fontFamily:"'Satoshi',sans-serif",transition:"all 0.2s",boxShadow:"0 4px 20px rgba(45,212,191,0.25)"}} onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-1px)";e.currentTarget.style.boxShadow="0 8px 28px rgba(45,212,191,0.35)"}} onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="0 4px 20px rgba(45,212,191,0.25)"}}>Sign In</button>
+          <button id="loginBtn" onClick={async()=>{setLoginError("");const u=document.getElementById("lu").value.trim().toLowerCase();const p=document.getElementById("lp").value;if(!u||!p){setLoginError("Enter username and password");return}const user=await db.loginUser(u,p);if(user){networkSignIn(u,p);setCurrentUser(user);sessionStorage.setItem("mw_user",JSON.stringify(user))}else{setLoginError("Invalid username or password")}}} style={{width:"100%",padding:"14px",borderRadius:12,border:"none",background:"linear-gradient(135deg,#2dd4bf,#14b8a6)",color:"#000",fontSize:15,fontWeight:700,cursor:"pointer",fontFamily:"'Satoshi',sans-serif",transition:"all 0.2s",boxShadow:"0 4px 20px rgba(45,212,191,0.25)"}} onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-1px)";e.currentTarget.style.boxShadow="0 8px 28px rgba(45,212,191,0.35)"}} onMouseLeave={e=>{e.currentTarget.style.transform="translateY(0)";e.currentTarget.style.boxShadow="0 4px 20px rgba(45,212,191,0.25)"}}>Sign In</button>
         </div></>
       }
 
@@ -2686,6 +2688,7 @@ const sharedScreen = sharedQuote ? <ShareQuotePortal quoteData={sharedQuote} onA
 
 
           {page==="usermgmt"&&<UserMgmtPage {...ctx}/>}
+          {NETWORK_PAGES.map(p=>page===p.id&&<NetworkPage key={p.id} view={p.view} currentUser={currentUser} pilotState={networkPilot} setPilotState={setNetworkPilot}/>)}
         </div>
       </div>
       <style>{`
