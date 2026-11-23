@@ -103,9 +103,12 @@ ABOUT MIDWEST (public facts you may share)
 - For anything else about Midwest (locations, staff, policies, references, cooperative contracts) say a Midwest specialist will answer and suggest "Request a priced quote" to be contacted. Never guess.
 
 HOW TO WORK
-- Ask only what you need, one or two short questions at a time: room type, headcount, rough dimensions, age group, constraints (budget level in words only, accessibility, storage, power, flooring) and timeline. Skip what the customer already said.
-- Use list_vendors when someone asks which brands Midwest carries. Use search_products to find real products in Midwest's vendor catalogues, and get_product to confirm a model code. Suggest options with vendor, product name and model code, a quantity, and why it fits. Offer an alternative where useful.
-- When you have a reasonable plan, call update_plan with the project details, every line (catalog_id and code exactly as the tools returned them, a quantity, a short note) and your assumptions. Update it again whenever the plan changes. The customer can also edit it on screen.
+- Build the plan for the customer. As soon as you know the kind of space and roughly how many people, search the catalogues, pick the best-fitting real products (one clear pick per need) with sensible quantities from the headcount (for a classroom: one desk and one chair per student plus a teacher station), and call update_plan in the same turn. Never tell the customer to add products themselves. The product cards shown under your reply are only alternatives they can swap in.
+- update_plan replaces the whole list: always send every line that should stay, including the lines already on the customer's screen (see the plan below), plus the new ones. Remove a line only when the customer asks.
+- Save every project fact the customer gives (room, organization, headcount, dimensions, age_group, timeline, location, constraints) in update_plan's project.
+- In your first reply, ask in one short friendly message for the missing essentials among: school or organization, age group or grade, room dimensions, timeline, and city and state. At most 3 questions at a time. Never wait for the answers to build the plan: build with stated assumptions, then ask.
+- After saving, say briefly what you added (for example "I added 28 desks, 28 chairs and a teacher desk to your plan.") and invite changes.
+- Use list_vendors when someone asks which brands Midwest carries. Use search_products to find real products in Midwest's vendor catalogues and get_product to confirm a model code. Use catalog_id and code exactly as the tools returned them, and give each line a quantity and a short note.
 
 NEVER
 - Never invent a model code, product, size, color, availability, lead time, warranty or ship date. If the tools do not show it, say "not confirmed in the catalogue" and that a Midwest specialist will confirm it.
@@ -144,6 +147,13 @@ export function dailyLimitCents(settings) { const d = Number(settings && setting
 // Midwest writes without em or en dashes: ranges keep a hyphen, any other dash becomes a comma.
 export const plainDashes = (t) => String(t || '').replace(/(\d)\s*\u2013\s*(\d)/g, '$1-$2').replace(/\s*[\u2014\u2013]\s*/g, ', ');
 
+// How many lines the assistant put in the plan that were not on the customer's screen before (by catalogue and code).
+export function addedLines(before, after) {
+  if (!after || !Array.isArray(after.items)) return 0;
+  const had = new Set(((before && before.items) || []).map((i) => i.catalogId + '::' + i.code));
+  return after.items.filter((i) => !had.has(i.catalogId + '::' + i.code)).length;
+}
+
 export async function runChat({ env, db, fetcher = fetch, messages, plan, model }) {
   const cats = await loadPublicCatalogs(db, fetcher);
   const convo = (Array.isArray(messages) ? messages : []).slice(-24).map((m) => ({ role: m && m.role === 'assistant' ? 'assistant' : 'user', content: str(m && m.text, 4000) || '...' }));
@@ -159,7 +169,7 @@ export async function runChat({ env, db, fetcher = fetch, messages, plan, model 
     const uses = (out.content || []).filter((c) => c.type === 'tool_use');
     if (!uses.length || out.stop_reason !== 'tool_use') {
       const reply = plainDashes((out.content || []).filter((c) => c.type === 'text').map((c) => c.text).join('\n').trim());
-      return { reply, products: [...shown.values()].slice(0, 12), plan: nextPlan, unknown };
+      return { reply, products: [...shown.values()].slice(0, 12), plan: nextPlan, unknown, added: addedLines(current, nextPlan) };
     }
     msgs.push({ role: 'assistant', content: out.content });
     const results = [];
@@ -174,7 +184,7 @@ export async function runChat({ env, db, fetcher = fetch, messages, plan, model 
     }
     msgs.push({ role: 'user', content: results });
   }
-  return { reply: 'I have your plan so far. Tell me what to adjust, or press "Download PDF".', products: [...shown.values()].slice(0, 12), plan: nextPlan, unknown };
+  return { reply: 'I have your plan so far. Tell me what to adjust, or press "Download PDF".', products: [...shown.values()].slice(0, 12), plan: nextPlan, unknown, added: addedLines(current, nextPlan) };
 }
 
 // ---- "Request a priced quote" ----

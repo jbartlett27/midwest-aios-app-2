@@ -13,6 +13,9 @@ const MUTANTS=[
   ['product names, not fragments','src/planCatalog.js',"if (usable(row.name)) return String(row.name).trim();","return row.name;"],
   ['every Prospect card is read','api/plan.js',"if (!page || page.length < 1000) break;","break;"],
   ['file names are not product names','src/planCatalog.js'," && !/_pages?[-_]?\\d|\\w_\\w+_|\\.pdf$/i.test(x)",""],
+  ['the assistant builds the quote itself','api/plan.js',"- Build the plan for the customer.","- Suggest products."],
+  ['saving keeps every line on screen','api/plan.js',"- update_plan replaces the whole list: always send every line that should stay","- update_plan saves the list: send the lines"],
+  ['the reply counts the lines it added','api/plan.js',"added: addedLines(current, nextPlan) };\n    }","added: 0 };\n    }"],
   ['the model gets only catalogue tools','api/plan.js',"{ name: 'get_product',","{ name: 'get_job', description: 'x', input_schema: { type: 'object', properties: {} } },\n  { name: 'get_product',"],
 ];
 const read=(f)=>{const t=fs.readFileSync('../../'+f,'utf8');if(mutantIdx<0||MUTANTS[mutantIdx][1]!==f)return t;assert.ok(t.includes(MUTANTS[mutantIdx][2]),'mutation anchor missing: '+MUTANTS[mutantIdx][0]);return t.replace(MUTANTS[mutantIdx][2],MUTANTS[mutantIdx][3]);};
@@ -61,6 +64,9 @@ assert.equal(P.plainDashes('Plan saved \u2014 28 desks, 22\u201330 in'),'Plan sa
 assert.ok(db.spent>0,'every model call adds to today\'s spend');
 assert.ok(/Never give, estimate or discuss prices/.test(seen.system)&&/ABOUT MIDWEST/.test(seen.system),'the prompt forbids prices and carries the public facts about Midwest');
 assert.deepEqual([out.plan.items.length,out.plan.items[0].code,out.unknown],[1,'FD-2030',['ZZ-1']],'the conversation returns a checked plan');
+assert.equal(out.added,1,'the assistant reports how many lines it put in the plan, so the customer sees "Added 1 item"');
+assert.ok(/Build the plan for the customer\./.test(seen.system)&&/Never tell the customer to add products themselves/.test(seen.system),'the assistant builds the quote itself and never asks the customer to add products');
+assert.ok(/update_plan replaces the whole list: always send every line that should stay/.test(seen.system),'the assistant keeps every line already on the customer\'s screen when it saves');
 assert.equal(out.products[0].code,'FD-2030','the products it looked at come back as cards');
 
 // 3. "Request a priced quote": a real card, duplicates merged, repeats safe.
