@@ -5,7 +5,7 @@ import {createHmac, createHash} from 'node:crypto';
 // users table and DYFRENT's door (which checks the signature exactly the way api/_enterprise_network.js does).
 const mutantIdx=process.argv.includes('--mutant')?Number(process.argv[process.argv.indexOf('--mutant')+1]):-1;
 const MUTANTS=[
-  ['only Midwest pages may ask the server','api/enterprise-network.js',"if (String((req.headers && req.headers.origin) || '') !== env.ENTERPRISE_APP_ORIGIN)","if (false)"],
+  ['only Midwest pages may ask the server','api/enterprise-network.js',"if (!appOrigins(env).includes(String((req.headers && req.headers.origin) || '')))","if (false)"],
   ['a Network call needs a pilot session','api/enterprise-network.js',"if (!s || !pilot.includes(s.id)) return say(401","if (!s) return say(401"],
   ['the session cookie is checked against its signature','api/enterprise-network.js',"if (!body || !sig || !same(sig, createHmac('sha256', key).update(body).digest('base64url'))) return null;","if (!body) return null;"],
   ['the session cookie is HttpOnly','api/enterprise-network.js',"; HttpOnly; Secure; SameSite=Strict","; Secure"],
@@ -20,7 +20,7 @@ const bundle=async(file,platform)=>{const r=await build({stdin:{contents:read(fi
 // ── 1. The broker ─────────────────────────────────────────────────────────
 const B=await bundle('api/enterprise-network.js','node');
 const KEY='b'.repeat(40),SKEY='s'.repeat(40),NOW=Date.parse('2026-11-23T15:00:00Z');
-const env={ENTERPRISE_NETWORK_PREVIEW:'on',ENTERPRISE_INSTALLATION_ID:'midwest',ENTERPRISE_BROKER_KEY:KEY,ENTERPRISE_SESSION_KEY:SKEY,ENTERPRISE_PILOT_USERS:'USR-000,USR-001',ENTERPRISE_APP_ORIGIN:'https://midwestaios.com',ENTERPRISE_NETWORK_ENDPOINT:'https://www.dyfrent.app/api/mcp?s=enterprise'};
+const env={ENTERPRISE_NETWORK_PREVIEW:'on',ENTERPRISE_INSTALLATION_ID:'midwest',ENTERPRISE_BROKER_KEY:KEY,ENTERPRISE_SESSION_KEY:SKEY,ENTERPRISE_PILOT_USERS:'USR-000,USR-001',ENTERPRISE_APP_ORIGIN:'https://midwestaios.com,https://www.midwestaios.com',ENTERPRISE_NETWORK_ENDPOINT:'https://www.dyfrent.app/api/mcp?s=enterprise'};
 const USERS=[{id:'USR-001',username:'maureen',password:'pw-maureen',name:'Maureen Welter',role:'admin'},{id:'USR-002',username:'dave',password:'pw-dave',name:'Dave Welter',role:'admin'}];
 let sent=[];
 const fakeFetch=async(url,init={})=>{
@@ -86,6 +86,8 @@ r=await call({op:'hello'},{cookie:expired});
 assert.equal(r.code,401,'a session older than twelve hours is refused');
 r=await call({op:'hello'},{cookie:maureen,origin:'https://evil.example'});
 assert.equal(r.code,403,'a request from any other site is refused, even with the cookie');
+r=await call({op:'hello'},{cookie:maureen,origin:'https://www.midwestaios.com'});
+assert.equal(r.code,200,'www.midwestaios.com is Midwest too');
 r=await call({op:'hello'},{cookie:maureen,method:'GET'});
 assert.equal(r.code,405,'only POST');
 r=await call({op:'logout'});

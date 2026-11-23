@@ -16,7 +16,7 @@
 //
 // Settings (server only, never in the browser): ENTERPRISE_NETWORK_PREVIEW=on, ENTERPRISE_INSTALLATION_ID,
 // ENTERPRISE_BROKER_KEY (shared with DYFRENT), ENTERPRISE_SESSION_KEY (this server's own), ENTERPRISE_PILOT_USERS
-// (Midwest users.id, comma separated), ENTERPRISE_APP_ORIGIN (https://midwestaios.com), ENTERPRISE_NETWORK_ENDPOINT
+// (Midwest users.id, comma separated), ENTERPRISE_APP_ORIGIN (https://midwestaios.com,https://www.midwestaios.com), ENTERPRISE_NETWORK_ENDPOINT
 // (https://www.dyfrent.app/api/mcp?s=enterprise).
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 
@@ -32,6 +32,9 @@ const plain = v => !!v && typeof v === 'object' && !Array.isArray(v);
 const b64 = s => Buffer.from(s).toString('base64url');
 const same = (a, b) => { const x = Buffer.from(String(a || '')), y = Buffer.from(String(b || '')); return x.length === y.length && timingSafeEqual(x, y); };
 
+export function appOrigins(env) {
+  return String(env.ENTERPRISE_APP_ORIGIN || '').split(',').map(s => s.trim()).filter(Boolean);
+}
 export function pilotList(env) {
   return String(env.ENTERPRISE_PILOT_USERS || '').split(',').map(s => s.trim()).filter(s => /^[A-Za-z0-9_.:@-]{1,128}$/.test(s));
 }
@@ -68,7 +71,7 @@ export function configured(env) {
   return env.ENTERPRISE_NETWORK_PREVIEW === 'on' && end.protocol === 'https:' && !end.username && !end.password
     && /^[a-z0-9][a-z0-9-]{2,62}$/.test(String(env.ENTERPRISE_INSTALLATION_ID || ''))
     && String(env.ENTERPRISE_BROKER_KEY || '').length >= 32 && String(env.ENTERPRISE_SESSION_KEY || '').length >= 32
-    && /^https:\/\/[a-z0-9.-]+$/.test(String(env.ENTERPRISE_APP_ORIGIN || ''));
+    && appOrigins(env).length > 0 && appOrigins(env).every(o => /^https:\/\/[a-z0-9.-]+$/.test(o));
 }
 
 export function enterpriseBroker(env, deps = {}) {
@@ -81,7 +84,7 @@ export function enterpriseBroker(env, deps = {}) {
     if (req.method !== 'POST') return say(405, { ok: false, error: 'Use POST.' });
     if (!configured(env)) return say(200, { ok: false, code: 'closed', pilot: false });
     // Same origin only: a page on any other site can never ask this server for anything.
-    if (String((req.headers && req.headers.origin) || '') !== env.ENTERPRISE_APP_ORIGIN) return say(403, { ok: false, error: 'Open the Network from your Midwest dashboard.' });
+    if (!appOrigins(env).includes(String((req.headers && req.headers.origin) || ''))) return say(403, { ok: false, error: 'Open the Network from your Midwest dashboard.' });
     let b = req.body;
     try { if (typeof b === 'string') b = JSON.parse(b); } catch (e) { return say(400, { ok: false, error: 'That request could not be read.' }); }
     if (!plain(b)) return say(400, { ok: false, error: 'That request could not be read.' });

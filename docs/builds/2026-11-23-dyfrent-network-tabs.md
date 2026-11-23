@@ -13,7 +13,7 @@ J (Nov 23): Midwest gets J's actual DYFRENT Profile, Network and Messages pages 
 
 ## Settings (server only)
 
-`ENTERPRISE_NETWORK_PREVIEW=on`, `ENTERPRISE_INSTALLATION_ID=midwest`, `ENTERPRISE_BROKER_KEY` (shared with DYFRENT), `ENTERPRISE_SESSION_KEY`, `ENTERPRISE_PILOT_USERS=USR-000,USR-001`, `ENTERPRISE_APP_ORIGIN=https://midwestaios.com`, `ENTERPRISE_NETWORK_ENDPOINT=https://www.dyfrent.app/api/mcp?s=enterprise`. With any of them missing the server answers closed and no tab shows.
+`ENTERPRISE_NETWORK_PREVIEW=on`, `ENTERPRISE_INSTALLATION_ID=midwest`, `ENTERPRISE_BROKER_KEY` (shared with DYFRENT), `ENTERPRISE_SESSION_KEY`, `ENTERPRISE_PILOT_USERS=USR-000,USR-001`, `ENTERPRISE_APP_ORIGIN=https://midwestaios.com,https://www.midwestaios.com`, `ENTERPRISE_NETWORK_ENDPOINT=https://www.dyfrent.app/api/mcp?s=enterprise`. With any of them missing the server answers closed and no tab shows.
 
 ## Rollback
 
