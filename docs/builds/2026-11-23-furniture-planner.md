@@ -39,3 +39,13 @@ A public page where a school or business plans a space with a scoped Midwest Bra
 1. Users & Permissions >> Furniture Planner: paste Dave's booking link (Calendly) and his calendar email.
 2. For confirmed-booking assignment: create a Calendly webhook (invitee.created) to `https://midwestaios.com/api/plan?op=booking` and set its signing key as `PLAN_BOOKING_SIGNING_KEY` in Vercel.
 3. Adjust the daily AI limit if $10 is not right.
+
+## Round 2 from J's iPad review
+
+- The Brain builds the quote itself: as soon as it knows the space and headcount it picks products and saves them to the plan in the same turn, keeps every existing line, saves every project fact, and asks at most 3 questions about the missing essentials (school, grade, room size, timeline, location). The chat shows "Added N items to your plan" with a View plan button. `runChat` returns `added`.
+- Project details: filled ones show as tiles, missing ones as "+ Label" chips that open in place.
+- Dark mode uses a white-wordmark logo (`public/mw-logo-dark.png`); the PDF keeps the original.
+- Light mode declares itself to the browser (`color-scheme: only light`, `theme-color`, `darkreader-lock`), because a Safari dark-mode extension was darkening the white page.
+- Composer hint fits on one line; safe-area padding only on phones; "New plan" shows as "New" on narrow phones; Start planning always opens the chat.
+- Sales Portal and Users & Permissions have a Furniture Planner bar with Open planner (new tab) and Copy link.
+- 15 planner mutants; browser check 74 of 74.

@@ -12,7 +12,7 @@ import { db } from "./supabase.js";
 import { useUser, useClerk, SignIn, UserButton, useAuth } from "@clerk/clerk-react";
 import{BarChart,Bar as RBar,XAxis,YAxis,Tooltip,ResponsiveContainer,LineChart,Line,PieChart,Pie,Cell}from"recharts";
 import { AnimNum, AnimatedNumber, Badge, Bar, Btn, CUSTOMER_TYPES, Card, Check, CheckMinus, DEFAULT_SOPS, Dashboard, DocumentsPage, Header, I, LINK_KINDS, LinkChips, LinkPicker, LinkedItemsPanel, bankCategoryType, bankTxnFingerprint, commissionEarned, commissionEarnedDate, commissionQuarterLabel, commissionQuarterOf, customerTypeOptions, fmt, fmtN, getLinks, getProspectList, getRoles, inputStyle, isSalesRep, isoDay, openLink, parseLocalDate, pct, resolveLinkNames, shipKey, statusColor } from "./App.jsx";
-import { PlannerBookingCard } from "./plannerSettings.jsx";   // Furniture Planner booking (/plan)
+import { PlannerBookingCard, PlannerLinkBar } from "./plannerSettings.jsx";   // Furniture Planner booking (/plan)
 import { FinancialsPage, parseVendorBills, billStatus, billTotal, billPaidTotal, billBalance } from "./App3.jsx";
 // ===============================================================
 // COMMISSIONS -- Editable Reps + PDF Export
@@ -202,6 +202,7 @@ function SalesPortalPage({jobs,reps,customers,lineItems,getJobFinancials,getJobI
 
   if(!canSeeTeam&&!userRepId){return <div style={{animation:"fadeUp 0.4s"}}><Header title="Sales Portal" sub="Your pipeline, CRM, and activity"/><Card><div style={{fontSize:13,color:"#9a9a9a",padding:"8px 0"}}>No sales profile is linked to your account. Ask an administrator to assign one in Users & Permissions.</div></Card></div>;}
   return <div style={{animation:"fadeUp 0.4s"}}><Header title="Sales Portal" sub={!canSeeTeam?"Your pipeline, CRM, and activity":"Pipeline management, CRM, and team performance"}/>
+    <PlannerLinkBar notify={notify}/>
     {/* Rep selector. Sales-role users see only their own tab. */}
     <div style={{display:"flex",gap:6,marginBottom:20,flexWrap:"wrap",overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
       {canSeeTeam&&<button onClick={()=>setActiveRep("overview")} style={{padding:"8px 16px",borderRadius:8,cursor:"pointer",background:isOverview?"#2dd4bf":"#111",color:isOverview?"#000":"#737373",fontSize:13,fontWeight:isOverview?600:400,fontFamily:"inherit",border:isOverview?"none":"1px solid rgba(255,255,255,0.06)",whiteSpace:"nowrap",flexShrink:0}}>Overview</button>}

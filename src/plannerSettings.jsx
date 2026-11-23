@@ -14,6 +14,27 @@ export function readPlannerSettings(customSops) {
 const box = { background: "#111111", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 14, padding: 20, marginBottom: 16 };
 const inp = { width: "100%", padding: "10px 12px", background: "#000", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, color: "#f0f0f0", fontSize: 13, boxSizing: "border-box" };
 
+// The public planner's link, for anyone in the app: open it in a new tab or copy it to share (Sales Portal and Users & Permissions).
+export const PLANNER_URL = "https://midwestaios.com/plan";
+export function PlannerLinkBar({ notify }) {
+  const copy = () => {
+    const done = () => notify && notify("Planner link copied");
+    try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(PLANNER_URL).then(done, () => { window.prompt("Copy the planner link", PLANNER_URL); }); return; } } catch (e) { }
+    window.prompt("Copy the planner link", PLANNER_URL);
+  };
+  const b = { padding: "8px 14px", borderRadius: 8, fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" };
+  return (
+    <div data-planner-link style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", background: "#111111", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 14, padding: "12px 16px", marginBottom: 16 }}>
+      <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+        <div style={{ fontSize: 13.5, color: "#f0f0f0", fontWeight: 600 }}>Furniture Planner</div>
+        <div style={{ fontSize: 12, color: "#9a9a9a", fontFamily: "'JetBrains Mono',monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>midwestaios.com/plan &gt;&gt; customers plan a space and request a priced quote</div>
+      </div>
+      <a href={PLANNER_URL} target="_blank" rel="noopener noreferrer" style={{ ...b, background: "#2dd4bf", color: "#000", textDecoration: "none" }} data-planner-open>Open planner</a>
+      <button type="button" onClick={copy} style={{ ...b, background: "transparent", color: "#f0f0f0", border: "1px solid rgba(255,255,255,0.14)" }} data-planner-copy>Copy link</button>
+    </div>
+  );
+}
+
 export function PlannerBookingCard({ reps, customSops, addSop, notify }) {
   const saved = readPlannerSettings(customSops);
   const b = saved.booking || {};
@@ -38,6 +59,8 @@ export function PlannerBookingCard({ reps, customSops, addSop, notify }) {
   };
   const def = rows[defRep] || {};
   return (
+    <>
+    <PlannerLinkBar notify={notify} />
     <div style={box} data-planner-booking>
       <div style={{ fontSize: 15, color: "#f0f0f0", fontWeight: 600, marginBottom: 4 }}>Furniture Planner</div>
       <div style={{ fontSize: 12.5, color: "#9a9a9a", lineHeight: 1.6, marginBottom: 14 }}>
@@ -64,5 +87,6 @@ export function PlannerBookingCard({ reps, customSops, addSop, notify }) {
       <div style={{ fontSize: 12, color: "#737373", lineHeight: 1.6, margin: "10px 0 14px" }}>Confirmed bookings: in Calendly, add a webhook for "invitee created" to https://midwestaios.com/api/plan?op=booking and put its signing key in the PLAN_BOOKING_SIGNING_KEY setting. A booking is matched to the prospect and the card is assigned to the rep whose calendar took it. A link click alone changes nothing.</div>
       <button type="button" onClick={save} style={{ padding: "9px 18px", borderRadius: 8, border: "none", background: "#2dd4bf", color: "#000", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Save planner settings</button>
     </div>
+    </>
   );
 }

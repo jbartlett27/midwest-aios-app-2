@@ -42,10 +42,10 @@ const CSS = `
 .mwp .bar{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:16px;padding:calc(12px + env(safe-area-inset-top)) max(20px,env(safe-area-inset-right)) 12px max(20px,env(safe-area-inset-left));background:var(--bar);backdrop-filter:saturate(1.4) blur(14px);-webkit-backdrop-filter:saturate(1.4) blur(14px);border-bottom:1px solid transparent}
 .mwp .bar.edge{border-bottom-color:var(--line)}
 .mwp .bar img{height:34px;width:auto;display:block}
-.mwp[data-theme=dark] .bar img,.mwp[data-theme=dark] .sheet .top img{background:#fff;border-radius:10px;padding:4px 8px;box-sizing:content-box}
 .mwp .bar .sp{flex:1}
 .mwp .bar button{white-space:nowrap}
-@media (max-width:479px){.mwp .bar{gap:8px;padding-left:max(14px,env(safe-area-inset-left));padding-right:max(14px,env(safe-area-inset-right))}.mwp .bar .tabs button{padding:7px 12px}.mwp .bar .btn.sm{padding:0 12px}.mwp .bar .long{display:none}}
+.mwp .bar .short{display:none}
+@media (max-width:479px){.mwp .facts{grid-template-columns:1fr}.mwp .bar{gap:8px;padding-left:max(14px,env(safe-area-inset-left));padding-right:max(14px,env(safe-area-inset-right))}.mwp .bar .tabs button{padding:7px 12px}.mwp .bar .btn.sm{padding:0 12px}.mwp .bar .long{display:none}.mwp .bar .short{display:inline}}
 .mwp .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:46px;padding:0 22px;border-radius:999px;border:1px solid var(--btn);background:var(--btn);color:var(--btnInk);font-weight:600;font-size:15px;transition:transform .15s,box-shadow .2s}
 .mwp .btn:hover{transform:translateY(-1px);box-shadow:0 10px 24px -12px rgba(17,20,24,.45)}
 .mwp .btn:active{transform:none}
@@ -99,8 +99,9 @@ const CSS = `
 .mwp .starters{display:flex;flex-wrap:wrap;gap:8px}
 .mwp .chip{border:1px solid var(--line);background:var(--card);border-radius:999px;padding:9px 14px;font-size:14px;color:var(--ink);text-align:left}
 .mwp .chip:hover{border-color:var(--ink)}
-.mwp .comp{border-top:1px solid var(--line);padding:12px clamp(12px,2vw,20px) calc(12px + env(safe-area-inset-bottom));display:flex;gap:10px;align-items:flex-end;background:var(--card)}
-.mwp .comp textarea{flex:1;resize:none;border:1px solid var(--line);border-radius:22px;padding:12px 16px;font:inherit;font-size:16px;line-height:1.4;max-height:160px;min-height:48px;background:var(--field);color:var(--ink)}
+.mwp .comp{border-top:1px solid var(--line);padding:12px clamp(12px,2vw,20px);display:flex;gap:10px;align-items:center;background:var(--card)}
+.mwp .comp textarea{flex:1;min-width:0;resize:none;border:1px solid var(--line);border-radius:24px;padding:13px 18px;font:inherit;font-size:16px;line-height:20px;height:48px;max-height:160px;min-height:48px;background:var(--field);color:var(--ink);overflow-y:auto}
+.mwp .comp textarea::placeholder{color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mwp .comp .btn{min-height:48px;width:48px;padding:0}
 /* the quote */
 .mwp .qhead{display:flex;align-items:center;gap:12px;padding:16px clamp(16px,3vw,28px);border-bottom:1px solid var(--line)}
@@ -117,9 +118,18 @@ const CSS = `
 .mwp .notice{margin:18px 0 22px;padding:12px 14px;border-radius:12px;background:var(--wash);font-size:13.5px;color:var(--soft)}
 .mwp .notice b{color:var(--ink)}
 .mwp .lbl{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);font-weight:700;margin:26px 0 10px}
-.mwp .facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 16px}
-.mwp .facts label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--faint);font-weight:600}
-.mwp .facts input{border:1px solid var(--line);border-radius:10px;padding:9px 11px;font:inherit;font-size:15px;color:var(--ink);background:var(--field);min-width:0}
+.mwp .facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.mwp .fact{display:flex;flex-direction:column;gap:2px;border:1px solid var(--line);border-radius:12px;padding:9px 12px;background:var(--field);min-width:0;transition:border-color .15s}
+.mwp .fact:focus-within{border-color:var(--blue)}
+.mwp .fact span{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);font-weight:700}
+.mwp .fact input{border:0;padding:0;font:inherit;font-size:15px;font-weight:500;color:var(--ink);background:transparent;min-width:0;outline:none}
+.mwp .fact input::placeholder{color:var(--faint);font-weight:400}
+.mwp .addfacts{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.mwp .addfacts button{border:1px dashed var(--line);background:transparent;border-radius:999px;padding:7px 13px;font-size:13.5px;color:var(--soft);font-weight:500}
+.mwp .addfacts button:hover{border-color:var(--ink);color:var(--ink)}
+.mwp .hint{font-size:13px;color:var(--faint);margin:-4px 0 10px}
+.mwp .added{display:inline-flex;align-items:center;gap:8px;margin-top:10px;font-size:13.5px;font-weight:600;color:var(--ink);background:var(--wash);border:1px solid var(--line);border-radius:999px;padding:6px 6px 6px 12px}
+.mwp .added button{border:0;background:var(--btn);color:var(--btnInk);border-radius:999px;padding:5px 12px;font-size:13px;font-weight:600}
 .mwp .item{display:grid;grid-template-columns:64px minmax(0,1fr) auto;gap:14px;align-items:start;padding:14px 0;border-top:1px solid var(--line)}
 .mwp .item .th{width:64px;height:64px;border-radius:10px;background:var(--wash) center/cover no-repeat;border:1px solid var(--line)}
 .mwp .item .t{font-weight:600;font-size:15px;line-height:1.3}
@@ -134,7 +144,7 @@ const CSS = `
 .mwp .empty{padding:28px 0;color:var(--faint);font-size:15px;text-align:center}
 .mwp .assume li{color:var(--soft);font-size:14px;margin:4px 0}
 .mwp .warn{font-size:13px;color:#b7791f;background:rgba(251,191,36,.12);border-radius:10px;padding:10px 12px;margin-top:12px}
-.mwp .qfoot{display:flex;gap:10px;flex-wrap:wrap;padding:14px clamp(16px,3vw,28px) calc(14px + env(safe-area-inset-bottom));border-top:1px solid var(--line);background:var(--card)}
+.mwp .qfoot{display:flex;gap:10px;flex-wrap:wrap;padding:14px clamp(16px,3vw,28px);border-top:1px solid var(--line);background:var(--card)}
 .mwp .qfoot .btn{flex:1 1 200px}
 /* request sheet */
 .mwp .scrim{position:fixed;inset:0;z-index:50;background:rgba(17,20,24,.4);display:flex;align-items:center;justify-content:center;padding:20px;animation:mwpf .2s}
@@ -154,13 +164,15 @@ const CSS = `
 @media (max-width:899px){
   .mwp .ws{grid-template-columns:1fr;padding:0;gap:0;height:calc(100dvh - 58px - env(safe-area-inset-top))}
   .mwp .pane{border:0;border-radius:0}
+  .mwp .comp{padding-bottom:calc(12px + env(safe-area-inset-bottom))}
+  .mwp .qfoot{padding-bottom:calc(14px + env(safe-area-inset-bottom))}
   .mwp .ws[data-tab=chat] .pane.q,.mwp .ws[data-tab=plan] .pane.c{display:none}
   .mwp .tabs{display:flex;gap:4px;padding:4px;background:var(--wash);border-radius:999px}
   .mwp .tabs button{border:0;background:transparent;border-radius:999px;padding:7px 14px;font-size:14px;font-weight:600;color:var(--soft)}
   .mwp .tabs button[aria-pressed=true]{background:var(--card);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.08)}
   .mwp .bar img{height:28px}
   .mwp .steps{grid-template-columns:1fr}
-  .mwp .facts,.mwp .form{grid-template-columns:1fr}
+  .mwp .form{grid-template-columns:1fr}
   .mwp .doc{padding:12px}
   .mwp .sheet{border-radius:12px}
   .mwp .item{grid-template-columns:52px minmax(0,1fr);}
@@ -295,13 +307,21 @@ export default function Planner() {
   const [ref] = useState(() => (kept && kept.ref) || 'MW-' + uid().slice(0, 8).toUpperCase());
   const [draft, setDraft] = useState(''); const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState('chat'); const [asking, setAsking] = useState(false); const [vendors, setVendors] = useState([]);
+  const [opening, setOpening] = useState(''); const ta = useRef(null);
   const [unknown, setUnknown] = useState([]); const [scrolled, setScrolled] = useState(false); const [pdfBusy, setPdfBusy] = useState(false);
   const campaign = useMemo(() => campaignNow(), []);
   // The visitor's own choice wins; otherwise the look Midwest set as the default (Users & Permissions >> Furniture Planner).
   const chosen = useMemo(() => { try { const t = localStorage.getItem('mw_plan_theme'); return t === 'dark' || t === 'light' ? t : ''; } catch (e) { return ''; } }, []);
   const [theme, setTheme] = useState(chosen || 'light');
   const flip = () => setTheme((t) => { const n = t === 'dark' ? 'light' : 'dark'; try { localStorage.setItem('mw_plan_theme', n); } catch (e) { } return n; });
-  useEffect(() => { document.body.style.background = theme === 'dark' ? '#000000' : '#ffffff'; }, [theme]);
+  useEffect(() => {
+    const bg = theme === 'dark' ? '#000000' : '#ffffff';
+    document.body.style.background = bg; document.documentElement.style.background = bg; document.documentElement.style.colorScheme = theme === 'dark' ? 'dark' : 'only light';
+    const meta = (name) => { let m = document.querySelector('meta[name="' + name + '"]'); if (!m) { m = document.createElement('meta'); m.setAttribute('name', name); document.head.appendChild(m); } return m; };
+    meta('color-scheme').setAttribute('content', theme === 'dark' ? 'dark' : 'only light');
+    meta('theme-color').setAttribute('content', bg);
+    meta('darkreader-lock');   // Dark Reader and similar extensions: this page has its own light and dark looks
+  }, [theme]);
   const end = useRef(null);
   useEffect(() => { save({ messages, plan, ref }); }, [messages, plan, ref]);
   useEffect(() => { fetch(API + '?op=config').then((r) => r.json()).then((d) => { setVendors(Array.isArray(d.vendors) ? d.vendors : []); if (!chosen && d.theme === 'dark') setTheme('dark'); }).catch(() => { }); }, []);
@@ -311,13 +331,13 @@ export default function Planner() {
   const send = useCallback(async (text) => {
     const t = String(text || '').trim(); if (!t || busy) return;
     const next = [...messages, { role: 'user', text: t }];
-    setMessages(next); setDraft(''); setBusy(true);
+    setMessages(next); setDraft(''); if (ta.current) ta.current.style.height = '48px'; setBusy(true);
     const r = await post('chat', { messages: next.map((m) => ({ role: m.role, text: m.text })), plan: { project: plan.project, assumptions: plan.assumptions, items: plan.items.map((i) => ({ catalog_id: i.catalogId, code: i.code, qty: i.qty, note: i.note })) } });
     setBusy(false);
     if (!r.ok) { setMessages([...next, { role: 'assistant', text: r.error, failed: true }]); return; }
     if (r.plan) { setPlan({ project: { ...plan.project, ...r.plan.project }, items: r.plan.items, assumptions: r.plan.assumptions }); }
     setUnknown(Array.isArray(r.unknown) ? r.unknown : []);
-    setMessages([...next, { role: 'assistant', text: r.reply || 'Here is what I found.', products: r.products || [] }]);
+    setMessages([...next, { role: 'assistant', text: r.reply || 'Here is what I found.', products: r.products || [], added: Number(r.added) || 0 }]);
   }, [messages, plan, busy]);
   const add = (p) => setPlan((x) => (x.items.some((i) => i.id === p.id) ? x : { ...x, items: [...x.items, { ...p, qty: 1, note: '', confirmed: true }] }));
   const setItem = (id, patch) => setPlan((x) => ({ ...x, items: x.items.map((i) => (i.id === id ? { ...i, ...patch } : i)) }));
@@ -338,13 +358,15 @@ export default function Planner() {
     } finally { setPdfBusy(false); }
   };
   const reset = () => { if (!window.confirm('Start a new plan? This clears the conversation and the plan on this device.')) return; setMessages([]); setPlan(EMPTY_PLAN); setUnknown([]); };
-  const facts = [['room', 'Space'], ['organization', 'School or organization'], ['headcount', 'People'], ['dimensions', 'Dimensions'], ['age_group', 'Age group'], ['timeline', 'Timeline'], ['location', 'Location'], ['constraints', 'Constraints']];
+  const facts = [['room', 'Space', 'Classroom, library, office'], ['organization', 'School or organization', 'Name'], ['headcount', 'People', 'How many'], ['age_group', 'Age group', 'Grade or ages'], ['dimensions', 'Room size', 'e.g. 30 x 32 ft'], ['timeline', 'Timeline', 'e.g. before August'], ['location', 'Location', 'City and state'], ['constraints', 'Needs', 'Storage, power, accessibility']];
+  const shownFacts = facts.filter(([k]) => (plan.project[k] && String(plan.project[k]).trim()) || opening === k);
+  const missingFacts = facts.filter(([k]) => !((plan.project[k] && String(plan.project[k]).trim()) || opening === k));
 
   return (
     <div className="mwp" data-view={view} data-theme={theme}>
       <style>{CSS}</style>
       <header className={'bar' + (scrolled || view === 'plan' ? ' edge' : '')}>
-        <a href="/plan" onClick={(e) => { e.preventDefault(); setView('landing'); }} aria-label="Midwest Furniture Planner home"><img src="/mw-logo.png" alt="Midwest" width="60" height="34" /></a>
+        <a href="/plan" onClick={(e) => { e.preventDefault(); setView('landing'); }} aria-label="Midwest Furniture Planner home"><img src={theme === 'dark' ? '/mw-logo-dark.png' : '/mw-logo.png'} alt="Midwest" width="60" height="34" /></a>
         <span className="sp" />
         <button type="button" className="theme" onClick={flip} aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'} data-theme-toggle>{theme === 'dark' ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="4.5" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></svg> : <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"><path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5Z" /></svg>}</button>
         {view === 'plan' ? (
@@ -353,11 +375,11 @@ export default function Planner() {
               <button type="button" aria-pressed={tab === 'chat'} onClick={() => setTab('chat')}>Chat</button>
               <button type="button" aria-pressed={tab === 'plan'} onClick={() => setTab('plan')} data-tab-plan>Plan{plan.items.length ? ' (' + plan.items.length + ')' : ''}</button>
             </div>
-            <button type="button" className="btn ghost sm" onClick={reset}>New<span className="long"> plan</span></button>
+            <button type="button" className="btn ghost sm" onClick={reset}><span className="long">New plan</span><span className="short">New</span></button>
           </>
-        ) : <button type="button" className="btn sm" onClick={() => setView('plan')}>Start planning</button>}
+        ) : <button type="button" className="btn sm" onClick={() => { setTab('chat'); setView('plan'); }}>Start planning</button>}
       </header>
-      {view === 'landing' ? <Landing onStart={() => setView('plan')} vendors={vendors} /> : (
+      {view === 'landing' ? <Landing onStart={() => { setTab('chat'); setView('plan'); }} vendors={vendors} /> : (
         <main className="ws" data-tab={tab}>
           <section className="pane c" aria-label="Planning conversation">
             <div className="msgs" aria-live="polite">
@@ -368,6 +390,7 @@ export default function Planner() {
                 <div key={i} className={'m ' + (m.role === 'user' ? 'u' : 'a')}>
                   {m.role === 'user' ? m.text : <>
                     <div className="who"><i />Midwest Planner</div><Rich text={m.text} />
+                    {m.added > 0 && <div className="added" data-added={m.added}>{m.added === 1 ? 'Added 1 item to your plan' : 'Added ' + m.added + ' items to your plan'}<button type="button" onClick={() => setTab('plan')}>View plan</button></div>}
                     {m.products && m.products.length > 0 && <div className="cards" style={{ marginTop: 12 }}>{m.products.map((p) => <ProductCard key={p.id} p={p} onAdd={add} added={inPlan.has(p.id)} />)}</div>}
                   </>}
                 </div>
@@ -376,8 +399,8 @@ export default function Planner() {
               <div ref={end} />
             </div>
             <form className="comp" onSubmit={(e) => { e.preventDefault(); send(draft); }}>
-              <textarea rows={1} value={draft} placeholder="Describe your space or ask about a product" aria-label="Message" maxLength={2000}
-                onChange={(e) => { setDraft(e.target.value); e.target.style.height = 'auto'; e.target.style.height = Math.min(160, e.target.scrollHeight) + 'px'; }}
+              <textarea ref={ta} rows={1} value={draft} placeholder="Tell me about your space" aria-label="Message" maxLength={2000}
+                onChange={(e) => { setDraft(e.target.value); e.target.style.height = '48px'; e.target.style.height = Math.min(160, Math.max(48, e.target.scrollHeight + 2)) + 'px'; }}
                 onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(draft); } }} />
               <button type="submit" className="btn" disabled={busy || !draft.trim()} aria-label="Send">&#8593;</button>
             </form>
@@ -388,12 +411,14 @@ export default function Planner() {
               <article className="sheet" data-quote>
                 <div className="stripe" />
                 <div className="in">
-                  <div className="top"><img src="/mw-logo.png" alt="Midwest" /><div className="ref">Planning quote<br />{ref}<br />{new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div></div>
+                  <div className="top"><img src={theme === 'dark' ? '/mw-logo-dark.png' : '/mw-logo.png'} alt="Midwest" /><div className="ref">Planning quote<br />{ref}<br />{new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div></div>
                   <h3>{plan.project.room ? plan.project.room : 'Your furniture plan'}</h3>
                   <div style={{ color: 'var(--soft)', fontSize: 14 }}>{plan.items.length ? pieces + (pieces === 1 ? ' piece' : ' pieces') + ' across ' + plan.items.length + (plan.items.length === 1 ? ' product' : ' products') : 'Products appear here as you plan.'}</div>
                   <div className="notice"><b>Planning quote, not a priced offer.</b> Products and quantities for review. Pricing, availability and lead times are confirmed by Midwest.</div>
                   <div className="lbl">Project</div>
-                  <div className="facts">{facts.map(([k, l]) => <label key={k}>{l}<input value={plan.project[k] || ''} onChange={setFact(k)} placeholder="Add" /></label>)}</div>
+                  <div className="hint">The planner fills these in as you chat. Tap any detail to change it.</div>
+                  {shownFacts.length > 0 && <div className="facts">{shownFacts.map(([k, l, ph]) => <label key={k} className="fact"><span>{l}</span><input value={plan.project[k] || ''} onChange={setFact(k)} placeholder={ph} autoFocus={opening === k} onBlur={() => { if (opening === k) setOpening(''); }} data-fact={k} /></label>)}</div>}
+                  {missingFacts.length > 0 && <div className="addfacts">{missingFacts.map(([k, l]) => <button key={k} type="button" onClick={() => setOpening(k)} data-add-fact={k}>+ {l}</button>)}</div>}
                   <div className="lbl">Furniture</div>
                   {plan.items.length === 0 && <div className="empty">Ask the planner for ideas, or add products from the suggestions.</div>}
                   {plan.items.map((it) => (
