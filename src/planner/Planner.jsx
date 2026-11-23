@@ -122,8 +122,9 @@ const CSS = `
 .mwp .fact{display:flex;flex-direction:column;gap:2px;border:1px solid var(--line);border-radius:12px;padding:9px 12px;background:var(--field);min-width:0;transition:border-color .15s}
 .mwp .fact:focus-within{border-color:var(--blue)}
 .mwp .fact span{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);font-weight:700}
-.mwp .fact input{border:0;padding:0;font:inherit;font-size:15px;font-weight:500;color:var(--ink);background:transparent;min-width:0;outline:none}
-.mwp .fact input::placeholder{color:var(--faint);font-weight:400}
+.mwp .fact.wide{grid-column:1/-1}
+.mwp .fact textarea{border:0;padding:0;margin:0;font:inherit;font-size:15px;font-weight:500;line-height:1.4;color:var(--ink);background:transparent;min-width:0;width:100%;outline:none;resize:none;overflow:hidden;display:block;white-space:pre-wrap;overflow-wrap:anywhere}
+.mwp .fact textarea::placeholder{color:var(--faint);font-weight:400}
 .mwp .addfacts{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
 .mwp .addfacts button{border:1px dashed var(--line);background:transparent;border-radius:999px;padding:7px 13px;font-size:13.5px;color:var(--soft);font-weight:500}
 .mwp .addfacts button:hover{border-color:var(--ink);color:var(--ink)}
@@ -134,7 +135,11 @@ const CSS = `
 .mwp .item .th{width:64px;height:64px;border-radius:10px;background:var(--wash) center/cover no-repeat;border:1px solid var(--line)}
 .mwp .item .t{font-weight:600;font-size:15px;line-height:1.3}
 .mwp .item .m2{font-size:13px;color:var(--soft);margin-top:2px}
-.mwp .item .nt{margin-top:8px;width:100%;border:1px solid transparent;border-radius:8px;padding:6px 8px;font:inherit;font-size:13px;color:var(--soft);background:var(--wash)}
+.mwp .item .nt{display:block;margin-top:8px;width:100%;border:1px solid transparent;border-radius:8px;padding:6px 8px;font:inherit;font-size:13px;line-height:1.45;color:var(--soft);background:var(--wash);resize:none;overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere}
+.mwp .area{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin:18px 0 2px;padding:8px 12px;border-radius:10px;background:var(--wash);font-weight:700;font-size:14px}
+.mwp .area span{font-weight:500;font-size:12.5px;color:var(--faint);white-space:nowrap}
+.mwp .pane.q{container-type:inline-size}
+@container (max-width:620px){.mwp .item{grid-template-columns:52px minmax(0,1fr)}.mwp .item .th{width:52px;height:52px}.mwp .item .side{grid-column:2;flex-direction:row!important;align-items:center!important;gap:14px}.mwp .item .side .rm{margin:0}}
 .mwp .item .nt:focus{border-color:var(--line);background:var(--field)}
 .mwp .qty{display:flex;align-items:center;border:1px solid var(--line);border-radius:999px;overflow:hidden;height:38px}
 .mwp .qty button{width:36px;height:38px;border:0;background:transparent;font-size:18px;color:var(--ink)}
@@ -257,7 +262,7 @@ function RequestDialog({ plan, onClose, makePdf, campaign }) {
   const send = async (e) => {
     e.preventDefault(); if (busy) return; setBusy(true); setErr('');
     let pdf = ''; try { const bytes = await makePdf(f); let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); pdf = btoa(s); } catch (x) { pdf = ''; }
-    const r = await post('request', { requestId: reqId.current, contact: f, plan: { project: plan.project, assumptions: plan.assumptions, items: plan.items.map((i) => ({ vendor: i.vendor, code: i.code, name: i.name, qty: i.qty, note: i.note, catalog: i.catalog, page: i.page })) }, campaign, pdf });
+    const r = await post('request', { requestId: reqId.current, contact: f, plan: { project: plan.project, assumptions: plan.assumptions, items: plan.items.map((i) => ({ vendor: i.vendor, code: i.code, name: i.name, qty: i.qty, note: i.note, area: i.area || '', catalog: i.catalog, page: i.page })) }, campaign, pdf });
     setBusy(false);
     if (r.ok) setDone(r); else setErr(r.error);
   };
@@ -308,6 +313,9 @@ export default function Planner() {
   const [draft, setDraft] = useState(''); const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState('chat'); const [asking, setAsking] = useState(false); const [vendors, setVendors] = useState([]);
   const [opening, setOpening] = useState(''); const ta = useRef(null);
+  const grow = useCallback((el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }, []);
+  // Details and notes grow to show every line, after any change to the plan and when the screen turns or resizes.
+  useEffect(() => { const all = () => document.querySelectorAll('.mwp .fact textarea, .mwp .item .nt').forEach(grow); all(); window.addEventListener('resize', all); return () => window.removeEventListener('resize', all); });
   const [unknown, setUnknown] = useState([]); const [scrolled, setScrolled] = useState(false); const [pdfBusy, setPdfBusy] = useState(false);
   const campaign = useMemo(() => campaignNow(), []);
   // The visitor's own choice wins; otherwise the look Midwest set as the default (Users & Permissions >> Furniture Planner).
@@ -332,7 +340,7 @@ export default function Planner() {
     const t = String(text || '').trim(); if (!t || busy) return;
     const next = [...messages, { role: 'user', text: t }];
     setMessages(next); setDraft(''); if (ta.current) ta.current.style.height = '48px'; setBusy(true);
-    const r = await post('chat', { messages: next.map((m) => ({ role: m.role, text: m.text })), plan: { project: plan.project, assumptions: plan.assumptions, items: plan.items.map((i) => ({ catalog_id: i.catalogId, code: i.code, qty: i.qty, note: i.note })) } });
+    const r = await post('chat', { messages: next.map((m) => ({ role: m.role, text: m.text })), plan: { project: plan.project, assumptions: plan.assumptions, items: plan.items.map((i) => ({ catalog_id: i.catalogId, code: i.code, qty: i.qty, note: i.note, area: i.area || '' })) } });
     setBusy(false);
     if (!r.ok) { setMessages([...next, { role: 'assistant', text: r.error, failed: true }]); return; }
     if (r.plan) { setPlan({ project: { ...plan.project, ...r.plan.project }, items: r.plan.items, assumptions: r.plan.assumptions }); }
@@ -348,14 +356,21 @@ export default function Planner() {
     const [{ buildPlanPdf }, logo] = await Promise.all([import('./planPdf.js'), fetch('/mw-logo.png').then((r) => r.arrayBuffer()).catch(() => null)]);
     return buildPlanPdf({ plan, contact, logoBytes: logo, refId: ref });
   };
+  // The PDF opens in a new tab, every time it is pressed. The tab is opened at the tap (so no browser blocks it)
+  // and pointed at the file once it is made; if a browser refuses new tabs, the file downloads instead.
   const download = async () => {
+    if (pdfBusy) return;
+    let tab = null; try { tab = window.open('', '_blank'); } catch (e) { tab = null; }
+    if (tab) { try { tab.document.title = 'Midwest planning quote'; tab.document.body.style.cssText = 'margin:0;font:16px -apple-system,system-ui,sans-serif;color:#5b636e;display:flex;align-items:center;justify-content:center;height:100vh'; tab.document.body.textContent = 'Preparing your planning quote...'; } catch (e) { } }
     setPdfBusy(true);
     try {
       const bytes = await makePdf(null);
       const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
-      const a = document.createElement('a'); a.href = url; a.download = 'Midwest-planning-quote-' + ref + '.pdf'; document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 30000);
-    } finally { setPdfBusy(false); }
+      if (tab && !tab.closed) tab.location.href = url;
+      else { const a = document.createElement('a'); a.href = url; a.download = 'Midwest-planning-quote-' + ref + '.pdf'; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove(); }
+      setTimeout(() => URL.revokeObjectURL(url), 10 * 60 * 1000);
+    } catch (e) { if (tab && !tab.closed) tab.close(); }
+    finally { setPdfBusy(false); }
   };
   const reset = () => { if (!window.confirm('Start a new plan? This clears the conversation and the plan on this device.')) return; setMessages([]); setPlan(EMPTY_PLAN); setUnknown([]); };
   const facts = [['room', 'Space', 'Classroom, library, office'], ['organization', 'School or organization', 'Name'], ['headcount', 'People', 'How many'], ['age_group', 'Age group', 'Grade or ages'], ['dimensions', 'Room size', 'e.g. 30 x 32 ft'], ['timeline', 'Timeline', 'e.g. before August'], ['location', 'Location', 'City and state'], ['constraints', 'Needs', 'Storage, power, accessibility']];
@@ -417,27 +432,30 @@ export default function Planner() {
                   <div className="notice"><b>Planning quote, not a priced offer.</b> Products and quantities for review. Pricing, availability and lead times are confirmed by Midwest.</div>
                   <div className="lbl">Project</div>
                   <div className="hint">The planner fills these in as you chat. Tap any detail to change it.</div>
-                  {shownFacts.length > 0 && <div className="facts">{shownFacts.map(([k, l, ph]) => <label key={k} className="fact"><span>{l}</span><input value={plan.project[k] || ''} onChange={setFact(k)} placeholder={ph} autoFocus={opening === k} onBlur={() => { if (opening === k) setOpening(''); }} data-fact={k} /></label>)}</div>}
+                  {shownFacts.length > 0 && <div className="facts">{shownFacts.map(([k, l, ph]) => <label key={k} className={'fact' + (String(plan.project[k] || '').length > 28 ? ' wide' : '')}><span>{l}</span><textarea rows={1} ref={grow} value={plan.project[k] || ''} onChange={(e) => { grow(e.target); setFact(k)(e); }} placeholder={ph} autoFocus={opening === k} onBlur={() => { if (opening === k) setOpening(''); }} data-fact={k} /></label>)}</div>}
                   {missingFacts.length > 0 && <div className="addfacts">{missingFacts.map(([k, l]) => <button key={k} type="button" onClick={() => setOpening(k)} data-add-fact={k}>+ {l}</button>)}</div>}
                   <div className="lbl">Furniture</div>
                   {plan.items.length === 0 && <div className="empty">Ask the planner for ideas, or add products from the suggestions.</div>}
-                  {plan.items.map((it) => (
-                    <div className="item" key={it.id} data-item={it.code}>
+                  {plan.items.map((it, idx) => (
+                    <React.Fragment key={it.id}>
+                    {it.area && (idx === 0 || plan.items[idx - 1].area !== it.area) && <div className="area" data-area>{it.area}<span>{plan.items.filter((x) => x.area === it.area).reduce((n, x) => n + (Number(x.qty) || 0), 0).toLocaleString()} pieces</span></div>}
+                    <div className="item" data-item={it.code}>
                       <div className="th" style={it.image ? { backgroundImage: 'url(' + it.image + ')' } : undefined} />
                       <div style={{ minWidth: 0 }}>
                         <div className="t">{it.name || it.series || it.code}</div>
                         <div className="m2">{it.vendor} &middot; Model {it.code}{it.page ? ' · catalogue page ' + it.page : ''}</div>
-                        <input className="nt" value={it.note || ''} placeholder="Add a note (finish, size, placement)" onChange={(e) => setItem(it.id, { note: e.target.value.slice(0, 200) })} aria-label={'Note for ' + it.code} />
+                        <textarea rows={1} ref={grow} className="nt" value={it.note || ''} placeholder="Add a note (finish, size, placement)" onChange={(e) => { grow(e.target); setItem(it.id, { note: e.target.value.slice(0, 200) }); }} aria-label={'Note for ' + it.code} />
                       </div>
                       <div className="side" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
                         <div className="qty">
                           <button type="button" aria-label="Fewer" onClick={() => setItem(it.id, { qty: Math.max(1, (Number(it.qty) || 1) - 1) })}>&minus;</button>
-                          <input inputMode="numeric" value={it.qty} aria-label={'Quantity of ' + it.code} onChange={(e) => { const n = parseInt(e.target.value.replace(/\D/g, ''), 10); setItem(it.id, { qty: Number.isFinite(n) ? Math.min(10000, Math.max(1, n)) : 1 }); }} />
-                          <button type="button" aria-label="More" onClick={() => setItem(it.id, { qty: Math.min(10000, (Number(it.qty) || 1) + 1) })}>+</button>
+                          <input inputMode="numeric" value={it.qty} aria-label={'Quantity of ' + it.code} onChange={(e) => { const n = parseInt(e.target.value.replace(/\D/g, ''), 10); setItem(it.id, { qty: Number.isFinite(n) ? Math.min(100000, Math.max(1, n)) : 1 }); }} />
+                          <button type="button" aria-label="More" onClick={() => setItem(it.id, { qty: Math.min(100000, (Number(it.qty) || 1) + 1) })}>+</button>
                         </div>
                         <button type="button" className="rm" onClick={() => remove(it.id)}>Remove</button>
                       </div>
                     </div>
+                    </React.Fragment>
                   ))}
                   {unknown.length > 0 && <div className="warn">Not confirmed in the catalogues and left out: {unknown.join(', ')}. A Midwest specialist can help with these.</div>}
                   {plan.assumptions.length > 0 && <><div className="lbl">Assumptions</div><ul className="assume">{plan.assumptions.map((a, i) => <li key={i}>{a}</li>)}</ul></>}
@@ -445,8 +463,8 @@ export default function Planner() {
               </article>
             </div>
             <div className="qfoot">
-              <button type="button" className="btn ghost" onClick={download} disabled={!plan.items.length || pdfBusy} data-download>{pdfBusy ? 'Preparing PDF' : 'Download PDF'}</button>
               <button type="button" className="btn" onClick={() => setAsking(true)} disabled={!plan.items.length} data-request-open>Request a priced quote</button>
+              <button type="button" className="btn ghost" onClick={download} disabled={!plan.items.length || pdfBusy} data-download>{pdfBusy ? 'Preparing PDF' : 'Open PDF'}</button>
             </div>
           </section>
         </main>

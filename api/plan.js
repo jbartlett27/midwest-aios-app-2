@@ -52,10 +52,10 @@ export async function loadPublicCatalogs(db, fetcher = fetch) {
   const out = await Promise.all(recs.map(async (rec) => { try { return { rec, cat: await loadCatalog(rec, { fetchImpl: fetcher }) }; } catch (e) { return null; } }));
   return out.filter(Boolean);
 }
-export function searchAll(cats, query, limit = 12) {
+export function searchAll(cats, query, limit = 20) {
   const hits = [];
   for (const { rec, cat } of cats) {
-    const r = searchCatalog(cat, query, { limit: 8 });
+    const r = searchCatalog(cat, query, { limit: 10 });
     for (const row of r.rows || []) hits.push({ rec, row, score: String(row.code).toLowerCase() === String(query).toLowerCase() ? 3 : 1 });
   }
   const seen = new Set(); const out = [];
@@ -79,9 +79,11 @@ export function findProduct(cats, catalogId, code) {
   return row ? publicProduct(hit.rec, row) : null;
 }
 // Every plan line is checked against the catalogues: a code that is not in the named catalogue never reaches the plan.
+// Plans run from one chair to a whole district: up to 250 lines, quantities up to 100,000.
+export const PLAN_LINES = 250;
 export function validatePlan(cats, plan) {
   const items = []; const unknown = [];
-  for (const it of (plain(plan) && Array.isArray(plan.items) ? plan.items : []).slice(0, 60)) {
+  for (const it of (plain(plan) && Array.isArray(plan.items) ? plan.items : []).slice(0, PLAN_LINES)) {
     const p = findProduct(cats, str(it && it.catalog_id || it && it.catalogId, 200), str(it && it.code, 80));
     if (p) items.push(cleanPlanItem(it, p)); else unknown.push(str(it && (it.code || it.name), 80));
   }
@@ -103,6 +105,9 @@ ABOUT MIDWEST (public facts you may share)
 - For anything else about Midwest (locations, staff, policies, references, cooperative contracts) say a Midwest specialist will answer and suggest "Request a priced quote" to be contacted. Never guess.
 
 HOW TO WORK
+- Any size, from one chair to a whole district or a multi-building, multimillion dollar project. Scale the plan to what the customer describes.
+- For a large project, plan by area: one area per room type or space (for example "Grade 3 classrooms (12 rooms)", "Cafeteria", "Library"). Build a standard package for one room, multiply it by the room count, set area on every line, and keep each area's lines together. Ask how many rooms of each type there are and whether the work is phased, and save phases and room counts in the project details.
+- ITERATION: whenever the customer asks for any change at all (add, remove, swap, more or fewer, a different color, size or model, a new room or area, or new project details), call update_plan in that SAME turn with the full updated list, then confirm in one sentence what changed. Never say you changed the plan without calling update_plan.
 - Build the plan for the customer. As soon as you know the kind of space and roughly how many people, search the catalogues, pick the best-fitting real products (one clear pick per need) with sensible quantities from the headcount (for a classroom: one desk and one chair per student plus a teacher station), and call update_plan in the same turn. Never tell the customer to add products themselves. The product cards shown under your reply are only alternatives they can swap in.
 - update_plan replaces the whole list: always send every line that should stay, including the lines already on the customer's screen (see the plan below), plus the new ones. Remove a line only when the customer asks.
 - Save every project fact the customer gives (room, organization, headcount, dimensions, age_group, timeline, location, constraints) in update_plan's project. Save only what the customer actually said; leave a fact out until they tell you (never a placeholder like "not yet named" or "TBD").
@@ -123,7 +128,7 @@ const TOOLS = [
   { name: 'get_product', description: 'Confirm one product by catalog_id and model code exactly as search_products returned them.', input_schema: { type: 'object', properties: { catalog_id: { type: 'string' }, code: { type: 'string' } }, required: ['catalog_id', 'code'] } },
   { name: 'update_plan', description: 'Save the current plan shown to the customer. Lines not found in the catalogues are dropped and reported back.', input_schema: { type: 'object', properties: {
     project: { type: 'object', properties: { room: { type: 'string' }, organization: { type: 'string' }, headcount: { type: 'string' }, dimensions: { type: 'string' }, age_group: { type: 'string' }, constraints: { type: 'string' }, timeline: { type: 'string' }, location: { type: 'string' } } },
-    items: { type: 'array', items: { type: 'object', properties: { catalog_id: { type: 'string' }, code: { type: 'string' }, qty: { type: 'number' }, note: { type: 'string' } }, required: ['catalog_id', 'code', 'qty'] } },
+    items: { type: 'array', items: { type: 'object', properties: { catalog_id: { type: 'string' }, code: { type: 'string' }, qty: { type: 'number' }, note: { type: 'string' }, area: { type: 'string', description: 'The room type or space this line belongs to, e.g. "Grade 3 classrooms (12 rooms)". Set it on every line of a multi-area project.' } }, required: ['catalog_id', 'code', 'qty'] } },
     assumptions: { type: 'array', items: { type: 'string' } } }, required: ['items'] } },
 ];
 
@@ -154,17 +159,25 @@ export function addedLines(before, after) {
   return after.items.filter((i) => !had.has(i.catalogId + '::' + i.code)).length;
 }
 
+// What the model sees of a product: enough to choose and cite it, small enough for big projects.
+const compact = (p) => ({ catalog_id: p.catalogId, code: p.code, name: p.name, vendor: p.vendor, series: p.series, section: p.section, page: p.page, specs: p.specs });
+// A line the model re-sends without its note or area keeps the ones already on the customer's screen.
+function keepNotes(next, current) {
+  const was = new Map(current.items.map((i) => [i.catalogId + '|' + i.code, i]));
+  for (const it of next.items) { const o = was.get(it.catalogId + '|' + it.code); if (!o) continue; if (!it.note && o.note) it.note = o.note; if (!it.area && o.area) it.area = o.area; }
+}
+
 export async function runChat({ env, db, fetcher = fetch, messages, plan, model }) {
   const cats = await loadPublicCatalogs(db, fetcher);
   const convo = (Array.isArray(messages) ? messages : []).slice(-24).map((m) => ({ role: m && m.role === 'assistant' ? 'assistant' : 'user', content: str(m && m.text, 4000) || '...' }));
   while (convo.length && convo[0].role !== 'user') convo.shift();
   if (!convo.length) throw Object.assign(new Error('empty'), { status: 400 });
   const current = validatePlan(cats, plan || {});
-  const sys = SYSTEM + '\n\nThe plan on the customer\'s screen now (they may have edited it): ' + JSON.stringify({ project: current.project, items: current.items.map((i) => ({ catalog_id: i.catalogId, code: i.code, name: i.name, vendor: i.vendor, qty: i.qty, note: i.note })), assumptions: current.assumptions });
+  const sys = SYSTEM + '\n\nThe plan on the customer\'s screen now (they may have edited it): ' + JSON.stringify({ project: current.project, items: current.items.map((i) => ({ catalog_id: i.catalogId, code: i.code, name: i.name, qty: i.qty, ...(i.area ? { area: i.area } : {}), ...(i.note ? { note: i.note } : {}) })), assumptions: current.assumptions });
   let nextPlan = null; const shown = new Map(); let unknown = [];
   const msgs = convo.slice();
-  for (let round = 0; round < 6; round++) {
-    const out = await claude(env, { model: model || 'claude-sonnet-5', max_tokens: 2000, system: sys, tools: TOOLS, messages: msgs }, fetcher);
+  for (let round = 0; round < 10; round++) {
+    const out = await claude(env, { model: model || 'claude-sonnet-5', max_tokens: 8000, system: sys, tools: TOOLS, messages: msgs }, fetcher);
     if (db.spendAdd) await db.spendAdd(costCents(out.usage)).catch(() => 0);
     const uses = (out.content || []).filter((c) => c.type === 'tool_use');
     if (!uses.length || out.stop_reason !== 'tool_use') {
@@ -176,9 +189,9 @@ export async function runChat({ env, db, fetcher = fetch, messages, plan, model 
     for (const u of uses) {
       let result;
       if (u.name === 'list_vendors') result = vendorList(cats);
-      else if (u.name === 'search_products') { const ps = searchAll(cats, str(u.input && u.input.query, 200)); ps.forEach((p) => shown.set(p.id, p)); result = ps.length ? ps : 'No product in the approved catalogues matched. Say so plainly and ask a clarifying question or try other words.'; }
+      else if (u.name === 'search_products') { const ps = searchAll(cats, str(u.input && u.input.query, 200)); ps.forEach((p) => shown.set(p.id, p)); result = ps.length ? ps.map(compact) : 'No product in the approved catalogues matched. Say so plainly and ask a clarifying question or try other words.'; }
       else if (u.name === 'get_product') { const p = findProduct(cats, str(u.input && u.input.catalog_id, 200), str(u.input && u.input.code, 80)); if (p) shown.set(p.id, p); result = p || 'Not found in that catalogue. Do not use this code.'; }
-      else if (u.name === 'update_plan') { const v = validatePlan(cats, u.input || {}); nextPlan = v; unknown = v.unknown; result = { saved: v.items.length, dropped_not_in_catalogue: v.unknown }; }
+      else if (u.name === 'update_plan') { const v = validatePlan(cats, u.input || {}); keepNotes(v, current); nextPlan = v; unknown = v.unknown; result = { saved: v.items.length, dropped_not_in_catalogue: v.unknown }; }
       else result = 'Unknown tool.';
       results.push({ type: 'tool_result', tool_use_id: u.id, content: JSON.stringify(result).slice(0, 12000) });
     }
@@ -206,7 +219,7 @@ export async function saveRequest({ db, body, now = () => new Date() }) {
   const requestId = str(body.requestId, 64);
   if (!/^[a-f0-9-]{16,64}$/i.test(requestId)) throw Object.assign(new Error('bad request id'), { status: 400 });
   const plan = plain(body.plan) ? body.plan : {};
-  const items = (Array.isArray(plan.items) ? plan.items : []).slice(0, 60).map((i) => ({ vendor: str(i.vendor, 80), code: str(i.code, 60), name: str(i.name, 120), qty: Math.max(1, Math.min(10000, Math.round(Number(i.qty) || 1))), note: str(i.note, 200), catalog: str(i.catalog, 100), page: Number(i.page) || null }));
+  const items = (Array.isArray(plan.items) ? plan.items : []).slice(0, PLAN_LINES).map((i) => ({ area: str(i.area, 80), vendor: str(i.vendor, 80), code: str(i.code, 60), name: str(i.name, 120), qty: Math.max(1, Math.min(100000, Math.round(Number(i.qty) || 1))), note: str(i.note, 200), catalog: str(i.catalog, 100), page: Number(i.page) || null }));
   const project = {}; for (const [k, v] of Object.entries(plain(plan.project) ? plan.project : {}).slice(0, 12)) project[str(k, 30)] = str(v, 300);
   const camp = plain(body.campaign) ? body.campaign : {};
   const campaign = {}; for (const k of ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'ref', 'landing', 'referrer']) if (camp[k]) campaign[k] = str(camp[k], 200);

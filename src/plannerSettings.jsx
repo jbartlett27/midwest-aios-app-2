@@ -17,20 +17,39 @@ const inp = { width: "100%", padding: "10px 12px", background: "#000", border: "
 // The public planner's link, for anyone in the app: open it in a new tab or copy it to share (Sales Portal and Users & Permissions).
 export const PLANNER_URL = "https://midwestaios.com/plan";
 export function PlannerLinkBar({ notify }) {
+  const [copied, setCopied] = useState(false);
+  const done = () => { setCopied(true); if (notify) notify("Planner link copied"); setTimeout(() => setCopied(false), 2200); };
   const copy = () => {
-    const done = () => notify && notify("Planner link copied");
-    try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(PLANNER_URL).then(done, () => { window.prompt("Copy the planner link", PLANNER_URL); }); return; } } catch (e) { }
+    try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(PLANNER_URL).then(done, fallback); return; } } catch (e) { }
+    fallback();
+  };
+  // Older browsers and some embedded views: copy through a hidden field, and as a last resort show the link to copy by hand.
+  const fallback = () => {
+    try { const t = document.createElement("textarea"); t.value = PLANNER_URL; t.setAttribute("readonly", ""); t.style.cssText = "position:fixed;opacity:0;top:0;left:0"; document.body.appendChild(t); t.select(); const ok = document.execCommand && document.execCommand("copy"); t.remove(); if (ok) { done(); return; } } catch (e) { }
     window.prompt("Copy the planner link", PLANNER_URL);
   };
-  const b = { padding: "8px 14px", borderRadius: 8, fontSize: 12.5, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" };
+  const btn = { display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 7, height: 38, padding: "0 16px", borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap", textDecoration: "none", transition: "background .15s,border-color .15s,color .15s" };
   return (
-    <div data-planner-link style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", background: "#111111", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 14, padding: "12px 16px", marginBottom: 16 }}>
-      <div style={{ flex: "1 1 220px", minWidth: 0 }}>
-        <div style={{ fontSize: 13.5, color: "#f0f0f0", fontWeight: 600 }}>Furniture Planner</div>
-        <div style={{ fontSize: 12, color: "#9a9a9a", fontFamily: "'JetBrains Mono',monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>midwestaios.com/plan &gt;&gt; customers plan a space and request a priced quote</div>
+    <div data-planner-link className="mw-plink" style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", background: "linear-gradient(135deg,rgba(45,212,191,0.06),rgba(167,139,250,0.04))", border: "1px solid rgba(45,212,191,0.16)", borderRadius: 14, padding: "14px 16px", marginBottom: 18 }}>
+      <style>{"@media (max-width:560px){.mw-plink .acts{width:100%}.mw-plink .acts>*{flex:1 1 auto}.mw-plink .acts .url{flex-basis:100%;text-align:center}}"}</style>
+      <div style={{ width: 40, height: 40, borderRadius: 10, background: "rgba(45,212,191,0.12)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }} aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2dd4bf" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 10h18M5 10v8M19 10v8M3 18h18M7 6h10l2 4H5z" /></svg>
       </div>
-      <a href={PLANNER_URL} target="_blank" rel="noopener noreferrer" style={{ ...b, background: "#2dd4bf", color: "#000", textDecoration: "none" }} data-planner-open>Open planner</a>
-      <button type="button" onClick={copy} style={{ ...b, background: "transparent", color: "#f0f0f0", border: "1px solid rgba(255,255,255,0.14)" }} data-planner-copy>Copy link</button>
+      <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+        <div style={{ fontSize: 14, color: "#f0f0f0", fontWeight: 600, marginBottom: 3 }}>Furniture Planner</div>
+        <div style={{ fontSize: 12.5, color: "#9a9a9a", lineHeight: 1.5 }}>Customers plan a space and request a priced quote. Requests land in Prospects.</div>
+      </div>
+      <div className="acts" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <span className="url" style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 12, color: "#c4c4c4", background: "#000", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, padding: "9px 12px", whiteSpace: "nowrap" }}>midwestaios.com/plan</span>
+        <button type="button" onClick={copy} style={{ ...btn, background: copied ? "rgba(52,211,153,0.12)" : "transparent", color: copied ? "#34d399" : "#f0f0f0", border: "1px solid " + (copied ? "rgba(52,211,153,0.35)" : "rgba(255,255,255,0.14)") }} data-planner-copy aria-live="polite">
+          {copied ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg> : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15V5a2 2 0 0 1 2-2h10" /></svg>}
+          {copied ? "Copied" : "Copy link"}
+        </button>
+        <a href={PLANNER_URL} target="_blank" rel="noopener noreferrer" style={{ ...btn, background: "#2dd4bf", color: "#000", border: "1px solid #2dd4bf" }} data-planner-open>
+          Open planner
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></svg>
+        </a>
+      </div>
     </div>
   );
 }
