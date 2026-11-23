@@ -30,7 +30,8 @@ export function makeDb(fetcher = fetch) {
   };
   return {
     catalogRows: () => rest('sops?cat=eq.VendorCatalog&select=id,cat,content'),
-    prospects: () => rest('sops?cat=eq.Prospect&select=id,content'),
+    // Every Prospect card, page by page: the database answers at most 1000 rows at a time and Midwest has more.
+    prospects: async () => { const all = []; for (let off = 0; off < 100000; off += 1000) { const page = await rest('sops?cat=eq.Prospect&select=id,content&order=id.asc&limit=1000&offset=' + off); all.push(...(page || [])); if (!page || page.length < 1000) break; } return all; },
     settings: async () => { const r = await rest('sops?id=eq.' + SETTINGS_ID + '&select=content'); try { return JSON.parse((r && r[0] && r[0].content) || '{}'); } catch (e) { return {}; } },
     saveProspect: (id, data) => rest('sops?on_conflict=id', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
       body: JSON.stringify([{ id, title: data.name || data.company || 'Prospect', cat: 'Prospect', icon: 'target', content: JSON.stringify(data), custom: true }]) }),

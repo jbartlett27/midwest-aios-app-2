@@ -11,6 +11,7 @@ const MUTANTS=[
   ['the daily limit stops the chat','api/plan.js',"if (spent >= dailyLimitCents(settings))","if (false)"],
   ['replies lose their dashes','api/plan.js',"const reply = plainDashes(","const reply = ("],
   ['product names, not fragments','src/planCatalog.js',"if (usable(row.name)) return String(row.name).trim();","return row.name;"],
+  ['every Prospect card is read','api/plan.js',"if (!page || page.length < 1000) break;","break;"],
   ['the model gets only catalogue tools','api/plan.js',"{ name: 'get_product',","{ name: 'get_job', description: 'x', input_schema: { type: 'object', properties: {} } },\n  { name: 'get_product',"],
 ];
 const read=(f)=>{const t=fs.readFileSync('../../'+f,'utf8');if(mutantIdx<0||MUTANTS[mutantIdx][1]!==f)return t;assert.ok(t.includes(MUTANTS[mutantIdx][2]),'mutation anchor missing: '+MUTANTS[mutantIdx][0]);return t.replace(MUTANTS[mutantIdx][2],MUTANTS[mutantIdx][3]);};
@@ -33,6 +34,8 @@ const cats=await P.loadPublicCatalogs(db,fetcher);
 // 1. Catalogue facts, never prices.
 const found=P.searchAll(cats,'adjustable desk');
 assert.equal(found[0].code,'FD-2030','a search finds the real product');
+{const calls=[];const big=P.makeDb(async(u)=>{calls.push(u);const off=Number(new URL(u).searchParams.get('offset'));const n=off===0?1000:off===1000?156:0;const rows=Array.from({length:n},(_,i)=>({id:'P'+(off+i),content:'{}'}));return{ok:true,text:async()=>JSON.stringify(rows)};});
+ assert.equal((await big.prospects()).length,1156,'duplicate and repeat checks see every Prospect card, past the 1000-row page');}
 assert.equal(P.findProduct(cats,'VCAT-1','FD-99').name,'Flex Desk Series','a customer sees a product name, never a sentence fragment from the catalogue');
 assert.ok(!/412|\$/.test(JSON.stringify(found)),'no price reaches a customer, in specs or anywhere in the product');
 assert.ok(!/129/.test(JSON.stringify(P.searchAll(cats,'stack chair'))),'a price written without a dollar sign is removed too');
