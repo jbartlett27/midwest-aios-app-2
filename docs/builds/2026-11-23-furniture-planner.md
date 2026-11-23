@@ -30,7 +30,8 @@ A public page where a school or business plans a space with a scoped Midwest Bra
 
 - The live Brain wrote em dashes. Replies now go through `plainDashes` (ranges keep a hyphen, other dashes become commas), and the prompt forbids them.
 - About 70% of catalogue lines carry a sentence fragment or a bare size where the name should be. `productName` uses the name when it is a real name, otherwise the page series or section (with the size kept, as in "Classroom Table 60 x 30"), otherwise "Model CODE". It was checked against all 63,170 live catalogue rows.
-- 2 more mutants; planner total 10. First live spend reading: 65 cents for 3 conversations, so the $10 default allows roughly 45 a day.
+- The live request test found a real bug: Midwest has 1,156 Prospect cards and the database answers at most 1,000 rows per call, so newer cards were invisible to the duplicate and repeat checks (three test requests made three cards). `db.prospects()` now reads every page. The test card fakes 1,156 rows.
+- 3 more mutants; planner total 11. First live spend reading: 65 cents for 3 conversations, so the $10 default allows roughly 45 a day.
 
 ## Setup left for Midwest
 
