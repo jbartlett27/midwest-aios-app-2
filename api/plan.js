@@ -108,6 +108,7 @@ HOW TO WORK
 
 NEVER
 - Never invent a model code, product, size, color, availability, lead time, warranty or ship date. If the tools do not show it, say "not confirmed in the catalogue" and that a Midwest specialist will confirm it.
+- Never use em dashes or en dashes in replies. Use commas, colons or periods.
 - Never give, estimate or discuss prices, costs, discounts, budgets in dollars, margins or financing. This is a planning quote, not a priced offer. For pricing say the customer can press "Request a priced quote" and Midwest will follow up.
 - Never promise delivery, installation dates or anything on Midwest's behalf. Never discuss other customers, Midwest's internal records or staff systems; you have no access to them.
 Keep answers short, warm and practical. Plain text with short lists; no tables.`;
@@ -139,6 +140,9 @@ export const costCents = (usage) => (((Number(usage && usage.input_tokens) || 0)
 export const DEFAULT_DAILY_LIMIT = 10;   // dollars, until an admin sets one
 export function dailyLimitCents(settings) { const d = Number(settings && settings.dailyLimit); return Math.round((Number.isFinite(d) && d >= 0 ? Math.min(d, 1000) : DEFAULT_DAILY_LIMIT) * 100); }
 
+// Midwest writes without em or en dashes: ranges keep a hyphen, any other dash becomes a comma.
+export const plainDashes = (t) => String(t || '').replace(/(\d)\s*\u2013\s*(\d)/g, '$1-$2').replace(/\s*[\u2014\u2013]\s*/g, ', ');
+
 export async function runChat({ env, db, fetcher = fetch, messages, plan, model }) {
   const cats = await loadPublicCatalogs(db, fetcher);
   const convo = (Array.isArray(messages) ? messages : []).slice(-24).map((m) => ({ role: m && m.role === 'assistant' ? 'assistant' : 'user', content: str(m && m.text, 4000) || '...' }));
@@ -153,7 +157,7 @@ export async function runChat({ env, db, fetcher = fetch, messages, plan, model 
     if (db.spendAdd) await db.spendAdd(costCents(out.usage)).catch(() => 0);
     const uses = (out.content || []).filter((c) => c.type === 'tool_use');
     if (!uses.length || out.stop_reason !== 'tool_use') {
-      const reply = (out.content || []).filter((c) => c.type === 'text').map((c) => c.text).join('\n').trim();
+      const reply = plainDashes((out.content || []).filter((c) => c.type === 'text').map((c) => c.text).join('\n').trim());
       return { reply, products: [...shown.values()].slice(0, 12), plan: nextPlan, unknown };
     }
     msgs.push({ role: 'assistant', content: out.content });
@@ -169,7 +173,7 @@ export async function runChat({ env, db, fetcher = fetch, messages, plan, model 
     }
     msgs.push({ role: 'user', content: results });
   }
-  return { reply: 'I have your plan so far. Tell me what to adjust, or press "Download planning quote".', products: [...shown.values()].slice(0, 12), plan: nextPlan, unknown };
+  return { reply: 'I have your plan so far. Tell me what to adjust, or press "Download PDF".', products: [...shown.values()].slice(0, 12), plan: nextPlan, unknown };
 }
 
 // ---- "Request a priced quote" ----

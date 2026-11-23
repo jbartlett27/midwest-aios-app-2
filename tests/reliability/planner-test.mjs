@@ -9,6 +9,8 @@ const MUTANTS=[
   ['a booking webhook must be signed','api/plan.js',"if (!verifyCalendly(raw, req.headers['calendly-webhook-signature'], env.PLAN_BOOKING_SIGNING_KEY)) return res.status(401).json({ ok: false });",""],
   ['the booking assigns the rep whose calendar took it','api/plan.js',"if (repId) next.assignedRep = repId;",""],
   ['the daily limit stops the chat','api/plan.js',"if (spent >= dailyLimitCents(settings))","if (false)"],
+  ['replies lose their dashes','api/plan.js',"const reply = plainDashes(","const reply = ("],
+  ['product names, not fragments','src/planCatalog.js',"if (usable(row.name)) return String(row.name).trim();","return row.name;"],
   ['the model gets only catalogue tools','api/plan.js',"{ name: 'get_product',","{ name: 'get_job', description: 'x', input_schema: { type: 'object', properties: {} } },\n  { name: 'get_product',"],
 ];
 const read=(f)=>{const t=fs.readFileSync('../../'+f,'utf8');if(mutantIdx<0||MUTANTS[mutantIdx][1]!==f)return t;assert.ok(t.includes(MUTANTS[mutantIdx][2]),'mutation anchor missing: '+MUTANTS[mutantIdx][0]);return t.replace(MUTANTS[mutantIdx][2],MUTANTS[mutantIdx][3]);};
@@ -19,7 +21,7 @@ fs.writeFileSync('./.plan-bundle.mjs',r.outputFiles[0].text);const P=await impor
 // ---- a made-up catalogue (one with prices in its rows) ----
 const CAT={v:1,headers:['Model | Description | Size | List'],sections:[{id:1,title:'Student Desks',group:'Desks'},{id:2,title:'Chairs',group:'Seating'}],
   pages:[{n:4,sec:1,title:'Flex Desk Series',text:'Flex desk adjustable height student desk list $412.00'},{n:9,sec:2,title:'Stack Chair',text:'Stack chair 18 inch seat'}],
-  products:[{c:'FD-2030',p:4,b:'Flex Desk 20x30 adjustable',r:'FD-2030 | Adjustable student desk | 20x30 | $412.00',h:0},{c:'SC-18',p:9,b:'Stack Chair 18"',r:'SC-18 | Stack chair | 18" seat | 129.00',h:0}]};
+  products:[{c:'FD-2030',p:4,b:'Flex Desk 20x30 adjustable',r:'FD-2030 | Adjustable student desk | 20x30 | $412.00',h:0},{c:'FD-99',p:4,b:'withstand heavy loads and daily wear. A',r:'FD-99 | heavy duty top',h:0},{c:'SC-18',p:9,b:'Stack Chair 18"',r:'SC-18 | Stack chair | 18" seat | 129.00',h:0}]};
 const REC={vendorId:'V1',vendorName:'Acme Seating',title:'Acme 2026 Catalog',url:'https://x/acme.json',productCount:2,pageImgBase:'https://x/pages/',hasPrices:false};
 let saved=[];const db={catalogRows:async()=>[{id:'VCAT-1',cat:'VendorCatalog',content:JSON.stringify(REC)}],prospects:async()=>saved.map(p=>({id:p.id,content:JSON.stringify(p.data)})),
   settings:async()=>({booking:{defaultRep:'S001',reps:{S001:{url:'https://calendly.com/dave/intro',hostEmails:['dave@mwf.test']},S004:{url:'',hostEmails:['jim@mwf.test']}}}}),
@@ -31,6 +33,7 @@ const cats=await P.loadPublicCatalogs(db,fetcher);
 // 1. Catalogue facts, never prices.
 const found=P.searchAll(cats,'adjustable desk');
 assert.equal(found[0].code,'FD-2030','a search finds the real product');
+assert.equal(P.findProduct(cats,'VCAT-1','FD-99').name,'Flex Desk Series','a customer sees a product name, never a sentence fragment from the catalogue');
 assert.ok(!/412|\$/.test(JSON.stringify(found)),'no price reaches a customer, in specs or anywhere in the product');
 assert.ok(!/129/.test(JSON.stringify(P.searchAll(cats,'stack chair'))),'a price written without a dollar sign is removed too');
 assert.equal(P.findProduct(cats,'VCAT-1','NOPE-1'),null,'an unknown code is not a product');
@@ -44,10 +47,12 @@ let seen=null,turn=0;
 const model=async(url,init)=>{if(url==='https://x/acme.json')return fetcher(url);const b=JSON.parse(init.body);seen=b;turn++;
   const reply=turn===1?{stop_reason:'tool_use',content:[{type:'tool_use',id:'t1',name:'search_products',input:{query:'adjustable desk'}}]}
     :turn===2?{stop_reason:'tool_use',content:[{type:'tool_use',id:'t2',name:'update_plan',input:{project:{room:'Grade 3 classroom',headcount:'28'},items:[{catalog_id:'VCAT-1',code:'FD-2030',qty:28,note:'one per student'},{catalog_id:'VCAT-1',code:'ZZ-1',qty:1}],assumptions:['28 students']}}]}
-    :{stop_reason:'end_turn',content:[{type:'text',text:'Here is a start: 28 Flex Desks.'}]};
+    :{stop_reason:'end_turn',content:[{type:'text',text:'Here is a start \u2014 28 Flex Desks.'}]};
   reply.usage={input_tokens:2000,output_tokens:300};return{ok:true,json:async()=>reply};};
 const out=await P.runChat({env:{ANTHROPIC_API_KEY:'k'},db,fetcher:model,messages:[{role:'user',text:'A 3rd grade classroom for 28'}],plan:{}});
 assert.deepEqual(seen.tools.map(t=>t.name).sort(),['get_product','list_vendors','search_products','update_plan'],'the public model has four tools, all over the catalogues');
+assert.equal(out.reply,'Here is a start, 28 Flex Desks.','the customer never sees an em dash from the model');
+assert.equal(P.plainDashes('Plan saved \u2014 28 desks, 22\u201330 in'),'Plan saved, 28 desks, 22-30 in','replies never carry em or en dashes');
 assert.ok(db.spent>0,'every model call adds to today\'s spend');
 assert.ok(/Never give, estimate or discuss prices/.test(seen.system)&&/ABOUT MIDWEST/.test(seen.system),'the prompt forbids prices and carries the public facts about Midwest');
 assert.deepEqual([out.plan.items.length,out.plan.items[0].code,out.unknown],[1,'FD-2030',['ZZ-1']],'the conversation returns a checked plan');
