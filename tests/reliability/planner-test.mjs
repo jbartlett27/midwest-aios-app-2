@@ -16,6 +16,7 @@ const MUTANTS=[
   ['the assistant builds the quote itself','api/plan.js',"- Build the plan for the customer.","- Suggest products."],
   ['saving keeps every line on screen','api/plan.js',"- update_plan replaces the whole list: always send every line that should stay","- update_plan saves the list: send the lines"],
   ['the reply counts the lines it added','api/plan.js',"added: addedLines(current, nextPlan) };\n    }","added: 0 };\n    }"],
+  ['no placeholder facts','api/plan.js'," Save only what the customer actually said; leave a fact out until they tell you"," Save"],
   ['the model gets only catalogue tools','api/plan.js',"{ name: 'get_product',","{ name: 'get_job', description: 'x', input_schema: { type: 'object', properties: {} } },\n  { name: 'get_product',"],
 ];
 const read=(f)=>{const t=fs.readFileSync('../../'+f,'utf8');if(mutantIdx<0||MUTANTS[mutantIdx][1]!==f)return t;assert.ok(t.includes(MUTANTS[mutantIdx][2]),'mutation anchor missing: '+MUTANTS[mutantIdx][0]);return t.replace(MUTANTS[mutantIdx][2],MUTANTS[mutantIdx][3]);};
@@ -60,6 +61,7 @@ const model=async(url,init)=>{if(url==='https://x/acme.json')return fetcher(url)
 const out=await P.runChat({env:{ANTHROPIC_API_KEY:'k'},db,fetcher:model,messages:[{role:'user',text:'A 3rd grade classroom for 28'}],plan:{}});
 assert.deepEqual(seen.tools.map(t=>t.name).sort(),['get_product','list_vendors','search_products','update_plan'],'the public model has four tools, all over the catalogues');
 assert.equal(out.reply,'Here is a start, 28 Flex Desks.','the customer never sees an em dash from the model');
+assert.ok(P.SYSTEM.includes('leave a fact out until they tell you'),'the planner never fills a project detail with a placeholder');
 assert.equal(P.plainDashes('Plan saved \u2014 28 desks, 22\u201330 in'),'Plan saved, 28 desks, 22-30 in','replies never carry em or en dashes');
 assert.ok(db.spent>0,'every model call adds to today\'s spend');
 assert.ok(/Never give, estimate or discuss prices/.test(seen.system)&&/ABOUT MIDWEST/.test(seen.system),'the prompt forbids prices and carries the public facts about Midwest');
