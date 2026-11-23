@@ -1,0 +1,83 @@
+import assert from 'node:assert/strict';
+import { build } from 'esbuild';
+import { JSDOM } from 'jsdom';
+import React, { act } from 'react';
+import { createRequire } from 'node:module';
+import { unlink, readFile } from 'node:fs/promises';
+
+const output = new URL('./.enterprise-host-test.cjs', import.meta.url);
+await build({ entryPoints: [new URL('../../src/enterprise/EnterpriseNetwork.jsx', import.meta.url).pathname], outfile: output.pathname, bundle: true, format: 'cjs', platform: 'node', jsx: 'automatic', external: ['react', 'react-dom'], loader: { '.css': 'empty' }, plugins: process.env.ENTERPRISE_HOST_MUTANT === 'source' ? [{ name: 'source-refusal-mutant', setup(builder) { builder.onLoad({ filter: /enterprise\/protocol\.mjs$/ }, async file => ({ contents: (await readFile(file.path, 'utf8')).replace('event.source === frame && ', ''), loader: 'js' })); } }] : [] });
+const require = createRequire(import.meta.url);
+const Host = require(output.pathname).default;
+const dom = new JSDOM('<div id="root"></div>', { url: 'https://midwest.example' });
+globalThis.window = dom.window;
+globalThis.document = dom.window.document;
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+const { createRoot } = await import('react-dom/client');
+let mode = 'blocked';
+let rpcCount = 0;
+globalThis.fetch = async (url, options) => {
+  assert.equal(url, '/api/enterprise-network');
+  assert.equal(options.headers.Authorization, 'Bearer synthetic');
+  const input = JSON.parse(options.body);
+  if (input.op === 'call') { rpcCount++; return { ok: true, status: 200, json: async () => ({ ok: false, error: 'Participant adapter pending.' }) }; }
+  if (mode === 'blocked') return { ok: false, status: 403, json: async () => ({ ok: false, error: 'Admin pairing pending.' }) };
+  return { ok: true, status: 200, json: async () => ({ ok: true, session_id: 'nonsecret', member: { id: 'member' }, expires_at: new Date(Date.now() + (mode === 'expired' ? -100 : 60000)).toISOString(), ui_url: 'https://network.example/enterprise', capabilities: { share_preview: true } }) };
+};
+const root = createRoot(document.getElementById('root'));
+const mount = async (id = 'one') => act(async () => { root.render(React.createElement(Host, { currentUser: { id, name: id }, getToken: async () => 'synthetic', screenLabel: 'Vendor Bills' })); });
+try {
+  await mount();
+  assert.ok(document.body.textContent.includes('Admin pairing pending.'));
+  assert.equal(document.querySelector('iframe'), null);
+  mode = 'expired';
+  await mount('two');
+  assert.ok(document.body.textContent.includes('invalid or expired session'));
+  mode = 'ready';
+  await mount('three');
+  const iframe = document.querySelector('iframe');
+  assert.ok(iframe);
+  assert.equal(iframe.src, 'https://network.example/enterprise');
+  assert.equal(iframe.getAttribute('referrerpolicy'), 'no-referrer');
+  const sent = [];
+  iframe.contentWindow.postMessage = (message, target) => sent.push({ message, target });
+  await act(async () => iframe.dispatchEvent(new dom.window.Event('load')));
+  const nonce = sent[0].message.nonce;
+  const emit = async (type, extra = {}, origin = 'https://network.example', source = iframe.contentWindow) => act(async () => {
+    window.dispatchEvent(new dom.window.MessageEvent('message', { source, origin, data: { type, nonce, version: 1, ...extra } }));
+  });
+  await emit('dyfrent.enterprise.ready', {}, 'https://attacker.example');
+  assert.equal(sent.length, 1);
+  await emit('dyfrent.enterprise.ready', {}, 'https://network.example', window);
+  assert.equal(sent.length, 1);
+  await emit('dyfrent.enterprise.ready');
+  assert.equal(sent[1].message.session_id, 'nonsecret');
+  assert.equal(sent[1].message.access_token, undefined);
+  await emit('dyfrent.enterprise.rpc', { action: 'net_directory', request_id: 'early', payload: {} });
+  assert.equal(rpcCount, 0);
+  await emit('dyfrent.enterprise.accepted');
+  const ask = [...document.querySelectorAll('button')].find(button => button.textContent.startsWith('Ask Jarvis'));
+  assert.equal(ask.disabled, false);
+  await emit('dyfrent.enterprise.rpc', { action: 'net_directory', request_id: 'first', payload: {} });
+  assert.equal(rpcCount, 1);
+  await emit('dyfrent.enterprise.rpc', { action: 'net_directory', request_id: 'first', payload: {} });
+  assert.equal(rpcCount, 1);
+  await emit('dyfrent.enterprise.rpc', { action: 'read_private_invoices', request_id: 'private', payload: {} });
+  assert.equal(rpcCount, 1);
+  await act(async () => ask.click());
+  assert.ok(document.querySelector('[role="dialog"]'));
+  assert.equal(document.querySelector('input[type="checkbox"]').checked, false);
+  await act(async () => window.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Escape' })));
+  assert.equal(document.querySelector('[role="dialog"]'), null);
+  await emit('dyfrent.enterprise.revoked');
+  assert.equal(document.querySelector('iframe'), null);
+  assert.ok(document.body.textContent.includes('Your Network access changed'));
+  await mount('four');
+  assert.ok(document.querySelector('iframe'));
+  assert.equal(window.sessionStorage.length + window.localStorage.length, 0);
+  console.log('PASS actual host rendering, membership errors, expiry, source/origin handshake, no iframe credential, RPC gating/dedupe/action refusal, explicit context, Escape, revocation and identity reset');
+} finally {
+  await act(async () => root.unmount());
+  dom.window.close();
+  await unlink(output);
+}

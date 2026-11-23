@@ -4,6 +4,7 @@ import { isBusinessDate, businessDayAfter } from './businessDate.js';
 import { poBillAmount } from './poBill.js';
 import { DOCUMENT_STATUSES_ID, documentStatusChanges, parseDocumentStatuses, readDocumentStatuses } from './documentStatuses.js';
 import DateInput from './DateInput.jsx';
+import EnterpriseNetwork from './enterprise/EnterpriseNetwork.jsx';
 import { BrainPage, CommissionsPage, Customer360Page, DirectoryPage, ExitReadinessPage, FilesPage, FinancialsPage, NotesPage, PlaybookPage, ProspectsPage, SalesPortalPage, TasksPage, UserMgmtPage, Vendor360Page } from "./App2.jsx";
 import React, { useState, useEffect, useRef } from "react";
 import { db } from "./supabase.js";
@@ -2490,6 +2491,11 @@ function MidwestAIOSInner() {
     {id:"exitready",label:"Exit Readiness",icon:"shield"},
 
 
+    ...(import.meta.env.VITE_ENTERPRISE_NETWORK_PREVIEW === "on" ? [
+      {id:"enterprise-profile",label:"Profile",icon:"users"},
+      {id:"enterprise-network",label:"Network",icon:"users"},
+      {id:"enterprise-messages",label:"Messages",icon:"file"},
+    ] : []),
     {id:"usermgmt",label:"Users & Permissions",icon:"shield"},
   ].filter(item => {
     // Check for custom page-level permissions (stored in Supabase users.pages column)
@@ -2498,6 +2504,7 @@ function MidwestAIOSInner() {
       if(currentUser?.pages&&typeof currentUser.pages==='string'){try{return JSON.parse(currentUser.pages)}catch{}}
       return null;
     })();
+    if(item.id.startsWith("enterprise-") && import.meta.env.VITE_ENTERPRISE_NETWORK_PREVIEW === "on") return true;
     if(customPages){
       if(item.id==="usermgmt")return currentUser.role==="admin";
       return customPages.includes(item.id);
@@ -2685,6 +2692,14 @@ const sharedScreen = sharedQuote ? <ShareQuotePortal quoteData={sharedQuote} onA
           {page==="exitready"&&<ExitReadinessPage {...ctx}/>}
 
 
+          {import.meta.env.VITE_ENTERPRISE_NETWORK_PREVIEW === "on" && page.startsWith("enterprise-") && <EnterpriseNetwork
+            key={currentUser.id + ":" + page}
+            currentUser={{id:currentUser.id}}
+            getToken={() => clerkAuth.getToken ? clerkAuth.getToken({template:"dyfrent-network"}) : Promise.resolve(null)}
+            initialTab={page.slice("enterprise-".length)}
+            screenLabel={navItems.find(item => item.id === page)?.label || ""}
+            onClose={() => setPage("dashboard")}
+          />}
           {page==="usermgmt"&&<UserMgmtPage {...ctx}/>}
         </div>
       </div>

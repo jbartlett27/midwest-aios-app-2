@@ -1,0 +1,28 @@
+import assert from 'node:assert/strict';
+import { enterpriseFrameUrl, enterpriseMessage, enterpriseSession, selectedShare } from '../../src/enterprise/protocol.mjs';
+
+const frame = {};
+const event = { source: frame, origin: 'https://www.dyfrent.app', data: { version: 1, nonce: 'test-nonce', type: 'ready' } };
+assert.equal(enterpriseMessage(event, frame, event.origin, 'test-nonce', 'ready'), true);
+assert.equal(enterpriseMessage({ ...event, source: {} }, frame, event.origin, 'test-nonce', 'ready'), false);
+assert.equal(enterpriseMessage({ ...event, origin: 'https://attacker.example' }, frame, event.origin, 'test-nonce', 'ready'), false);
+assert.equal(enterpriseMessage(event, frame, event.origin, 'other-nonce', 'ready'), false);
+assert.equal(enterpriseMessage({ ...event, data: { ...event.data, version: 2 } }, frame, event.origin, 'test-nonce', 'ready'), false);
+assert.equal(enterpriseMessage(event, null, event.origin, 'test-nonce', 'ready'), false);
+assert.equal(enterpriseFrameUrl('https://www.dyfrent.app/enterprise').origin, 'https://www.dyfrent.app');
+for (const url of ['http://www.dyfrent.app/enterprise', 'https://user:pass@www.dyfrent.app/enterprise', 'https://www.dyfrent.app/enterprise?token=secret', 'https://www.dyfrent.app/enterprise#token', 'https://www.dyfrent.app/']) assert.equal(enterpriseFrameUrl(url), null);
+const now = 1000000000000;
+const session = { ok: true, ui_url: 'https://www.dyfrent.app/enterprise', session_id: 'synthetic', member: { id: 'maureen' }, expires_at: new Date(now + 60000).toISOString() };
+assert.ok(enterpriseSession(session, now));
+assert.equal(enterpriseSession({ ...session, expires_at: new Date(now).toISOString() }, now), null);
+assert.equal(enterpriseSession({ ...session, expires_at: new Date(now + 301000).toISOString() }, now), null);
+assert.equal(enterpriseSession({ ...session, member: {} }, now), null);
+assert.equal(enterpriseSession({ ...session, session_id: '' }, now), null);
+assert.deepEqual(selectedShare(' Help ', 'Vendor Bills', false, []), { description: 'Help', screen: '', attachments: [] });
+assert.equal(selectedShare('Help', 'Vendor Bills', true, []).screen, 'Vendor Bills');
+assert.throws(() => selectedShare('', '', false, []));
+assert.throws(() => selectedShare('x'.repeat(4001), '', false, []));
+assert.throws(() => selectedShare('Help', '', false, [{ size: 11 * 1024 * 1024 }]));
+assert.throws(() => selectedShare('Help', '', false, new Array(5).fill({ size: 10 })));
+assert.throws(() => selectedShare('Help', '', false, [{}]));
+console.log('PASS enterprise protocol, recipient/source/nonce isolation, expiry, explicit context and attachment bounds');
