@@ -57,19 +57,23 @@ export function PlannerLinkBar({ notify }) {
 export function PlannerBookingCard({ reps, customSops, addSop, notify }) {
   const saved = readPlannerSettings(customSops);
   const b = saved.booking || {};
-  const selling = (reps || []).filter((r) => r && r.id && r.name);
+  const selling = (reps || []).filter((r) => r && r.id && r.name && !String(r.id).includes("SEED"));
+  // Before anything is saved, the sales team (reps with the Sales role) is offered to customers by name.
+  const isSales = (r) => Array.isArray(r.roles) ? r.roles.includes("Sales") : /sales/i.test(String(r.tier || ""));
+  const rowFor = (r) => { const s0 = b.reps && b.reps[r.id]; return { url: (s0 && s0.url) || "", hostEmails: ((s0 && s0.hostEmails) || []).join(", "), offer: s0 && typeof s0.offer === "boolean" ? s0.offer : isSales(r), area: s0 && typeof s0.area === "string" ? s0.area : (r.territory || "") }; };
   const [defRep, setDefRep] = useState(b.defaultRep || "S001");
   const [theme, setTheme] = useState(saved.theme === "dark" ? "dark" : "light");
   const [limit, setLimit] = useState(String(saved.dailyLimit != null ? saved.dailyLimit : 10));
   const [spent, setSpent] = useState(null);
   useEffect(() => { fetch("https://kogjthgceejpzxnekprr.supabase.co/rest/v1/rpc/planner_spend_get", { method: "POST", headers: { apikey: ANON, Authorization: "Bearer " + ANON, "Content-Type": "application/json" }, body: "{}" }).then((r) => r.json()).then((c) => setSpent(Number(c) || 0)).catch(() => setSpent(null)); }, []);
-  const [rows, setRows] = useState(() => Object.fromEntries(selling.map((r) => [r.id, { url: (b.reps && b.reps[r.id] && b.reps[r.id].url) || "", hostEmails: ((b.reps && b.reps[r.id] && b.reps[r.id].hostEmails) || []).join(", ") }])));
-  useEffect(() => { setRows((x) => { const n = { ...x }; selling.forEach((r) => { if (!n[r.id]) n[r.id] = { url: "", hostEmails: "" }; }); return n; }); }, [reps]); // eslint-disable-line react-hooks/exhaustive-deps
-  const set = (id, k) => (e) => setRows((x) => ({ ...x, [id]: { ...x[id], [k]: e.target.value } }));
+  const [rows, setRows] = useState(() => Object.fromEntries(selling.map((r) => [r.id, rowFor(r)])));
+  useEffect(() => { setRows((x) => { const n = { ...x }; selling.forEach((r) => { if (!n[r.id]) n[r.id] = rowFor(r); }); return n; }); }, [reps]); // eslint-disable-line react-hooks/exhaustive-deps
+  const set = (id, k) => (e) => setRows((x) => ({ ...x, [id]: { ...x[id], [k]: k === "offer" ? e.target.checked : e.target.value } }));
   const save = () => {
     for (const [id, r] of Object.entries(rows)) if (r.url && !/^https:\/\/\S+$/.test(r.url.trim())) { notify("A booking link must start with https://"); return; }
     const repsOut = {};
-    for (const [id, r] of Object.entries(rows)) if (r.url.trim() || r.hostEmails.trim()) repsOut[id] = { url: r.url.trim(), hostEmails: r.hostEmails.split(/[,\s]+/).map((e) => e.trim().toLowerCase()).filter((e) => /@/.test(e)) };
+    // Every rep is kept with its name, so the public planner can show the ones offered without reading the staff list.
+    for (const rep of selling) { const r = rows[rep.id] || rowFor(rep); repsOut[rep.id] = { name: rep.name, offer: !!r.offer, area: String(r.area || "").trim().slice(0, 80), url: r.url.trim(), hostEmails: r.hostEmails.split(/[,\s]+/).map((e) => e.trim().toLowerCase()).filter((e) => /@/.test(e)) }; }
     const lim = Number(limit);
     if (!Number.isFinite(lim) || lim < 0 || lim > 1000) { notify("Daily limit: a dollar amount from 0 to 1000"); return; }
     const next = { ...saved, theme, dailyLimit: Math.round(lim * 100) / 100, booking: { defaultRep: defRep, reps: repsOut } };
@@ -83,8 +87,8 @@ export function PlannerBookingCard({ reps, customSops, addSop, notify }) {
     <div style={box} data-planner-booking>
       <div style={{ fontSize: 15, color: "#f0f0f0", fontWeight: 600, marginBottom: 4 }}>Furniture Planner</div>
       <div style={{ fontSize: 12.5, color: "#9a9a9a", lineHeight: 1.6, marginBottom: 14 }}>
-        After a customer requests a priced quote at midwestaios.com/plan, they are offered the default rep's booking link. The request is always saved first, with or without a link.
-        {!def.url && <span style={{ color: "#fbbf24" }}> No link for the default rep yet: customers are told Midwest will follow up.</span>}
+        When a customer requests a priced quote at midwestaios.com/plan, the Prospect card is assigned to the rep they chose, or to the default rep when they have no preference, and the rep follows up. A booking link is optional: when the rep has one, the customer is also offered it right after the request is saved.
+        {!def.url && <span style={{ color: "#9a9a9a" }}> No booking link for the default rep: customers are told the rep will follow up.</span>}
       </div>
       <label style={{ fontSize: 12, color: "#9a9a9a", display: "block", marginBottom: 12 }}>Daily AI spend limit for the public planner, in dollars (0 turns the chat off)
         <input inputMode="decimal" value={limit} onChange={(e) => setLimit(e.target.value.replace(/[^0-9.]/g, ""))} style={{ ...inp, marginTop: 6, fontFamily: "'JetBrains Mono',monospace" }} data-planner-limit />
@@ -96,14 +100,21 @@ export function PlannerBookingCard({ reps, customSops, addSop, notify }) {
       <label style={{ fontSize: 12, color: "#9a9a9a", display: "block", marginBottom: 12 }}>Default rep for new planner requests
         <select value={defRep} onChange={(e) => setDefRep(e.target.value)} style={{ ...inp, marginTop: 6 }}>{selling.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
       </label>
+      <div style={{ fontSize: 12, color: "#9a9a9a", margin: "4px 0 10px" }}>Reps customers can choose. A checked rep is listed by name and area in the request form ("Who would you like to talk with?"); nothing else about the rep is shown.</div>
       {selling.map((r) => (
-        <div key={r.id} style={{ display: "grid", gridTemplateColumns: "minmax(110px,160px) 1fr 1fr", gap: 8, alignItems: "center", marginBottom: 8 }} className="resp-grid-2">
-          <div style={{ fontSize: 13, color: "#c4c4c4" }}>{r.name}{r.id === defRep ? " (default)" : ""}</div>
-          <input style={inp} placeholder="Booking link (https://calendly.com/...)" value={(rows[r.id] || {}).url || ""} onChange={set(r.id, "url")} />
-          <input style={inp} placeholder="Calendar email(s) for confirmed bookings" value={(rows[r.id] || {}).hostEmails || ""} onChange={set(r.id, "hostEmails")} />
+        <div key={r.id} style={{ background: "#0a0a0a", border: "1px solid rgba(255,255,255,0.05)", borderRadius: 10, padding: 12, marginBottom: 8 }} data-planner-rep={r.id}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
+            <div style={{ fontSize: 13, color: "#f0f0f0", fontWeight: 600 }}>{r.name}{r.id === defRep ? <span style={{ color: "#2dd4bf", fontWeight: 500 }}> (default)</span> : ""}</div>
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12, color: "#c4c4c4", cursor: "pointer" }}><input type="checkbox" checked={!!(rows[r.id] || {}).offer} onChange={set(r.id, "offer")} data-planner-offer={r.id} /> Customers can choose</label>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }} className="resp-grid-2">
+            <input style={inp} placeholder="Area shown to customers (e.g. Milwaukee area)" value={(rows[r.id] || {}).area || ""} onChange={set(r.id, "area")} data-planner-area={r.id} />
+            <input style={inp} placeholder="Booking link, optional (https://...)" value={(rows[r.id] || {}).url || ""} onChange={set(r.id, "url")} />
+            <input style={inp} placeholder="Calendar email(s), optional" value={(rows[r.id] || {}).hostEmails || ""} onChange={set(r.id, "hostEmails")} />
+          </div>
         </div>
       ))}
-      <div style={{ fontSize: 12, color: "#737373", lineHeight: 1.6, margin: "10px 0 14px" }}>Confirmed bookings: in Calendly, add a webhook for "invitee created" to https://midwestaios.com/api/plan?op=booking and put its signing key in the PLAN_BOOKING_SIGNING_KEY setting. A booking is matched to the prospect and the card is assigned to the rep whose calendar took it. A link click alone changes nothing.</div>
+      <div style={{ fontSize: 12, color: "#737373", lineHeight: 1.6, margin: "10px 0 14px" }}>Booking links are optional and any https booking page works (Calendly, Microsoft Bookings with me, and others). Confirmed bookings: in Calendly, add a webhook for "invitee created" to https://midwestaios.com/api/plan?op=booking and put its signing key in the PLAN_BOOKING_SIGNING_KEY setting. A booking is matched to the prospect and the card is assigned to the rep whose calendar took it. A link click alone changes nothing.</div>
       <button type="button" onClick={save} style={{ padding: "9px 18px", borderRadius: 8, border: "none", background: "#2dd4bf", color: "#000", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Save planner settings</button>
     </div>
     </>

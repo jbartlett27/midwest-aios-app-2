@@ -66,3 +66,16 @@ Fix: `src/vendorHistory.js` (company history and vendor ranking), a read-only Br
 - "Request a priced quote" comes first.
 - Planner link bar redesigned: icon, link, Copy link with a Copied state (and fallbacks), Open planner in a new tab; checked in a browser at desktop and phone width.
 - 24 planner mutants; browser check 94 of 94.
+
+## Reps and the default rep (Maureen, Nov 24 2026)
+
+Ask: "please make Dave the default rep. The email address his calendar uses is dwelter@mwfurnishings.com. We don't use a booking link. Is this something that we will need to set up for this new feature?" and "If a customer wants to book a meeting with Jim Lindner, our rep in the Milwaukee area, how would that work?"
+
+Cause: a planner request saved the Prospect card with no rep (`assignedRep: ''`); the default rep only chose whose booking link to offer. There was no way for a customer to ask for a particular rep.
+
+- `api/plan.js`: `plannerReps(settings)` lists the reps Midwest offers (name and area only, never an email); `chooseRep` takes the customer's pick when it is offered, otherwise the default rep. A new card is assigned to that rep; an existing card keeps its rep (an unassigned one takes the new rep). The card notes say who was asked for and the best time to reach the customer. `bookingFor` uses the chosen rep's own link (none if that rep has none, never another rep's calendar). `op=config` adds `reps`; `op=request` returns the rep's name.
+- `src/planner/Planner.jsx`: the request form has "Who would you like to talk with?" (No preference, then each offered rep with their area) and "Best time to reach you (optional)". The confirmation names the rep ("Jim Lindner from Midwest has your plan..."), and the booking button says "Book a call with Jim" when Jim has a link.
+- `src/plannerSettings.jsx`: per rep, "Customers can choose" (defaults to reps with the Sales role) and an area shown to customers; booking link and calendar emails are marked optional; any https booking page works (Calendly, Microsoft Bookings with me).
+- Booking links stay optional: without one, the rep follows up by email or phone from the card.
+- Tests: section 6 of `planner-test.mjs`, 6 more mutants (planner total 30). Browser check (mocked API) at 402x874 and 1440x900: rep list, pick, best time, request payload, confirmation text, no sideways scroll.
+- Data: `PLANNER_SETTINGS` written with Dave (S001) as the default rep, his calendar email, and the sales reps offered (Dave, Jim Harris, Jim Lindner, Jackie Biller).
