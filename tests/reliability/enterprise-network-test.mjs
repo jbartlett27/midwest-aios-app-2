@@ -13,6 +13,8 @@ const MUTANTS=[
   ['the relay answers only the DYFRENT frame','src/enterprise.jsx',"if (!f || e.source !== f.contentWindow || e.origin !== NETWORK_APP) return;","if (!f) return;"],
   ['the frame call cannot name another kind of op','api/enterprise-network.js',"if (!kind || !(kind === 'net' ? NET_OP : PROFILE_OP).test(inner))","if (!kind)"],
   ['an expired session is refused','api/enterprise-network.js',"|| s.e <= now) return null;",") return null;"],
+  ['the frame can switch tabs (Open full profile)','src/enterprise.jsx',"if (p && m.view !== view && onGo) onGo(p); return;","return;"],
+  ['the frame cannot switch to a page that is not one of the three','src/enterprise.jsx',"const p = GO_PAGE[m.view]; if (p &&","const p = GO_PAGE[m.view] || m.view; if (p &&"],
 ];
 const read=(f)=>{const t=fs.readFileSync('../../'+f,'utf8');if(mutantIdx<0||MUTANTS[mutantIdx][1]!==f)return t;assert.ok(t.includes(MUTANTS[mutantIdx][2]),'mutation anchor missing: '+MUTANTS[mutantIdx][0]);return t.replace(MUTANTS[mutantIdx][2],MUTANTS[mutantIdx][3]);};
 const bundle=async(file,platform)=>{const r=await build({stdin:{contents:read(file),resolveDir:'../../'+file.split('/').slice(0,-1).join('/'),sourcefile:file,loader:file.endsWith('.jsx')?'jsx':'js'},bundle:true,write:false,format:'esm',platform,external:['react','react-dom','node:crypto'],jsx:'transform'});const out='./.enterprise-'+platform+'.mjs';fs.writeFileSync(out,r.outputFiles[0].text);try{return await import(out+'?'+Date.now())}finally{fs.rmSync(out)}};
@@ -110,8 +112,8 @@ const origErr=console.error;console.error=(...a)=>{if(/act\(|not wrapped/.test(S
 const E=await bundle('src/enterprise.jsx','browser');
 assert.deepEqual(E.NETWORK_PAGES.map(p=>p.label),['Profile','Network','Messages'],'three new tabs: Profile, Network, Messages');
 const root=createRoot(document.getElementById('root'));
-let pilot;
-function Host({user,view}){const [st,setSt]=E.useNetworkPilot(user);pilot=st;return React.createElement(E.NetworkPage,{view,currentUser:user,pilotState:st,setPilotState:setSt});}
+let pilot;const went=[];
+function Host({user,view}){const [st,setSt]=E.useNetworkPilot(user);pilot=st;return React.createElement(E.NetworkPage,{view,currentUser:user,pilotState:st,setPilotState:setSt,setPage:p=>went.push(p)});}
 const flush=async()=>{for(let i=0;i<6;i++)await act(async()=>{await new Promise(r=>setTimeout(r,0))});};
 await act(async()=>root.render(React.createElement(Host,{user:{id:'USR-002',username:'dave'},view:'network'})));await flush();
 assert.deepEqual([pilot.checked,pilot.pilot,document.getElementById('root').innerHTML],[true,false,''],'a login that is not on the pilot list sees nothing at all');
@@ -139,6 +141,14 @@ assert.deepEqual([posts[0]&&posts[0].op,replies[0]&&replies[0][1],replies[0]&&re
 await fire({t:E.FRAME_PROTOCOL,kind:'call',id:'c1',route:'net_team',body:{net:'net_directory',q:'J'}});
 assert.deepEqual(posts[1],{op:'call',route:'net_team',body:{net:'net_directory',q:'J'}},'a frame call goes to Midwest\'s server as it was asked');
 assert.deepEqual([replies[1][0].kind,replies[1][0].id,replies[1][0].status],['result','c1',200],'and the answer goes back to that call');
+const sentBefore=posts.length;
+await fire({t:E.FRAME_PROTOCOL,kind:'go',id:'g0',view:'profile'},{origin:'https://evil.example'});
+await fire({t:E.FRAME_PROTOCOL,kind:'go',id:'g1',view:'profile'});
+await fire({t:E.FRAME_PROTOCOL,kind:'go',id:'g2',view:'messages'});
+await fire({t:E.FRAME_PROTOCOL,kind:'go',id:'g3',view:'network'});
+await fire({t:E.FRAME_PROTOCOL,kind:'go',id:'g4',view:'jobs'});
+assert.deepEqual(went,['netprofile','netmessages'],'the frame can switch to the Profile or Messages tab (Open full profile), never to its own view, another page or from another origin');
+assert.equal(posts.length,sentBefore,'switching tabs calls nothing on the server');
 await act(async()=>root.unmount());
 console.error=origErr;
 console.log('PASS DYFRENT Network in Midwest: broker and tabs ('+(mutantIdx<0?'source':'mutant '+mutantIdx)+')');

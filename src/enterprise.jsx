@@ -69,8 +69,11 @@ function ConfirmPassword({ currentUser, onDone }) {
   );
 }
 
+// The views the frame may ask to switch to (DYFRENT issue 1422: Open full profile, Messages): each is one of our tabs.
+export const GO_PAGE = Object.freeze({ profile: "netprofile", network: "network", messages: "netmessages" });
+
 // The relay: answers the frame's hello and calls, only from that frame at the DYFRENT origin.
-function NetworkFrame({ view, onSignedOut }) {
+function NetworkFrame({ view, onSignedOut, onGo }) {
   const ref = useRef(null);
   const host = typeof window !== "undefined" ? window.location.origin : "";
   useEffect(() => {
@@ -80,6 +83,7 @@ function NetworkFrame({ view, onSignedOut }) {
       const m = e.data;
       if (!m || typeof m !== "object" || m.t !== FRAME_PROTOCOL || typeof m.id !== "string" || m.id.length > 64) return;
       let r;
+      if (m.kind === "go") { const p = GO_PAGE[m.view]; if (p && m.view !== view && onGo) onGo(p); return; }
       if (m.kind === "hello") r = await post({ op: "hello" });
       else if (m.kind === "call") r = await post({ op: "call", route: m.route, body: m.body });
       else return;
@@ -88,16 +92,16 @@ function NetworkFrame({ view, onSignedOut }) {
     };
     window.addEventListener("message", on);
     return () => window.removeEventListener("message", on);
-  }, [onSignedOut]);
+  }, [onSignedOut, onGo, view]);
   const src = NETWORK_APP + "/enterprise?host=" + encodeURIComponent(host) + "&view=" + encodeURIComponent(view);
   return <iframe ref={ref} key={view} src={src} title={"DYFRENT " + view} data-network-frame={view}
     style={{ display: "block", width: "100%", height: "calc(100dvh - 120px)", minHeight: 520, border: "1px solid rgba(255,255,255,0.06)", borderRadius: 14, background: "#000" }}
     allow="clipboard-write" referrerPolicy="strict-origin-when-cross-origin" />;
 }
 
-export function NetworkPage({ view, currentUser, pilotState, setPilotState }) {
+export function NetworkPage({ view, currentUser, pilotState, setPilotState, setPage }) {
   if (!pilotState.checked) return <div style={{ minHeight: "50vh" }} aria-busy="true" />;
   if (!pilotState.pilot) return null;
   if (!pilotState.session) return <ConfirmPassword currentUser={currentUser} onDone={() => setPilotState(s => ({ ...s, session: true }))} />;
-  return <NetworkFrame view={view} onSignedOut={() => setPilotState(s => ({ ...s, session: false }))} />;
+  return <NetworkFrame view={view} onSignedOut={() => setPilotState(s => ({ ...s, session: false }))} onGo={setPage} />;
 }
