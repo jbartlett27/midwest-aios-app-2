@@ -2688,7 +2688,7 @@ const sharedScreen = sharedQuote ? <ShareQuotePortal quoteData={sharedQuote} onA
 
 
           {page==="usermgmt"&&<UserMgmtPage {...ctx}/>}
-          {NETWORK_PAGES.map(p=>page===p.id&&<NetworkPage key={p.id} view={p.view} currentUser={currentUser} pilotState={networkPilot} setPilotState={setNetworkPilot}/>)}
+          {NETWORK_PAGES.map(p=>page===p.id&&<NetworkPage key={p.id} view={p.view} currentUser={currentUser} pilotState={networkPilot} setPilotState={setNetworkPilot} setPage={ctx.setPage}/>)}
         </div>
       </div>
       <style>{`
