@@ -4,7 +4,7 @@ const mutantIdx=process.argv.includes('--mutant')?Number(process.argv[process.ar
 const MUTANTS=[
   ['a plan line must be in the catalogue','api/plan.js',"if (p) items.push(cleanPlanItem(it, p)); else unknown.push(","items.push(cleanPlanItem(it, p || {code:it.code,catalogId:''})); if(!p) unknown.push("],
   ['prices are scrubbed from specs','src/planCatalog.js',"const specs = pricey || PRICEY_HEADER.test(String(row.header || '')) ? '' : clip(scrubPrices(row.row), 220);","const specs = clip(row.row, 220);"],
-  ['a repeated request makes no second card','api/plan.js',"if (already) return { prospectId: already.id, repeated: true, contact };",""],
+  ['a repeated request makes no second card','api/plan.js',"if (already) return { prospectId: already.id, repeated: true, contact, repId:","if (false) return { prospectId: already.id, repeated: true, contact, repId:"],
   ['duplicates update the existing card','api/plan.js',"const dup = findDuplicateProspect(all, contact);","const dup = null;"],
   ['a booking webhook must be signed','api/plan.js',"if (!verifyCalendly(raw, req.headers['calendly-webhook-signature'], env.PLAN_BOOKING_SIGNING_KEY)) return res.status(401).json({ ok: false });",""],
   ['the booking assigns the rep whose calendar took it','api/plan.js',"if (repId) next.assignedRep = repId;",""],
@@ -25,6 +25,12 @@ const MUTANTS=[
   ['names from the catalogue row','src/planCatalog.js',"  if (fromRow) return fromRow + size;",""],
   ['a change keeps notes and areas','api/plan.js',"keepNotes(v, current); ",""],
   ['quantities up to 100,000','src/planCatalog.js',"Math.min(100000, Math.round(Number(item && item.qty) || 1))","Math.min(10000, Math.round(Number(item && item.qty) || 1))"],
+  ['a new card goes to the chosen or default rep','api/plan.js',"assignedRep: repId, addedAt","assignedRep: '', addedAt"],
+  ['only reps Midwest offers can be chosen','api/plan.js',"reps[id].offer === true && ",""],
+  ['an existing card keeps its rep','api/plan.js',"if (!next.assignedRep && repId) next.assignedRep = repId;","if (repId) next.assignedRep = repId;"],
+  ['the booking link is the chosen rep\'s','api/plan.js',"const repId = str(forRep, 20) || str(b.defaultRep, 20);","const repId = str(b.defaultRep, 20);"],
+  ['the public rep list carries names and areas only','api/plan.js',".map((id) => ({ id: str(id, 20), name: str(reps[id].name, 80), area: str(reps[id].area, 80) }));",".map((id) => ({ id, ...reps[id] }));"],
+  ['the best time reaches the card','api/plan.js',"(bestTime ? '. Best time to reach them: ' + bestTime : '')","''"],
   ['the model gets only catalogue tools','api/plan.js',"{ name: 'get_product',","{ name: 'get_job', description: 'x', input_schema: { type: 'object', properties: {} } },\n  { name: 'get_product',"],
 ];
 const read=(f)=>{const t=fs.readFileSync('../../'+f,'utf8');if(mutantIdx<0||MUTANTS[mutantIdx][1]!==f)return t;assert.ok(t.includes(MUTANTS[mutantIdx][2]),'mutation anchor missing: '+MUTANTS[mutantIdx][0]);return t.replace(MUTANTS[mutantIdx][2],MUTANTS[mutantIdx][3]);};
@@ -129,7 +135,7 @@ assert.equal(res.code,429,'a limit of 0 turns the chat off');
 assert.equal(P.costCents({input_tokens:1000000,output_tokens:100000}),450,'cost is counted from the tokens each answer used');
 db.settings=async()=>({booking:{defaultRep:'S001',reps:{S001:{url:'https://calendly.com/dave/intro',hostEmails:['dave@mwf.test']}}}});
 res=await call('config',{},{},'GET');
-assert.deepEqual([res.body.booking,res.body.vendors,res.body.theme,Object.keys(res.body).sort()],[true,['Acme Seating'],'light',['booking','ok','theme','vendors']],'the public config tells only whether booking is on and the brand names');
+assert.deepEqual([res.body.booking,res.body.vendors,res.body.theme,res.body.reps,Object.keys(res.body).sort()],[true,['Acme Seating'],'light',[],['booking','ok','reps','theme','vendors']],'the public config tells only whether booking is on, the brand names and the reps offered (none here)');
 
 // 5. The duplicate rules are the Prospects page's own.
 const app2=fs.readFileSync('../../src/App2.jsx','utf8');
@@ -139,4 +145,30 @@ const {prospectKeys}=await import('../../src/prospectKeys.js');
 for(const p of [{name:"Bobby's School",company:'The ABC Schools, Inc.'},{email:' A@B.com '},{phone:'(312) 555-0100 x1',name:'A'},{name:'John Smith'},{linkedin:'https://www.linkedin.com/in/x/'}])assert.deepEqual(prospectKeys(p),pageKeys(p),'the server\'s duplicate keys equal the Prospects page\'s');
 {await P.saveRequest({db,body:{requestId:'dddddddd-1111-2222-3333-444444444444',contact:{name:'Big District',email:'big@district.test',company:'Big District'},plan:{project:{},items:Array.from({length:200},()=>({vendor:'Acme Seating',code:'FD-2030',name:'Flex Desk',qty:5,area:'Classrooms'})),assumptions:[]}}});
  const bc=saved.find(p=>p.data.email==='big@district.test').data;assert.deepEqual([bc.planRequests[0].items.length,bc.planRequests[0].items[0].area],[200,'Classrooms'],'a large request reaches the card with every line and its area');}
+
+// 6. Reps (Maureen, Nov 24): Dave is the default, customers may ask for an offered rep such as Jim Lindner, no booking link needed.
+{const ST={booking:{defaultRep:'S001',reps:{S001:{name:'Dave Welter',offer:true,area:'Illinois & Wisconsin',url:'',hostEmails:['dave@mwf.test']},S005:{name:'Jim Lindner',offer:true,area:'Milwaukee area',url:'https://calendly.com/jim/call',hostEmails:['jim@mwf.test']},S003:{name:'Lisa Office',offer:false,area:'',url:'',hostEmails:['lisa@mwf.test']}}}};
+ assert.deepEqual(P.plannerReps(ST),[{id:'S001',name:'Dave Welter',area:'Illinois & Wisconsin'},{id:'S005',name:'Jim Lindner',area:'Milwaukee area'}],'customers see the offered reps by name and area only, never an email or calendar');
+ assert.deepEqual([P.chooseRep(ST,'S005'),P.chooseRep(ST,'S003'),P.chooseRep(ST,''),P.chooseRep({},'S005')],[{repId:'S005',chosen:true},{repId:'S001',chosen:false},{repId:'S001',chosen:false},{repId:'',chosen:false}],'a customer can pick only an offered rep; anything else goes to the default rep');
+ saved=[{id:'PR-KEEP',data:{name:'Kim Ray',email:'kim@west.test',company:'West High',assignedRep:'S004',status:'Contacted'}},{id:'PR-OPEN',data:{name:'Lee Park',email:'lee@east.test',company:'East High',assignedRep:'',status:'New'}}];
+ const H2=P.planHandler({},{db:{...db,settings:async()=>ST},fetch:fetcher});
+ const req=async(id,contact,extra={})=>{const r2={code:0,body:null,setHeader(){},status(c){this.code=c;return this},json(b){this.body=b;return this}};await H2({method:'POST',query:{op:'request'},headers:{'x-forwarded-for':'9.9.9.'+id.slice(0,2)},body:{requestId:id,contact,plan,...extra}},r2);return r2;};
+ let r1=await req('11111111-aaaa-bbbb-cccc-000000000001',{name:'Ann Bell',email:'ann@north.test',company:'North Elementary'});
+ const c1=saved.find(p=>p.data.email==='ann@north.test').data;
+ assert.deepEqual([r1.code,c1.assignedRep,r1.body.rep,r1.body.booking],[200,'S001','Dave Welter',''],'no preference: the card goes to Dave, the default rep, and with no booking link none is offered');
+ r1=await req('22222222-aaaa-bbbb-cccc-000000000002',{name:'Bo Diaz',email:'bo@mke.test',company:'Milwaukee Prep'},{preferredRep:'S005',bestTime:'Weekday mornings'});
+ const c2=saved.find(p=>p.data.email==='bo@mke.test').data;
+ assert.deepEqual([c2.assignedRep,r1.body.rep,c2.planRequests[0].preferredRep,c2.planRequests[0].bestTime],['S005','Jim Lindner','S005','Weekday mornings'],'a customer who asks for Jim Lindner reaches Jim: his card, his name on the confirmation');
+ assert.ok(/Asked to talk with Jim Lindner/.test(c2.notes)&&/Best time to reach them: Weekday mornings/.test(c2.notes),'the rep reads who was asked for and the best time on the card');
+ assert.ok(r1.body.booking.startsWith('https://calendly.com/jim/call?')&&r1.body.booking.includes('utm_content='),'the booking link offered is Jim\'s own, tagged with the card');
+ r1=await req('33333333-aaaa-bbbb-cccc-000000000003',{name:'Kim Ray',email:'kim@west.test',company:'West High'},{preferredRep:'S005'});
+ assert.equal(saved.find(p=>p.id==='PR-KEEP').data.assignedRep,'S004','a card that already has a rep keeps it');
+ r1=await req('44444444-aaaa-bbbb-cccc-000000000004',{name:'Lee Park',email:'lee@east.test',company:'East High'},{preferredRep:'S005'});
+ assert.deepEqual([saved.find(p=>p.id==='PR-OPEN').data.assignedRep,r1.body.rep],['S005','Jim Lindner'],'an unassigned card goes to the rep the customer chose');
+ assert.equal(P.bookingFor({booking:{defaultRep:'S005',reps:{S005:{url:'https://calendly.com/jim/call'},S001:{url:''}}}},'x',{},'S001'),null,'a chosen rep without a link offers no link, never someone else\'s calendar');
+ res=await call('config',{},{},'GET');}
+{const dbx={...db,settings:async()=>({booking:{defaultRep:'S001',reps:{S001:{name:'Dave Welter',offer:true,area:'IL',url:'',hostEmails:['dave@mwf.test']}}}})};const Hx=P.planHandler({},{db:dbx,fetch:fetcher});
+ const rr={code:0,body:null,setHeader(){},status(c){this.code=c;return this},json(b){this.body=b;return this}};await Hx({method:'GET',query:{op:'config'},headers:{}},rr);
+ assert.deepEqual([rr.body.booking,rr.body.reps],[false,[{id:'S001',name:'Dave Welter',area:'IL'}]],'the config lists Dave for the request form, and no booking is offered without a link');
+ assert.ok(!/@/.test(JSON.stringify(rr.body)),'no staff email reaches the public page');}
 console.log('PASS Furniture Planner server ('+(mutantIdx<0?'source':'mutant '+mutantIdx)+')');

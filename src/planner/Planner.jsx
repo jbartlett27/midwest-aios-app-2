@@ -254,15 +254,17 @@ function Landing({ onStart, vendors }) {
   );
 }
 
-function RequestDialog({ plan, onClose, makePdf, campaign }) {
+function RequestDialog({ plan, onClose, makePdf, campaign, reps = [] }) {
   const [f, setF] = useState({ name: '', email: '', phone: '', company: plan.project.organization || '', title: '', city: '', state: '' });
+  // Who the customer would like to talk with (the reps Midwest offers) and when to reach them; both optional.
+  const [rep, setRep] = useState(''); const [bestTime, setBestTime] = useState('');
   const [busy, setBusy] = useState(false); const [err, setErr] = useState(''); const [done, setDone] = useState(null);
   const reqId = useRef(uid());   // the same id on every retry, so a repeat never makes a second card
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
   const send = async (e) => {
     e.preventDefault(); if (busy) return; setBusy(true); setErr('');
     let pdf = ''; try { const bytes = await makePdf(f); let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); pdf = btoa(s); } catch (x) { pdf = ''; }
-    const r = await post('request', { requestId: reqId.current, contact: f, plan: { project: plan.project, assumptions: plan.assumptions, items: plan.items.map((i) => ({ vendor: i.vendor, code: i.code, name: i.name, qty: i.qty, note: i.note, area: i.area || '', catalog: i.catalog, page: i.page })) }, campaign, pdf });
+    const r = await post('request', { requestId: reqId.current, contact: f, plan: { project: plan.project, assumptions: plan.assumptions, items: plan.items.map((i) => ({ vendor: i.vendor, code: i.code, name: i.name, qty: i.qty, note: i.note, area: i.area || '', catalog: i.catalog, page: i.page })) }, campaign, pdf, preferredRep: rep, bestTime });
     setBusy(false);
     if (r.ok) setDone(r); else setErr(r.error);
   };
@@ -273,9 +275,9 @@ function RequestDialog({ plan, onClose, makePdf, campaign }) {
           <div className="ok" data-request="saved">
             <div className="tick">&#10003;</div>
             <h3>Your request is in</h3>
-            <p>Midwest has your plan and will follow up with pricing. Keep your PDF for your records.</p>
+            <p data-request-rep>{done.rep ? done.rep + ' from Midwest has your plan and will follow up with pricing.' : 'Midwest has your plan and will follow up with pricing.'} Keep your PDF for your records.</p>
             <div className="row">
-              {done.booking && <a className="btn" href={done.booking} target="_blank" rel="noopener noreferrer" data-booking>Book a call with Midwest</a>}
+              {done.booking && <a className="btn" href={done.booking} target="_blank" rel="noopener noreferrer" data-booking>{done.rep ? 'Book a call with ' + done.rep.split(' ')[0] : 'Book a call with Midwest'}</a>}
               <button type="button" className="btn ghost" onClick={onClose}>Back to my plan</button>
             </div>
           </div>
@@ -291,6 +293,11 @@ function RequestDialog({ plan, onClose, makePdf, campaign }) {
               <label className="w">School or company<input required autoComplete="organization" value={f.company} onChange={set('company')} /></label>
               <label>City<input autoComplete="address-level2" value={f.city} onChange={set('city')} /></label>
               <label>State<input autoComplete="address-level1" value={f.state} onChange={set('state')} /></label>
+              {reps.length > 0 && <label className="w">Who would you like to talk with?<select value={rep} onChange={(e) => setRep(e.target.value)} data-request-rep-pick>
+                <option value="">No preference, Midwest will match you</option>
+                {reps.map((r) => <option key={r.id} value={r.id}>{r.name}{r.area ? ', ' + r.area : ''}</option>)}
+              </select></label>}
+              <label className="w">Best time to reach you (optional)<input placeholder="For example, weekday mornings" maxLength={120} value={bestTime} onChange={(e) => setBestTime(e.target.value)} data-request-time /></label>
             </div>
             {err && <div className="err" role="alert">{err}</div>}
             <div style={{ display: 'flex', gap: 10, marginTop: 20, flexWrap: 'wrap' }}>
@@ -311,7 +318,7 @@ export default function Planner() {
   const [plan, setPlan] = useState((kept && kept.plan) || EMPTY_PLAN);
   const [ref] = useState(() => (kept && kept.ref) || 'MW-' + uid().slice(0, 8).toUpperCase());
   const [draft, setDraft] = useState(''); const [busy, setBusy] = useState(false);
-  const [tab, setTab] = useState('chat'); const [asking, setAsking] = useState(false); const [vendors, setVendors] = useState([]);
+  const [tab, setTab] = useState('chat'); const [asking, setAsking] = useState(false); const [vendors, setVendors] = useState([]); const [reps, setReps] = useState([]);
   const [opening, setOpening] = useState(''); const ta = useRef(null);
   const grow = useCallback((el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }, []);
   // Details and notes grow to show every line, after any change to the plan and when the screen turns or resizes.
@@ -332,7 +339,7 @@ export default function Planner() {
   }, [theme]);
   const end = useRef(null);
   useEffect(() => { save({ messages, plan, ref }); }, [messages, plan, ref]);
-  useEffect(() => { fetch(API + '?op=config').then((r) => r.json()).then((d) => { setVendors(Array.isArray(d.vendors) ? d.vendors : []); if (!chosen && d.theme === 'dark') setTheme('dark'); }).catch(() => { }); }, []);
+  useEffect(() => { fetch(API + '?op=config').then((r) => r.json()).then((d) => { setVendors(Array.isArray(d.vendors) ? d.vendors : []); setReps(Array.isArray(d.reps) ? d.reps : []); if (!chosen && d.theme === 'dark') setTheme('dark'); }).catch(() => { }); }, []);
   useEffect(() => { document.title = 'Midwest Furniture Planner'; const on = () => setScrolled(window.scrollY > 4); window.addEventListener('scroll', on); return () => window.removeEventListener('scroll', on); }, []);
   useEffect(() => { if (end.current) end.current.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [messages, busy]);
   const inPlan = useMemo(() => new Set(plan.items.map((i) => i.id)), [plan.items]);
@@ -469,7 +476,7 @@ export default function Planner() {
           </section>
         </main>
       )}
-      {asking && <RequestDialog plan={plan} onClose={() => setAsking(false)} makePdf={makePdf} campaign={campaign} />}
+      {asking && <RequestDialog plan={plan} onClose={() => setAsking(false)} makePdf={makePdf} campaign={campaign} reps={reps} />}
     </div>
   );
 }

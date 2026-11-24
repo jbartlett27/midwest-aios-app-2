@@ -6,7 +6,7 @@
 //                     customers, notes or staff tools exist here, so none can be asked for or leaked.
 //   POST ?op=request  "Request a priced quote": saves the plan and contact as a Prospect card (the Prospects page's
 //                     own duplicate rules), safe to repeat (the request id is kept on the card).
-//   GET  ?op=config   the booking link to offer after a request (PLANNER_SETTINGS, set on Users & Permissions).
+//   GET  ?op=config   whether a booking link is set, and the reps a customer may ask for by name (names and areas only).
 //   POST ?op=booking  Calendly's "invitee created" webhook: a CONFIRMED booking. Signed with PLAN_BOOKING_SIGNING_KEY;
 //                     matched to the prospect and assigned to the rep whose calendar took the meeting.
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
@@ -201,9 +201,27 @@ export async function runChat({ env, db, fetcher = fetch, messages, plan, model 
 }
 
 // ---- "Request a priced quote" ----
-export function bookingFor(settings, prospectId, contact) {
+// The reps a customer may ask for by name (Users & Permissions >> Furniture Planner >> "Customers can choose").
+// Only a name and an area leave the server: never an email, a calendar or anything else about the rep.
+export function plannerReps(settings) {
   const b = plain(settings && settings.booking) ? settings.booking : {};
-  const repId = str(b.defaultRep, 20); const rep = plain(b.reps) && plain(b.reps[repId]) ? b.reps[repId] : null;
+  const reps = plain(b.reps) ? b.reps : {};
+  return Object.keys(reps).filter((id) => plain(reps[id]) && reps[id].offer === true && str(reps[id].name, 80))
+    .map((id) => ({ id: str(id, 20), name: str(reps[id].name, 80), area: str(reps[id].area, 80) }));
+}
+// Who a new request goes to: the rep the customer asked for when Midwest offers that rep, otherwise the default rep.
+export function chooseRep(settings, wanted) {
+  const w = str(wanted, 20);
+  if (w && plannerReps(settings).some((r) => r.id === w)) return { repId: w, chosen: true };
+  const b = plain(settings && settings.booking) ? settings.booking : {};
+  return { repId: str(b.defaultRep, 20), chosen: false };
+}
+const repName = (settings, repId) => { const b = plain(settings && settings.booking) ? settings.booking : {}; const r = plain(b.reps) && plain(b.reps[repId]) ? b.reps[repId] : null; return r ? str(r.name, 80) : ''; };
+// The booking link offered after a request: the link of the rep the request went to (the default rep when none is
+// given). A rep without a link offers none, so a customer who asked for Jim is never sent to someone else's calendar.
+export function bookingFor(settings, prospectId, contact, forRep) {
+  const b = plain(settings && settings.booking) ? settings.booking : {};
+  const repId = str(forRep, 20) || str(b.defaultRep, 20); const rep = plain(b.reps) && plain(b.reps[repId]) ? b.reps[repId] : null;
   const url = rep && /^https:\/\/[^\s]+$/.test(String(rep.url || '')) ? String(rep.url) : '';
   if (!url) return null;
   const u = new URL(url);
@@ -212,7 +230,7 @@ export function bookingFor(settings, prospectId, contact) {
   return { url: u.href, repId };
 }
 
-export async function saveRequest({ db, body, now = () => new Date() }) {
+export async function saveRequest({ db, body, settings = {}, now = () => new Date() }) {
   const c = plain(body.contact) ? body.contact : {};
   const contact = { name: str(c.name, 120), email: normProspectEmail(str(c.email, 200)), phone: str(c.phone, 40), company: str(c.company, 160), title: str(c.title, 120), city: str(c.city, 80), state: str(c.state, 40), type: str(c.type, 60) };
   if (!contact.name || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(contact.email) || !contact.company) throw Object.assign(new Error('Please add your name, a valid email and your school or company.'), { status: 400 });
@@ -221,20 +239,22 @@ export async function saveRequest({ db, body, now = () => new Date() }) {
   const plan = plain(body.plan) ? body.plan : {};
   const items = (Array.isArray(plan.items) ? plan.items : []).slice(0, PLAN_LINES).map((i) => ({ area: str(i.area, 80), vendor: str(i.vendor, 80), code: str(i.code, 60), name: str(i.name, 120), qty: Math.max(1, Math.min(100000, Math.round(Number(i.qty) || 1))), note: str(i.note, 200), catalog: str(i.catalog, 100), page: Number(i.page) || null }));
   const project = {}; for (const [k, v] of Object.entries(plain(plan.project) ? plan.project : {}).slice(0, 12)) project[str(k, 30)] = str(v, 300);
+  const { repId, chosen } = chooseRep(settings, body.preferredRep);
+  const bestTime = str(body.bestTime, 120);
   const camp = plain(body.campaign) ? body.campaign : {};
   const campaign = {}; for (const k of ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'ref', 'landing', 'referrer']) if (camp[k]) campaign[k] = str(camp[k], 200);
   const rows = await db.prospects();
   const all = (rows || []).map((r) => { try { return { id: r.id, ...JSON.parse(r.content) }; } catch (e) { return null; } }).filter(Boolean);
   const already = all.find((p) => Array.isArray(p.planRequests) && p.planRequests.some((q) => q.id === requestId));
-  if (already) return { prospectId: already.id, repeated: true, contact };
+  if (already) return { prospectId: already.id, repeated: true, contact, repId: already.assignedRep || repId, repName: repName(settings, already.assignedRep || repId) };
   let pdfUrl = '';
   if (typeof body.pdf === 'string' && body.pdf.length < 6000000) {
     const bytes = Buffer.from(body.pdf, 'base64');
     if (bytes.slice(0, 5).toString() === '%PDF-') pdfUrl = await db.uploadPdf(bytes);
   }
   const at = now().toISOString();
-  const request = { id: requestId, at, project, items, assumptions: (Array.isArray(plan.assumptions) ? plan.assumptions : []).map((a) => str(a, 300)).slice(0, 12), pdfUrl, campaign };
-  const summary = 'Furniture Planner request ' + at.slice(0, 10) + ': ' + (project.room || 'space') + (project.headcount ? ', ' + project.headcount + ' people' : '') + '. ' + items.map((i) => i.qty + ' x ' + i.vendor + ' ' + i.code + (i.name ? ' (' + i.name + ')' : '')).join('; ') + (pdfUrl ? '. Plan PDF: ' + pdfUrl : '');
+  const request = { id: requestId, at, project, items, assumptions: (Array.isArray(plan.assumptions) ? plan.assumptions : []).map((a) => str(a, 300)).slice(0, 12), pdfUrl, campaign, ...(chosen ? { preferredRep: repId } : {}), ...(bestTime ? { bestTime } : {}) };
+  const summary = 'Furniture Planner request ' + at.slice(0, 10) + ': ' + (project.room || 'space') + (project.headcount ? ', ' + project.headcount + ' people' : '') + '. ' + items.map((i) => i.qty + ' x ' + i.vendor + ' ' + i.code + (i.name ? ' (' + i.name + ')' : '')).join('; ') + (pdfUrl ? '. Plan PDF: ' + pdfUrl : '') + (chosen ? '. Asked to talk with ' + (repName(settings, repId) || repId) : '') + (bestTime ? '. Best time to reach them: ' + bestTime : '');
   const dup = findDuplicateProspect(all, contact);
   if (dup) {
     const next = { ...dup }; delete next.id;
@@ -243,12 +263,14 @@ export async function saveRequest({ db, body, now = () => new Date() }) {
     next.notes = (next.notes ? next.notes + '\n\n' : '') + summary;
     if (!next.source) next.source = 'Furniture Planner';
     if (!next.status || next.status === 'Lost') next.status = 'New';
+    // An existing card keeps its rep; an unassigned one goes to the rep this request chose (or the default rep).
+    if (!next.assignedRep && repId) next.assignedRep = repId;
     await db.saveProspect(dup.id, next);
-    return { prospectId: dup.id, updated: true, contact };
+    return { prospectId: dup.id, updated: true, contact, repId: next.assignedRep || '', repName: repName(settings, next.assignedRep) };
   }
   const id = 'PR-PLAN-' + randomBytes(5).toString('hex').toUpperCase();
-  await db.saveProspect(id, { ...contact, status: 'New', assignedRep: '', addedAt: at, source: 'Furniture Planner', campaign, notes: summary, planRequests: [request] });
-  return { prospectId: id, created: true, contact };
+  await db.saveProspect(id, { ...contact, status: 'New', assignedRep: repId, addedAt: at, source: 'Furniture Planner', campaign, notes: summary, planRequests: [request] });
+  return { prospectId: id, created: true, contact, repId, repName: repName(settings, repId) };
 }
 
 // ---- a confirmed booking (Calendly invitee.created) ----
@@ -310,7 +332,7 @@ export function planHandler(env, deps = {}) {
       if (op === 'config') {
         const [settings, rows] = await Promise.all([db.settings().catch(() => ({})), db.catalogRows().catch(() => [])]);
         const vendors = [...new Set(publicCatalogs(catalogRecords(rows)).map((r) => str(r.vendorName, 60)).filter(Boolean))].sort();
-        return res.status(200).json({ ok: true, booking: !!bookingFor(settings, 'x', {}), vendors, theme: settings && settings.theme === 'dark' ? 'dark' : 'light' });
+        return res.status(200).json({ ok: true, booking: !!bookingFor(settings, 'x', {}), reps: plannerReps(settings), vendors, theme: settings && settings.theme === 'dark' ? 'dark' : 'light' });
       }
       if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'Use POST.' });
       const body = plain(req.body) ? req.body : (() => { try { return JSON.parse(req.body); } catch (e) { return {}; } })();
@@ -324,9 +346,10 @@ export function planHandler(env, deps = {}) {
       }
       if (op === 'request') {
         if (limited(ip, 8, 10 * 60 * 1000)) return res.status(429).json({ ok: false, error: 'Please wait a minute and try again.' });
-        const saved = await saveRequest({ db, body });
-        const booking = bookingFor(await db.settings().catch(() => ({})), saved.prospectId, saved.contact);
-        return res.status(200).json({ ok: true, saved: true, repeated: !!saved.repeated, booking: booking ? booking.url : '' });
+        const settings = await db.settings().catch(() => ({}));
+        const saved = await saveRequest({ db, body, settings });
+        const booking = bookingFor(settings, saved.prospectId, saved.contact, saved.repId);
+        return res.status(200).json({ ok: true, saved: true, repeated: !!saved.repeated, booking: booking ? booking.url : '', rep: saved.repName || '' });
       }
       return res.status(400).json({ ok: false, error: 'Unknown request.' });
     } catch (e) {
