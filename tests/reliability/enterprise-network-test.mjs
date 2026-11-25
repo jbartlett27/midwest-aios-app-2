@@ -15,6 +15,11 @@ const MUTANTS=[
   ['an expired session is refused','api/enterprise-network.js',"|| s.e <= now) return null;",") return null;"],
   ['the frame can switch tabs (Open full profile)','src/enterprise.jsx',"if (p && m.view !== view && onGo) onGo(p); return;","return;"],
   ['the frame cannot switch to a page that is not one of the three','src/enterprise.jsx',"const p = GO_PAGE[m.view]; if (p &&","const p = GO_PAGE[m.view] || m.view; if (p &&"],
+  ['the connector relay takes the person from the connector, never from the request','api/enterprise-network.js',"const request = kind === 'session' ? { subject: who.id, name: who.name, kind } : { subject: who.id, name: who.name, kind, op, payload };","const request = { ...q, subject: q.subject || who.id, name: who.name };"],
+  ['the connector relay only serves pilot logins','api/enterprise-network.js',"if (!pilotList(env).includes(who.id)) return say(403","if (false) return say(403"],
+  ['the connector relay sends only net_ and profile_ ops','api/enterprise-network.js',"else if (!((kind === 'net' && NET_OP.test(op)) || (kind === 'profile' && PROFILE_OP.test(op))) || !plain(payload))","else if (!plain(payload))"],
+  ['the connector relay refuses a token the connector does not vouch for','api/enterprise-network.js',"const w = r.status === 200 ? await r.json() : null;","const w = { ok: true, nu: 'USR-001', nn: 'Maureen Welter' };"],
+  ['the connector relay asks only an https connector','api/enterprise-network.js',"return u.protocol === 'https:' && !u.username","return !u.username"],
 ];
 const read=(f)=>{const t=fs.readFileSync('../../'+f,'utf8');if(mutantIdx<0||MUTANTS[mutantIdx][1]!==f)return t;assert.ok(t.includes(MUTANTS[mutantIdx][2]),'mutation anchor missing: '+MUTANTS[mutantIdx][0]);return t.replace(MUTANTS[mutantIdx][2],MUTANTS[mutantIdx][3]);};
 const bundle=async(file,platform)=>{const r=await build({stdin:{contents:read(file),resolveDir:'../../'+file.split('/').slice(0,-1).join('/'),sourcefile:file,loader:file.endsWith('.jsx')?'jsx':'js'},bundle:true,write:false,format:'esm',platform,external:['react','react-dom','node:crypto'],jsx:'transform'});const out='./.enterprise-'+platform+'.mjs';fs.writeFileSync(out,r.outputFiles[0].text);try{return await import(out+'?'+Date.now())}finally{fs.rmSync(out)}};
@@ -37,7 +42,14 @@ const fakeFetch=async(url,init={})=>{
     return {status:200,json:async()=>({ok:true,echo:{kind:b.request.kind,op:b.request.op,subject:b.request.subject,payload:b.request.payload}})};}
   throw new Error('unexpected fetch '+url);
 };
-const handler=B.enterpriseBroker(env,{fetch:fakeFetch,now:()=>NOW});
+// The connector (midwest-aios-mcp /network-whois): who a connector access token speaks for. Made-up tokens.
+const WHOIS={'tok-maureen':{nu:'USR-001',nn:'Maureen Welter'},'tok-dave':{nu:'USR-002',nn:'Dave Welter'}};
+let whois=[],whoisDown=false;
+const baseFetch=fakeFetch;
+const relayFetch=async(url,init={})=>{const u=new URL(url);
+  if(u.hostname==='midwest-aios-mcp.vercel.app'){whois.push({url:String(url),init});if(whoisDown)throw new Error('down');const t=JSON.parse(init.body).token;const w=WHOIS[t];return w?{status:200,json:async()=>({ok:true,...w})}:{status:401,json:async()=>({ok:false})};}
+  return baseFetch(url,init);};
+const handler=B.enterpriseBroker(env,{fetch:relayFetch,now:()=>NOW});
 const call=async(body,{origin='https://midwestaios.com',cookie='',method='POST'}={})=>{const res={code:0,headers:{},body:null,setHeader(k,v){this.headers[k]=v},status(c){this.code=c;return this},json(b){this.body=b;return this}};await handler({method,headers:{origin,cookie},body},res);return res;};
 const cookieOf=(res)=>String(res.headers['Set-Cookie']||'').split(';')[0];
 
@@ -98,6 +110,45 @@ const closed=B.enterpriseBroker({...env,ENTERPRISE_NETWORK_PREVIEW:''},{fetch:fa
 const cr={code:0,headers:{},body:null,setHeader(){},status(c){this.code=c;return this},json(b){this.body=b;return this}};await closed({method:'POST',headers:{origin:'https://midwestaios.com'},body:{op:'status',user:'USR-001'}},cr);
 assert.deepEqual([cr.body.pilot,cr.body.code],[false,'closed'],'with the preview switch off nobody sees the tabs');
 assert.deepEqual([...read('api/enterprise-network.js').matchAll(/SB \+ '\/([a-z_]+)/g)].map(m=>m[1]),['users'],'the broker reads one Midwest table, users (the sign-in check), and no business table');
+
+// ── 1b. The connector relay (server to server, no origin, no cookie) ──────
+const CONN='https://midwest-aios-mcp.vercel.app';
+const relayEnv={...env,ENTERPRISE_CONNECTOR_ORIGIN:CONN};
+const relay=B.enterpriseBroker(relayEnv,{fetch:relayFetch,now:()=>NOW});
+const rcall=async(body,h=relay)=>{const res={code:0,headers:{},body:null,setHeader(k,v){this.headers[k]=v},status(c){this.code=c;return this},json(b){this.body=b;return this}};await h({method:'POST',headers:{},body},res);return res;};
+sent=[];whois=[];r=await rcall({op:'connector',token:'tok-maureen',request:{kind:'session',op:'net_threads'}});
+assert.equal(r.code,400,'a session request names no op');assert.deepEqual([sent.length,whois.length],[0,0],'and nothing is asked or sent');
+sent=[];whois=[];r=await rcall({op:'connector',token:'tok-maureen',request:{kind:'session',subject:'USR-000'}});
+assert.deepEqual([r.code,r.body.member&&r.body.member.name],[200,'Maureen Welter'],'the connector asks who Maureen is, with no browser origin and no cookie');
+assert.equal(whois.length,1,'the connector is asked once about the token');
+assert.deepEqual([whois[0].url,whois[0].init.method,whois[0].init.redirect,JSON.parse(whois[0].init.body)],[CONN+'/network-whois','POST','error',{token:'tok-maureen'}],'at its own /network-whois, POST, no redirects, with only the token');
+assert.deepEqual(sent[0].request,{subject:'USR-001',name:'Maureen Welter',kind:'session'},'and DYFRENT gets the same signed session request the tabs send, for Maureen');
+sent=[];r=await rcall({op:'connector',token:'tok-maureen',request:{kind:'net',op:'net_thread_send',subject:'USR-000',name:'J Bartlett',payload:{id:'nt-0123456789abcdef',body:'hi',subject:'USR-000'}}});
+assert.equal(r.code,200,'a message through the relay is answered');
+assert.deepEqual([sent[0].request.subject,sent[0].request.name,sent[0].request.op],['USR-001','Maureen Welter','net_thread_send'],'naming someone else in the request changes nothing: it goes as the person the connector vouched for');
+assert.deepEqual(Object.keys(sent[0].request).sort(),['kind','name','op','payload','subject'],'and the signed request holds only what DYFRENT reads');
+sent=[];r=await rcall({op:'connector',token:'tok-maureen',request:{kind:'profile',op:'profile_me',payload:{}}});
+assert.deepEqual(r.body.echo&&[r.body.echo.kind,r.body.echo.op,r.body.echo.subject],['profile','profile_me','USR-001'],'a Profile call goes as a profile op');
+for(const [label,q] of [['another kind',{kind:'brain',op:'brain_chat',payload:{}}],['a non-network op',{kind:'net',op:'brain_chat',payload:{}}],['a profile op under net',{kind:'net',op:'profile_me',payload:{}}],['a net op under profile',{kind:'profile',op:'net_threads',payload:{}}],['no payload',{kind:'net',op:'net_threads'}],['an odd op name',{kind:'net',op:'net_threads; drop',payload:{}}]]){
+  sent=[];whois=[];r=await rcall({op:'connector',token:'tok-maureen',request:q});
+  assert.deepEqual([r.code,sent.length,whois.length],[400,0,0],label+' is refused before anything is asked or sent');}
+sent=[];whois=[];r=await rcall({op:'connector',token:'forged',request:{kind:'session'}});
+assert.deepEqual([r.code,r.body.code,sent.length],[401,'signin',0],'a token the connector does not vouch for is refused, nothing sent to DYFRENT');
+sent=[];r=await rcall({op:'connector',token:'tok-dave',request:{kind:'net',op:'net_threads',payload:{}}});
+assert.deepEqual([r.code,r.body.code,sent.length],[403,'pilot',0],'a real Midwest person who is not on the pilot list is refused');
+sent=[];r=await rcall({op:'connector',request:{kind:'session'}});
+assert.deepEqual([r.code,sent.length],[400,0],'no token: refused');
+whoisDown=true;sent=[];r=await rcall({op:'connector',token:'tok-maureen',request:{kind:'session'}});
+assert.deepEqual([r.code,sent.length],[503,0],'when the connector cannot answer, nothing is sent');whoisDown=false;
+for(const o of ['', 'http://midwest-aios-mcp.vercel.app', 'https://user:pw@midwest-aios-mcp.vercel.app', 'https://midwest-aios-mcp.vercel.app/elsewhere']){
+  const h=B.enterpriseBroker({...env,ENTERPRISE_CONNECTOR_ORIGIN:o},{fetch:relayFetch,now:()=>NOW});
+  sent=[];whois=[];r=await rcall({op:'connector',token:'tok-maureen',request:{kind:'session'}},h);
+  assert.deepEqual([r.body.code,sent.length,whois.length],['closed',0,0],'connector origin '+JSON.stringify(o)+' keeps the relay closed');}
+const relayOff=B.enterpriseBroker({...relayEnv,ENTERPRISE_NETWORK_PREVIEW:''},{fetch:relayFetch,now:()=>NOW});
+sent=[];whois=[];r=await rcall({op:'connector',token:'tok-maureen',request:{kind:'session'}},relayOff);
+assert.deepEqual([r.body.code,sent.length,whois.length],['closed',0,0],'the preview switch off closes the relay too');
+r=await call({op:'hello'},{cookie:maureen,origin:'https://evil.example'});
+assert.equal(r.code,403,'the browser ops still need a Midwest page');
 
 // ── 2. The tabs and the relay ─────────────────────────────────────────────
 const dom=new JSDOM('<div id="root"></div>',{url:'https://midwestaios.com/'});

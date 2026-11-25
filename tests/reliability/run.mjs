@@ -6,7 +6,7 @@ for(const tz of ['UTC','America/Chicago','America/Los_Angeles']){console.log('Ti
 run(['job-patch-test.mjs']);run(['build-harness.mjs']);run(['render-test.mjs']);run(['project-due-date-test.mjs']);run(['po-bill-amount-test.mjs']);for(let i=0;i<8;i++)run(['po-bill-amount-test.mjs','--mutant',String(i)],{fail:true});
 run(['file-index-test.mjs']);run(['files-brain-test.mjs']);run(['vendor-catalog-test.mjs']);run(['catalog-ingest-test.mjs']);run(['catalog-api-test.mjs']);run(['vendor-catalog-brain-test.mjs']);
 run(['brain-grounding-test.mjs']);for(let i=0;i<9;i++)run(['brain-grounding-test.mjs','--mutant',String(i)],{fail:true});
-run(['enterprise-network-test.mjs']);for(let i=0;i<10;i++)run(['enterprise-network-test.mjs','--mutant',String(i)],{fail:true});
+run(['enterprise-network-test.mjs']);for(let i=0;i<15;i++)run(['enterprise-network-test.mjs','--mutant',String(i)],{fail:true});
 run(['vendor-history-test.mjs']);for(let i=0;i<6;i++)run(['vendor-history-test.mjs','--mutant',String(i)],{fail:true});
 run(['planner-test.mjs']);for(let i=0;i<40;i++)run(['planner-test.mjs','--mutant',String(i)],{fail:true});
 run(['catalog-lifecycle-test.mjs']);run(['catalog-controls-ui-test.mjs']);run(['catalog-brain-controls-test.mjs']);
