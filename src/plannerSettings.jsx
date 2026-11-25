@@ -16,6 +16,13 @@ const inp = { width: "100%", padding: "10px 12px", background: "#000", border: "
 
 // The public planner's link, for anyone in the app: open it in a new tab or copy it to share (Sales Portal and Users & Permissions).
 export const PLANNER_URL = "https://midwestaios.com/plan";
+// A rep's share link: midwestaios.com/plan?rep=jim-lindner. The same slug rule as the server (api/plan.js repSlug).
+export const repSlug = (name) => String(name || "").toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+export const repShareUrl = (name) => PLANNER_URL + "?rep=" + repSlug(name);
+function copyText(text, ok) {
+  try { if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text).then(ok, () => window.prompt("Copy this link", text)); return; } } catch (e) { }
+  window.prompt("Copy this link", text);
+}
 export function PlannerLinkBar({ notify }) {
   const [copied, setCopied] = useState(false);
   const done = () => { setCopied(true); if (notify) notify("Planner link copied"); setTimeout(() => setCopied(false), 2200); };
@@ -57,10 +64,13 @@ export function PlannerLinkBar({ notify }) {
 export function PlannerBookingCard({ reps, customSops, addSop, notify }) {
   const saved = readPlannerSettings(customSops);
   const b = saved.booking || {};
-  const selling = (reps || []).filter((r) => r && r.id && r.name && !String(r.id).includes("SEED"));
+  const staff = (reps || []).filter((r) => r && r.id && r.name && !String(r.id).includes("SEED"));
+  // Reps added here (not in the staff list), kept in the planner settings: Maureen can add, edit and remove them.
+  const [added, setAdded] = useState(() => Object.entries(b.reps || {}).filter(([id, r]) => r && r.added && !staff.some((x) => x.id === id)).map(([id, r]) => ({ id, name: r.name || "", added: true })));
+  const selling = [...staff, ...added];
   // Before anything is saved, the sales team (reps with the Sales role) is offered to customers by name.
   const isSales = (r) => Array.isArray(r.roles) ? r.roles.includes("Sales") : /sales/i.test(String(r.tier || ""));
-  const rowFor = (r) => { const s0 = b.reps && b.reps[r.id]; return { url: (s0 && s0.url) || "", hostEmails: ((s0 && s0.hostEmails) || []).join(", "), offer: s0 && typeof s0.offer === "boolean" ? s0.offer : isSales(r), calendly: !!(s0 && s0.calendly), area: s0 && typeof s0.area === "string" ? s0.area : (r.territory || "") }; };
+  const rowFor = (r) => { const s0 = b.reps && b.reps[r.id]; return { name: (s0 && s0.name) || r.name || "", email: (s0 && typeof s0.email === "string" ? s0.email : (r.email || "")), url: (s0 && s0.url) || "", hostEmails: ((s0 && s0.hostEmails) || []).join(", "), offer: s0 && typeof s0.offer === "boolean" ? s0.offer : (r.added ? true : isSales(r)), calendly: !!(s0 && s0.calendly), area: s0 && typeof s0.area === "string" ? s0.area : (r.territory || "") }; };
   const [defRep, setDefRep] = useState(b.defaultRep || "S001");
   const [theme, setTheme] = useState(saved.theme === "dark" ? "dark" : "light");
   const [limit, setLimit] = useState(String(saved.dailyLimit != null ? saved.dailyLimit : 10));
@@ -69,6 +79,27 @@ export function PlannerBookingCard({ reps, customSops, addSop, notify }) {
   const [rows, setRows] = useState(() => Object.fromEntries(selling.map((r) => [r.id, rowFor(r)])));
   useEffect(() => { setRows((x) => { const n = { ...x }; selling.forEach((r) => { if (!n[r.id]) n[r.id] = rowFor(r); }); return n; }); }, [reps]); // eslint-disable-line react-hooks/exhaustive-deps
   const set = (id, k) => (e) => setRows((x) => ({ ...x, [id]: { ...x[id], [k]: k === "offer" ? e.target.checked : e.target.value } }));
+  const [nw, setNw] = useState({ name: "", email: "", area: "", url: "" });
+  const addRep = () => {
+    const name = nw.name.trim();
+    if (!name) { notify("Add the rep's name"); return; }
+    if (nw.email.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(nw.email.trim())) { notify("That email does not look right"); return; }
+    if (nw.url.trim() && !/^https:\/\/\S+$/.test(nw.url.trim())) { notify("A booking link must start with https://"); return; }
+    if (selling.some((r) => repSlug((rows[r.id] || {}).name || r.name) === repSlug(name))) { notify("There is already a rep with that name"); return; }
+    const id = "PX-" + Math.random().toString(36).slice(2, 8).toUpperCase();
+    const nextAdded = [...added, { id, name, added: true }];
+    const nextRows = { ...rows, [id]: { name, email: nw.email.trim(), url: nw.url.trim(), hostEmails: nw.email.trim(), offer: true, calendly: false, area: nw.area.trim() } };
+    setAdded(nextAdded); setRows(nextRows); setNw({ name: "", email: "", area: "", url: "" });
+    save(nextRows, nextAdded, null, name + " added");
+  };
+  const removeRep = (rep) => {
+    if (!window.confirm("Remove " + ((rows[rep.id] || {}).name || rep.name) + " from the planner? Prospect cards already assigned to them keep their rep.")) return;
+    const nextAdded = added.filter((r) => r.id !== rep.id);
+    const nextRows = { ...rows }; delete nextRows[rep.id];
+    const nextDef = defRep === rep.id ? (staff[0] ? (staff.find((r) => r.id === "S001") || staff[0]).id : (nextAdded[0] || {}).id || "") : defRep;
+    setAdded(nextAdded); setRows(nextRows); setDefRep(nextDef);
+    save(nextRows, nextAdded, nextDef, "Rep removed");
+  };
   const [linking, setLinking] = useState({}); // repId -> { open, token, busy, note }
   const setLink = (id, patch) => setLinking((x) => ({ ...x, [id]: { ...(x[id] || {}), ...patch } }));
   // Connect Calendly: the rep's personal access token goes to the server once, which reads the rep's booking link and
@@ -90,17 +121,20 @@ export function PlannerBookingCard({ reps, customSops, addSop, notify }) {
       save(nextRows);
     } catch (e) { setLink(rep.id, { busy: false, token: "", note: "Calendly could not be reached. Try again in a minute." }); }
   };
-  const save = (useRows) => {
+  const save = (useRows, useAdded, useDef, msg) => {
     const rows0 = useRows && typeof useRows === "object" && !useRows.nativeEvent ? useRows : rows;
+    const list = [...staff, ...(Array.isArray(useAdded) ? useAdded : added)];
+    const def0 = typeof useDef === "string" ? useDef : defRep;
+    for (const [, r] of Object.entries(rows0)) if (r.email && r.email.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(r.email.trim())) { notify("A rep email does not look right: " + r.email); return; }
     for (const [id, r] of Object.entries(rows0)) if (r.url && !/^https:\/\/\S+$/.test(r.url.trim())) { notify("A booking link must start with https://"); return; }
     const repsOut = {};
     // Every rep is kept with its name, so the public planner can show the ones offered without reading the staff list.
-    for (const rep of selling) { const r = rows0[rep.id] || rowFor(rep); repsOut[rep.id] = { name: rep.name, offer: !!r.offer, area: String(r.area || "").trim().slice(0, 80), url: r.url.trim(), hostEmails: r.hostEmails.split(/[,\s]+/).map((e) => e.trim().toLowerCase()).filter((e) => /@/.test(e)), ...(r.calendly ? { calendly: true } : {}) }; }
+    for (const rep of list) { const r = rows0[rep.id] || rowFor(rep); repsOut[rep.id] = { name: (rep.added ? String(r.name || rep.name).trim().slice(0, 80) : rep.name) || rep.name, email: String(r.email || "").trim().toLowerCase(), ...(rep.added ? { added: true } : {}), offer: !!r.offer, area: String(r.area || "").trim().slice(0, 80), url: r.url.trim(), hostEmails: r.hostEmails.split(/[,\s]+/).map((e) => e.trim().toLowerCase()).filter((e) => /@/.test(e)), ...(r.calendly ? { calendly: true } : {}) }; }
     const lim = Number(limit);
     if (!Number.isFinite(lim) || lim < 0 || lim > 1000) { notify("Daily limit: a dollar amount from 0 to 1000"); return; }
-    const next = { ...saved, theme, dailyLimit: Math.round(lim * 100) / 100, booking: { defaultRep: defRep, reps: repsOut } };
+    const next = { ...saved, theme, dailyLimit: Math.round(lim * 100) / 100, booking: { defaultRep: def0, reps: repsOut } };
     addSop({ id: PLANNER_SETTINGS_ID, title: "Furniture Planner settings", cat: "Config", icon: "settings", content: JSON.stringify(next), custom: true });
-    notify("Planner settings saved");
+    notify(msg || "Planner settings saved");
   };
   const def = rows[defRep] || {};
   return (
@@ -122,12 +156,16 @@ export function PlannerBookingCard({ reps, customSops, addSop, notify }) {
       <label style={{ fontSize: 12, color: "#9a9a9a", display: "block", marginBottom: 12 }}>Default rep for new planner requests
         <select value={defRep} onChange={(e) => setDefRep(e.target.value)} style={{ ...inp, marginTop: 6 }}>{selling.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
       </label>
-      <div style={{ fontSize: 12, color: "#9a9a9a", margin: "4px 0 10px" }}>Reps customers can choose. A checked rep is listed by name and area in the request form ("Who would you like to talk with?"); nothing else about the rep is shown.</div>
+      <div style={{ fontSize: 12, color: "#9a9a9a", margin: "4px 0 10px" }}>Reps customers can choose. A checked rep is listed by name and area in the quote request form ("Who would you like to talk with?"). The rep's email is shown only to a customer who just sent that rep a request, and only when the rep has no booking link.</div>
       {selling.map((r) => (
         <div key={r.id} style={{ background: "#0a0a0a", border: "1px solid rgba(255,255,255,0.05)", borderRadius: 10, padding: 12, marginBottom: 8 }} data-planner-rep={r.id}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
-            <div style={{ fontSize: 13, color: "#f0f0f0", fontWeight: 600 }}>{r.name}{r.id === defRep ? <span style={{ color: "#2dd4bf", fontWeight: 500 }}> (default)</span> : ""}</div>
+            <div style={{ fontSize: 13, color: "#f0f0f0", fontWeight: 600 }}>{(rows[r.id] || {}).name || r.name}{r.id === defRep ? <span style={{ color: "#2dd4bf", fontWeight: 500 }}> (default)</span> : ""}{r.added ? <span style={{ color: "#737373", fontWeight: 500 }}> (added here)</span> : ""}</div>
             <label style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12, color: "#c4c4c4", cursor: "pointer" }}><input type="checkbox" checked={!!(rows[r.id] || {}).offer} onChange={set(r.id, "offer")} data-planner-offer={r.id} /> Customers can choose</label>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 8 }} className="resp-grid-2">
+            {r.added && <input style={inp} placeholder="Name" value={(rows[r.id] || {}).name || ""} onChange={set(r.id, "name")} data-planner-name={r.id} />}
+            <input style={inp} placeholder="Email (offered when there is no booking link)" value={(rows[r.id] || {}).email || ""} onChange={set(r.id, "email")} data-planner-email={r.id} />
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }} className="resp-grid-2">
             <input style={inp} placeholder="Area shown to customers (e.g. Milwaukee area)" value={(rows[r.id] || {}).area || ""} onChange={set(r.id, "area")} data-planner-area={r.id} />
@@ -137,6 +175,8 @@ export function PlannerBookingCard({ reps, customSops, addSop, notify }) {
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
             {!(linking[r.id] || {}).open && <button type="button" onClick={() => setLink(r.id, { open: true, note: "" })} style={{ padding: "6px 12px", borderRadius: 7, border: "1px solid rgba(45,212,191,0.4)", background: "transparent", color: "#2dd4bf", fontSize: 12, fontWeight: 600, cursor: "pointer" }} data-planner-calendly={r.id}>{(rows[r.id] || {}).calendly ? "Reconnect Calendly" : "Connect Calendly"}</button>}
             {(rows[r.id] || {}).calendly && !(linking[r.id] || {}).open && <span style={{ fontSize: 12, color: "#9a9a9a" }}>Calendly connected</span>}
+            {!(linking[r.id] || {}).open && (rows[r.id] || {}).offer && <button type="button" onClick={() => copyText(repShareUrl((rows[r.id] || {}).name || r.name), () => notify("Share link copied: " + repShareUrl((rows[r.id] || {}).name || r.name)))} title={repShareUrl((rows[r.id] || {}).name || r.name)} style={{ padding: "6px 12px", borderRadius: 7, border: "1px solid rgba(255,255,255,0.1)", background: "transparent", color: "#c4c4c4", fontSize: 12, cursor: "pointer" }} data-planner-share={r.id}>Copy share link</button>}
+            {!(linking[r.id] || {}).open && r.added && <button type="button" onClick={() => removeRep(r)} style={{ padding: "6px 12px", borderRadius: 7, border: "1px solid rgba(248,113,113,0.35)", background: "transparent", color: "#f87171", fontSize: 12, cursor: "pointer", marginLeft: "auto" }} data-planner-remove={r.id}>Remove</button>}
             {(linking[r.id] || {}).open && (<>
               <input type="password" autoComplete="off" spellCheck={false} style={{ ...inp, flex: "1 1 260px" }} placeholder="Paste the rep's Calendly personal access token" value={(linking[r.id] || {}).token || ""} onChange={(e) => setLink(r.id, { token: e.target.value })} data-planner-calendly-token={r.id} />
               <button type="button" disabled={!!(linking[r.id] || {}).busy} onClick={() => connect(r)} style={{ padding: "7px 14px", borderRadius: 7, border: "none", background: "#2dd4bf", color: "#000", fontSize: 12, fontWeight: 700, cursor: "pointer" }} data-planner-calendly-go={r.id}>{(linking[r.id] || {}).busy ? "Connecting..." : "Connect"}</button>
@@ -146,7 +186,17 @@ export function PlannerBookingCard({ reps, customSops, addSop, notify }) {
           {(linking[r.id] || {}).note && <div style={{ fontSize: 12, color: "#c4c4c4", marginTop: 6, lineHeight: 1.5 }} data-planner-calendly-note={r.id}>{(linking[r.id] || {}).note}</div>}
         </div>
       ))}
-      <div style={{ fontSize: 12, color: "#737373", lineHeight: 1.6, margin: "10px 0 14px" }}>Booking links are optional and any https booking page works (Calendly, Microsoft Bookings with me, and others). Connect Calendly fills in the rep's booking link and calendar email and turns on confirmed bookings: when a customer books, the Prospect card is matched and assigned to the rep whose calendar took it. Get the token in Calendly under Integrations & apps >> API and webhooks >> Personal access tokens. It is used once and never saved. A link click alone changes nothing.</div>
+      <div style={{ background: "#0a0a0a", border: "1px dashed rgba(255,255,255,0.12)", borderRadius: 10, padding: 12, marginBottom: 8 }} data-planner-add>
+        <div style={{ fontSize: 13, color: "#f0f0f0", fontWeight: 600, marginBottom: 8 }}>Add a sales rep</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }} className="resp-grid-2">
+          <input style={inp} placeholder="Name" value={nw.name} onChange={(e) => setNw({ ...nw, name: e.target.value })} data-planner-add-name />
+          <input style={inp} placeholder="Email" value={nw.email} onChange={(e) => setNw({ ...nw, email: e.target.value })} data-planner-add-email />
+          <input style={inp} placeholder="Area shown to customers" value={nw.area} onChange={(e) => setNw({ ...nw, area: e.target.value })} />
+          <input style={inp} placeholder="Booking link, optional (https://...)" value={nw.url} onChange={(e) => setNw({ ...nw, url: e.target.value })} />
+        </div>
+        <button type="button" onClick={addRep} style={{ marginTop: 8, padding: "7px 14px", borderRadius: 7, border: "none", background: "#2dd4bf", color: "#000", fontSize: 12, fontWeight: 700, cursor: "pointer" }} data-planner-add-go>Add rep</button>
+      </div>
+      <div style={{ fontSize: 12, color: "#737373", lineHeight: 1.6, margin: "10px 0 14px" }}>Each rep's share link (Copy share link) opens the planner with that rep already chosen when the customer requests a quote; customers who arrive without one reach the default rep. Customers pick a rep only in the quote request, never before. When a rep has no booking link, the customer is offered to email the rep instead. Booking links are optional and any https booking page works (Calendly, Microsoft Bookings with me, and others). Connect Calendly fills in the rep's booking link and calendar email and turns on confirmed bookings: when a customer books, the Prospect card is matched and assigned to the rep whose calendar took it. Get the token in Calendly under Integrations & apps >> API and webhooks >> Personal access tokens. It is used once and never saved. A link click alone changes nothing.</div>
       <button type="button" onClick={() => save()} style={{ padding: "9px 18px", borderRadius: 8, border: "none", background: "#2dd4bf", color: "#000", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Save planner settings</button>
     </div>
     </>

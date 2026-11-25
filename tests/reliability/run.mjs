@@ -8,7 +8,7 @@ run(['file-index-test.mjs']);run(['files-brain-test.mjs']);run(['vendor-catalog-
 run(['brain-grounding-test.mjs']);for(let i=0;i<9;i++)run(['brain-grounding-test.mjs','--mutant',String(i)],{fail:true});
 run(['enterprise-network-test.mjs']);for(let i=0;i<10;i++)run(['enterprise-network-test.mjs','--mutant',String(i)],{fail:true});
 run(['vendor-history-test.mjs']);for(let i=0;i<6;i++)run(['vendor-history-test.mjs','--mutant',String(i)],{fail:true});
-run(['planner-test.mjs']);for(let i=0;i<35;i++)run(['planner-test.mjs','--mutant',String(i)],{fail:true});
+run(['planner-test.mjs']);for(let i=0;i<40;i++)run(['planner-test.mjs','--mutant',String(i)],{fail:true});
 run(['catalog-lifecycle-test.mjs']);run(['catalog-controls-ui-test.mjs']);run(['catalog-brain-controls-test.mjs']);
 for(let i=0;i<11;i++)run(['catalog-lifecycle-test.mjs','--mutant',String(i)],{fail:true});
 for(let i=0;i<2;i++)run(['catalog-controls-ui-test.mjs','--mutant',String(i)],{fail:true});for(let i=0;i<8;i++)run(['catalog-brain-controls-test.mjs','--mutant',String(i)],{fail:true});

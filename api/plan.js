@@ -206,12 +206,29 @@ export async function runChat({ env, db, fetcher = fetch, messages, plan, model 
 
 // ---- "Request a priced quote" ----
 // The reps a customer may ask for by name (Users & Permissions >> Furniture Planner >> "Customers can choose").
-// Only a name and an area leave the server: never an email, a calendar or anything else about the rep.
+// Only a name, an area and the share-link name leave the server here: never an email, a calendar or anything else.
+// slug: the rep's share link name (midwestaios.com/plan?rep=jim-lindner), made from the name; the id works too.
+export const repSlug = (name) => String(name || '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
 export function plannerReps(settings) {
   const b = plain(settings && settings.booking) ? settings.booking : {};
   const reps = plain(b.reps) ? b.reps : {};
   return Object.keys(reps).filter((id) => plain(reps[id]) && reps[id].offer === true && str(reps[id].name, 80))
-    .map((id) => ({ id: str(id, 20), name: str(reps[id].name, 80), area: str(reps[id].area, 80) }));
+    .map((id) => ({ id: str(id, 20), name: str(reps[id].name, 80), area: str(reps[id].area, 80), slug: repSlug(reps[id].name) }));
+}
+// The rep a visitor with no preference reaches, by name, when Midwest offers that rep by name; '' otherwise.
+export function defaultRepPublic(settings) {
+  const b = plain(settings && settings.booking) ? settings.booking : {};
+  const id = str(b.defaultRep, 20);
+  return plannerReps(settings).find((r) => r.id === id) ? id : '';
+}
+// The email a customer can write to when the rep they reached has no booking link yet (shown only after their request
+// is saved, and only that one rep's): the rep's contact email, otherwise their calendar email.
+export function repContactEmail(settings, repId) {
+  const b = plain(settings && settings.booking) ? settings.booking : {};
+  const r = plain(b.reps) && plain(b.reps[repId]) ? b.reps[repId] : null;
+  if (!r) return '';
+  const all = [r.email, ...(Array.isArray(r.hostEmails) ? r.hostEmails : [])].map((e) => normProspectEmail(str(e, 200)));
+  return all.find((e) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) || '';
 }
 // Who a new request goes to: the rep the customer asked for when Midwest offers that rep, otherwise the default rep.
 export function chooseRep(settings, wanted) {
@@ -369,7 +386,7 @@ export function planHandler(env, deps = {}) {
       if (op === 'config') {
         const [settings, rows] = await Promise.all([db.settings().catch(() => ({})), db.catalogRows().catch(() => [])]);
         const vendors = [...new Set(publicCatalogs(catalogRecords(rows)).map((r) => str(r.vendorName, 60)).filter(Boolean))].sort();
-        return res.status(200).json({ ok: true, booking: !!bookingFor(settings, 'x', {}), reps: plannerReps(settings), vendors, theme: settings && settings.theme === 'dark' ? 'dark' : 'light' });
+        return res.status(200).json({ ok: true, booking: !!bookingFor(settings, 'x', {}), reps: plannerReps(settings), defaultRep: defaultRepPublic(settings), vendors, theme: settings && settings.theme === 'dark' ? 'dark' : 'light' });
       }
       if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'Use POST.' });
       const body = plain(req.body) ? req.body : (() => { try { return JSON.parse(req.body); } catch (e) { return {}; } })();
@@ -391,7 +408,7 @@ export function planHandler(env, deps = {}) {
         const settings = await db.settings().catch(() => ({}));
         const saved = await saveRequest({ db, body, settings });
         const booking = bookingFor(settings, saved.prospectId, saved.contact, saved.repId);
-        return res.status(200).json({ ok: true, saved: true, repeated: !!saved.repeated, booking: booking ? booking.url : '', rep: saved.repName || '' });
+        return res.status(200).json({ ok: true, saved: true, repeated: !!saved.repeated, booking: booking ? booking.url : '', rep: saved.repName || '', repEmail: booking ? '' : repContactEmail(settings, saved.repId) });
       }
       return res.status(400).json({ ok: false, error: 'Unknown request.' });
     } catch (e) {
