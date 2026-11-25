@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module';
 import assert from 'node:assert/strict';import fs from 'node:fs';import {build} from 'esbuild';import {createHmac} from 'node:crypto';
 // The public Furniture Planner (/plan, api/plan.js). Made-up catalogue, prospects and model replies; no network.
 const mutantIdx=process.argv.includes('--mutant')?Number(process.argv[process.argv.indexOf('--mutant')+1]):-1;
@@ -50,8 +51,10 @@ const MUTANTS=[
 ];
 const read=(f)=>{const t=fs.readFileSync('../../'+f,'utf8');if(mutantIdx<0||MUTANTS[mutantIdx][1]!==f)return t;assert.ok(t.includes(MUTANTS[mutantIdx][2]),'mutation anchor missing: '+MUTANTS[mutantIdx][0]);return t.replace(MUTANTS[mutantIdx][2],MUTANTS[mutantIdx][3]);};
 const plugin={name:'mut',setup(b){b.onLoad({filter:/(planCatalog|prospectKeys)\.js$/},(a)=>({contents:read(a.path.slice(a.path.indexOf('src/'))),loader:'js'}));}};
-const r=await build({stdin:{contents:read('api/plan.js'),resolveDir:'../../api',sourcefile:'plan.js',loader:'js'},bundle:true,write:false,format:'esm',platform:'node',plugins:[plugin]});
-fs.writeFileSync('./.plan-bundle.mjs',r.outputFiles[0].text);const P=await import('./.plan-bundle.mjs?'+Date.now());fs.rmSync('./.plan-bundle.mjs');
+const r=await build({stdin:{contents:read('api/plan.js'),resolveDir:'../../api',sourcefile:'plan.js',loader:'js'},bundle:true,write:false,format:'cjs',platform:'node',logOverride:{'empty-import-meta':'error'},plugins:[plugin]});
+const module = { exports: {} };
+new Function('require', 'module', 'exports', r.outputFiles[0].text)(createRequire(import.meta.url), module, module.exports);
+const P = module.exports;
 
 // ---- a made-up catalogue (one with prices in its rows) ----
 const CAT={v:1,headers:['Model | Description | Size | List'],sections:[{id:1,title:'Student Desks',group:'Desks'},{id:2,title:'Chairs',group:'Seating'},{id:3,title:'Tables',group:'Tables'}],

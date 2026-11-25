@@ -16,6 +16,7 @@
 //                     here: the admin's browser saves the link and email into PLANNER_SETTINGS like every other setting.
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { PLANNER_VENDOR_POLICY_ID, includesPlannerWords, parseVendorPolicy, plannerWords, preferredProduct, vendorPolicyFor } from '../src/plannerVendorPolicy.js';
 import { catalogRecords, loadCatalog, searchCatalog, getProduct } from '../src/vendorCatalog.js';
 import { publicCatalogs, publicProduct, cleanPlanItem } from '../src/planCatalog.js';
@@ -357,7 +358,7 @@ export async function saveRequest({ db, body, settings = {}, fetcher = fetch, no
   let pdfUrl = '';
   if (items.length) {
     const { buildPlanPdf } = await import('../src/planner/planPdf.js');
-    const logoBytes = await readFile(new URL('../public/mw-logo.png', import.meta.url)).catch(() => null);
+    const logoBytes = await readFile(join(process.cwd(), 'public', 'mw-logo.png')).catch(() => null);
     const refId = typeof body.refId === 'string' && /^MW-[A-Z0-9]{8}$/.test(body.refId) ? body.refId : 'MW-' + requestId.slice(0, 8).toUpperCase();
     pdfUrl = await db.uploadPdf(Buffer.from(await buildPlanPdf({ plan, contact, refId, logoBytes, date })));
   }
