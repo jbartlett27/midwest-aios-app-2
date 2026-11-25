@@ -7,8 +7,12 @@
 //   POST ?op=request  "Request a priced quote": saves the plan and contact as a Prospect card (the Prospects page's
 //                     own duplicate rules), safe to repeat (the request id is kept on the card).
 //   GET  ?op=config   whether a booking link is set, and the reps a customer may ask for by name (names and areas only).
-//   POST ?op=booking  Calendly's "invitee created" webhook: a CONFIRMED booking. Signed with PLAN_BOOKING_SIGNING_KEY;
+//   POST ?op=booking  Calendly's "invitee created" webhook: a CONFIRMED booking. Signed with signingKey(env) (PLAN_BOOKING_SIGNING_KEY or one derived on the server);
 //                     matched to the prospect and assigned to the rep whose calendar took the meeting.
+//   POST ?op=calendly-connect  Users & Permissions >> Furniture Planner >> "Connect Calendly": with a rep's Calendly personal
+//                     access token (used once, never stored or logged), reads the rep's booking link and calendar email
+//                     and subscribes Calendly to send that rep's confirmed bookings to ?op=booking. Nothing is saved
+//                     here: the admin's browser saves the link and email into PLANNER_SETTINGS like every other setting.
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { catalogRecords, loadCatalog, searchCatalog, getProduct } from '../src/vendorCatalog.js';
 import { publicCatalogs, publicProduct, cleanPlanItem } from '../src/planCatalog.js';
@@ -274,6 +278,37 @@ export async function saveRequest({ db, body, settings = {}, now = () => new Dat
 }
 
 // ---- a confirmed booking (Calendly invitee.created) ----
+// The key Calendly signs bookings with: PLAN_BOOKING_SIGNING_KEY when set, otherwise one derived from the server's own
+// secret, so connecting a rep needs no new setting. Never sent to a browser.
+export function signingKey(env) {
+  if (env && env.PLAN_BOOKING_SIGNING_KEY) return String(env.PLAN_BOOKING_SIGNING_KEY);
+  const base = env && env.ANTHROPIC_API_KEY;
+  return base ? createHmac('sha256', String(base)).update('midwest-planner-calendly-booking').digest('hex') : '';
+}
+export const BOOKING_HOOK = 'https://midwestaios.com/api/plan?op=booking';
+export async function connectCalendly({ env, token, fetcher = fetch, hookUrl = BOOKING_HOOK }) {
+  const t = str(token, 2000);
+  if (!/^[A-Za-z0-9._-]{20,2000}$/.test(t)) throw Object.assign(new Error('Paste the rep\'s Calendly personal access token.'), { status: 400 });
+  const key = signingKey(env);
+  if (!key) throw new Error('no signing key');
+  const api = async (path, init = {}) => {
+    const r = await fetcher('https://api.calendly.com' + path, { ...init, headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(15000) });
+    const body = await r.json().catch(() => ({}));
+    return { status: r.status, body };
+  };
+  const me = await api('/users/me');
+  if (me.status === 401 || me.status === 403) throw Object.assign(new Error('Calendly did not accept that token. Create a new one and paste it again.'), { status: 400 });
+  const u = me.body && me.body.resource;
+  if (me.status !== 200 || !plain(u) || !u.uri) throw new Error('calendly ' + me.status);
+  // The booking link: the rep's one active event type when there is exactly one (Calendly Free), otherwise their page.
+  const ev = await api('/event_types?active=true&count=20&user=' + encodeURIComponent(u.uri));
+  const active = (ev.status === 200 && Array.isArray(ev.body.collection) ? ev.body.collection : []).filter((e) => e && e.active !== false && /^https:\/\//.test(String(e.scheduling_url || '')));
+  const url = active.length === 1 ? String(active[0].scheduling_url) : String(u.scheduling_url || '');
+  const hook = await api('/webhook_subscriptions', { method: 'POST', body: JSON.stringify({ url: hookUrl, events: ['invitee.created'], organization: u.current_organization, user: u.uri, scope: 'user', signing_key: key }) });
+  // 409: this rep's calendar already sends bookings here (connected before).
+  const hooked = hook.status === 201 || hook.status === 200 || hook.status === 409;
+  return { name: str(u.name, 80), email: normProspectEmail(u.email), url: /^https:\/\/\S+$/.test(url) ? url : '', hooked, hookStatus: hook.status, eventTypes: active.length };
+}
 export function verifyCalendly(raw, header, key, nowMs = Date.now()) {
   if (!key || !header) return false;
   const parts = Object.fromEntries(String(header).split(',').map((p) => p.split('=').map((s) => s.trim())));
@@ -295,6 +330,8 @@ export async function applyBooking({ db, event }) {
   const all = (rows || []).map((r) => { try { return { id: r.id, ...JSON.parse(r.content) }; } catch (e) { return null; } }).filter(Boolean);
   const hit = (tracked && all.find((x) => x.id === tracked)) || (email && all.find((x) => normProspectEmail(x.email) === email));
   if (!hit) return { unmatched: true };
+  // Only a calendar Midwest connected for one of its reps can move a card (a stranger's Calendly signed with the same key cannot).
+  if (!repId) return { prospectId: hit.id, unknownHost: true };
   const next = { ...hit }; delete next.id;
   const start = str(p.scheduled_event && p.scheduled_event.start_time, 40);
   const uri = str(p.uri, 300);
@@ -326,7 +363,7 @@ export function planHandler(env, deps = {}) {
       if (op === 'booking') {
         if (req.method !== 'POST') return res.status(405).json({ ok: false });
         const raw = await readRaw(req);   // the exact bytes Calendly signed; req.body is never touched here
-        if (!verifyCalendly(raw, req.headers['calendly-webhook-signature'], env.PLAN_BOOKING_SIGNING_KEY)) return res.status(401).json({ ok: false });
+        if (!verifyCalendly(raw, req.headers['calendly-webhook-signature'], signingKey(env))) return res.status(401).json({ ok: false });
         return res.status(200).json({ ok: true, ...(await applyBooking({ db, event: JSON.parse(raw) })) });
       }
       if (op === 'config') {
@@ -336,6 +373,11 @@ export function planHandler(env, deps = {}) {
       }
       if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'Use POST.' });
       const body = plain(req.body) ? req.body : (() => { try { return JSON.parse(req.body); } catch (e) { return {}; } })();
+      if (op === 'calendly-connect') {
+        if (limited(ip, 10, 10 * 60 * 1000)) return res.status(429).json({ ok: false, error: 'Please wait a minute and try again.' });
+        const out = await connectCalendly({ env, token: body.token, fetcher });
+        return res.status(200).json({ ok: true, ...out });
+      }
       if (op === 'chat') {
         if (limited(ip, 40, 10 * 60 * 1000)) return res.status(429).json({ ok: false, error: 'You are going quickly. Please wait a minute and try again.' });
         // The admin's daily limit (Users & Permissions >> Furniture Planner): once today's spend reaches it, the planner rests until tomorrow.

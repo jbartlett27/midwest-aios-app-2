@@ -6,7 +6,7 @@ const MUTANTS=[
   ['prices are scrubbed from specs','src/planCatalog.js',"const specs = pricey || PRICEY_HEADER.test(String(row.header || '')) ? '' : clip(scrubPrices(row.row), 220);","const specs = clip(row.row, 220);"],
   ['a repeated request makes no second card','api/plan.js',"if (already) return { prospectId: already.id, repeated: true, contact, repId:","if (false) return { prospectId: already.id, repeated: true, contact, repId:"],
   ['duplicates update the existing card','api/plan.js',"const dup = findDuplicateProspect(all, contact);","const dup = null;"],
-  ['a booking webhook must be signed','api/plan.js',"if (!verifyCalendly(raw, req.headers['calendly-webhook-signature'], env.PLAN_BOOKING_SIGNING_KEY)) return res.status(401).json({ ok: false });",""],
+  ['a booking webhook must be signed','api/plan.js',"if (!verifyCalendly(raw, req.headers['calendly-webhook-signature'], signingKey(env))) return res.status(401).json({ ok: false });",""],
   ['the booking assigns the rep whose calendar took it','api/plan.js',"if (repId) next.assignedRep = repId;",""],
   ['the daily limit stops the chat','api/plan.js',"if (spent >= dailyLimitCents(settings))","if (false)"],
   ['replies lose their dashes','api/plan.js',"const reply = plainDashes(","const reply = ("],
@@ -32,6 +32,11 @@ const MUTANTS=[
   ['the public rep list carries names and areas only','api/plan.js',".map((id) => ({ id: str(id, 20), name: str(reps[id].name, 80), area: str(reps[id].area, 80) }));",".map((id) => ({ id, ...reps[id] }));"],
   ['the best time reaches the card','api/plan.js',"(bestTime ? '. Best time to reach them: ' + bestTime : '')","''"],
   ['the model gets only catalogue tools','api/plan.js',"{ name: 'get_product',","{ name: 'get_job', description: 'x', input_schema: { type: 'object', properties: {} } },\n  { name: 'get_product',"],
+  ['Calendly connect uses the rep\'s one event','api/plan.js',"const url = active.length === 1 ? String(active[0].scheduling_url) : String(u.scheduling_url || '');","const url = String(u.scheduling_url || '');"],
+  ['Calendly connect turns on bookings for that calendar','api/plan.js',"events: ['invitee.created'], organization: u.current_organization, user: u.uri, scope: 'user', signing_key: key","events: ['invitee.created'], organization: u.current_organization, user: u.uri, scope: 'user'"],
+  ['a bad Calendly token is a plain answer','api/plan.js',"if (me.status === 401 || me.status === 403) throw","if (false) throw"],
+  ['the signing key comes from the server','api/plan.js',"return base ? createHmac('sha256', String(base)).update('midwest-planner-calendly-booking').digest('hex') : '';","return base ? String(base) : '';"],
+  ['a calendar Midwest did not connect changes nothing','api/plan.js',"  if (!repId) return { prospectId: hit.id, unknownHost: true };\n",""],
 ];
 const read=(f)=>{const t=fs.readFileSync('../../'+f,'utf8');if(mutantIdx<0||MUTANTS[mutantIdx][1]!==f)return t;assert.ok(t.includes(MUTANTS[mutantIdx][2]),'mutation anchor missing: '+MUTANTS[mutantIdx][0]);return t.replace(MUTANTS[mutantIdx][2],MUTANTS[mutantIdx][3]);};
 const plugin={name:'mut',setup(b){b.onLoad({filter:/(planCatalog|prospectKeys)\.js$/},(a)=>({contents:read(a.path.slice(a.path.indexOf('src/'))),loader:'js'}));}};
@@ -171,4 +176,29 @@ for(const p of [{name:"Bobby's School",company:'The ABC Schools, Inc.'},{email:'
  const rr={code:0,body:null,setHeader(){},status(c){this.code=c;return this},json(b){this.body=b;return this}};await Hx({method:'GET',query:{op:'config'},headers:{}},rr);
  assert.deepEqual([rr.body.booking,rr.body.reps],[false,[{id:'S001',name:'Dave Welter',area:'IL'}]],'the config lists Dave for the request form, and no booking is offered without a link');
  assert.ok(!/@/.test(JSON.stringify(rr.body)),'no staff email reaches the public page');}
+// 7. Connect Calendly (J, Nov 25): one token per rep fills the link and calendar email and turns on confirmed bookings.
+{const calls=[];const cal=(over={})=>async(url,init={})=>{calls.push({url,init});const H0=init.headers||{};if(H0.Authorization!=='Bearer '+'t'.repeat(40))return{status:401,json:async()=>({})};
+  if(url.endsWith('/users/me'))return{status:200,json:async()=>({resource:{uri:'https://api.calendly.com/users/U1',name:'Jim Lindner',email:'JLindner@MWF.test',scheduling_url:'https://calendly.com/jlindner',current_organization:'https://api.calendly.com/organizations/O1'}})};
+  if(url.includes('/event_types'))return{status:200,json:async()=>({collection:over.events||[{active:true,scheduling_url:'https://calendly.com/jlindner/furniture-planner-call'}]})};
+  if(url.endsWith('/webhook_subscriptions'))return{status:over.hook||201,json:async()=>({})};throw new Error('unexpected '+url);};
+ const env={ANTHROPIC_API_KEY:'server-secret'};
+ const key=P.signingKey(env);
+ assert.ok(/^[0-9a-f]{64}$/.test(key)&&key!=='server-secret'&&P.signingKey({PLAN_BOOKING_SIGNING_KEY:'whsec',ANTHROPIC_API_KEY:'x'})==='whsec','the booking key is derived on the server, never the raw secret, and a set key wins');
+ const out=await P.connectCalendly({env,token:'t'.repeat(40),fetcher:cal()});
+ assert.deepEqual([out.name,out.email,out.url,out.hooked],['Jim Lindner','jlindner@mwf.test','https://calendly.com/jlindner/furniture-planner-call',true],'connecting reads the rep\'s name, calendar email and their one booking page');
+ const hook=JSON.parse(calls.find(c=>c.url.endsWith('/webhook_subscriptions')).init.body);
+ assert.deepEqual([hook.url,hook.events,hook.scope,hook.user,hook.signing_key],['https://midwestaios.com/api/plan?op=booking',['invitee.created'],'user','https://api.calendly.com/users/U1',key],'bookings on that calendar are sent to the planner, signed with the server\'s key');
+ assert.ok(!JSON.stringify(out).includes('t'.repeat(40))&&!JSON.stringify(out).includes(key),'the token and the key never come back to the browser');
+ const two=await P.connectCalendly({env,token:'t'.repeat(40),fetcher:cal({events:[{active:true,scheduling_url:'https://calendly.com/a'},{active:true,scheduling_url:'https://calendly.com/b'}],hook:409})});
+ assert.deepEqual([two.url,two.hooked],['https://calendly.com/jlindner',true],'several events: the rep\'s own page; connected before: still on');
+ await assert.rejects(P.connectCalendly({env,token:'u'.repeat(40),fetcher:cal()}),(e)=>e.status===400&&/did not accept/.test(e.message),'a wrong token gets a plain answer');
+ await assert.rejects(P.connectCalendly({env,token:'short',fetcher:cal()}),(e)=>e.status===400,'nothing that is not a token is sent to Calendly');
+ const Hc=P.planHandler(env,{db,fetch:cal()});const rc={code:0,body:null,setHeader(){},status(c){this.code=c;return this},json(b){this.body=b;return this}};
+ await Hc({method:'POST',query:{op:'calendly-connect'},headers:{'x-forwarded-for':'7.7.7.7'},body:{token:'u'.repeat(40)}},rc);
+ assert.deepEqual([rc.code,/did not accept/.test(rc.body.error)],[400,true],'the settings page shows Calendly\'s refusal in plain words');
+ // A booking on a calendar no rep connected leaves the card alone.
+ saved=[{id:'PR-CAL',data:{name:'Ty Fox',email:'ty@fox.test',company:'Fox School',assignedRep:'',status:'New'}}];
+ const evx={event:'invitee.created',payload:{email:'ty@fox.test',uri:'https://api.calendly.com/inv/9',tracking:{utm_content:'PR-CAL'},scheduled_event:{start_time:'2026-12-02T15:00:00Z',event_memberships:[{user_email:'stranger@else.test'}]}}};
+ const ux=await P.applyBooking({db:{...db,settings:async()=>({booking:{reps:{S005:{hostEmails:['jlindner@mwf.test']}}}})},event:evx});
+ assert.deepEqual([ux.unknownHost,saved[0].data.status,saved[0].data.assignedRep],[true,'New',''],'a calendar Midwest did not connect cannot move or assign a card');}
 console.log('PASS Furniture Planner server ('+(mutantIdx<0?'source':'mutant '+mutantIdx)+')');
