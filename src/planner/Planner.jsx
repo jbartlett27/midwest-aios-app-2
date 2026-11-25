@@ -254,10 +254,27 @@ function Landing({ onStart, vendors }) {
   );
 }
 
-function RequestDialog({ plan, onClose, makePdf, campaign, reps = [] }) {
+// A rep's share link (midwestaios.com/plan?rep=jim-lindner, or ?rep=S005) makes that rep this visitor's choice. It is
+// remembered on this device, so a customer who comes back later still reaches the rep who sent them.
+const REP_KEY = 'mw_plan_rep';
+function linkedRepWanted() {
+  let v = '';
+  try { v = (new URLSearchParams(location.search).get('rep') || '').trim().slice(0, 60); } catch (e) { v = ''; }
+  try { if (v) localStorage.setItem(REP_KEY, v); else v = localStorage.getItem(REP_KEY) || ''; } catch (e) { }
+  return v;
+}
+export function matchRep(reps, wanted) {
+  const w = String(wanted || '').trim().toLowerCase();
+  if (!w) return '';
+  const hit = (reps || []).find((r) => String(r.id || '').toLowerCase() === w || String(r.slug || '') === w);
+  return hit ? hit.id : '';
+}
+
+function RequestDialog({ plan, onClose, makePdf, campaign, reps = [], linkedRep = '', defaultRep = '' }) {
   const [f, setF] = useState({ name: '', email: '', phone: '', company: plan.project.organization || '', title: '', city: '', state: '' });
   // Who the customer would like to talk with (the reps Midwest offers) and when to reach them; both optional.
-  const [rep, setRep] = useState(''); const [bestTime, setBestTime] = useState('');
+  const [rep, setRep] = useState(linkedRep); const [bestTime, setBestTime] = useState('');
+  const defName = (reps.find((r) => r.id === defaultRep) || {}).name || '';
   const [busy, setBusy] = useState(false); const [err, setErr] = useState(''); const [done, setDone] = useState(null);
   const reqId = useRef(uid());   // the same id on every retry, so a repeat never makes a second card
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
@@ -277,7 +294,8 @@ function RequestDialog({ plan, onClose, makePdf, campaign, reps = [] }) {
             <h3>Your request is in</h3>
             <p data-request-rep>{done.rep ? done.rep + ' from Midwest has your plan and will follow up with pricing.' : 'Midwest has your plan and will follow up with pricing.'} Keep your PDF for your records.</p>
             <div className="row">
-              {done.booking && <a className="btn" href={done.booking} target="_blank" rel="noopener noreferrer" data-booking>{done.rep ? 'Book a call with ' + done.rep.split(' ')[0] : 'Book a call with Midwest'}</a>}
+              {done.booking && <a className="btn" href={done.booking} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none' }} data-booking>{done.rep ? 'Book a call with ' + done.rep.split(' ')[0] : 'Book a call with Midwest'}</a>}
+              {!done.booking && done.repEmail && <a className="btn" href={'mailto:' + done.repEmail + '?subject=' + encodeURIComponent('My Furniture Planner request') + '&body=' + encodeURIComponent('Hi ' + (done.rep ? done.rep.split(' ')[0] : '') + ',\n\nI just sent my plan through the Furniture Planner. ' + (bestTime ? 'The best time to reach me is ' + bestTime + '.' : '') + '\n\n' + f.name)} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none' }} data-rep-email>{done.rep ? 'Email ' + done.rep.split(' ')[0] : 'Email Midwest'}</a>}
               <button type="button" className="btn ghost" onClick={onClose}>Back to my plan</button>
             </div>
           </div>
@@ -294,7 +312,7 @@ function RequestDialog({ plan, onClose, makePdf, campaign, reps = [] }) {
               <label>City<input autoComplete="address-level2" value={f.city} onChange={set('city')} /></label>
               <label>State<input autoComplete="address-level1" value={f.state} onChange={set('state')} /></label>
               {reps.length > 0 && <label className="w">Who would you like to talk with?<select value={rep} onChange={(e) => setRep(e.target.value)} data-request-rep-pick>
-                <option value="">No preference, Midwest will match you</option>
+                <option value="">{defName ? "I don't know my rep (" + defName + " will help you)" : 'No preference, Midwest will match you'}</option>
                 {reps.map((r) => <option key={r.id} value={r.id}>{r.name}{r.area ? ', ' + r.area : ''}</option>)}
               </select></label>}
               <label className="w">Best time to reach you (optional)<input placeholder="For example, weekday mornings" maxLength={120} value={bestTime} onChange={(e) => setBestTime(e.target.value)} data-request-time /></label>
@@ -318,7 +336,8 @@ export default function Planner() {
   const [plan, setPlan] = useState((kept && kept.plan) || EMPTY_PLAN);
   const [ref] = useState(() => (kept && kept.ref) || 'MW-' + uid().slice(0, 8).toUpperCase());
   const [draft, setDraft] = useState(''); const [busy, setBusy] = useState(false);
-  const [tab, setTab] = useState('chat'); const [asking, setAsking] = useState(false); const [vendors, setVendors] = useState([]); const [reps, setReps] = useState([]);
+  const [tab, setTab] = useState('chat'); const [asking, setAsking] = useState(false); const [vendors, setVendors] = useState([]); const [reps, setReps] = useState([]); const [defaultRep, setDefaultRep] = useState('');
+  const [repWanted] = useState(() => linkedRepWanted());
   const [opening, setOpening] = useState(''); const ta = useRef(null);
   const grow = useCallback((el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }, []);
   // Details and notes grow to show every line, after any change to the plan and when the screen turns or resizes.
@@ -339,7 +358,7 @@ export default function Planner() {
   }, [theme]);
   const end = useRef(null);
   useEffect(() => { save({ messages, plan, ref }); }, [messages, plan, ref]);
-  useEffect(() => { fetch(API + '?op=config').then((r) => r.json()).then((d) => { setVendors(Array.isArray(d.vendors) ? d.vendors : []); setReps(Array.isArray(d.reps) ? d.reps : []); if (!chosen && d.theme === 'dark') setTheme('dark'); }).catch(() => { }); }, []);
+  useEffect(() => { fetch(API + '?op=config').then((r) => r.json()).then((d) => { setVendors(Array.isArray(d.vendors) ? d.vendors : []); setReps(Array.isArray(d.reps) ? d.reps : []); setDefaultRep(typeof d.defaultRep === 'string' ? d.defaultRep : ''); if (!chosen && d.theme === 'dark') setTheme('dark'); }).catch(() => { }); }, []);
   useEffect(() => { document.title = 'Midwest Furniture Planner'; const on = () => setScrolled(window.scrollY > 4); window.addEventListener('scroll', on); return () => window.removeEventListener('scroll', on); }, []);
   useEffect(() => { if (end.current) end.current.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [messages, busy]);
   const inPlan = useMemo(() => new Set(plan.items.map((i) => i.id)), [plan.items]);
@@ -476,7 +495,7 @@ export default function Planner() {
           </section>
         </main>
       )}
-      {asking && <RequestDialog plan={plan} onClose={() => setAsking(false)} makePdf={makePdf} campaign={campaign} reps={reps} />}
+      {asking && <RequestDialog plan={plan} onClose={() => setAsking(false)} makePdf={makePdf} campaign={campaign} reps={reps} linkedRep={matchRep(reps, repWanted)} defaultRep={defaultRep} />}
     </div>
   );
 }

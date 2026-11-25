@@ -86,3 +86,11 @@ Cause: a planner request saved the Prospect card with no rep (`assignedRep: ''`)
 - The webhook signing key is `signingKey(env)`: `PLAN_BOOKING_SIGNING_KEY` when set, otherwise an HMAC derived from the server's existing secret, so connecting a rep needs no new environment setting and the key never reaches a browser.
 - A signed booking whose host calendar email matches no configured rep now returns `unknownHost` and leaves the card alone, so a calendar Midwest did not connect cannot move or assign a Prospect card.
 - Tests: section 7 of `tests/reliability/planner-test.mjs`, mutants 30 to 34. `render-test.mjs` had an invoice due 2026-11-24 that became overdue on its own; its due date is now far in the future.
+
+## Rep share links, added reps and the email path (J, Nov 25 2026)
+
+- Share links: `midwestaios.com/plan?rep=jim-lindner` (the slug comes from the rep's name; the rep id also works). The planner remembers it on that device (`mw_plan_rep`) and preselects that rep in the quote request. Customers still pick a rep only inside "Request a priced quote", never before. Without a link, the request goes to the default rep, named in the first option ("I don't know my rep (Dave Welter will help you)"). Only reps marked "Customers can choose" are matched.
+- Config now returns `defaultRep` (the default rep's id, only when that rep is offered by name) and a `slug` per offered rep. It still carries no email.
+- Users & Permissions >> Furniture Planner: per rep an Email field, "Copy share link", and for reps added here (id `PX-...`, `added: true`) editable names and Remove. "Add a sales rep" takes name, email, area and booking link. Add and remove save immediately; removing the default rep falls back to Dave (S001).
+- After a request, when the rep reached has no booking link, the response carries `repEmail` (the rep's email, otherwise their calendar email) and the confirmation shows "Email <first name>". With a booking link there is no email, only "Book a call with <first name>". Both open in a new tab.
+- Tests: section 8 of `planner-test.mjs`, mutants 35 to 39.
