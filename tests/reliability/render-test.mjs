@@ -43,7 +43,7 @@ assert.equal(JSON.parse(records.find(r=>r.id==='INVR-prior').content).date,'2026
 assert.ok(document.querySelector('a[href="https://example.test/pay"]'),'filing preserves issued quantity and correct link');
 console.log('PASS rendered invoice dates, partial checkout request, stale-link hiding and registered state');
 await act(async()=>app.unmount());
-const ledgerSops=[{id:'R1',cat:'Invoice',content:JSON.stringify({jobId:job.id,invoiceNum:'ONE',total:400,date:'2026-09-01',dueDate:'2026-10-01'})},{id:'R2',cat:'Invoice',content:JSON.stringify({jobId:job.id,invoiceNum:'TWO',total:600,date:'2026-10-25',dueDate:'2026-11-24'})},{id:'DOC_STATUSES_GLOBAL',cat:'DocStatuses',content:JSON.stringify({'PAY-1':{jobId:job.id,amount:150}})}];
+const ledgerSops=[{id:'R1',cat:'Invoice',content:JSON.stringify({jobId:job.id,invoiceNum:'ONE',total:400,date:'2026-09-01',dueDate:'2026-10-01'})},{id:'R2',cat:'Invoice',content:JSON.stringify({jobId:job.id,invoiceNum:'TWO',total:600,date:'2026-10-25',dueDate:'2099-11-24'})},{id:'DOC_STATUSES_GLOBAL',cat:'DocStatuses',content:JSON.stringify({'PAY-1':{jobId:job.id,amount:150}})}];
 const dashboard=createRoot(document.getElementById('root'));await act(async()=>dashboard.render(React.createElement(Dashboard,{...props,customSops:ledgerSops,dateFilter:'all',setDateFilter:()=>{},setSelectedJob:()=>{},jobNum:()=>1,jobReportDate:j=>j.createdDate})));
 assert.match(document.body.textContent,/1 overdue invoices \(\$250\.00\)/,'dashboard displays unpaid remainder for past-due invoice only');
 await act(async()=>dashboard.unmount());console.log('PASS rendered dashboard ledger and overdue balance');
