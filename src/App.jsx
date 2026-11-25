@@ -2393,6 +2393,15 @@ function MidwestAIOSInner() {
     setCustomSops(rows => rows.some(row => row.id === result.row.id) ? rows.map(row => row.id === result.row.id ? result.row : row) : [...rows,result.row]);
     return result.row;
   };
+  const savePlannerVendorPolicy = async (sop, expectedContent) => {
+    const result = await db.savePlannerVendorPolicy(sop, expectedContent);
+    if (result.ok) {
+      const row = result.row;
+      setCustomSops(rows => rows.some(r => r.id === row.id)
+        ? rows.map(r => r.id === row.id ? row : r) : [...rows, row]);
+    }
+    return result;
+  };
   const addSop = (sop, changes) => { if(sop.cat === 'VendorCatalog') return changeVendorCatalog(sop,'insert'); if (sop.id === DOCUMENT_STATUSES_ID) return saveDocumentStatusChanges(changes); setCustomSops(p => { const exists = p.findIndex(s => s.id === sop.id); if (exists >= 0) { const updated = [...p]; updated[exists] = sop; return updated; } return [...p, sop]; }); db.deleteSop(sop.id).then(()=>db.saveSop(sop)); };
   // Line-item ship-to override store: persists per-line shipTo addresses in a dedicated
   // sops record (LINE_ITEM_SHIP_TO_GLOBAL). This sidesteps the supabase.js line_items
@@ -2541,7 +2550,7 @@ function MidwestAIOSInner() {
   // it passes through for everyone; Vendor 360 reads the unfiltered line-item
   // ledger (vendor spend across ALL jobs), so sales-role users are excluded.
   const _allowedPageIds = new Set([...navItems.map(i=>i.id),"customer360",...(userRole==="sales"?[]:["vendor360"])]);
-  const ctx = {jobs:visibleJobs,allJobs:jobs,setJobs,confirmJobId,jobNum,currentUser,userRole,userRepId,logout,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,_commissionFor,_bankTxnHash,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,forceDeleteVendor,forceDeleteLineItem,forceDeleteCustomer,forceDeleteRep,db,lineItemShipTos,setLineItemShipTo,setPage:p=>{const _tp=_allowedPageIds.has(p)?p:(navItems[0]?.id||"dashboard");setPage(_tp);setMobileMenuOpen(false);window.scrollTo(0,0);const mc=document.querySelector('.main-content');if(mc)mc.scrollTop=0},viewCustomer:id=>{setPage("customer360");window._viewCustId=id;window.scrollTo(0,0)},jobReportDate,brainQuery,setBrainQuery,customSops,setCustomSops,addSop,deleteSop,changeVendorCatalog,brainLoading,setBrainLoading,brainHistory,setBrainHistory,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter,pendingCommPreview,setPendingCommPreview,pendingBrainFile,setPendingBrainFile,pendingBrainEmail,setPendingBrainEmail,focusSopId,setFocusSopId};
+  const ctx = {jobs:visibleJobs,allJobs:jobs,setJobs,confirmJobId,jobNum,currentUser,userRole,userRepId,logout,lineItems,setLineItems,reps,setReps,vendors,customers,setCustomers,setVendors,selectedJob,setSelectedJob,showNewJob,setShowNewJob,notify,getJobItems,getJobFinancials,getItemStatus,getJobPOStatus,getJobInvStatus,_commissionFor,_bankTxnHash,updateLineItem,addLineItem,deleteLineItem,updateJob,addJob,deleteJob,updateRep,addRep,deleteRep,addCustomer,updateCustomer,deleteCustomer,addVendor,updateVendor,deleteVendor,forceDeleteVendor,forceDeleteLineItem,forceDeleteCustomer,forceDeleteRep,db,lineItemShipTos,setLineItemShipTo,setPage:p=>{const _tp=_allowedPageIds.has(p)?p:(navItems[0]?.id||"dashboard");setPage(_tp);setMobileMenuOpen(false);window.scrollTo(0,0);const mc=document.querySelector('.main-content');if(mc)mc.scrollTop=0},viewCustomer:id=>{setPage("customer360");window._viewCustId=id;window.scrollTo(0,0)},jobReportDate,brainQuery,setBrainQuery,customSops,setCustomSops,addSop,deleteSop,changeVendorCatalog,savePlannerVendorPolicy,brainLoading,setBrainLoading,brainHistory,setBrainHistory,triggerPrint,dbStatus,confirm,globalSearch,setGlobalSearch,dateFilter,setDateFilter,pendingCommPreview,setPendingCommPreview,pendingBrainFile,setPendingBrainFile,pendingBrainEmail,setPendingBrainEmail,focusSopId,setFocusSopId};
 
 
   const loadingScreen = (

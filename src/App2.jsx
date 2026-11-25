@@ -12,7 +12,7 @@ import { db } from "./supabase.js";
 import { useUser, useClerk, SignIn, UserButton, useAuth } from "@clerk/clerk-react";
 import{BarChart,Bar as RBar,XAxis,YAxis,Tooltip,ResponsiveContainer,LineChart,Line,PieChart,Pie,Cell}from"recharts";
 import { AnimNum, AnimatedNumber, Badge, Bar, Btn, CUSTOMER_TYPES, Card, Check, CheckMinus, DEFAULT_SOPS, Dashboard, DocumentsPage, Header, I, LINK_KINDS, LinkChips, LinkPicker, LinkedItemsPanel, bankCategoryType, bankTxnFingerprint, commissionEarned, commissionEarnedDate, commissionQuarterLabel, commissionQuarterOf, customerTypeOptions, fmt, fmtN, getLinks, getProspectList, getRoles, inputStyle, isSalesRep, isoDay, openLink, parseLocalDate, pct, resolveLinkNames, shipKey, statusColor } from "./App.jsx";
-import { PlannerBookingCard, PlannerLinkBar } from "./plannerSettings.jsx";
+import { PlannerBookingCard, PlannerLinkBar, PlannerVendorCard } from "./plannerSettings.jsx";
 import { vendorPurchaseHistory, vendorUsage } from "./vendorHistory.js";   // company purchase history with each vendor   // Furniture Planner booking (/plan)
 import { FinancialsPage, parseVendorBills, billStatus, billTotal, billPaidTotal, billBalance } from "./App3.jsx";
 // ===============================================================
@@ -6351,7 +6351,7 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
 
 
 
-function UserMgmtPage({notify,reps,customSops,addSop,deleteSop}){
+function UserMgmtPage({notify,reps,vendors,customSops,addSop,deleteSop,savePlannerVendorPolicy}){
   const [users,setUsers]=useState([]);
   const [loading,setLoading]=useState(true);
   const [showAdd,setShowAdd]=useState(false);
@@ -6401,6 +6401,7 @@ function UserMgmtPage({notify,reps,customSops,addSop,deleteSop}){
   return <div style={{animation:"fadeUp 0.4s"}}>
     <Header title="Users & Permissions" sub="Manage team access"/>
     <PlannerBookingCard reps={reps} customSops={customSops} addSop={addSop} notify={notify}/>
+    <PlannerVendorCard vendors={vendors} customSops={customSops} savePolicy={savePlannerVendorPolicy} notify={notify}/>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
       <div style={{fontSize:13,color:"#a3a3a3"}}>{allUsersList.length} user{allUsersList.length!==1?"s":""} ({users.length} password, {clerkUsers.length} Google/Apple)</div>
       <Btn onClick={()=>setShowAdd(!showAdd)}>{showAdd?"Cancel":"+ Add User"}</Btn>

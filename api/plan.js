@@ -6,6 +6,7 @@
 //                     customers, notes or staff tools exist here, so none can be asked for or leaked.
 //   POST ?op=request  "Request a priced quote": saves the plan and contact as a Prospect card (the Prospects page's
 //                     own duplicate rules), safe to repeat (the request id is kept on the card).
+//   POST ?op=validate  rechecks locally saved plan lines and alternatives against current Planner catalogues.
 //   GET  ?op=config   whether a booking link is set, and the reps a customer may ask for by name (names and areas only).
 //   POST ?op=booking  Calendly's "invitee created" webhook: a CONFIRMED booking. Signed with signingKey(env) (PLAN_BOOKING_SIGNING_KEY or one derived on the server);
 //                     matched to the prospect and assigned to the rep whose calendar took the meeting.
@@ -14,6 +15,8 @@
 //                     and subscribes Calendly to send that rep's confirmed bookings to ?op=booking. Nothing is saved
 //                     here: the admin's browser saves the link and email into PLANNER_SETTINGS like every other setting.
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { PLANNER_VENDOR_POLICY_ID, includesPlannerWords, parseVendorPolicy, plannerWords, preferredProduct, vendorPolicyFor } from '../src/plannerVendorPolicy.js';
 import { catalogRecords, loadCatalog, searchCatalog, getProduct } from '../src/vendorCatalog.js';
 import { publicCatalogs, publicProduct, cleanPlanItem } from '../src/planCatalog.js';
 import { findDuplicateProspect, normProspectEmail } from '../src/prospectKeys.js';
@@ -36,7 +39,14 @@ export function makeDb(fetcher = fetch) {
     catalogRows: () => rest('sops?cat=eq.VendorCatalog&select=id,cat,content'),
     // Every Prospect card, page by page: the database answers at most 1000 rows at a time and Midwest has more.
     prospects: async () => { const all = []; for (let off = 0; off < 100000; off += 1000) { const page = await rest('sops?cat=eq.Prospect&select=id,content&order=id.asc&limit=1000&offset=' + off); all.push(...(page || [])); if (!page || page.length < 1000) break; } return all; },
-    settings: async () => { const r = await rest('sops?id=eq.' + SETTINGS_ID + '&select=content'); try { return JSON.parse((r && r[0] && r[0].content) || '{}'); } catch (e) { return {}; } },
+    settings: async () => {
+      const rows = await rest('sops?id=in.(' + SETTINGS_ID + ',' + PLANNER_VENDOR_POLICY_ID + ')&select=id,content');
+      const booking = (rows || []).find(row => row.id === SETTINGS_ID);
+      const policy = (rows || []).find(row => row.id === PLANNER_VENDOR_POLICY_ID);
+      let settings = {};
+      try { settings = JSON.parse(booking?.content || '{}') || {}; } catch (e) { }
+      return { ...settings, vendorPolicy: parseVendorPolicy(policy?.content) };
+    },
     saveProspect: (id, data) => rest('sops?on_conflict=id', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
       body: JSON.stringify([{ id, title: data.name || data.company || 'Prospect', cat: 'Prospect', icon: 'target', content: JSON.stringify(data), custom: true }]) }),
     spendToday: async () => Number(await rest('rpc/planner_spend_get', { method: 'POST', body: '{}' })) || 0,
@@ -51,20 +61,42 @@ export function makeDb(fetcher = fetch) {
 }
 
 // ---- the catalogues, as a customer may see them ----
-export async function loadPublicCatalogs(db, fetcher = fetch) {
-  const recs = publicCatalogs(catalogRecords(await db.catalogRows()));
-  const out = await Promise.all(recs.map(async (rec) => { try { return { rec, cat: await loadCatalog(rec, { fetchImpl: fetcher }) }; } catch (e) { return null; } }));
+export async function loadPublicCatalogs(db, fetcher = fetch, policy, { records, ids, strict = false } = {}) {
+  const recs = publicCatalogs(records ?? catalogRecords(await db.catalogRows()), policy)
+    .filter(rec => !ids || ids.has(rec.id));
+  const out = await Promise.all(recs.map(async (rec) => {
+    try {
+      const cat = await loadCatalog(rec, { fetchImpl: fetcher });
+      return cat.codeCount ? { rec, cat, rule: vendorPolicyFor(policy, rec.vendorId) } : null;
+    } catch (e) {
+      if (strict) throw e;
+      return null;
+    }
+  }));
   return out.filter(Boolean);
 }
-export function searchAll(cats, query, limit = 20) {
+
+const lineCatalogId = item => str(item?.catalog_id || item?.catalogId, 200);
+function loadDraftCatalogs(db, fetcher, policy, items, legacyRequest = false) {
+  const ids = items.map(lineCatalogId);
+  if (!ids.length) return [];
+  return loadPublicCatalogs(db, fetcher, policy, { ids: legacyRequest && ids.includes('') ? null : new Set(ids), strict: true });
+}
+
+export function searchAll(cats, query, limit = 20, context = '', category = '') {
   const hits = [];
-  for (const { rec, cat } of cats) {
-    const r = searchCatalog(cat, query, { limit: 10 });
-    for (const row of r.rows || []) hits.push({ rec, row, score: String(row.code).toLowerCase() === String(query).toLowerCase() ? 3 : 1 });
+  for (const { rec, cat, rule } of cats) {
+    const matches = searchCatalog(cat, query, { limit: rule ? 60 : 10 }).rows.map(row => {
+      const exact = String(row.code).toLowerCase() === String(query).toLowerCase();
+      const preferred = preferredProduct(rule, row, query, context, category);
+      return { rec, row, rule, preferred, score: exact ? 3 : preferred ? 2 : 1 };
+    });
+    hits.push(...matches.sort((a, b) => b.score - a.score).slice(0, 10));
   }
   const seen = new Set(); const out = [];
   for (const h of hits.sort((a, b) => b.score - a.score)) {
-    const p = publicProduct(h.rec, h.row); const k = p.vendor + '|' + p.code;
+    const p = publicProduct(h.rec, h.row, h.rule); const k = h.rec.vendorId + '|' + p.code;
+    if (h.preferred) p.preferred = true;
     if (seen.has(k)) continue; seen.add(k); out.push(p);
     if (out.length >= limit) break;
   }
@@ -80,15 +112,27 @@ export function findProduct(cats, catalogId, code) {
   if (!hit) return null;
   const r = getProduct(hit.cat, code);
   const row = r.exact ? r.rows[0] : null;
-  return row ? publicProduct(hit.rec, row) : null;
+  return row ? publicProduct(hit.rec, row, hit.rule) : null;
 }
 // Every plan line is checked against the catalogues: a code that is not in the named catalogue never reaches the plan.
 // Plans run from one chair to a whole district: up to 250 lines, quantities up to 100,000.
 export const PLAN_LINES = 250;
-export function validatePlan(cats, plan) {
+// Older public clients submitted catalogue labels. Accept only an unambiguous match in eligible catalogues.
+function legacyCatalogId(cats, item) {
+  const hits = cats.filter(({ rec, cat }) => {
+    const result = getProduct(cat, item.code);
+    if (!result.exact) return false;
+    const product = publicProduct(rec, result.rows[0]);
+    return product.vendor === item.vendor && product.catalog === item.catalog;
+  });
+  return hits.length === 1 ? hits[0].rec.id : '';
+}
+
+export function validatePlan(cats, plan, legacyRequest = false) {
   const items = []; const unknown = [];
   for (const it of (plain(plan) && Array.isArray(plan.items) ? plan.items : []).slice(0, PLAN_LINES)) {
-    const p = findProduct(cats, str(it && it.catalog_id || it && it.catalogId, 200), str(it && it.code, 80));
+    const id = lineCatalogId(it) || (legacyRequest && it ? legacyCatalogId(cats, it) : '');
+    const p = findProduct(cats, id, str(it?.code, 80));
     if (p) items.push(cleanPlanItem(it, p)); else unknown.push(str(it && (it.code || it.name), 80));
   }
   const pr = plain(plan && plan.project) ? plan.project : {};
@@ -117,7 +161,8 @@ HOW TO WORK
 - Save every project fact the customer gives (room, organization, headcount, dimensions, age_group, timeline, location, constraints) in update_plan's project. Save only what the customer actually said; leave a fact out until they tell you (never a placeholder like "not yet named" or "TBD").
 - In your first reply, ask in one short friendly message for the missing essentials among: school or organization, age group or grade, room dimensions, timeline, and city and state. At most 3 questions at a time. Never wait for the answers to build the plan: build with stated assumptions, then ask.
 - After saving, say briefly what you added (for example "I added 28 desks, 28 chairs and a teacher desk to your plan.") and invite changes.
-- Use list_vendors when someone asks which brands Midwest carries. Use search_products to find real products in Midwest's vendor catalogues and get_product to confirm a model code. Use catalog_id and code exactly as the tools returned them, and give each line a quantity and a short note.
+- Use list_vendors for brands available in the Furniture Planner. Use search_products for the type of item you need, and pass the grade, age and room for that particular area in context. Give the broad product category separately, such as Seating or Storage. Do not repeat the entire project in the query. A preferred match is a suggestion from Midwest. Choose it among equally suitable products, with size and age suitability first.
+- Recommend products and vendors only from the current tool results. If the requested brand or model is unavailable here, offer eligible alternatives. Use get_product to confirm a model code you are unsure of. Use catalog_id and code exactly as the tools returned them, and give each line a quantity and a short note.
 
 NEVER
 - Never invent a model code, product, size, color, availability, lead time, warranty or ship date. If the tools do not show it, say "not confirmed in the catalogue" and that a Midwest specialist will confirm it.
@@ -128,7 +173,7 @@ Keep answers short, warm and practical. Plain text with short lists; no tables.`
 
 const TOOLS = [
   { name: 'list_vendors', description: 'The vendor brands whose catalogues Midwest has loaded, with each catalogue title and its product groups.', input_schema: { type: 'object', properties: {} } },
-  { name: 'search_products', description: 'Search Midwest\'s approved vendor catalogues by words or a model code (e.g. "student desk adjustable", "stacking chair 18 inch", "mobile whiteboard"). Returns real products with vendor, code, name, series, section, page and specs. No prices.', input_schema: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } },
+  { name: 'search_products', description: 'Search Midwest\'s approved vendor catalogues by words or a model code (e.g. "student desk adjustable", "stacking chair 18 inch", "mobile whiteboard"). Returns real products with vendor, code, name, series, section, page and specs. No prices.', input_schema: { type: 'object', properties: { query: { type: 'string' }, context: { type: 'string', description: 'Grade, age group and kind of room for this product; for example, pre-K classroom, ages 3-5.' }, category: { type: 'string', description: 'Broad furniture category such as Seating, Tables, or Storage.' } }, required: ['query'] } },
   { name: 'get_product', description: 'Confirm one product by catalog_id and model code exactly as search_products returned them.', input_schema: { type: 'object', properties: { catalog_id: { type: 'string' }, code: { type: 'string' } }, required: ['catalog_id', 'code'] } },
   { name: 'update_plan', description: 'Save the current plan shown to the customer. Lines not found in the catalogues are dropped and reported back.', input_schema: { type: 'object', properties: {
     project: { type: 'object', properties: { room: { type: 'string' }, organization: { type: 'string' }, headcount: { type: 'string' }, dimensions: { type: 'string' }, age_group: { type: 'string' }, constraints: { type: 'string' }, timeline: { type: 'string' }, location: { type: 'string' } } },
@@ -164,28 +209,50 @@ export function addedLines(before, after) {
 }
 
 // What the model sees of a product: enough to choose and cite it, small enough for big projects.
-const compact = (p) => ({ catalog_id: p.catalogId, code: p.code, name: p.name, vendor: p.vendor, series: p.series, section: p.section, page: p.page, specs: p.specs });
+const compact = (p) => ({ catalog_id: p.catalogId, code: p.code, name: p.name, vendor: p.vendor, series: p.series, section: p.section, page: p.page, specs: p.specs, ...(p.preferred ? { preferred: true } : {}) });
 // A line the model re-sends without its note or area keeps the ones already on the customer's screen.
 function keepNotes(next, current) {
   const was = new Map(current.items.map((i) => [i.catalogId + '|' + i.code, i]));
   for (const it of next.items) { const o = was.get(it.catalogId + '|' + it.code); if (!o) continue; if (!it.note && o.note) it.note = o.note; if (!it.area && o.area) it.area = o.area; }
 }
 
-export async function runChat({ env, db, fetcher = fetch, messages, plan, model }) {
-  const cats = await loadPublicCatalogs(db, fetcher);
-  const convo = (Array.isArray(messages) ? messages : []).slice(-24).map((m) => ({ role: m && m.role === 'assistant' ? 'assistant' : 'user', content: str(m && m.text, 4000) || '...' }));
+export async function runChat({ env, db, fetcher = fetch, messages, plan, model, settings }) {
+  const policy = (settings ?? await db.settings()).vendorPolicy;
+  const records = catalogRecords(await db.catalogRows());
+  const cats = await loadPublicCatalogs(db, fetcher, policy, { records });
+  const excluded = records.filter(rec => vendorPolicyFor(policy, rec.vendorId)?.excluded === true);
+  const eligibleNames = new Set(cats.map(({ rec }) => plannerWords(rec.vendorName)));
+  const excludedNames = [...new Set(excluded.map(rec => plannerWords(rec.vendorName)))].filter(name => name && !eligibleNames.has(name));
+  const excludedIds = new Set(excluded.map(rec => rec.id));
+  const blockedCodes = new Set();
+  const checkBlocked = (line) => {
+    if (excludedIds.has(lineCatalogId(line))) blockedCodes.add(plannerWords(line.code));
+  };
+  (Array.isArray(plan?.items) ? plan.items : []).slice(0, PLAN_LINES).forEach(checkBlocked);
+  const mentionsBlocked = (reply) => {
+    const words = plannerWords(reply);
+    return excludedNames.some(name => includesPlannerWords(words, name))
+      || [...blockedCodes].some(code => includesPlannerWords(words, code));
+  };
+  const convo = (Array.isArray(messages) ? messages : []).slice(-24)
+    .filter(m => m?.role !== 'assistant' || !mentionsBlocked(m.text))
+    .map((m) => ({ role: m && m.role === 'assistant' ? 'assistant' : 'user', content: str(m && m.text, 4000) || '...' }));
   while (convo.length && convo[0].role !== 'user') convo.shift();
   if (!convo.length) throw Object.assign(new Error('empty'), { status: 400 });
   const current = validatePlan(cats, plan || {});
   const sys = SYSTEM + '\n\nThe plan on the customer\'s screen now (they may have edited it): ' + JSON.stringify({ project: current.project, items: current.items.map((i) => ({ catalog_id: i.catalogId, code: i.code, name: i.name, qty: i.qty, ...(i.area ? { area: i.area } : {}), ...(i.note ? { note: i.note } : {}) })), assumptions: current.assumptions });
-  let nextPlan = null; const shown = new Map(); let unknown = [];
+  let nextPlan = current.unknown.length ? current : null;
+  const shown = new Map();
+  let unknown = current.unknown;
+  const context = [current.project.room, current.project.age_group, convo.at(-1)?.content].filter(Boolean).join(' ');
   const msgs = convo.slice();
   for (let round = 0; round < 10; round++) {
     const out = await claude(env, { model: model || 'claude-sonnet-5', max_tokens: 8000, system: sys, tools: TOOLS, messages: msgs }, fetcher);
     if (db.spendAdd) await db.spendAdd(costCents(out.usage)).catch(() => 0);
     const uses = (out.content || []).filter((c) => c.type === 'tool_use');
     if (!uses.length || out.stop_reason !== 'tool_use') {
-      const reply = plainDashes((out.content || []).filter((c) => c.type === 'text').map((c) => c.text).join('\n').trim());
+      let reply = plainDashes((out.content || []).filter((c) => c.type === 'text').map((c) => c.text).join('\n').trim());
+      if (mentionsBlocked(reply)) reply = 'That option is unavailable in the Furniture Planner. A Midwest specialist can help, or you can explore the eligible products shown here.';
       return { reply, products: [...shown.values()].slice(0, 12), plan: nextPlan, unknown, added: addedLines(current, nextPlan) };
     }
     msgs.push({ role: 'assistant', content: out.content });
@@ -193,9 +260,22 @@ export async function runChat({ env, db, fetcher = fetch, messages, plan, model 
     for (const u of uses) {
       let result;
       if (u.name === 'list_vendors') result = vendorList(cats);
-      else if (u.name === 'search_products') { const ps = searchAll(cats, str(u.input && u.input.query, 200)); ps.forEach((p) => shown.set(p.id, p)); result = ps.length ? ps.map(compact) : 'No product in the approved catalogues matched. Say so plainly and ask a clarifying question or try other words.'; }
-      else if (u.name === 'get_product') { const p = findProduct(cats, str(u.input && u.input.catalog_id, 200), str(u.input && u.input.code, 80)); if (p) shown.set(p.id, p); result = p || 'Not found in that catalogue. Do not use this code.'; }
-      else if (u.name === 'update_plan') { const v = validatePlan(cats, u.input || {}); keepNotes(v, current); nextPlan = v; unknown = v.unknown; result = { saved: v.items.length, dropped_not_in_catalogue: v.unknown }; }
+      else if (u.name === 'search_products') {
+        const ps = searchAll(cats, str(u.input?.query, 200), 20, str(u.input?.context, 300) || context, str(u.input?.category, 80));
+        ps.forEach((p) => shown.set(p.id, p));
+        result = ps.length ? ps.map(compact) : 'No product in the approved catalogues matched. Say so plainly and ask a clarifying question or try other words.';
+      }
+      else if (u.name === 'get_product') {
+        checkBlocked(u.input);
+        const p = findProduct(cats, str(u.input?.catalog_id, 200), str(u.input?.code, 80));
+        if (p) shown.set(p.id, p);
+        result = p ? compact(p) : 'Not found in that catalogue. Do not use this code.';
+      }
+      else if (u.name === 'update_plan') {
+        (Array.isArray(u.input?.items) ? u.input.items : []).slice(0, PLAN_LINES).forEach(checkBlocked);
+        const v = validatePlan(cats, u.input || {}); keepNotes(v, current); nextPlan = v; unknown = v.unknown;
+        result = { saved: v.items.length, dropped_not_in_catalogue: v.unknown };
+      }
       else result = 'Unknown tool.';
       results.push({ type: 'tool_result', tool_use_id: u.id, content: JSON.stringify(result).slice(0, 12000) });
     }
@@ -251,15 +331,12 @@ export function bookingFor(settings, prospectId, contact, forRep) {
   return { url: u.href, repId };
 }
 
-export async function saveRequest({ db, body, settings = {}, now = () => new Date() }) {
+export async function saveRequest({ db, body, settings = {}, fetcher = fetch, now = () => new Date() }) {
   const c = plain(body.contact) ? body.contact : {};
   const contact = { name: str(c.name, 120), email: normProspectEmail(str(c.email, 200)), phone: str(c.phone, 40), company: str(c.company, 160), title: str(c.title, 120), city: str(c.city, 80), state: str(c.state, 40), type: str(c.type, 60) };
   if (!contact.name || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(contact.email) || !contact.company) throw Object.assign(new Error('Please add your name, a valid email and your school or company.'), { status: 400 });
   const requestId = str(body.requestId, 64);
   if (!/^[a-f0-9-]{16,64}$/i.test(requestId)) throw Object.assign(new Error('bad request id'), { status: 400 });
-  const plan = plain(body.plan) ? body.plan : {};
-  const items = (Array.isArray(plan.items) ? plan.items : []).slice(0, PLAN_LINES).map((i) => ({ area: str(i.area, 80), vendor: str(i.vendor, 80), code: str(i.code, 60), name: str(i.name, 120), qty: Math.max(1, Math.min(100000, Math.round(Number(i.qty) || 1))), note: str(i.note, 200), catalog: str(i.catalog, 100), page: Number(i.page) || null }));
-  const project = {}; for (const [k, v] of Object.entries(plain(plan.project) ? plan.project : {}).slice(0, 12)) project[str(k, 30)] = str(v, 300);
   const { repId, chosen } = chooseRep(settings, body.preferredRep);
   const bestTime = str(body.bestTime, 120);
   const camp = plain(body.campaign) ? body.campaign : {};
@@ -268,13 +345,24 @@ export async function saveRequest({ db, body, settings = {}, now = () => new Dat
   const all = (rows || []).map((r) => { try { return { id: r.id, ...JSON.parse(r.content) }; } catch (e) { return null; } }).filter(Boolean);
   const already = all.find((p) => Array.isArray(p.planRequests) && p.planRequests.some((q) => q.id === requestId));
   if (already) return { prospectId: already.id, repeated: true, contact, repId: already.assignedRep || repId, repName: repName(settings, already.assignedRep || repId) };
-  let pdfUrl = '';
-  if (typeof body.pdf === 'string' && body.pdf.length < 6000000) {
-    const bytes = Buffer.from(body.pdf, 'base64');
-    if (bytes.slice(0, 5).toString() === '%PDF-') pdfUrl = await db.uploadPdf(bytes);
+  const submitted = Array.isArray(body.plan?.items) ? body.plan.items : [];
+  const cats = await loadDraftCatalogs(db, fetcher, settings.vendorPolicy, submitted.slice(0, PLAN_LINES), true);
+  const plan = validatePlan(cats, body.plan, true);
+  if (plan.items.length !== submitted.length) {
+    throw Object.assign(new Error('Some products are no longer available in the Furniture Planner. Review your plan, then send it again.'), { status: 400 });
   }
-  const at = now().toISOString();
-  const request = { id: requestId, at, project, items, assumptions: (Array.isArray(plan.assumptions) ? plan.assumptions : []).map((a) => str(a, 300)).slice(0, 12), pdfUrl, campaign, ...(chosen ? { preferredRep: repId } : {}), ...(bestTime ? { bestTime } : {}) };
+  const { project, assumptions } = plan;
+  const items = plan.items.map(({ area = '', vendor, code, name, qty, note, catalog, page }) => ({ area, vendor, code, name, qty, note, catalog, page: Number(page) || null }));
+  const date = now();
+  let pdfUrl = '';
+  if (items.length) {
+    const { buildPlanPdf } = await import('../src/planner/planPdf.js');
+    const logoBytes = await readFile(new URL('../public/mw-logo.png', import.meta.url)).catch(() => null);
+    const refId = typeof body.refId === 'string' && /^MW-[A-Z0-9]{8}$/.test(body.refId) ? body.refId : 'MW-' + requestId.slice(0, 8).toUpperCase();
+    pdfUrl = await db.uploadPdf(Buffer.from(await buildPlanPdf({ plan, contact, refId, logoBytes, date })));
+  }
+  const at = date.toISOString();
+  const request = { id: requestId, at, project, items, assumptions, pdfUrl, campaign, ...(chosen ? { preferredRep: repId } : {}), ...(bestTime ? { bestTime } : {}) };
   const summary = 'Furniture Planner request ' + at.slice(0, 10) + ': ' + (project.room || 'space') + (project.headcount ? ', ' + project.headcount + ' people' : '') + '. ' + items.map((i) => i.qty + ' x ' + i.vendor + ' ' + i.code + (i.name ? ' (' + i.name + ')' : '')).join('; ') + (pdfUrl ? '. Plan PDF: ' + pdfUrl : '') + (chosen ? '. Asked to talk with ' + (repName(settings, repId) || repId) : '') + (bestTime ? '. Best time to reach them: ' + bestTime : '');
   const dup = findDuplicateProspect(all, contact);
   if (dup) {
@@ -384,8 +472,8 @@ export function planHandler(env, deps = {}) {
         return res.status(200).json({ ok: true, ...(await applyBooking({ db, event: JSON.parse(raw) })) });
       }
       if (op === 'config') {
-        const [settings, rows] = await Promise.all([db.settings().catch(() => ({})), db.catalogRows().catch(() => [])]);
-        const vendors = [...new Set(publicCatalogs(catalogRecords(rows)).map((r) => str(r.vendorName, 60)).filter(Boolean))].sort();
+        const [settings, rows] = await Promise.all([db.settings(), db.catalogRows().catch(() => [])]);
+        const vendors = [...new Set(publicCatalogs(catalogRecords(rows), settings.vendorPolicy).map((r) => str(r.vendorName, 60)).filter(Boolean))].sort();
         return res.status(200).json({ ok: true, booking: !!bookingFor(settings, 'x', {}), reps: plannerReps(settings), defaultRep: defaultRepPublic(settings), vendors, theme: settings && settings.theme === 'dark' ? 'dark' : 'light' });
       }
       if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'Use POST.' });
@@ -398,15 +486,23 @@ export function planHandler(env, deps = {}) {
       if (op === 'chat') {
         if (limited(ip, 40, 10 * 60 * 1000)) return res.status(429).json({ ok: false, error: 'You are going quickly. Please wait a minute and try again.' });
         // The admin's daily limit (Users & Permissions >> Furniture Planner): once today's spend reaches it, the planner rests until tomorrow.
-        const [settings, spent] = await Promise.all([db.settings().catch(() => ({})), db.spendToday()]);
+        const [settings, spent] = await Promise.all([db.settings(), db.spendToday()]);
         if (spent >= dailyLimitCents(settings)) return res.status(429).json({ ok: false, code: 'daily_limit', error: 'The planner has reached today\'s limit. Your plan is saved on this device: download it, or press "Request a priced quote" and Midwest will help you directly.' });
-        const out = await runChat({ env, db, fetcher, messages: body.messages, plan: body.plan });
+        const out = await runChat({ env, db, fetcher, messages: body.messages, plan: body.plan, settings });
         return res.status(200).json({ ok: true, ...out });
+      }
+      if (op === 'validate') {
+        if (limited('validate:' + ip, 80, 10 * 60 * 1000)) return res.status(429).json({ ok: false, error: 'Please wait a minute and try again.' });
+        const settings = await db.settings();
+        const items = (Array.isArray(body.plan?.items) ? body.plan.items : []).slice(0, PLAN_LINES);
+        const products = (Array.isArray(body.products) ? body.products : []).slice(0, PLAN_LINES);
+        const cats = await loadDraftCatalogs(db, fetcher, settings.vendorPolicy, [...items, ...products]);
+        return res.status(200).json({ ok: true, plan: validatePlan(cats, body.plan), products: validatePlan(cats, { items: products }).items });
       }
       if (op === 'request') {
         if (limited(ip, 8, 10 * 60 * 1000)) return res.status(429).json({ ok: false, error: 'Please wait a minute and try again.' });
-        const settings = await db.settings().catch(() => ({}));
-        const saved = await saveRequest({ db, body, settings });
+        const settings = await db.settings();
+        const saved = await saveRequest({ db, body, settings, fetcher });
         const booking = bookingFor(settings, saved.prospectId, saved.contact, saved.repId);
         return res.status(200).json({ ok: true, saved: true, repeated: !!saved.repeated, booking: booking ? booking.url : '', rep: saved.repName || '', repEmail: booking ? '' : repContactEmail(settings, saved.repId) });
       }

@@ -2,6 +2,9 @@
 // quote" (/plan). One booking link per rep, a default rep, and the calendar emails that tell the server which rep a
 // confirmed booking belongs to. Saved as the PLANNER_SETTINGS row; no code change to swap reps or add routing later.
 import React, { useState, useEffect } from "react";
+import { catalogRecords } from './vendorCatalog.js';
+import { publicCatalogs } from './planCatalog.js';
+import { PLANNER_VENDOR_POLICY_ID, PREFERENCE_FIELDS, parseVendorPolicy, preferenceTags, referenceUrl, vendorPolicyFor } from './plannerVendorPolicy.js';
 
 export const PLANNER_SETTINGS_ID = "PLANNER_SETTINGS";
 // The same public key the app already uses (src/supabase.js); planner_spend_get only reads a total.
@@ -196,9 +199,85 @@ export function PlannerBookingCard({ reps, customSops, addSop, notify }) {
         </div>
         <button type="button" onClick={addRep} style={{ marginTop: 8, padding: "7px 14px", borderRadius: 7, border: "none", background: "#2dd4bf", color: "#000", fontSize: 12, fontWeight: 700, cursor: "pointer" }} data-planner-add-go>Add rep</button>
       </div>
-      <div style={{ fontSize: 12, color: "#737373", lineHeight: 1.6, margin: "10px 0 14px" }}>Each rep's share link (Copy share link) opens the planner with that rep already chosen when the customer requests a quote; customers who arrive without one reach the default rep. Customers pick a rep only in the quote request, never before. When a rep has no booking link, the customer is offered to email the rep instead. Booking links are optional and any https booking page works (Calendly, Microsoft Bookings with me, and others). Connect Calendly fills in the rep's booking link and calendar email and turns on confirmed bookings: when a customer books, the Prospect card is matched and assigned to the rep whose calendar took it. Get the token in Calendly under Integrations & apps >> API and webhooks >> Personal access tokens. It is used once and never saved. A link click alone changes nothing.</div>
+      <div style={{ fontSize: 12, color: "#737373", lineHeight: 1.6, margin: "10px 0 14px" }}>Each rep's share link (Copy share link) opens the planner with that rep already chosen when the customer requests a quote; customers who arrive without one reach the default rep. Customers pick a rep only in the quote request, never before. When a rep has no booking link, the customer is offered to email the rep instead. Booking links are optional and any https booking page works (Calendly, Microsoft Bookings with me, and others). Connect Calendly fills in the rep's booking link and calendar email and turns on confirmed bookings: when a customer books, the Prospect card is matched and assigned to the rep whose calendar took it. Get the token in Calendly under Integrations &amp; apps &gt;&gt; API and webhooks &gt;&gt; Personal access tokens. It is used once and never saved. A link click alone changes nothing.</div>
       <button type="button" onClick={() => save()} style={{ padding: "9px 18px", borderRadius: 8, border: "none", background: "#2dd4bf", color: "#000", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>Save planner settings</button>
     </div>
     </>
   );
+}
+
+const preferenceInputs = {
+  grades: ['Grade or age tags', 'Pre-K, Grade 3'],
+  categories: ['Product category tags', 'Seating, Cubbies'],
+  spaces: ['Space tags', 'Library, Cafeteria'],
+};
+const vendorLabel = { fontSize: 12, color: "#c4c4c4", display: "block", marginBottom: 12 };
+
+export function PlannerVendorCard({ vendors, customSops, savePolicy, notify }) {
+  const names = new Map((vendors || []).map(v => [v.id, v.name]));
+  const eligible = new Map(publicCatalogs(catalogRecords(customSops)).map(rec => [rec.vendorId, names.get(rec.vendorId) || rec.vendorName || rec.vendorId]));
+  const options = [...eligible].sort((a, b) => a[1].localeCompare(b[1]));
+  const [selected, setSelected] = useState('');
+  const [saving, setSaving] = useState(false);
+  const row = (customSops || []).find(s => s.id === PLANNER_VENDOR_POLICY_ID);
+  let policy;
+  try { policy = parseVendorPolicy(row?.content); } catch { policy = null; }
+  return <section style={box} aria-labelledby="planner-vendors-title">
+    <h3 id="planner-vendors-title" style={{ fontSize: 15, color: "#f0f0f0", margin: "0 0 6px" }}>Furniture Planner vendor recommendations</h3>
+    <p style={{ fontSize: 12.5, color: "#9a9a9a", margin: "0 0 14px" }}>Choose a vendor with indexed products. Set preferences by grade, category or space to give suitable products from this vendor priority.</p>
+    <label style={vendorLabel}>Catalog vendor
+      <select style={{ ...inp, marginTop: 6 }} value={eligible.has(selected) ? selected : ''} disabled={saving || !options.length || !policy} onChange={e => setSelected(e.target.value)}>
+        <option value="">{options.length ? 'Choose a vendor' : 'No indexed catalogs available'}</option>
+        {options.map(([id, name]) => <option key={id} value={id}>{name}{options.some(([otherId, otherName]) => otherId !== id && otherName === name) ? ' (' + id + ')' : ''}</option>)}
+      </select>
+    </label>
+    {!policy && <p role="alert">Vendor settings could not be read. Refresh and try again.</p>}
+    {eligible.has(selected) && policy && <VendorPolicyFields key={selected + '|' + (row?.content || '')}
+      vendorId={selected} policy={policy} expectedContent={row?.content} saving={saving} setSaving={setSaving} savePolicy={savePolicy} notify={notify} />}
+  </section>;
+}
+
+function VendorPolicyFields({ vendorId, policy, expectedContent, saving, setSaving, savePolicy, notify }) {
+  const saved = vendorPolicyFor(policy, vendorId);
+  const [excluded, setExcluded] = useState(saved?.excluded === true);
+  const [tags, setTags] = useState(() => Object.fromEntries(PREFERENCE_FIELDS.map(key => [key, Array.isArray(saved?.[key]) ? saved[key].join(', ') : ''])));
+  const [url, setUrl] = useState(saved?.referenceUrl || '');
+  const [error, setError] = useState('');
+  const save = async (event) => {
+    event.preventDefault();
+    if (saving) return;
+    const reference = referenceUrl(url);
+    if (url.trim() && !reference) { setError('Enter a public HTTPS reference link without a username or password.'); return; }
+    const rule = Object.fromEntries(PREFERENCE_FIELDS.map(key => [key, preferenceTags(tags[key])]).filter(([, values]) => values.length));
+    if (excluded) rule.excluded = true;
+    if (reference) rule.referenceUrl = reference;
+    const next = { ...policy };
+    if (Object.keys(rule).length) next[vendorId] = rule;
+    else delete next[vendorId];
+    setError('');
+    setSaving(true);
+    try {
+      const result = await savePolicy({ id: PLANNER_VENDOR_POLICY_ID, title: 'Furniture Planner vendor recommendations', cat: 'Config', icon: 'settings', content: JSON.stringify(next), custom: true }, expectedContent);
+      if (result?.ok) notify('Furniture Planner vendor settings saved');
+      else setError(result?.conflict ? 'Someone changed these settings. Refresh and review their changes before saving.' : 'Could not confirm the save. Refresh and check the settings.');
+    } catch {
+      setError('Could not confirm the save. Refresh and check the settings.');
+    } finally {
+      setSaving(false);
+    }
+  };
+  return <form onSubmit={save}>
+    <label style={vendorLabel}><input type="checkbox" checked={excluded} onChange={e => setExcluded(e.target.checked)} /> Do not recommend in Furniture Planner</label>
+    <div className="resp-grid-2" style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
+      {PREFERENCE_FIELDS.map(key => <label key={key} style={vendorLabel}>{preferenceInputs[key][0]}
+        <input style={{ ...inp, marginTop: 6 }} value={tags[key]} onChange={e => setTags({ ...tags, [key]: e.target.value })} placeholder={preferenceInputs[key][1]} maxLength={750} />
+      </label>)}
+    </div>
+    <p style={{ fontSize: 12, color: "#9a9a9a", margin: "0 0 12px" }}>Separate tags with commas. Pre-K, ages 3-5, and early childhood match the same age group.</p>
+    <label style={vendorLabel}>Customer reference link (optional)
+      <input style={{ ...inp, marginTop: 6 }} inputMode="url" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://manufacturer.example/products" maxLength={800} />
+    </label>
+    {error && <p role="alert" style={{ color: "#f87171", fontSize: 13 }}>{error}</p>}
+    <button type="submit" disabled={saving} style={{ padding: "9px 18px", borderRadius: 8, border: "none", background: "#2dd4bf", color: "#000", fontWeight: 700, fontSize: 13 }}>{saving ? 'Saving' : 'Save vendor settings'}</button>
+  </form>;
 }

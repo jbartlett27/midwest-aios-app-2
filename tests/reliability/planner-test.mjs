@@ -9,7 +9,7 @@ const MUTANTS=[
   ['a booking webhook must be signed','api/plan.js',"if (!verifyCalendly(raw, req.headers['calendly-webhook-signature'], signingKey(env))) return res.status(401).json({ ok: false });",""],
   ['the booking assigns the rep whose calendar took it','api/plan.js',"if (repId) next.assignedRep = repId;",""],
   ['the daily limit stops the chat','api/plan.js',"if (spent >= dailyLimitCents(settings))","if (false)"],
-  ['replies lose their dashes','api/plan.js',"const reply = plainDashes(","const reply = ("],
+  ['replies lose their dashes','api/plan.js',"let reply = plainDashes(","let reply = ("],
   ['product names, not fragments','src/planCatalog.js',"if (usable(row.name)) return String(row.name).trim();","return row.name;"],
   ['every Prospect card is read','api/plan.js',"if (!page || page.length < 1000) break;","break;"],
   ['file names are not product names','src/planCatalog.js'," && !/_pages?[-_]?\\d|\\w_\\w+_|\\.pdf$/i.test(x)",""],
@@ -42,6 +42,11 @@ const MUTANTS=[
   ['a rep without a link is reached by email','api/plan.js',"repEmail: booking ? '' : repContactEmail(settings, saved.repId)","repEmail: ''"],
   ['a rep with a link shows no email','api/plan.js',"repEmail: booking ? '' : repContactEmail(settings, saved.repId)","repEmail: repContactEmail(settings, saved.repId)"],
   ['the contact email falls back to the calendar email','api/plan.js',"const all = [r.email, ...(Array.isArray(r.hostEmails) ? r.hostEmails : [])]","const all = [r.email]"],
+  ['pre-K preference reaches public search','api/plan.js',"const preferred = preferredProduct(rule, row, query, context, category);","const preferred = false;"],
+  ['excluded catalogues are removed before lookup and plan validation','src/planCatalog.js'," && vendorPolicyFor(policy, r.vendorId)?.excluded !== true",""],
+  ['stale or excluded products cannot reach a quote request','api/plan.js',"if (plan.items.length !== submitted.length) {","if (false) {"],
+  ['the public config fails closed when vendor rules are unavailable','api/plan.js',"Promise.all([db.settings(), db.catalogRows().catch(() => [])])","Promise.all([db.settings().catch(() => ({})), db.catalogRows().catch(() => [])])"],
+  ['an excluded recommendation is removed from model prose','api/plan.js',"if (mentionsBlocked(reply)) reply =","if (false) reply ="],
 ];
 const read=(f)=>{const t=fs.readFileSync('../../'+f,'utf8');if(mutantIdx<0||MUTANTS[mutantIdx][1]!==f)return t;assert.ok(t.includes(MUTANTS[mutantIdx][2]),'mutation anchor missing: '+MUTANTS[mutantIdx][0]);return t.replace(MUTANTS[mutantIdx][2],MUTANTS[mutantIdx][3]);};
 const plugin={name:'mut',setup(b){b.onLoad({filter:/(planCatalog|prospectKeys)\.js$/},(a)=>({contents:read(a.path.slice(a.path.indexOf('src/'))),loader:'js'}));}};
@@ -108,17 +113,17 @@ assert.equal(out.products[0].code,'FD-2030','the products it looked at come back
 saved=[{id:'PR-OLD',data:{name:'Pat Lee',company:'Lincoln Elementary',email:'pat@lincoln.test',status:'Contacted',assignedRep:'S004',notes:'met at expo'}}];
 const plan={project:{room:'Library'},items:[{vendor:'Acme Seating',code:'FD-2030',name:'Flex Desk',qty:10,catalog:'Acme 2026 Catalog',page:4}],assumptions:[]};
 const pdf=Buffer.from('%PDF-1.7 test').toString('base64');
-const a=await P.saveRequest({db,body:{requestId:'aaaaaaaa-1111-2222-3333-444444444444',contact:{name:'Sam Ortiz',email:'Sam@Oak.test',company:'Oak Middle School'},plan,campaign:{utm_campaign:'fall',evil:'x'},pdf}});
+const a=await P.saveRequest({db,fetcher,body:{requestId:'aaaaaaaa-1111-2222-3333-444444444444',contact:{name:'Sam Ortiz',email:'Sam@Oak.test',company:'Oak Middle School'},plan,campaign:{utm_campaign:'fall',evil:'x'},pdf}});
 assert.ok(a.created,'a new customer becomes a new prospect card');
 const card=saved.find(p=>p.id===a.prospectId).data;
 assert.deepEqual([card.status,card.source,card.email,card.campaign.utm_campaign,card.campaign.evil,card.planRequests[0].pdfUrl,card.planRequests[0].items[0].qty],['New','Furniture Planner','sam@oak.test','fall',undefined,'https://x/plan.pdf',10],'the card carries the contact, plan, quantities, PDF and campaign');
 assert.match(card.notes,/10 x Acme Seating FD-2030/,'staff read the request on the card without asking the customer again');
-const again=await P.saveRequest({db,body:{requestId:'aaaaaaaa-1111-2222-3333-444444444444',contact:{name:'Sam Ortiz',email:'sam@oak.test',company:'Oak Middle School'},plan,pdf}});
+const again=await P.saveRequest({db,fetcher,body:{requestId:'aaaaaaaa-1111-2222-3333-444444444444',contact:{name:'Sam Ortiz',email:'sam@oak.test',company:'Oak Middle School'},plan,pdf}});
 assert.deepEqual([again.repeated,saved.length],[true,2],'sending the same request again makes no second card');
-const dup=await P.saveRequest({db,body:{requestId:'bbbbbbbb-1111-2222-3333-444444444444',contact:{name:'Pat Lee',email:'PAT@lincoln.test',company:'Lincoln Elementary School'},plan}});
+const dup=await P.saveRequest({db,fetcher,body:{requestId:'bbbbbbbb-1111-2222-3333-444444444444',contact:{name:'Pat Lee',email:'PAT@lincoln.test',company:'Lincoln Elementary School'},plan}});
 const old=saved.find(p=>p.id==='PR-OLD').data;
 assert.deepEqual([dup.updated,saved.length,old.assignedRep,old.status,old.notes.startsWith('met at expo'),old.planRequests.length],[true,2,'S004','Contacted',true,1],'a known prospect (same email) is updated in place, keeping its rep, status and notes');
-await assert.rejects(P.saveRequest({db,body:{requestId:'cccccccc-1111-2222-3333-444444444444',contact:{name:'X',email:'nope',company:'Y'},plan}}),/valid email/,'a request needs a real email');
+await assert.rejects(P.saveRequest({db,fetcher,body:{requestId:'cccccccc-1111-2222-3333-444444444444',contact:{name:'X',email:'nope',company:'Y'},plan}}),/valid email/,'a request needs a real email');
 
 // 4. Booking: offered when set, never required; only a signed, confirmed booking assigns the rep.
 const bk=P.bookingFor(await db.settings(),a.prospectId,{name:'Sam Ortiz',email:'sam@oak.test'});
@@ -153,7 +158,7 @@ const s=app2.indexOf('const _normProspectText='),e=app2.indexOf('// Build a Set 
 const pageKeys=new Function(app2.slice(s,e)+';return _prospectKeys;')();
 const {prospectKeys}=await import('../../src/prospectKeys.js');
 for(const p of [{name:"Bobby's School",company:'The ABC Schools, Inc.'},{email:' A@B.com '},{phone:'(312) 555-0100 x1',name:'A'},{name:'John Smith'},{linkedin:'https://www.linkedin.com/in/x/'}])assert.deepEqual(prospectKeys(p),pageKeys(p),'the server\'s duplicate keys equal the Prospects page\'s');
-{await P.saveRequest({db,body:{requestId:'dddddddd-1111-2222-3333-444444444444',contact:{name:'Big District',email:'big@district.test',company:'Big District'},plan:{project:{},items:Array.from({length:200},()=>({vendor:'Acme Seating',code:'FD-2030',name:'Flex Desk',qty:5,area:'Classrooms'})),assumptions:[]}}});
+{await P.saveRequest({db,fetcher,body:{requestId:'dddddddd-1111-2222-3333-444444444444',contact:{name:'Big District',email:'big@district.test',company:'Big District'},plan:{project:{},items:Array.from({length:200},()=>({catalogId:'VCAT-1',code:'FD-2030',qty:5,area:'Classrooms'})),assumptions:[]}}});
  const bc=saved.find(p=>p.data.email==='big@district.test').data;assert.deepEqual([bc.planRequests[0].items.length,bc.planRequests[0].items[0].area],[200,'Classrooms'],'a large request reaches the card with every line and its area');}
 
 // 6. Reps (Maureen, Nov 24): Dave is the default, customers may ask for an offered rep such as Jim Lindner, no booking link needed.
@@ -221,4 +226,126 @@ for(const p of [{name:"Bobby's School",company:'The ABC Schools, Inc.'},{email:'
  assert.deepEqual([q.body.rep,q.body.repEmail],['Dave Welter','dave@mwf.test'],'a rep Midwest does not offer cannot be chosen: the default rep takes it');
  const rc={code:0,body:null,setHeader(){},status(c){this.code=c;return this},json(b){this.body=b;return this}};await H3({method:'GET',query:{op:'config'},headers:{}},rc);
  assert.ok(!/@/.test(JSON.stringify(rc.body))&&rc.body.reps.length===3,'the public config lists the offered reps with no email at all');}
+// Public entry point with synthetic early-childhood catalogues and an excluded purchasing vendor.
+{
+  const indexed = (id, vendorId, vendorName, products) => {
+    const url = 'https://planner-fixture.test/' + id + '.json';
+    return {
+      row: { id, cat: 'VendorCatalog', content: JSON.stringify({ vendorId, vendorName, url, title: vendorName + ' 2026 Catalog', productCount: products.length }) },
+      url, catalog: { v: 1, sections: [], pages: products.map(([code], i) => ({ n: i + 1, title: code, text: '' })),
+        products: products.map(([code, name, spec], i) => ({ c: code, b: name, p: i + 1, r: code + ' | ' + spec, h: -1 })) },
+    };
+  };
+  const standard = indexed('VCAT-STANDARD', 'V-STANDARD', 'Oak Classroom', [
+    ['OK-14', 'Early Learning Stacking Chair', 'Preschool stacking chair, 14 inch seat'],
+  ]);
+  const preferred = indexed('VCAT-PREFERRED', 'V-PREFERRED', 'Jonti-Craft', [
+    ['JC-18', 'Adult Stacking Chair', 'Adult stacking chair, 18 inch seat'],
+    ['JC-12', 'Early Learning Stacking Chair', 'Early childhood classroom seating, stacking chair, 12 inch seat'],
+    ['JC-ST', 'Cubbie Storage', 'Early childhood storage'],
+  ]);
+  const competitor = indexed('VCAT-COMPETITOR', 'V-EXCLUDED', 'Rival Learning', [
+    ['RL-12', 'Early Learning Stacking Chair', 'Preschool stacking chair, 12 inch seat'],
+  ]);
+  const catalogs = [standard, preferred, competitor];
+  const policy = {
+    'V-PREFERRED': { grades: ['Early childhood'], referenceUrl: 'https://manufacturer.example/early-learning' },
+    'V-EXCLUDED': { excluded: true, grades: ['Pre-K'], referenceUrl: 'https://rival.example/' },
+    'V-STANDARD': { referenceUrl: 'https://name:password@manufacturer.example/' },
+    'V-NOT-INDEXED': { grades: ['Pre-K'], referenceUrl: 'https://unindexed.example/' },
+  };
+  let settings = {};
+  let policySettingsFailed = false;
+  let toolCalls = [];
+  let turn = 0;
+  let uploaded;
+  let requestSaved;
+  let lastPrompt;
+  const fetched = [];
+  const newDb = {
+    ...db,
+    settings: async () => { if (policySettingsFailed) throw new Error('settings unreachable'); return settings; },
+    catalogRows: async () => catalogs.map(c => c.row),
+    spendToday: async () => 0,
+    spendAdd: async () => 0,
+    prospects: async () => [],
+    uploadPdf: async (bytes) => { uploaded = bytes; return 'https://planner-fixture.test/quote.pdf'; },
+    saveProspect: async (id, data) => { requestSaved = data; },
+  };
+  const allowed = { catalog_id: preferred.row.id, code: 'JC-12', qty: 12 };
+  const blocked = { catalog_id: competitor.row.id, code: 'RL-12', qty: 12 };
+  const fixtureFetch = async (url, init) => {
+    fetched.push(url);
+    const hit = catalogs.find(c => c.url === url);
+    if (hit) return { ok: true, json: async () => hit.catalog };
+    assert.equal(url, 'https://api.anthropic.com/v1/messages');
+    lastPrompt = JSON.parse(init.body);
+    const tool = (name, input) => ({ type: 'tool_use', id: name, name, input });
+    if (turn++ % 2 === 0) {
+      return { ok: true, json: async () => ({ stop_reason: 'tool_use', content: [
+        tool('list_vendors', {}),
+        tool('search_products', { query: 'stacking chair', context: 'pre-K classroom, ages 3\u20135' }),
+        tool('get_product', blocked),
+        tool('update_plan', { items: [allowed, blocked] }),
+      ] }) };
+    }
+    toolCalls = lastPrompt.messages.at(-1).content.map(c => JSON.parse(c.content));
+    return { ok: true, json: async () => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'Try the Rival Learning RL-12 chairs.' }] }) };
+  };
+  const handler = P.planHandler({ ANTHROPIC_API_KEY: 'fixture' }, { db: newDb, fetch: fixtureFetch });
+  const post = async (op, body, method = 'POST') => {
+    const response = { code: 0, body: null, setHeader() {}, status(code) { this.code = code; return this; }, json(value) { this.body = value; return this; } };
+    await handler({ method, query: { op }, headers: { 'x-forwarded-for': '192.0.2.55' }, body }, response);
+    return response;
+  };
+  const chat = { messages: [{ role: 'user', text: 'Plan a pre-K transition-school classroom for ages 3\u20135. Use Rival Learning if you can.' }], plan: { items: [blocked] } };
+  let response = await post('chat', chat);
+  assert.equal(response.body.products[0].code, 'OK-14', 'without saved rules the existing catalogue order is preserved');
+  settings = { vendorPolicy: policy };
+  response = await post('chat', chat);
+  assert.equal(response.code, 200);
+  assert.equal(response.body.products[0].code, 'JC-12', 'a relevant indexed Jonti-Craft product leads pre-K search');
+  assert.deepEqual(response.body.products.map(p => p.code), ['JC-12', 'OK-14', 'JC-18'], 'an adult chair from the preferred vendor stays below a matching pre-K chair and unrelated storage is absent');
+  assert.deepEqual(toolCalls[0].map(v => v.vendor), ['Jonti-Craft', 'Oak Classroom'], 'tool vendor list excludes the competitor');
+  assert.equal(toolCalls[1][0].preferred, true, 'the model can recognize a product matched by staff preferences');
+  assert.equal(toolCalls[1].find(p => p.code === 'JC-18').preferred, undefined, 'the adult chair is never marked preferred in a pre-K room');
+  assert.equal(typeof toolCalls[2], 'string', 'an exact blocked lookup returns no product');
+  assert.deepEqual(response.body.plan.items.map(p => p.code), ['JC-12'], 'a model update cannot add the blocked product');
+  assert.doesNotMatch(lastPrompt.system, /RL-12/, 'a blocked item in a resumed plan is not sent to the model');
+  assert.doesNotMatch(response.body.reply, /Rival Learning|RL-12/, 'the model cannot promote the excluded vendor in its reply');
+  assert.equal(response.body.products[0].referenceUrl, 'https://manufacturer.example/early-learning');
+  assert.equal(response.body.products[1].referenceUrl, undefined, 'credential-bearing URLs do not reach customers');
+  const rows = await P.loadPublicCatalogs(newDb, fixtureFetch, {
+    'V-PREFERRED': { spaces: ['Classroom'], categories: ['Seating'] },
+  });
+  for (const [context, category] of [['Classroom', ''], ['', 'Seating']]) {
+    assert.equal(P.searchAll(rows, 'stacking chair', 10, context, category)[0].code, 'JC-12', 'room and category tags can independently rank a matching indexed product');
+  }
+  assert.equal(P.searchAll(rows, 'OK-14', 10, 'Classroom', 'Seating')[0].code, 'OK-14', 'an exact model lookup keeps priority');
+  assert.doesNotMatch(JSON.stringify(toolCalls), /manufacturer\.example|rival\.example|V-PREFERRED/, 'reference URLs and policy IDs stay out of model search results');
+  assert.deepEqual((await post('config', {}, 'GET')).body.vendors, ['Jonti-Craft', 'Oak Classroom'], 'the public landing list omits the excluded vendor and unindexed policy entries');
+  assert.deepEqual((await post('validate', { plan: chat.plan })).body.plan.items, [], 'a browser reusing a saved draft gets only currently eligible items');
+  const lead = { requestId: 'aaaaaaaa-7777-2222-3333-444444444444', contact: { name: 'A. Lee', email: 'a@example.test', company: 'Early Learning School' }, plan: { items: [blocked] }, pdf: 'JVBERi0xLjQgVW50cnVzdGVk' };
+  response = await post('request', lead);
+  assert.equal(response.code, 400, 'the public quote request cannot persist or attach an excluded catalogue product');
+  assert.equal(requestSaved, undefined);
+  assert.equal(uploaded, undefined);
+  response = await post('request', { ...lead, plan: { items: [{ ...allowed, vendor: 'Rival Learning', name: 'Forged name', page: 200 }] } });
+  assert.equal(response.code, 200);
+  assert.deepEqual(requestSaved.planRequests[0].items.map(({ vendor, name, page }) => ({ vendor, name, page })), [{ vendor: 'Jonti-Craft', name: 'Early Learning Stacking Chair', page: 2 }], 'submitted names, vendors and pages are re-derived from the catalogue');
+  assert.equal(uploaded.subarray(0, 5).toString(), '%PDF-');
+  assert.notDeepEqual(uploaded, Buffer.from(lead.pdf, 'base64'), 'the stored PDF is built from checked lines');
+  assert.ok(fetched.every(url => /planner-fixture\.test|api\.anthropic\.com/.test(url)), 'no configured reference is ever fetched');
+  policySettingsFailed = true;
+  assert.equal((await post('config', {}, 'GET')).code, 503, 'a settings read outage cannot make an excluded vendor eligible');
+  assert.equal((await post('chat', chat)).code, 503, 'chat also stops if the vendor rules cannot be read');
+  const settingsDb = P.makeDb(async url => {
+    assert.match(url, /PLANNER_SETTINGS,PLANNER_VENDOR_POLICY/);
+    return { ok: true, text: async () => JSON.stringify([
+      { id: 'PLANNER_SETTINGS', content: '{"theme":"dark"}' },
+      { id: 'PLANNER_VENDOR_POLICY', content: JSON.stringify(policy) },
+    ]) };
+  });
+  assert.deepEqual(await settingsDb.settings(), { theme: 'dark', vendorPolicy: policy }, 'the settings reader combines the existing booking row with the independent policy');
+}
 console.log('PASS Furniture Planner server ('+(mutantIdx<0?'source':'mutant '+mutantIdx)+')');

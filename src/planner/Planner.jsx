@@ -18,6 +18,8 @@ const post = async (op, body) => {
     return r.ok && d.ok ? d : { ok: false, error: d.error || 'Something went wrong. Please try again.' };
   } catch (e) { return { ok: false, error: 'No connection just now. Please try again.' }; }
 };
+const planLine = (i) => ({ catalog_id: i.catalogId, code: i.code, qty: i.qty, note: i.note, area: i.area || '' });
+const planPayload = (plan) => ({ project: plan.project, assumptions: plan.assumptions, items: plan.items.map(planLine) });
 // Campaign attribution: kept from the first landing in this browser session.
 function campaignNow() {
   let c = {}; try { c = JSON.parse(sessionStorage.getItem('mw_plan_campaign') || '{}'); } catch (e) { }
@@ -216,6 +218,10 @@ function Rich({ text }) {
   return blocks.map((b, i) => (b.list ? <ul key={i}>{b.list.map((l, j) => <li key={j}>{inline(l)}</li>)}</ul> : <p key={i}>{inline(b.p)}</p>));
 }
 
+function ManufacturerReference({ url }) {
+  return url ? <a href={url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--ink)', fontSize: 12, display: 'block', marginTop: 6 }}>Manufacturer reference</a> : null;
+}
+
 function ProductCard({ p, onAdd, added }) {
   return (
     <div className="pc" data-product={p.code}>
@@ -225,6 +231,7 @@ function ProductCard({ p, onAdd, added }) {
         <div className="n">{p.name || p.series || p.code}</div>
         <div className="c">Model {p.code}</div>
         {p.specs && <div className="s">{p.specs}</div>}
+        <ManufacturerReference url={p.referenceUrl} />
         <button type="button" className={'btn sm' + (added ? ' ghost' : '')} onClick={() => onAdd(p)} style={{ marginTop: 10 }} disabled={added}>{added ? 'In your plan' : 'Add to plan'}</button>
       </div>
     </div>
@@ -270,7 +277,7 @@ export function matchRep(reps, wanted) {
   return hit ? hit.id : '';
 }
 
-function RequestDialog({ plan, onClose, makePdf, campaign, reps = [], linkedRep = '', defaultRep = '' }) {
+function RequestDialog({ plan, onClose, refId, campaign, reps = [], linkedRep = '', defaultRep = '' }) {
   const [f, setF] = useState({ name: '', email: '', phone: '', company: plan.project.organization || '', title: '', city: '', state: '' });
   // Who the customer would like to talk with (the reps Midwest offers) and when to reach them; both optional.
   const [rep, setRep] = useState(linkedRep); const [bestTime, setBestTime] = useState('');
@@ -280,8 +287,7 @@ function RequestDialog({ plan, onClose, makePdf, campaign, reps = [], linkedRep 
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
   const send = async (e) => {
     e.preventDefault(); if (busy) return; setBusy(true); setErr('');
-    let pdf = ''; try { const bytes = await makePdf(f); let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); pdf = btoa(s); } catch (x) { pdf = ''; }
-    const r = await post('request', { requestId: reqId.current, contact: f, plan: { project: plan.project, assumptions: plan.assumptions, items: plan.items.map((i) => ({ vendor: i.vendor, code: i.code, name: i.name, qty: i.qty, note: i.note, area: i.area || '', catalog: i.catalog, page: i.page })) }, campaign, pdf, preferredRep: rep, bestTime });
+    const r = await post('request', { requestId: reqId.current, refId, contact: f, plan: planPayload(plan), campaign, preferredRep: rep, bestTime });
     setBusy(false);
     if (r.ok) setDone(r); else setErr(r.error);
   };
@@ -334,6 +340,8 @@ export default function Planner() {
   const [view, setView] = useState(kept && kept.messages && kept.messages.length ? 'plan' : 'landing');
   const [messages, setMessages] = useState((kept && kept.messages) || []);
   const [plan, setPlan] = useState((kept && kept.plan) || EMPTY_PLAN);
+  const [restored, setRestored] = useState(() => !kept?.plan?.items?.length && !kept?.messages?.some(m => m.products?.length));
+  const [catalogError, setCatalogError] = useState('');
   const [ref] = useState(() => (kept && kept.ref) || 'MW-' + uid().slice(0, 8).toUpperCase());
   const [draft, setDraft] = useState(''); const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState('chat'); const [asking, setAsking] = useState(false); const [vendors, setVendors] = useState([]); const [reps, setReps] = useState([]); const [defaultRep, setDefaultRep] = useState('');
@@ -357,30 +365,79 @@ export default function Planner() {
     meta('darkreader-lock');   // Dark Reader and similar extensions: this page has its own light and dark looks
   }, [theme]);
   const end = useRef(null);
-  useEffect(() => { save({ messages, plan, ref }); }, [messages, plan, ref]);
+  const restoreGeneration = useRef(0);
+  const restore = useCallback(async () => {
+    const generation = ++restoreGeneration.current;
+    setCatalogError('');
+    const oldProducts = new Map((kept?.messages || []).slice().reverse().flatMap(m => m.products || []).map(p => [p.id, p]));
+    const result = await post('validate', { plan: planPayload(kept?.plan || EMPTY_PLAN), products: [...oldProducts.values()].slice(0, 250).map(planLine) });
+    if (generation !== restoreGeneration.current) return;
+    if (!result.ok) { setCatalogError(result.error); return; }
+    const validProducts = new Map(result.products.map(p => [p.id, p]));
+    setMessages(current => current.map(m => {
+      if (!m.products?.length) return m;
+      const products = m.products.map(p => validProducts.get(p.id)).filter(Boolean);
+      if (products.length === m.products.length) return { ...m, products };
+      return { ...m, text: 'Some options from this earlier reply are no longer available in the Furniture Planner.', products, added: 0 };
+    }));
+    setPlan(result.plan);
+    setUnknown(result.plan.unknown);
+    setRestored(true);
+  }, [kept]);
+  useEffect(() => {
+    if (!restored) restore();
+  }, [restored, restore]);
+  useEffect(() => { if (restored) save({ messages, plan, ref }); }, [messages, plan, ref, restored]);
   useEffect(() => { fetch(API + '?op=config').then((r) => r.json()).then((d) => { setVendors(Array.isArray(d.vendors) ? d.vendors : []); setReps(Array.isArray(d.reps) ? d.reps : []); setDefaultRep(typeof d.defaultRep === 'string' ? d.defaultRep : ''); if (!chosen && d.theme === 'dark') setTheme('dark'); }).catch(() => { }); }, []);
   useEffect(() => { document.title = 'Midwest Furniture Planner'; const on = () => setScrolled(window.scrollY > 4); window.addEventListener('scroll', on); return () => window.removeEventListener('scroll', on); }, []);
   useEffect(() => { if (end.current) end.current.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [messages, busy]);
   const inPlan = useMemo(() => new Set(plan.items.map((i) => i.id)), [plan.items]);
   const send = useCallback(async (text) => {
-    const t = String(text || '').trim(); if (!t || busy) return;
+    const t = String(text || '').trim(); if (!t || busy || !restored) return;
     const next = [...messages, { role: 'user', text: t }];
     setMessages(next); setDraft(''); if (ta.current) ta.current.style.height = '48px'; setBusy(true);
-    const r = await post('chat', { messages: next.map((m) => ({ role: m.role, text: m.text })), plan: { project: plan.project, assumptions: plan.assumptions, items: plan.items.map((i) => ({ catalog_id: i.catalogId, code: i.code, qty: i.qty, note: i.note, area: i.area || '' })) } });
+    const r = await post('chat', { messages: next.map((m) => ({ role: m.role, text: m.text })), plan: planPayload(plan) });
     setBusy(false);
     if (!r.ok) { setMessages([...next, { role: 'assistant', text: r.error, failed: true }]); return; }
     if (r.plan) { setPlan({ project: { ...plan.project, ...r.plan.project }, items: r.plan.items, assumptions: r.plan.assumptions }); }
     setUnknown(Array.isArray(r.unknown) ? r.unknown : []);
     setMessages([...next, { role: 'assistant', text: r.reply || 'Here is what I found.', products: r.products || [], added: Number(r.added) || 0 }]);
-  }, [messages, plan, busy]);
-  const add = (p) => setPlan((x) => (x.items.some((i) => i.id === p.id) ? x : { ...x, items: [...x.items, { ...p, qty: 1, note: '', confirmed: true }] }));
+  }, [messages, plan, busy, restored]);
+  const add = async (p) => {
+    const result = await post('validate', { products: [planLine(p)] });
+    const item = result.products?.[0];
+    setCatalogError(item ? '' : result.error || 'This product is no longer available in the Furniture Planner.');
+    if (!item) {
+      if (result.ok) setMessages(current => current.map(m => m.products ? { ...m, products: m.products.filter(product => product.id !== p.id) } : m));
+      return;
+    }
+    setPlan(current => current.items.some(i => i.id === item.id) ? current : { ...current, items: [...current.items, item] });
+  };
   const setItem = (id, patch) => setPlan((x) => ({ ...x, items: x.items.map((i) => (i.id === id ? { ...i, ...patch } : i)) }));
   const remove = (id) => setPlan((x) => ({ ...x, items: x.items.filter((i) => i.id !== id) }));
   const setFact = (k) => (e) => { const v = e.target.value; setPlan((x) => ({ ...x, project: { ...x.project, [k]: v } })); };
-  const pieces = plan.items.reduce((n, i) => n + (Number(i.qty) || 0), 0);
-  const makePdf = async (contact) => {
+  const visibleItems = restored ? plan.items : [];
+  const pieces = visibleItems.reduce((n, i) => n + (Number(i.qty) || 0), 0);
+  const checkPlan = async () => {
+    setCatalogError('');
+    const result = await post('validate', { plan: planPayload(plan) });
+    if (!result.ok) { setCatalogError(result.error); return null; }
+    const submitted = new Set(plan.items.map(item => item.id));
+    const checked = new Map(result.plan.items.map(item => [item.id, item]));
+    setPlan(current => ({
+      ...current,
+      items: current.items.flatMap(item => {
+        if (!submitted.has(item.id)) return [item];
+        const product = checked.get(item.id);
+        return product ? [{ ...product, qty: item.qty, note: item.note, area: item.area }] : [];
+      }),
+    }));
+    setUnknown(result.plan.unknown);
+    return result.plan;
+  };
+  const makePdf = async (checkedPlan) => {
     const [{ buildPlanPdf }, logo] = await Promise.all([import('./planPdf.js'), fetch('/mw-logo.png').then((r) => r.arrayBuffer()).catch(() => null)]);
-    return buildPlanPdf({ plan, contact, logoBytes: logo, refId: ref });
+    return buildPlanPdf({ plan: checkedPlan, logoBytes: logo, refId: ref });
   };
   // The PDF opens in a new tab, every time it is pressed. The tab is opened at the tap (so no browser blocks it)
   // and pointed at the file once it is made; if a browser refuses new tabs, the file downloads instead.
@@ -390,7 +447,9 @@ export default function Planner() {
     if (tab) { try { tab.document.title = 'Midwest planning quote'; tab.document.body.style.cssText = 'margin:0;font:16px -apple-system,system-ui,sans-serif;color:#5b636e;display:flex;align-items:center;justify-content:center;height:100vh'; tab.document.body.textContent = 'Preparing your planning quote...'; } catch (e) { } }
     setPdfBusy(true);
     try {
-      const bytes = await makePdf(null);
+      const checked = await checkPlan();
+      if (!checked?.items.length) { if (tab && !tab.closed) tab.close(); return; }
+      const bytes = await makePdf(checked);
       const url = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
       if (tab && !tab.closed) tab.location.href = url;
       else { const a = document.createElement('a'); a.href = url; a.download = 'Midwest-planning-quote-' + ref + '.pdf'; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove(); }
@@ -398,7 +457,7 @@ export default function Planner() {
     } catch (e) { if (tab && !tab.closed) tab.close(); }
     finally { setPdfBusy(false); }
   };
-  const reset = () => { if (!window.confirm('Start a new plan? This clears the conversation and the plan on this device.')) return; setMessages([]); setPlan(EMPTY_PLAN); setUnknown([]); };
+  const reset = () => { if (!window.confirm('Start a new plan? This clears the conversation and the plan on this device.')) return; restoreGeneration.current++; setMessages([]); setPlan(EMPTY_PLAN); setUnknown([]); setCatalogError(''); setRestored(true); };
   const facts = [['room', 'Space', 'Classroom, library, office'], ['organization', 'School or organization', 'Name'], ['headcount', 'People', 'How many'], ['age_group', 'Age group', 'Grade or ages'], ['dimensions', 'Room size', 'e.g. 30 x 32 ft'], ['timeline', 'Timeline', 'e.g. before August'], ['location', 'Location', 'City and state'], ['constraints', 'Needs', 'Storage, power, accessibility']];
   const shownFacts = facts.filter(([k]) => (plan.project[k] && String(plan.project[k]).trim()) || opening === k);
   const missingFacts = facts.filter(([k]) => !((plan.project[k] && String(plan.project[k]).trim()) || opening === k));
@@ -414,12 +473,16 @@ export default function Planner() {
           <>
             <div className="tabs" role="group" aria-label="Show">
               <button type="button" aria-pressed={tab === 'chat'} onClick={() => setTab('chat')}>Chat</button>
-              <button type="button" aria-pressed={tab === 'plan'} onClick={() => setTab('plan')} data-tab-plan>Plan{plan.items.length ? ' (' + plan.items.length + ')' : ''}</button>
+              <button type="button" aria-pressed={tab === 'plan'} onClick={() => setTab('plan')} data-tab-plan>Plan{visibleItems.length ? ' (' + visibleItems.length + ')' : ''}</button>
             </div>
             <button type="button" className="btn ghost sm" onClick={reset}><span className="long">New plan</span><span className="short">New</span></button>
           </>
         ) : <button type="button" className="btn sm" onClick={() => { setTab('chat'); setView('plan'); }}>Start planning</button>}
       </header>
+      {view !== 'landing' && (!restored || catalogError) && <div className="warn" role="status" style={{ margin: 8 }}>
+        {catalogError || 'Checking saved products against the current catalogues.'}
+        {!restored && catalogError && <button type="button" className="btn ghost sm" onClick={restore}>Retry saved plan</button>}
+      </div>}
       {view === 'landing' ? <Landing onStart={() => { setTab('chat'); setView('plan'); }} vendors={vendors} /> : (
         <main className="ws" data-tab={tab}>
           <section className="pane c" aria-label="Planning conversation">
@@ -432,7 +495,7 @@ export default function Planner() {
                   {m.role === 'user' ? m.text : <>
                     <div className="who"><i />Midwest Planner</div><Rich text={m.text} />
                     {m.added > 0 && <div className="added" data-added={m.added}>{m.added === 1 ? 'Added 1 item to your plan' : 'Added ' + m.added + ' items to your plan'}<button type="button" onClick={() => setTab('plan')}>View plan</button></div>}
-                    {m.products && m.products.length > 0 && <div className="cards" style={{ marginTop: 12 }}>{m.products.map((p) => <ProductCard key={p.id} p={p} onAdd={add} added={inPlan.has(p.id)} />)}</div>}
+                    {restored && m.products && m.products.length > 0 && <div className="cards" style={{ marginTop: 12 }}>{m.products.map((p) => <ProductCard key={p.id} p={p} onAdd={add} added={inPlan.has(p.id)} />)}</div>}
                   </>}
                 </div>
               ))}
@@ -443,7 +506,7 @@ export default function Planner() {
               <textarea ref={ta} rows={1} value={draft} placeholder="Tell me about your space" aria-label="Message" maxLength={2000}
                 onChange={(e) => { setDraft(e.target.value); e.target.style.height = '48px'; e.target.style.height = Math.min(160, Math.max(48, e.target.scrollHeight + 2)) + 'px'; }}
                 onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(draft); } }} />
-              <button type="submit" className="btn" disabled={busy || !draft.trim()} aria-label="Send">&#8593;</button>
+              <button type="submit" className="btn" disabled={!restored || busy || !draft.trim()} aria-label="Send">&#8593;</button>
             </form>
           </section>
           <section className="pane q" aria-label="Your planning quote">
@@ -454,15 +517,15 @@ export default function Planner() {
                 <div className="in">
                   <div className="top"><img src={theme === 'dark' ? '/mw-logo-dark.png' : '/mw-logo.png'} alt="Midwest" /><div className="ref">Planning quote<br />{ref}<br />{new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div></div>
                   <h3>{plan.project.room ? plan.project.room : 'Your furniture plan'}</h3>
-                  <div style={{ color: 'var(--soft)', fontSize: 14 }}>{plan.items.length ? pieces + (pieces === 1 ? ' piece' : ' pieces') + ' across ' + plan.items.length + (plan.items.length === 1 ? ' product' : ' products') : 'Products appear here as you plan.'}</div>
+                  <div style={{ color: 'var(--soft)', fontSize: 14 }}>{visibleItems.length ? pieces + (pieces === 1 ? ' piece' : ' pieces') + ' across ' + visibleItems.length + (visibleItems.length === 1 ? ' product' : ' products') : 'Products appear here as you plan.'}</div>
                   <div className="notice"><b>Planning quote, not a priced offer.</b> Products and quantities for review. Pricing, availability and lead times are confirmed by Midwest.</div>
                   <div className="lbl">Project</div>
                   <div className="hint">The planner fills these in as you chat. Tap any detail to change it.</div>
                   {shownFacts.length > 0 && <div className="facts">{shownFacts.map(([k, l, ph]) => <label key={k} className={'fact' + (String(plan.project[k] || '').length > 28 ? ' wide' : '')}><span>{l}</span><textarea rows={1} ref={grow} value={plan.project[k] || ''} onChange={(e) => { grow(e.target); setFact(k)(e); }} placeholder={ph} autoFocus={opening === k} onBlur={() => { if (opening === k) setOpening(''); }} data-fact={k} /></label>)}</div>}
                   {missingFacts.length > 0 && <div className="addfacts">{missingFacts.map(([k, l]) => <button key={k} type="button" onClick={() => setOpening(k)} data-add-fact={k}>+ {l}</button>)}</div>}
                   <div className="lbl">Furniture</div>
-                  {plan.items.length === 0 && <div className="empty">Ask the planner for ideas, or add products from the suggestions.</div>}
-                  {plan.items.map((it, idx) => (
+                  {restored && visibleItems.length === 0 && <div className="empty">Ask the planner for ideas, or add products from the suggestions.</div>}
+                  {visibleItems.map((it, idx) => (
                     <React.Fragment key={it.id}>
                     {it.area && (idx === 0 || plan.items[idx - 1].area !== it.area) && <div className="area" data-area>{it.area}<span>{plan.items.filter((x) => x.area === it.area).reduce((n, x) => n + (Number(x.qty) || 0), 0).toLocaleString()} pieces</span></div>}
                     <div className="item" data-item={it.code}>
@@ -470,6 +533,7 @@ export default function Planner() {
                       <div style={{ minWidth: 0 }}>
                         <div className="t">{it.name || it.series || it.code}</div>
                         <div className="m2">{it.vendor} &middot; Model {it.code}{it.page ? ' · catalogue page ' + it.page : ''}</div>
+                        <ManufacturerReference url={it.referenceUrl} />
                         <textarea rows={1} ref={grow} className="nt" value={it.note || ''} placeholder="Add a note (finish, size, placement)" onChange={(e) => { grow(e.target); setItem(it.id, { note: e.target.value.slice(0, 200) }); }} aria-label={'Note for ' + it.code} />
                       </div>
                       <div className="side" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
@@ -489,13 +553,13 @@ export default function Planner() {
               </article>
             </div>
             <div className="qfoot">
-              <button type="button" className="btn" onClick={() => setAsking(true)} disabled={!plan.items.length} data-request-open>Request a priced quote</button>
-              <button type="button" className="btn ghost" onClick={download} disabled={!plan.items.length || pdfBusy} data-download>{pdfBusy ? 'Preparing PDF' : 'Open PDF'}</button>
+              <button type="button" className="btn" onClick={async () => { if ((await checkPlan())?.items.length) setAsking(true); }} disabled={!visibleItems.length} data-request-open>Request a priced quote</button>
+              <button type="button" className="btn ghost" onClick={download} disabled={!visibleItems.length || pdfBusy} data-download>{pdfBusy ? 'Preparing PDF' : 'Open PDF'}</button>
             </div>
           </section>
         </main>
       )}
-      {asking && <RequestDialog plan={plan} onClose={() => setAsking(false)} makePdf={makePdf} campaign={campaign} reps={reps} linkedRep={matchRep(reps, repWanted)} defaultRep={defaultRep} />}
+      {asking && <RequestDialog plan={plan} onClose={() => setAsking(false)} refId={ref} campaign={campaign} reps={reps} linkedRep={matchRep(reps, repWanted)} defaultRep={defaultRep} />}
     </div>
   );
 }

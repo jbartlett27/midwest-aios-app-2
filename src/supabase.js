@@ -462,6 +462,20 @@ export const db = {
       return {ok: false};
     }
   },
+  async savePlannerVendorPolicy(sop, expectedContent) {
+    const row = sopToDb(sop);
+    const query = new URLSearchParams({ id: 'eq.' + row.id, content: 'eq.' + expectedContent });
+    try {
+      const response = await fetch(URL + '/sops' + (expectedContent == null ? '' : '?' + query), {
+        method: expectedContent == null ? 'POST' : 'PATCH', headers: hdrs, body: JSON.stringify(row),
+      });
+      if (!response.ok) return { ok: false, conflict: response.status === 409 };
+      const [saved] = await response.json();
+      return saved ? { ok: true, row: sopFromDb(saved) } : { ok: false, conflict: true };
+    } catch {
+      return { ok: false };
+    }
+  },
   async saveSop(s) { return upsertRow('sops', sopToDb(s)); },
   async deleteSop(id) { return deleteRow('sops', id); },
   // ---- General ledger (Phase 1) ----

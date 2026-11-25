@@ -1,0 +1,9 @@
+# Furniture Planner vendor recommendations
+
+Maureen and Dave tested a pre-K transition classroom for ages 3-5. Staff asked to favor suitable products from preferred manufacturers by age, category or space and to exclude selected purchasing vendors from public recommendations.
+
+In Users & Permissions, open Furniture Planner vendor recommendations and choose an indexed catalog vendor. Enter comma-separated tags, add a public HTTPS manufacturer reference if useful, or select **Do not recommend in Furniture Planner**. Save with **Save vendor settings**. Preferences use the catalog vendor ID and require a matching indexed product. Pre-K, preschool, ages 3-5 and early childhood use the same match. An exact model search still takes priority. The reference link appears on verified product cards and plan lines. It is opened by the customer and supplies no product facts to the Planner.
+
+The vendor policy is stored in the existing Config records independently of the booking controls. Saves check the version staff started with. Public catalog lists, search, exact lookup and plan validation share the eligibility filter. Saved drafts and alternatives are rechecked on return, and quote requests rederive product facts and the attached planning PDF from eligible catalog items. Internal catalog and purchasing records remain available through their existing flows.
+
+Verification starts from main `fe751385531ccb5a0baa8ab7a419030deec3b3e3`. An offline public API fixture produced Oak Classroom first on the original code and Jonti-Craft first with the saved pre-K rule on the candidate. The fixture uses synthetic products and settings, including an adult chair and an excluded competitor. It also exercises stale draft validation, an attempted direct lookup, attempted quote submission, and PDF generation. An offline render checks the admin settings form, draft restoration, and the customer reference link.

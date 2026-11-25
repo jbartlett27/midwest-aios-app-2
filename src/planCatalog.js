@@ -2,6 +2,7 @@
 // A customer sees product facts only: vendor, catalogue, model code, name, series, section, page and specs with every
 // price removed. Pure functions; the server does the loading. Nothing here reads jobs, customers, costs or notes.
 import { pageImageUrl } from './vendorCatalog.js';
+import { referenceUrl, vendorPolicyFor } from './plannerVendorPolicy.js';
 
 const MONEY = /(?:US)?\$\s?\d[\d,]*(?:\.\d+)?|\b\d[\d,]*\.\d{2}\b|\b(?:list|net|msrp|price|cost|dealer)\b[^|;\n]{0,40}/gi;
 const PRICEY_HEADER = /\b(price|list|cost|net|msrp|dealer|\$)\b/i;
@@ -43,20 +44,22 @@ export function productName(row) {
   for (const alt of [section, group]) if (usable(alt)) return alt + size;
   return 'Model ' + (row.code || '');
 }
-export function publicProduct(rec, row) {
+export function publicProduct(rec, row, rule) {
   const pricey = catalogHasPrices(rec);
   const specs = pricey || PRICEY_HEADER.test(String(row.header || '')) ? '' : clip(scrubPrices(row.row), 220);
+  const reference = referenceUrl(rule?.referenceUrl);
   return {
     id: rec.id + '::' + row.code,
     catalogId: rec.id, vendor: clip(rec.vendorName || '', 80), catalog: clip(rec.title || '', 100),
     code: clip(row.code, 60), name: clip(scrubPrices(productName(row)), 120), series: clip(scrubPrices(row.series || ''), 100),
     section: clip(row.section || '', 80), group: clip(row.group || '', 60), page: row.page, specs,
     image: pricey ? '' : pageImageUrl(rec, row.page),
+    ...(reference ? { referenceUrl: reference } : {}),
   };
 }
 // Catalogue records a customer may search: real catalogues with products, never an archived one.
-export function publicCatalogs(recs) {
-  return (Array.isArray(recs) ? recs : []).filter((r) => r && r.url && r.vendorId && Number(r.productCount || 0) > 0);
+export function publicCatalogs(recs, policy) {
+  return (Array.isArray(recs) ? recs : []).filter((r) => r && r.url && r.vendorId && Number(r.productCount || 0) > 0 && vendorPolicyFor(policy, r.vendorId)?.excluded !== true);
 }
 // The plan line a customer keeps: only what the catalogue confirms, plus their own quantity and note.
 export function cleanPlanItem(item, product) {
