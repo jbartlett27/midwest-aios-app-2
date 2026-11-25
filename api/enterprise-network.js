@@ -13,11 +13,17 @@
 //   logout                        clears the session cookie
 //   hello                         who the signed-in person is on the Network (DYFRENT answers from its own records)
 //   call    { route, body }       one Network or Profile call from the frame: route net_team or profile_team
+//   connector { token, request }  server to server, from the Midwest AIOS MCP connector (midwest-aios-mcp), which
+//                                 holds no broker key: this server asks the connector who the person's own access
+//                                 token speaks for (POST <ENTERPRISE_CONNECTOR_ORIGIN>/network-whois), checks the
+//                                 pilot list, and signs request { kind, op?, payload? } for that person. The subject
+//                                 always comes from the connector's answer, never from the request.
 //
 // Settings (server only, never in the browser): ENTERPRISE_NETWORK_PREVIEW=on, ENTERPRISE_INSTALLATION_ID,
 // ENTERPRISE_BROKER_KEY (shared with DYFRENT), ENTERPRISE_SESSION_KEY (this server's own), ENTERPRISE_PILOT_USERS
 // (Midwest users.id, comma separated), ENTERPRISE_APP_ORIGIN (https://midwestaios.com,https://www.midwestaios.com), ENTERPRISE_NETWORK_ENDPOINT
-// (https://www.dyfrent.app/api/mcp?s=enterprise).
+// (https://www.dyfrent.app/api/mcp?s=enterprise), and for the connector relay ENTERPRISE_CONNECTOR_ORIGIN
+// (https://midwest-aios-mcp.vercel.app; no secret).
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 
 const SB = 'https://kogjthgceejpzxnekprr.supabase.co/rest/v1';
@@ -74,6 +80,36 @@ export function configured(env) {
     && appOrigins(env).length > 0 && appOrigins(env).every(o => /^https:\/\/[a-z0-9.-]+$/.test(o));
 }
 
+export function connectorOrigin(env) {
+  let u; try { u = new URL(String(env.ENTERPRISE_CONNECTOR_ORIGIN || '')); } catch (e) { return ''; }
+  return u.protocol === 'https:' && !u.username && !u.password && u.pathname === '/' && !u.search ? u.origin : '';
+}
+
+// The connector relay: who the token is comes from the connector itself; what may be sent is the same as the frame.
+async function connectorCall(env, b, fetcher, now, say) {
+  const origin = connectorOrigin(env);
+  if (!origin) return say(200, { ok: false, code: 'closed', error: 'Network not connected' });
+  const token = typeof b.token === 'string' ? b.token : '', q = plain(b.request) ? b.request : null;
+  if (!token || token.length > 4096 || !q) return say(400, { ok: false, error: 'That request could not be read.' });
+  const kind = String(q.kind || ''), op = q.op === undefined ? '' : String(q.op);
+  const payload = q.payload === undefined ? undefined : q.payload;
+  if (kind === 'session') { if (op || payload !== undefined) return say(400, { ok: false, error: 'That part of the Network is not open here.' }); }
+  else if (!((kind === 'net' && NET_OP.test(op)) || (kind === 'profile' && PROFILE_OP.test(op))) || !plain(payload)) return say(400, { ok: false, error: 'That part of the Network is not open here.' });
+  if (payload !== undefined && Buffer.byteLength(JSON.stringify(payload)) > 48000) return say(413, { ok: false, error: 'That is too large to send.' });
+  let who = null;
+  try {
+    const r = await fetcher(origin + '/network-whois', { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(8000),
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) });
+    const w = r.status === 200 ? await r.json() : null;
+    if (plain(w) && w.ok === true && typeof w.nu === 'string' && /^[A-Za-z0-9_.:@-]{1,128}$/.test(w.nu)) who = { id: w.nu, name: String(w.nn || '').slice(0, 80) };
+  } catch (e) { return say(503, { ok: false, error: 'The Network could not answer just now. Try again.' }); }
+  if (!who) return say(401, { ok: false, code: 'signin', error: 'Network not connected for you yet. Remove and add the Midwest AIOS connector again and sign in with your Midwest login.' });
+  if (!pilotList(env).includes(who.id)) return say(403, { ok: false, code: 'pilot', error: 'Your Midwest login is not open on the DYFRENT Network yet. Ask J to add you.' });
+  const request = kind === 'session' ? { subject: who.id, name: who.name, kind } : { subject: who.id, name: who.name, kind, op, payload };
+  try { const out = await signedCall(env, request, fetcher, now); return say(out.status, out.body); }
+  catch (e) { return say(503, { ok: false, error: 'The Network could not answer just now. Try again.' }); }
+}
+
 export function enterpriseBroker(env, deps = {}) {
   const fetcher = deps.fetch || fetch;
   const clock = deps.now || (() => Date.now());
@@ -83,12 +119,14 @@ export function enterpriseBroker(env, deps = {}) {
     const say = (status, body) => res.status(status).json(body);
     if (req.method !== 'POST') return say(405, { ok: false, error: 'Use POST.' });
     if (!configured(env)) return say(200, { ok: false, code: 'closed', pilot: false });
-    // Same origin only: a page on any other site can never ask this server for anything.
-    if (!appOrigins(env).includes(String((req.headers && req.headers.origin) || ''))) return say(403, { ok: false, error: 'Open the Network from your Midwest dashboard.' });
     let b = req.body;
     try { if (typeof b === 'string') b = JSON.parse(b); } catch (e) { return say(400, { ok: false, error: 'That request could not be read.' }); }
     if (!plain(b)) return say(400, { ok: false, error: 'That request could not be read.' });
     const now = clock();
+    // The connector relay carries no browser origin and no cookie: the person is proven by the connector itself.
+    if (b.op === 'connector') return connectorCall(env, b, fetcher, now, say);
+    // Same origin only: a page on any other site can never ask this server for anything.
+    if (!appOrigins(env).includes(String((req.headers && req.headers.origin) || ''))) return say(403, { ok: false, error: 'Open the Network from your Midwest dashboard.' });
     const pilot = pilotList(env);
     const op = String(b.op || '');
 
