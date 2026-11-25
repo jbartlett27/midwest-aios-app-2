@@ -79,3 +79,10 @@ Cause: a planner request saved the Prospect card with no rep (`assignedRep: ''`)
 - Booking links stay optional: without one, the rep follows up by email or phone from the card.
 - Tests: section 6 of `planner-test.mjs`, 6 more mutants (planner total 30). Browser check (mocked API) at 402x874 and 1440x900: rep list, pick, best time, request payload, confirmation text, no sideways scroll.
 - Data: `PLANNER_SETTINGS` written with Dave (S001) as the default rep, his calendar email, and the sales reps offered (Dave, Jim Harris, Jim Lindner, Jackie Biller).
+
+## Connect Calendly per rep (J, Nov 25 2026)
+
+- Users & Permissions >> Furniture Planner: each rep has a "Connect Calendly" button. The rep's Calendly personal access token is pasted once and sent to `POST /api/plan?op=calendly-connect`, which reads the rep's name, calendar email and booking page (their one active event type, otherwise their Calendly page) and creates a user-scope `invitee.created` webhook to `?op=booking`. The browser fills the link and calendar email, marks the rep `calendly: true` and saves the settings. The token is never stored, logged or returned.
+- The webhook signing key is `signingKey(env)`: `PLAN_BOOKING_SIGNING_KEY` when set, otherwise an HMAC derived from the server's existing secret, so connecting a rep needs no new environment setting and the key never reaches a browser.
+- A signed booking whose host calendar email matches no configured rep now returns `unknownHost` and leaves the card alone, so a calendar Midwest did not connect cannot move or assign a Prospect card.
+- Tests: section 7 of `tests/reliability/planner-test.mjs`, mutants 30 to 34. `render-test.mjs` had an invoice due 2026-11-24 that became overdue on its own; its due date is now far in the future.
