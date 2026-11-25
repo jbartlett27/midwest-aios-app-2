@@ -2,9 +2,10 @@
 // quote" (/plan). One booking link per rep, a default rep, and the calendar emails that tell the server which rep a
 // confirmed booking belongs to. Saved as the PLANNER_SETTINGS row; no code change to swap reps or add routing later.
 import React, { useState, useEffect } from "react";
-import { catalogRecords } from './vendorCatalog.js';
+import { catalogRecords, loadCatalog } from './vendorCatalog.js';
 import { publicCatalogs } from './planCatalog.js';
 import { PLANNER_VENDOR_POLICY_ID, PREFERENCE_FIELDS, parseVendorPolicy, preferenceTags, referenceUrl, vendorPolicyFor } from './plannerVendorPolicy.js';
+import { vendorResearchOverview, suggestVendorTags, topPurchases, mergeTags } from './plannerVendorResearch.js';
 
 export const PLANNER_SETTINGS_ID = "PLANNER_SETTINGS";
 // The same public key the app already uses (src/supabase.js); planner_spend_get only reads a total.
@@ -213,7 +214,7 @@ const preferenceInputs = {
 };
 const vendorLabel = { fontSize: 12, color: "#c4c4c4", display: "block", marginBottom: 12 };
 
-export function PlannerVendorCard({ vendors, customSops, savePolicy, notify }) {
+export function PlannerVendorCard({ vendors, customSops, savePolicy, notify, jobs, lineItems, customers, fetchImpl }) {
   const names = new Map((vendors || []).map(v => [v.id, v.name]));
   const eligible = new Map(publicCatalogs(catalogRecords(customSops)).map(rec => [rec.vendorId, names.get(rec.vendorId) || rec.vendorName || rec.vendorId]));
   const options = [...eligible].sort((a, b) => a[1].localeCompare(b[1]));
@@ -222,9 +223,11 @@ export function PlannerVendorCard({ vendors, customSops, savePolicy, notify }) {
   const row = (customSops || []).find(s => s.id === PLANNER_VENDOR_POLICY_ID);
   let policy;
   try { policy = parseVendorPolicy(row?.content); } catch { policy = null; }
+  const history = { jobs, lineItems, customers };
   return <section style={box} aria-labelledby="planner-vendors-title">
     <h3 id="planner-vendors-title" style={{ fontSize: 15, color: "#f0f0f0", margin: "0 0 6px" }}>Furniture Planner vendor recommendations</h3>
     <p style={{ fontSize: 12.5, color: "#9a9a9a", margin: "0 0 14px" }}>Choose a vendor with indexed products. Set preferences by grade, category or space to give suitable products from this vendor priority.</p>
+    {policy && <MostUsedVendors eligible={eligible} policy={policy} vendors={vendors} history={history} selected={selected} disabled={saving} onPick={setSelected} />}
     <label style={vendorLabel}>Catalog vendor
       <select style={{ ...inp, marginTop: 6 }} value={eligible.has(selected) ? selected : ''} disabled={saving || !options.length || !policy} onChange={e => setSelected(e.target.value)}>
         <option value="">{options.length ? 'Choose a vendor' : 'No indexed catalogs available'}</option>
@@ -233,11 +236,12 @@ export function PlannerVendorCard({ vendors, customSops, savePolicy, notify }) {
     </label>
     {!policy && <p role="alert">Vendor settings could not be read. Refresh and try again.</p>}
     {eligible.has(selected) && policy && <VendorPolicyFields key={selected + '|' + (row?.content || '')}
-      vendorId={selected} policy={policy} expectedContent={row?.content} saving={saving} setSaving={setSaving} savePolicy={savePolicy} notify={notify} />}
+      vendorId={selected} policy={policy} expectedContent={row?.content} saving={saving} setSaving={setSaving} savePolicy={savePolicy} notify={notify}
+      catalogs={publicCatalogs(catalogRecords(customSops)).filter(rec => rec.vendorId === selected)} history={history} fetchImpl={fetchImpl} />}
   </section>;
 }
 
-function VendorPolicyFields({ vendorId, policy, expectedContent, saving, setSaving, savePolicy, notify }) {
+function VendorPolicyFields({ vendorId, policy, expectedContent, saving, setSaving, savePolicy, notify, catalogs, history, fetchImpl }) {
   const saved = vendorPolicyFor(policy, vendorId);
   const [excluded, setExcluded] = useState(saved?.excluded === true);
   const [tags, setTags] = useState(() => Object.fromEntries(PREFERENCE_FIELDS.map(key => [key, Array.isArray(saved?.[key]) ? saved[key].join(', ') : ''])));
@@ -274,10 +278,90 @@ function VendorPolicyFields({ vendorId, policy, expectedContent, saving, setSavi
       </label>)}
     </div>
     <p style={{ fontSize: 12, color: "#9a9a9a", margin: "0 0 12px" }}>Separate tags with commas. Pre-K, ages 3-5, and early childhood match the same age group.</p>
+    <VendorResearch vendorId={vendorId} catalogs={catalogs} history={history} fetchImpl={fetchImpl} tags={tags}
+      addTags={(field, list) => setTags(prev => ({ ...prev, [field]: mergeTags(prev[field], list) }))} />
     <label style={vendorLabel}>Customer reference link (optional)
       <input style={{ ...inp, marginTop: 6 }} inputMode="url" value={url} onChange={e => setUrl(e.target.value)} placeholder="https://manufacturer.example/products" maxLength={800} />
     </label>
     {error && <p role="alert" style={{ color: "#f87171", fontSize: 13 }}>{error}</p>}
     <button type="submit" disabled={saving} style={{ padding: "9px 18px", borderRadius: 8, border: "none", background: "#2dd4bf", color: "#000", fontWeight: 700, fontSize: 13 }}>{saving ? 'Saving' : 'Save vendor settings'}</button>
   </form>;
+}
+
+const chip = { padding: "5px 10px", borderRadius: 999, border: "1px solid rgba(45,212,191,0.35)", background: "transparent", color: "#2dd4bf", fontSize: 12, cursor: "pointer", margin: "0 6px 6px 0" };
+const fieldNames = { grades: 'Grade or age', categories: 'Category', spaces: 'Space' };
+const statusText = { preferred: ['Preferences set', '#34d399'], excluded: ['Do not recommend', '#f87171'], open: ['Not set up yet', '#737373'] };
+
+// Suggested tags for the chosen vendor: read from its loaded catalogs and Midwest's own orders. Clicking adds a tag to
+// the field above; nothing is saved until Save vendor settings.
+function VendorResearch({ vendorId, catalogs, history, fetchImpl, tags, addTags }) {
+  const [state, setState] = useState({ status: 'loading', rows: [] });
+  const recs = (catalogs || []).map(rec => rec.url).join('|');
+  useEffect(() => {
+    let alive = true;
+    const fetcher = fetchImpl || ((url) => fetch(url));
+    setState({ status: 'loading', rows: [] });
+    Promise.allSettled((catalogs || []).map(rec => loadCatalog(rec, { fetchImpl: fetcher }))).then(results => {
+      if (!alive) return;
+      const loaded = results.filter(r => r.status === 'fulfilled').map(r => r.value);
+      setState({ status: loaded.length ? 'ready' : 'error', rows: loaded.flatMap(cat => cat.rows), partial: loaded.length < results.length });
+    });
+    return () => { alive = false; };
+  }, [vendorId, recs]);
+  const bought = topPurchases({ vendorId, jobs: history.jobs, lineItems: history.lineItems });
+  const jobCount = countJobs(vendorId, history);
+  const existing = Object.fromEntries(PREFERENCE_FIELDS.map(key => [key, preferenceTags(tags[key])]));
+  const suggested = state.status === 'ready' ? suggestVendorTags({ rows: state.rows, vendorId, ...history, existing }) : null;
+  const unsaved = suggested ? PREFERENCE_FIELDS.flatMap(key => suggested[key].filter(s => !s.saved).map(s => [key, s.tag])) : [];
+  return <div data-vendor-research style={{ background: "#0a0a0a", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10, padding: 14, margin: "0 0 14px" }}>
+    <div style={{ fontSize: 13, color: "#f0f0f0", fontWeight: 700, marginBottom: 4 }}>Research &gt;&gt; suggested tags</div>
+    <div style={{ fontSize: 12, color: "#9a9a9a", marginBottom: 10 }}>
+      {jobCount ? <>Midwest has ordered from this vendor on <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>{jobCount}</span> job{jobCount === 1 ? '' : 's'}. Most ordered: {bought.map(x => x.label + ' (' + x.jobs + ')').join(', ')}.</> : 'No orders from this vendor are recorded in the AIOS yet.'}
+    </div>
+    {state.status === 'loading' && <div style={{ fontSize: 12, color: "#737373" }}>Reading this vendor's catalogs...</div>}
+    {state.status === 'error' && <div role="alert" style={{ fontSize: 12, color: "#fbbf24" }}>This vendor's catalogs could not be read right now. Refresh and try again.</div>}
+    {suggested && <>
+      {PREFERENCE_FIELDS.map(key => <div key={key} style={{ marginBottom: 6 }}>
+        <div style={{ fontSize: 11.5, color: "#737373", marginBottom: 5 }}>{fieldNames[key]}</div>
+        {suggested[key].length ? suggested[key].map(s => <button key={s.tag} type="button" data-suggest={key + ':' + s.tag} disabled={s.saved}
+          onClick={() => addTags(key, [s.tag])} title={s.products + ' catalog products' + (s.jobs ? ', mentioned on ' + s.jobs + ' Midwest jobs' : '')}
+          style={{ ...chip, ...(s.saved ? { color: "#525252", borderColor: "rgba(255,255,255,0.08)", cursor: "default" } : {}) }}>
+          {s.saved ? 'Added: ' : '+ '}{s.tag} <span style={{ fontFamily: "'JetBrains Mono', monospace", color: s.saved ? "#525252" : "#9a9a9a" }}>{s.products}{s.jobs ? ' / ' + s.jobs + (s.jobs === 1 ? ' job' : ' jobs') : ''}</span>
+        </button>) : <span style={{ fontSize: 12, color: "#525252" }}>None found in the catalog</span>}
+      </div>)}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 6 }}>
+        <button type="button" data-suggest-all disabled={!unsaved.length} onClick={() => PREFERENCE_FIELDS.forEach(key => addTags(key, unsaved.filter(([k]) => k === key).map(([, tag]) => tag)))}
+          style={{ padding: "7px 14px", borderRadius: 7, border: "none", background: unsaved.length ? "#2dd4bf" : "#1a1a1a", color: unsaved.length ? "#000" : "#525252", fontSize: 12, fontWeight: 700, cursor: unsaved.length ? "pointer" : "default" }}>Add all suggestions</button>
+        <span style={{ fontSize: 11.5, color: "#737373" }}>Numbers are matching catalog products, then Midwest jobs that mention the tag. Review, remove any that do not fit, then Save vendor settings.{state.partial ? ' One of this vendor\'s catalogs could not be read, so counts may be low.' : ''}</span>
+      </div>
+    </>}
+  </div>;
+}
+function countJobs(vendorId, history) {
+  const ids = new Set((history.jobs || []).map(j => j.id));
+  return new Set((history.lineItems || []).filter(i => i && i.vendor === vendorId && (Number(i.qtyOrdered) || 0) > 0 && ids.has(i.jobId)).map(i => i.jobId)).size;
+}
+
+// The catalog vendors Midwest buys from most, so the busiest ones get set up first.
+function MostUsedVendors({ eligible, policy, vendors, history, selected, disabled, onPick }) {
+  const [all, setAll] = useState(false);
+  const { ranked, noCatalog } = vendorResearchOverview({ eligible, policy, vendors, ...history });
+  const used = ranked.filter(r => r.jobs > 0);
+  const shown = all ? ranked : used.slice(0, 10);
+  const setUp = used.filter(r => r.status !== 'open').length;
+  return <div data-most-used style={{ marginBottom: 16 }}>
+    <div style={{ fontSize: 13, color: "#f0f0f0", fontWeight: 700, marginBottom: 4 }}>Vendors Midwest buys from most</div>
+    <div style={{ fontSize: 12, color: "#9a9a9a", marginBottom: 10 }}>Ranked by how many jobs Midwest has ordered from each vendor with a loaded catalog. <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>{setUp}</span> of <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>{used.length}</span> are set up. Choose one to see suggested tags.</div>
+    {shown.map(r => <button key={r.vendorId} type="button" data-rank={r.vendorId} disabled={disabled} onClick={() => onPick(r.vendorId)}
+      style={{ display: "flex", width: "100%", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "8px 10px", marginBottom: 4, borderRadius: 8, cursor: "pointer", textAlign: "left",
+        border: "1px solid " + (selected === r.vendorId ? "rgba(45,212,191,0.5)" : "rgba(255,255,255,0.06)"), background: selected === r.vendorId ? "rgba(45,212,191,0.06)" : "#0a0a0a", color: "#f0f0f0", fontSize: 12.5 }}>
+      <span>{r.name}</span>
+      <span style={{ display: "flex", gap: 12, alignItems: "center", flexShrink: 0 }}>
+        <span style={{ fontFamily: "'JetBrains Mono', monospace", color: "#9a9a9a" }}>{r.jobs} job{r.jobs === 1 ? '' : 's'}</span>
+        <span style={{ color: statusText[r.status][1], fontSize: 11.5 }}>{statusText[r.status][0]}</span>
+      </span>
+    </button>)}
+    {ranked.length > shown.length || all ? <button type="button" onClick={() => setAll(!all)} style={{ background: "none", border: "none", color: "#2dd4bf", fontSize: 12, cursor: "pointer", padding: "6px 0" }}>{all ? 'Show the 10 most used' : 'Show all ' + ranked.length + ' catalog vendors'}</button> : null}
+    {noCatalog.length > 0 && <div style={{ fontSize: 12, color: "#737373", marginTop: 8 }}>Bought from often but no catalog products loaded, so the planner cannot recommend them yet: {noCatalog.map(n => n.name + ' (' + n.jobs + ')').join(', ')}.</div>}
+  </div>;
 }

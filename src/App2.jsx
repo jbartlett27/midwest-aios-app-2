@@ -6351,7 +6351,7 @@ function FilesPage({customSops,addSop,deleteSop,notify,currentUser,setPage,setPe
 
 
 
-function UserMgmtPage({notify,reps,vendors,customSops,addSop,deleteSop,savePlannerVendorPolicy}){
+function UserMgmtPage({notify,reps,vendors,customSops,addSop,deleteSop,savePlannerVendorPolicy,allJobs,jobs,lineItems,customers}){
   const [users,setUsers]=useState([]);
   const [loading,setLoading]=useState(true);
   const [showAdd,setShowAdd]=useState(false);
@@ -6401,7 +6401,7 @@ function UserMgmtPage({notify,reps,vendors,customSops,addSop,deleteSop,savePlann
   return <div style={{animation:"fadeUp 0.4s"}}>
     <Header title="Users & Permissions" sub="Manage team access"/>
     <PlannerBookingCard reps={reps} customSops={customSops} addSop={addSop} notify={notify}/>
-    <PlannerVendorCard vendors={vendors} customSops={customSops} savePolicy={savePlannerVendorPolicy} notify={notify}/>
+    <PlannerVendorCard vendors={vendors} customSops={customSops} savePolicy={savePlannerVendorPolicy} notify={notify} jobs={allJobs||jobs} lineItems={lineItems} customers={customers}/>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
       <div style={{fontSize:13,color:"#a3a3a3"}}>{allUsersList.length} user{allUsersList.length!==1?"s":""} ({users.length} password, {clerkUsers.length} Google/Apple)</div>
       <Btn onClick={()=>setShowAdd(!showAdd)}>{showAdd?"Cancel":"+ Add User"}</Btn>

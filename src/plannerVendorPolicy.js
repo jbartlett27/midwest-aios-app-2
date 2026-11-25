@@ -39,7 +39,7 @@ export function includesPlannerWords(text, words) {
   return !!words && (' ' + text + ' ').includes(' ' + words + ' ');
 }
 
-const categoryWords = text => plannerWords(text).replace(/\b(chair|desk|table|shelf|seat|locker|cabinet|bench|cubby)s\b/g, '$1')
+export const categoryWords = text => plannerWords(text).replace(/\b(chair|desk|table|shelf|seat|locker|cabinet|bench|cubby)s\b/g, '$1')
   .replace(/\bbenches\b/g, 'bench').replace(/\bcubbies\b/g, 'cubby').replace(/\bshelves\b/g, 'shelf');
 
 function matchingTag(tags, request, product, normalize = plannerWords) {
@@ -49,10 +49,13 @@ function matchingTag(tags, request, product, normalize = plannerWords) {
   });
 }
 
+// The product text a preference tag is matched against (also used by the vendor research suggestions).
+export const indexedProductText = row => [row.name, row.row, row.ctx, row.section, row.group, row.series].join(' ');
+
 export function preferredProduct(rule, row, query, context, category) {
   if (!rule) return false;
   const scope = plannerWords(context + ' ' + query);
-  const indexed = [row.name, row.row, row.ctx, row.section, row.group, row.series].join(' ');
+  const indexed = indexedProductText(row);
   const facts = plannerWords(indexed);
   // A matching vendor cannot make an adult or age-unknown item preferred in an early-childhood plan.
   if (includesPlannerWords(scope, 'early childhood') && !includesPlannerWords(facts, 'early childhood')) return false;
