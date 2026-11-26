@@ -24,7 +24,9 @@
 //                                 holds no broker key: this server asks the connector who the person's own access
 //                                 token speaks for (POST <ENTERPRISE_CONNECTOR_ORIGIN>/network-whois), checks the
 //                                 pilot list, and signs request { kind, op?, payload? } for that person. The subject
-//                                 always comes from the connector's answer, never from the request.
+//                                 always comes from the connector's answer, never from the request. A net call goes
+//                                 with app: 'connector' (DYFRENT issue 1488: the person's own Claude is their own agent);
+//                                 the frame's call never carries it.
 //
 // Settings (server only, never in the browser): ENTERPRISE_NETWORK_PREVIEW=on, ENTERPRISE_INSTALLATION_ID,
 // ENTERPRISE_BROKER_KEY (shared with DYFRENT), ENTERPRISE_SESSION_KEY (this server's own), ENTERPRISE_PILOT_USERS
@@ -120,7 +122,10 @@ async function connectorCall(env, b, fetcher, now, say) {
   } catch (e) { return say(503, { ok: false, error: 'The Network could not answer just now. Try again.' }); }
   if (!who) return say(401, { ok: false, code: 'signin', error: 'Network not connected for you yet. Remove and add the Midwest AIOS connector again and sign in with your Midwest login.' });
   if (!mayUse(env, who.id)) return say(403, { ok: false, code: 'pilot', error: 'Your Midwest login is not open on the DYFRENT Network yet. Ask J to add you.' });
-  const request = kind === 'session' ? { subject: who.id, name: who.name, kind } : { subject: who.id, name: who.name, kind, op, payload };
+  // DYFRENT issue 1488 >> app 'connector' tells DYFRENT this net call is from the person's own Claude (never from the
+  // page), so its Agent messages run as their own agent, "Maureen's Claude". DYFRENT decides which ops that covers.
+  const request = kind === 'session' ? { subject: who.id, name: who.name, kind }
+    : kind === 'net' ? { subject: who.id, name: who.name, kind, op, payload, app: 'connector' } : { subject: who.id, name: who.name, kind, op, payload };
   try { const out = await signedCall(env, request, fetcher, now); return say(out.status, out.body); }
   catch (e) { return say(503, { ok: false, error: 'The Network could not answer just now. Try again.' }); }
 }
