@@ -24,9 +24,12 @@ const MUTANTS=[
   ['DYFRENT issue 1488: only an approved person gets the frame','src/enterprise.jsx',"if (st.state === \"approved\") return children;","if (st.state) return children;"],
   ['the connector relay asks only an https connector','api/enterprise-network.js',"return u.protocol === 'https:' && !u.username","return !u.username"],
   ['DYFRENT issue 1488: the bell reads connection requests only once the person is listed','api/enterprise-network.js',"if (mk.body.listed === true && mk.body.left !== true) {","if (true) {"],
-  ['DYFRENT issue 1488: the bell hides when the Network does not answer for this person','src/enterprise.jsx',"setCounts(r.status === 200 && r.body.ok === true ? r.body : null);","setCounts(r.body);"],
+  ['DYFRENT issue 1488: the bell hides when the Network refuses this person','src/enterprise.jsx',"else if (r.status === 401 || r.status === 403) setCounts(null);",""],
   ['DYFRENT issue 1488: work that fits you is listed but never counted on the badge','src/enterprise.jsx',".filter(r => r.key !== \"work\").reduce(",".reduce("],
   ['DYFRENT issue 1488: the bell sends counts only, never what DYFRENT answered','api/enterprise-network.js',"return say(200, { ok: true, messages: n(c.unread),","return say(200, { ...mk.body, ok: true, messages: n(c.unread),"],
+  ['DYFRENT issue 1488: a passing failure keeps the bell where it was','src/enterprise.jsx',"else if (r.status === 401 || r.status === 403) setCounts(null);","else setCounts(null);"],
+  ['DYFRENT issue 1488: the bell reads no connection requests for someone who left the Network','api/enterprise-network.js',"if (mk.body.listed === true && mk.body.left !== true) {","if (mk.body.listed === true) {"],
+  ['DYFRENT issue 1488: the bell reads at most once each 20 seconds unless opened','src/enterprise.jsx',"if (busy.current || (!force && t - lastAt.current < BELL_GAP_MS)) return;","if (busy.current) return;"],
 ];
 const read=(f)=>{const t=fs.readFileSync('../../'+f,'utf8');if(mutantIdx<0||MUTANTS[mutantIdx][1]!==f)return t;assert.ok(t.includes(MUTANTS[mutantIdx][2]),'mutation anchor missing: '+MUTANTS[mutantIdx][0]);return t.replace(MUTANTS[mutantIdx][2],MUTANTS[mutantIdx][3]);};
 const bundle=async(file,platform)=>{const r=await build({stdin:{contents:read(file),resolveDir:'../../'+file.split('/').slice(0,-1).join('/'),sourcefile:file,loader:file.endsWith('.jsx')?'jsx':'js'},bundle:true,write:false,format:'esm',platform,external:['react','react-dom','node:crypto'],jsx:'transform'});const out='./.enterprise-'+platform+'.mjs';fs.writeFileSync(out,r.outputFiles[0].text);try{return await import(out+'?'+Date.now())}finally{fs.rmSync(out)}};
@@ -125,6 +128,13 @@ assert.ok(sent.every(x=>Object.keys(x.request).sort().join()==='kind,name,op,pay
 BELL_FAKE.net_mk_overview.body={...BELL_FAKE.net_mk_overview.body,listed:false};
 sent=[];r=await call({op:'bell'},{cookie:maureen});
 assert.deepEqual([r.body.requests,r.body.messages,sent.map(x=>x.request.op).includes('net_overview')],[0,3,false],'someone who has never opened the Network is not read through net_overview (which would list them)');
+BELL_FAKE.net_mk_overview.body={...BELL_FAKE.net_mk_overview.body,listed:true,left:true};
+sent=[];r=await call({op:'bell'},{cookie:maureen});
+assert.deepEqual([r.body.requests,sent.map(x=>x.request.op).includes('net_overview')],[0,false],'someone who left the Network is not read through net_overview either');
+BELL_FAKE.net_mk_overview.body={...BELL_FAKE.net_mk_overview.body,left:false};const ovWas=BELL_FAKE.net_overview;BELL_FAKE.net_overview={status:503,body:{ok:false}};
+r=await call({op:'bell'},{cookie:maureen});
+assert.deepEqual([r.code,r.body.messages,r.body.requests],[200,3,0],'a failed connection-request read still answers the other counts');
+BELL_FAKE.net_overview=ovWas;
 BELL_FAKE.net_mk_overview.body={...BELL_FAKE.net_mk_overview.body,listed:true,counts:{unread:-4,intros:'7',to_decide:2.5,for_you:5000}};BELL_FAKE.net_wire_unread={status:403,body:{ok:false,code:'forbidden'}};
 r=await call({op:'bell'},{cookie:maureen});
 assert.deepEqual(r.body,{ok:true,messages:0,agents:0,requests:5,intros:0,decide:0,work:999},'garbage counts read as nothing, huge ones are capped, and a refused agent read is zero');
@@ -312,6 +322,31 @@ assert.equal(q('[data-network-bell-panel]'),null,'a click outside closes the pan
 const quiet=bellPosts.length;
 await act(async()=>setBellPage('jobs'));await flush();
 assert.equal(bellPosts.length,quiet,'moving between Midwest pages asks nothing');
+bellFake.status=200;bellFake.body={ok:true,messages:2,agents:0,requests:0,intros:0,decide:0,work:0};
+let n0=bellPosts.length;
+await act(async()=>{q('[data-network-bell] button').click()});await flush();
+assert.equal(q('[data-network-bell-count]').textContent,'2','opening the bell always reads it fresh');
+assert.ok(q('[data-network-bell-panel]').contains(document.activeElement)&&document.activeElement.tagName==='BUTTON','opening moves focus into the panel');
+await act(async()=>{document.dispatchEvent(new window.KeyboardEvent('keydown',{key:'Escape'}))});await flush();
+assert.equal(document.activeElement,q('[data-network-bell] button'),'Escape returns focus to the bell');
+await act(async()=>{q('[data-network-bell] button').click()});await flush();
+await act(async()=>{window.dispatchEvent(new window.Event('resize'))});await flush();
+assert.equal(q('[data-network-bell-panel]'),null,'a resize or rotation closes the panel instead of leaving it adrift');
+await act(async()=>{q('[data-network-bell] button').click()});await flush();
+await act(async()=>{window.dispatchEvent(new window.Event('blur'))});await flush();
+assert.equal(q('[data-network-bell-panel]'),null,'a click into the Network frame (the page loses focus) closes the panel');
+n0=bellPosts.length;
+Object.defineProperty(document,'visibilityState',{value:'visible',configurable:true});
+await act(async()=>{document.dispatchEvent(new window.Event('visibilitychange'))});await flush();
+await act(async()=>{document.dispatchEvent(new window.Event('visibilitychange'))});await flush();
+assert.equal(bellPosts.length,n0,'flipping back to the page right after a read asks nothing more');
+bellFake.status=503;bellFake.body={ok:false,error:'down'};
+await act(async()=>{q('[data-network-bell] button').click()});await flush();
+assert.equal(q('[data-network-bell-count]')&&q('[data-network-bell-count]').textContent,'2','a passing failure keeps the last counts; the bell does not jump away');
+await act(async()=>{document.dispatchEvent(new window.KeyboardEvent('keydown',{key:'Escape'}))});await flush();
+bellFake.status=403;bellFake.body={ok:false,code:'forbidden'};
+await act(async()=>{q('[data-network-bell] button').click()});await flush();
+assert.equal(document.getElementById('root').innerHTML,'','once DYFRENT refuses the person (paused), the bell goes');
 await act(async()=>root5.unmount());
 bellFake.status=403;bellFake.body={ok:false,code:'forbidden'};
 const root6=createRoot(document.getElementById('root'));

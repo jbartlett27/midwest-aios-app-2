@@ -188,6 +188,8 @@ export function enterpriseBroker(env, deps = {}) {
         const n = (v) => (Number.isInteger(v) && v > 0 ? Math.min(v, 999) : 0);
         const c = plain(mk.body.counts) ? mk.body.counts : {};
         let requests = 0;
+        // Deliberately conservative: someone who later hid themselves (unlisted) shows no connection requests here rather
+        // than risk listing anyone; they still see them on the Network tab.
         if (mk.body.listed === true && mk.body.left !== true) {
           const ov = await ask('net_overview', {});
           if (ov.status === 200 && ov.body.ok === true && plain(ov.body.counts)) requests = n(ov.body.counts.incoming);
