@@ -240,4 +240,7 @@ export function enterpriseBroker(env, deps = {}) {
   };
 }
 
+// A connector's listen for agent messages waits up to 10 s inside the 20 s call to DYFRENT: room for it on every plan.
+export const config = { maxDuration: 30 };
+
 export default function handler(req, res) { return enterpriseBroker(process.env)(req, res); }
