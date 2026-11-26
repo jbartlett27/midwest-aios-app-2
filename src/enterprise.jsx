@@ -5,7 +5,8 @@
 // session it set at sign-in and signs the call for DYFRENT. No key, token or password ever reaches the frame, and
 // nothing from Midwest's own records is sent: only the call the person made on the Network page.
 //
-// Shown only to the pilot logins the server names (ENTERPRISE_PILOT_USERS); for everyone else nothing here renders.
+// Shown to the pilot logins the server names (ENTERPRISE_PILOT_USERS), or to every login when the server has
+// ENTERPRISE_OPEN_REQUESTS=on (DYFRENT issue 1488): a login J has not approved yet sees Ask to join instead of the frame.
 import React, { useState, useEffect, useRef } from "react";
 
 export const NETWORK_APP = "https://www.dyfrent.app";
@@ -99,9 +100,52 @@ function NetworkFrame({ view, onSignedOut, onGo }) {
     allow="clipboard-write" referrerPolicy="strict-origin-when-cross-origin" />;
 }
 
+// DYFRENT issue 1488: a login J has not approved yet asks to join here; J approves each person on DYFRENT.
+const JOIN_COPY = {
+  none: { title: "Join the DYFRENT Network", body: "Profile, Network and Messages connect you with DYFRENT and the businesses on its Network. Ask to join and J will approve you. Only your name and Midwest login id are shared; Midwest's jobs, customers and finances stay here." },
+  pending: { title: "Waiting for J to approve you", body: "Your request is with J at DYFRENT. These tabs open as soon as he approves you; you do not need to ask again." },
+  paused: { title: "Your Network access is paused", body: "J has paused your access to the DYFRENT Network. Ask him if you need it back." },
+};
+function JoinCard({ state, busy, err, onAsk, onCheck }) {
+  const c = JOIN_COPY[state] || JOIN_COPY.none;
+  return (
+    <div data-network-join={state} style={{ maxWidth: 460, margin: "10vh auto", padding: 28, background: "#111111", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 14 }}>
+      <div style={{ fontSize: 11, letterSpacing: ".2em", textTransform: "uppercase", color: "#2dd4bf", marginBottom: 10 }}>DYFRENT Network</div>
+      <div style={{ fontSize: 18, color: "#f0f0f0", marginBottom: 8 }}>{c.title}</div>
+      <div style={{ fontSize: 13, color: "#9a9a9a", lineHeight: 1.6, marginBottom: state === "paused" ? 0 : 18 }}>{c.body}</div>
+      {err && <div role="alert" style={{ color: "#f87171", fontSize: 13, marginBottom: 12 }}>{err}</div>}
+      {state === "none" && <button type="button" disabled={busy} onClick={onAsk} data-network-ask style={{ width: "100%", padding: 12, borderRadius: 10, border: "none", background: "#2dd4bf", color: "#000", fontWeight: 700, fontSize: 14, cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1 }}>{busy ? "Sending" : "Ask to join"}</button>}
+      {state === "pending" && <button type="button" disabled={busy} onClick={onCheck} data-network-check style={{ width: "100%", padding: 12, borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "transparent", color: "#f0f0f0", fontWeight: 600, fontSize: 14, cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1 }}>{busy ? "Checking" : "Check again"}</button>}
+    </div>
+  );
+}
+
+// Asks DYFRENT once per tab visit whether this person is approved; only an approved person gets the frame.
+function JoinGate({ children, onSignedOut }) {
+  const [st, setSt] = useState({ state: "", busy: false, err: "" });
+  const ask = async (want) => {
+    setSt(s => ({ ...s, busy: true, err: "" }));
+    const r = await post({ op: "join", ask: want === true });
+    if (r.status === 401 && r.body.code === "signin") { onSignedOut(); return; }
+    if (r.body.ok === true && ["approved", "pending", "paused", "none"].includes(r.body.state)) setSt({ state: r.body.state, busy: false, err: "" });
+    else setSt(s => ({ state: s.state || "error", busy: false, err: r.body.error || "The Network could not answer just now. Try again." }));
+  };
+  useEffect(() => { ask(false); }, []);   // eslint-disable-line react-hooks/exhaustive-deps
+  if (!st.state) return <div style={{ minHeight: "50vh" }} aria-busy="true" />;
+  if (st.state === "approved") return children;
+  if (st.state === "error") return (
+    <div data-network-join="error" style={{ maxWidth: 460, margin: "10vh auto", padding: 28, background: "#111111", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 14 }}>
+      <div style={{ fontSize: 13, color: "#9a9a9a", lineHeight: 1.6, marginBottom: 14 }}>{st.err}</div>
+      <button type="button" disabled={st.busy} onClick={() => ask(false)} style={{ width: "100%", padding: 12, borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "transparent", color: "#f0f0f0", fontWeight: 600, fontSize: 14 }}>Try again</button>
+    </div>
+  );
+  return <JoinCard state={st.state} busy={st.busy} err={st.err} onAsk={() => ask(true)} onCheck={() => ask(false)} />;
+}
+
 export function NetworkPage({ view, currentUser, pilotState, setPilotState, setPage }) {
   if (!pilotState.checked) return <div style={{ minHeight: "50vh" }} aria-busy="true" />;
   if (!pilotState.pilot) return null;
+  const signedOut = () => setPilotState(s => ({ ...s, session: false }));
   if (!pilotState.session) return <ConfirmPassword currentUser={currentUser} onDone={() => setPilotState(s => ({ ...s, session: true }))} />;
-  return <NetworkFrame view={view} onSignedOut={() => setPilotState(s => ({ ...s, session: false }))} onGo={setPage} />;
+  return <JoinGate onSignedOut={signedOut}><NetworkFrame view={view} onSignedOut={signedOut} onGo={setPage} /></JoinGate>;
 }
