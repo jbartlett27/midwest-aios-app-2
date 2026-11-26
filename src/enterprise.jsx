@@ -72,8 +72,14 @@ function ConfirmPassword({ currentUser, onDone }) {
 // The views the frame may ask to switch to (DYFRENT issue 1422: Open full profile, Messages): each is one of our tabs.
 export const GO_PAGE = Object.freeze({ profile: "netprofile", network: "network", messages: "netmessages" });
 
+// Add to Apple Wallet on the Network card (DYFRENT issue 1492). An iPhone does not hand a pass opened inside a frame to
+// Wallet, so the frame asks this page to open the person's own signed pass link here, at the top. Only DYFRENT's pass
+// download address with its token is ever opened; anything else is ignored.
+export const PASS_LINK = /^https:\/\/www\.dyfrent\.app\/api\/book\?action=netpass&t=[A-Za-z0-9_-]{100,200}$/;
+export const openPass = (url, go) => { const u = String(url || ""); if (!PASS_LINK.test(u)) return false; (go || ((x) => window.location.assign(x)))(u); return true; };
+
 // The relay: answers the frame's hello and calls, only from that frame at the DYFRENT origin.
-function NetworkFrame({ view, onSignedOut, onGo }) {
+function NetworkFrame({ view, onSignedOut, onGo, onPass }) {
   const ref = useRef(null);
   const host = typeof window !== "undefined" ? window.location.origin : "";
   useEffect(() => {
@@ -84,6 +90,7 @@ function NetworkFrame({ view, onSignedOut, onGo }) {
       if (!m || typeof m !== "object" || m.t !== FRAME_PROTOCOL || typeof m.id !== "string" || m.id.length > 64) return;
       let r;
       if (m.kind === "go") { const p = GO_PAGE[m.view]; if (p && m.view !== view && onGo) onGo(p); return; }
+      if (m.kind === "pass") { openPass(m.url, onPass); return; }
       if (m.kind === "hello") r = await post({ op: "hello" });
       else if (m.kind === "call") r = await post({ op: "call", route: m.route, body: m.body });
       else return;
@@ -92,16 +99,16 @@ function NetworkFrame({ view, onSignedOut, onGo }) {
     };
     window.addEventListener("message", on);
     return () => window.removeEventListener("message", on);
-  }, [onSignedOut, onGo, view]);
+  }, [onSignedOut, onGo, onPass, view]);
   const src = NETWORK_APP + "/enterprise?host=" + encodeURIComponent(host) + "&view=" + encodeURIComponent(view);
   return <iframe ref={ref} key={view} src={src} title={"DYFRENT " + view} data-network-frame={view}
     style={{ display: "block", width: "100%", height: "calc(100dvh - 120px)", minHeight: 520, border: "1px solid rgba(255,255,255,0.06)", borderRadius: 14, background: "#000" }}
     allow="clipboard-write" referrerPolicy="strict-origin-when-cross-origin" />;
 }
 
-export function NetworkPage({ view, currentUser, pilotState, setPilotState, setPage }) {
+export function NetworkPage({ view, currentUser, pilotState, setPilotState, setPage, onPass }) {
   if (!pilotState.checked) return <div style={{ minHeight: "50vh" }} aria-busy="true" />;
   if (!pilotState.pilot) return null;
   if (!pilotState.session) return <ConfirmPassword currentUser={currentUser} onDone={() => setPilotState(s => ({ ...s, session: true }))} />;
-  return <NetworkFrame view={view} onSignedOut={() => setPilotState(s => ({ ...s, session: false }))} onGo={setPage} />;
+  return <NetworkFrame view={view} onSignedOut={() => setPilotState(s => ({ ...s, session: false }))} onGo={setPage} onPass={onPass} />;
 }

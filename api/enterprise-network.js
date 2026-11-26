@@ -27,8 +27,8 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 
 const SB = 'https://kogjthgceejpzxnekprr.supabase.co/rest/v1';
-// The same public key the Midwest app uses in the browser (src/supabase.js): the sign-in check here reads exactly
-// what the sign-in screen reads, so the same username and password work.
+// The same public key the Midwest app uses in the browser (src/supabase.js): the sign-in check here asks the same
+// database function family the sign-in screen does, so the same username and password work.
 const ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtvZ2p0aGdjZWVqcHp4bmVrcHJyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyODgyODUsImV4cCI6MjA4ODg2NDI4NX0.W0bhVfPNjCPYKzs6KpIeYaXk5epKRbLmDzgSN8NEjHo';
 const COOKIE = 'mw_net';
 const SESSION_MS = 12 * 60 * 60 * 1000;
@@ -139,13 +139,15 @@ export function enterpriseBroker(env, deps = {}) {
     if (op === 'login') {
       const username = String(b.username || '').trim().toLowerCase(), password = String(b.password || '');
       if (!username || !password || username.length > 80 || password.length > 200) return say(400, { ok: false, error: 'Enter your username and password.' });
-      let rows = [];
+      // The database compares the password (mw_check_login) and answers id, name and role only: the password column
+      // is not readable with the public key (supabase/migrations/20261126040100_lock_user_passwords.sql).
+      let u = null;
       try {
-        const r = await fetcher(SB + '/users?username=eq.' + encodeURIComponent(username) + '&password=eq.' + encodeURIComponent(password) + '&select=id,name,role&limit=1',
-          { headers: { apikey: ANON, Authorization: 'Bearer ' + ANON }, signal: AbortSignal.timeout(8000) });
-        rows = r.ok ? await r.json() : [];
+        const r = await fetcher(SB + '/rpc/mw_check_login', { method: 'POST', headers: { apikey: ANON, Authorization: 'Bearer ' + ANON, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ p_username: username, p_password: password }), signal: AbortSignal.timeout(8000) });
+        u = r.ok ? await r.json() : null;
       } catch (e) { return say(503, { ok: false, error: 'The sign-in check could not finish. Try again.' }); }
-      const u = Array.isArray(rows) ? rows[0] : null;
+      if (!plain(u)) u = null;
       if (!u || typeof u.id !== 'string') return say(401, { ok: false, error: 'That username and password did not match.' });
       if (!pilot.includes(u.id)) return say(200, { ok: false, pilot: false });
       res.setHeader('Set-Cookie', cookie(sealSession(env, u, now), SESSION_MS / 1000));

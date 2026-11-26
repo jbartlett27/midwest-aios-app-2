@@ -14,6 +14,8 @@ const MUTANTS=[
   ['the frame call cannot name another kind of op','api/enterprise-network.js',"if (!kind || !(kind === 'net' ? NET_OP : PROFILE_OP).test(inner))","if (!kind)"],
   ['an expired session is refused','api/enterprise-network.js',"|| s.e <= now) return null;",") return null;"],
   ['the frame can switch tabs (Open full profile)','src/enterprise.jsx',"if (p && m.view !== view && onGo) onGo(p); return;","return;"],
+  ['Add to Apple Wallet opens the pass at the top','src/enterprise.jsx',"if (m.kind === \"pass\") { openPass(m.url, onPass); return; }",""],
+  ['only DYFRENT\'s signed pass link is opened','src/enterprise.jsx',"if (!PASS_LINK.test(u)) return false;",""],
   ['the frame cannot switch to a page that is not one of the three','src/enterprise.jsx',"const p = GO_PAGE[m.view]; if (p &&","const p = GO_PAGE[m.view] || m.view; if (p &&"],
   ['the connector relay takes the person from the connector, never from the request','api/enterprise-network.js',"const request = kind === 'session' ? { subject: who.id, name: who.name, kind } : { subject: who.id, name: who.name, kind, op, payload };","const request = { ...q, subject: q.subject || who.id, name: who.name };"],
   ['the connector relay only serves pilot logins','api/enterprise-network.js',"if (!pilotList(env).includes(who.id)) return say(403","if (false) return say(403"],
@@ -32,7 +34,8 @@ const USERS=[{id:'USR-001',username:'maureen',password:'pw-maureen',name:'Mauree
 let sent=[];
 const fakeFetch=async(url,init={})=>{
   const u=new URL(url);
-  if(u.hostname==='kogjthgceejpzxnekprr.supabase.co'){const name=decodeURIComponent((u.search.match(/username=eq\.([^&]*)/)||[])[1]||''),pw=decodeURIComponent((u.search.match(/password=eq\.([^&]*)/)||[])[1]||'');const row=USERS.find(x=>x.username===name&&x.password===pw);return {ok:true,status:200,json:async()=>row?[{id:row.id,name:row.name,role:row.role}]:[]};}
+  // Midwest's database function mw_check_login: the password is compared there and never read back (Nov 26 2026).
+  if(u.hostname==='kogjthgceejpzxnekprr.supabase.co'){assert.equal(u.pathname,'/rest/v1/rpc/mw_check_login','the Network sign-in asks the database function, never the users table');assert.equal(init.method,'POST');const a=JSON.parse(init.body);const row=USERS.find(x=>x.username===a.p_username&&x.password===a.p_password);return {ok:true,status:200,json:async()=>row?{id:row.id,name:row.name,role:row.role}:null};}
   if(u.hostname==='www.dyfrent.app'){const b=JSON.parse(init.body);sent.push(b);
     // DYFRENT's own check (api/_enterprise_network.js brokerText / brokerSignature)
     const text=['dyfrent.enterprise/1',b.installation,b.nonce,b.issued_at,createHash('sha256').update(JSON.stringify(b.request)).digest('hex')].join('\n');
@@ -109,7 +112,7 @@ assert.match(String(r.headers['Set-Cookie']),/^mw_net=; .*Max-Age=0$/,'sign-out 
 const closed=B.enterpriseBroker({...env,ENTERPRISE_NETWORK_PREVIEW:''},{fetch:fakeFetch,now:()=>NOW});
 const cr={code:0,headers:{},body:null,setHeader(){},status(c){this.code=c;return this},json(b){this.body=b;return this}};await closed({method:'POST',headers:{origin:'https://midwestaios.com'},body:{op:'status',user:'USR-001'}},cr);
 assert.deepEqual([cr.body.pilot,cr.body.code],[false,'closed'],'with the preview switch off nobody sees the tabs');
-assert.deepEqual([...read('api/enterprise-network.js').matchAll(/SB \+ '\/([a-z_]+)/g)].map(m=>m[1]),['users'],'the broker reads one Midwest table, users (the sign-in check), and no business table');
+assert.deepEqual([...read('api/enterprise-network.js').matchAll(/SB \+ '\/([a-z_/]+)/g)].map(m=>m[1]),['rpc/mw_check_login'],'the broker asks Midwest one thing, the sign-in check (mw_check_login), and reads no table');
 
 // ── 1b. The connector relay (server to server, no origin, no cookie) ──────
 const CONN='https://midwest-aios-mcp.vercel.app';
@@ -163,8 +166,8 @@ const origErr=console.error;console.error=(...a)=>{if(/act\(|not wrapped/.test(S
 const E=await bundle('src/enterprise.jsx','browser');
 assert.deepEqual(E.NETWORK_PAGES.map(p=>p.label),['Profile','Network','Messages'],'three new tabs: Profile, Network, Messages');
 const root=createRoot(document.getElementById('root'));
-let pilot;const went=[];
-function Host({user,view}){const [st,setSt]=E.useNetworkPilot(user);pilot=st;return React.createElement(E.NetworkPage,{view,currentUser:user,pilotState:st,setPilotState:setSt,setPage:p=>went.push(p)});}
+let pilot;const went=[];const passes=[];
+function Host({user,view}){const [st,setSt]=E.useNetworkPilot(user);pilot=st;return React.createElement(E.NetworkPage,{view,currentUser:user,pilotState:st,setPilotState:setSt,setPage:p=>went.push(p),onPass:u=>passes.push(u)});}
 const flush=async()=>{for(let i=0;i<6;i++)await act(async()=>{await new Promise(r=>setTimeout(r,0))});};
 await act(async()=>root.render(React.createElement(Host,{user:{id:'USR-002',username:'dave'},view:'network'})));await flush();
 assert.deepEqual([pilot.checked,pilot.pilot,document.getElementById('root').innerHTML],[true,false,''],'a login that is not on the pilot list sees nothing at all');
@@ -200,6 +203,12 @@ await fire({t:E.FRAME_PROTOCOL,kind:'go',id:'g3',view:'network'});
 await fire({t:E.FRAME_PROTOCOL,kind:'go',id:'g4',view:'jobs'});
 assert.deepEqual(went,['netprofile','netmessages'],'the frame can switch to the Profile or Messages tab (Open full profile), never to its own view, another page or from another origin');
 assert.equal(posts.length,sentBefore,'switching tabs calls nothing on the server');
+const PASS='https://www.dyfrent.app/api/book?action=netpass&t='+'Q'.repeat(144);
+await fire({t:E.FRAME_PROTOCOL,kind:'pass',id:'p0',url:PASS},{origin:'https://evil.example'});
+for(const bad of ['https://evil.example/api/book?action=netpass&t='+'Q'.repeat(144),'https://www.dyfrent.app/api/book?action=netpass&t=short','javascript:alert(1)',PASS+'&x=1',null])await fire({t:E.FRAME_PROTOCOL,kind:'pass',id:'p1',url:bad});
+await fire({t:E.FRAME_PROTOCOL,kind:'pass',id:'p2',url:PASS});
+assert.deepEqual(passes,[PASS],'Add to Apple Wallet: only DYFRENT\'s own signed pass link, from the DYFRENT frame, is opened at the top of this page');
+assert.equal(posts.length,sentBefore,'opening the pass calls nothing on the server');
 await act(async()=>root.unmount());
 console.error=origErr;
 console.log('PASS DYFRENT Network in Midwest: broker and tabs ('+(mutantIdx<0?'source':'mutant '+mutantIdx)+')');

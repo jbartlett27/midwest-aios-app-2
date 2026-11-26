@@ -279,9 +279,20 @@ const periodLockToDb = (p) => ({
 });
 
 // ---- USERS ----
+// Passwords never reach the browser (Nov 26 2026): sign-in and every change to a user go through the database's own
+// functions (supabase/migrations/20261126040000_user_sign_in_functions.sql). The list reads every column but the password.
+const USER_COLUMNS = 'id,username,role,rep_id,name,created_at,pages';
+const rpc = async (fn, args) => {
+  const r = await fetch(URL + '/rpc/' + fn, { method: 'POST', headers: hdrs, body: JSON.stringify(args) });
+  if (!r.ok) return null;
+  return await r.json();
+};
+// The admin session made at sign-in (mw_login), kept with the signed-in user for this tab only.
+const sessionToken = () => { try { const u = JSON.parse(sessionStorage.getItem('mw_user') || 'null'); return u && typeof u.session === 'string' ? u.session : ''; } catch (e) { return ''; } };
+
 async function fetchUsers() {
   try {
-    const r = await fetch(URL + '/users?select=*&order=id', { headers: hdrs });
+    const r = await fetch(URL + '/users?select=' + USER_COLUMNS + '&order=id', { headers: hdrs });
     if (!r.ok) return null;
     return await r.json();
   } catch (e) { console.error('Fetch users:', e); return null; }
@@ -289,11 +300,23 @@ async function fetchUsers() {
 
 async function loginUser(username, password) {
   try {
-    const r = await fetch(URL + '/users?username=eq.' + encodeURIComponent(username) + '&password=eq.' + encodeURIComponent(password) + '&select=*', { headers: hdrs });
-    if (!r.ok) return null;
-    const data = await r.json();
-    return data.length > 0 ? data[0] : null;
+    const u = await rpc('mw_login', { p_username: String(username || ''), p_password: String(password || '') });
+    return u && typeof u === 'object' && typeof u.id === 'string' ? u : null;
   } catch (e) { console.error('Login:', e); return null; }
+}
+
+// { ok, code? } code 'signin': this tab has no admin session (signed in before Nov 26 2026): sign out and in again.
+async function saveUser(user) {
+  try {
+    const out = await rpc('mw_user_save', { p_session: sessionToken(), p_user: user || {} });
+    return { ok: !!(out && out.ok === true), code: out && out.code ? String(out.code) : '' };
+  } catch (e) { console.error('Save user:', e); return { ok: false }; }
+}
+async function deleteUser(id) {
+  try {
+    const out = await rpc('mw_user_delete', { p_session: sessionToken(), p_id: String(id || '') });
+    return { ok: !!(out && out.ok === true), code: out && out.code ? String(out.code) : '' };
+  } catch (e) { console.error('Delete user:', e); return { ok: false }; }
 }
 
 // ---- REALTIME ----
@@ -541,8 +564,8 @@ export const db = {
   async saveSops(list) { return upsertMany('sops', (Array.isArray(list) ? list : []).map(sopToDb)); },
   async fetchUsers() { return fetchUsers(); },
   async loginUser(u, p) { return loginUser(u, p); },
-  async saveUser(user) { return upsertRow('users', user); },
-  async deleteUser(id) { return deleteRow('users', id); },
+  async saveUser(user) { return saveUser(user); },
+  async deleteUser(id) { return deleteUser(id); },
   async seedSafe(initJobs, initLI, initV, initC, initR) {
     await Promise.all([
       upsertMany('vendors', initV.map(vendorToDb)),

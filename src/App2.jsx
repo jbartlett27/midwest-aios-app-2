@@ -6380,10 +6380,10 @@ function UserMgmtPage({notify,reps,vendors,customSops,addSop,deleteSop,savePlann
   const clerkUsers=Object.entries(clerkRoles).map(([id,data])=>({id,clerkId:id,...data}));
 
 
-  const addUser=async()=>{if(!newUser.name||!newUser.username||!newUser.password){notify("All fields required");return}const user={id:"USR-"+Math.random().toString(36).slice(2,8).toUpperCase(),username:newUser.username.trim().toLowerCase(),password:newUser.password,role:newUser.role,rep_id:newUser.role==="sales"?newUser.rep_id:"",name:newUser.name.trim()};const res=await db.saveUser(user);if(res?.ok){setUsers(p=>[...p,user]);setNewUser({name:"",username:"",password:"",role:"sales",rep_id:""});setShowAdd(false);notify("User created: "+user.name)}else{notify("Error creating user -- username may exist")}};
+  const addUser=async()=>{if(!newUser.name||!newUser.username||!newUser.password){notify("All fields required");return}const user={id:"USR-"+Math.random().toString(36).slice(2,8).toUpperCase(),username:newUser.username.trim().toLowerCase(),password:newUser.password,role:newUser.role,rep_id:newUser.role==="sales"?newUser.rep_id:"",name:newUser.name.trim()};const res=await db.saveUser(user);if(res?.ok){const{password:_pw,...shown}=user;setUsers(p=>[...p,shown]);setNewUser({name:"",username:"",password:"",role:"sales",rep_id:""});setShowAdd(false);notify("User created: "+user.name)}else{notify(res?.code==="signin"?"Sign out and sign in again, then try that once more":"Error creating user -- username may exist")}};
 
 
-  const deleteUser=async(id)=>{if(!confirm("Delete this user?"))return;await db.deleteUser(id);setUsers(p=>p.filter(u=>u.id!==id));notify("User deleted")};
+  const deleteUser=async(id)=>{if(!confirm("Delete this user?"))return;const res=await db.deleteUser(id);if(!res?.ok){notify(res?.code==="signin"?"Sign out and sign in again, then try that once more":"Error deleting user");return}setUsers(p=>p.filter(u=>u.id!==id));notify("User deleted")};
 
 
   const roleColor={admin:"#2dd4bf",office:"#a78bfa",sales:"#fbbf24"};
@@ -6450,7 +6450,7 @@ function UserMgmtPage({notify,reps,vendors,customSops,addSop,deleteSop,savePlann
             const newPages=JSON.stringify(roleDefaults[r.v]);
             if(u.source==="clerk"){saveClerkRole(u.clerkId,{...clerkRoles[u.clerkId],role:r.v,name:u.name,email:u.email||"",pages:roleDefaults[r.v]})}
             else{
-              db.saveUser({...u,role:r.v,pages:newPages}).then(()=>{setUsers(prev=>prev.map(x=>x.id===u.id?{...x,role:r.v,pages:newPages}:x));notify("Role updated to "+r.l+" -- pages reset to default")}).catch(()=>{})
+              db.saveUser({...u,role:r.v,pages:newPages}).then((res)=>{if(!res?.ok){notify(res?.code==="signin"?"Sign out and sign in again, then try that once more":"Error updating role");return}setUsers(prev=>prev.map(x=>x.id===u.id?{...x,role:r.v,pages:newPages}:x));notify("Role updated to "+r.l+" -- pages reset to default")}).catch(()=>{})
             }
           }} style={{padding:"8px 16px",borderRadius:8,border:"1px solid "+((u.role||"admin")===r.v?(roleColor[r.v]||"#525252")+"60":"#222"),background:(u.role||"admin")===r.v?(roleColor[r.v]||"#525252")+"12":"transparent",color:(u.role||"admin")===r.v?roleColor[r.v]:"#737373",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>{r.l}</button>)}</div></div>
 
@@ -6468,7 +6468,8 @@ function UserMgmtPage({notify,reps,vendors,customSops,addSop,deleteSop,savePlann
                 const newPagesStr=JSON.stringify(newPages);
                 if(u.source==="clerk"){saveClerkRole(u.clerkId,{...clerkRoles[u.clerkId],role:u.role||"admin",name:u.name,email:u.email||"",pages:newPages})}
                 else{
-                  db.saveUser({...u,pages:newPagesStr}).then(()=>{
+                  db.saveUser({...u,pages:newPagesStr}).then((res)=>{
+                    if(!res?.ok){notify(res?.code==="signin"?"Sign out and sign in again, then try that once more":"Error saving permissions");return}
                     setUsers(prev=>prev.map(x=>x.id===u.id?{...x,pages:newPagesStr}:x));
                     notify(pageLabels[p]+" "+(isOn?"hidden from":"shown to")+" "+u.name);
                   }).catch(()=>{notify("Error saving permissions")});
@@ -6480,7 +6481,7 @@ function UserMgmtPage({notify,reps,vendors,customSops,addSop,deleteSop,savePlann
 
           {/* Password change for password users */}
           {u.source!=="clerk"&&<div style={{marginTop:12}}><button onClick={()=>setChangingPw(changingPw===u.id?null:u.id)} style={{padding:"4px 10px",borderRadius:6,border:"1px solid #333",background:"transparent",color:"#a3a3a3",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Change Password</button>
-          {changingPw===u.id&&<div style={{marginTop:8,display:"flex",gap:8,alignItems:"center"}}><input id={"pw-"+u.id} type="password" placeholder="New password" style={{flex:1,padding:"8px 12px",background:"#000",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"#f0f0f0",fontSize:13,fontFamily:"inherit",outline:"none"}}/><Btn onClick={async()=>{const pw=document.getElementById("pw-"+u.id)?.value;if(!pw||pw.length<4){notify("Password must be at least 4 characters");return}const res=await db.saveUser({...u,password:pw});if(res?.ok){notify("Password updated for "+u.name);setChangingPw(null)}else{notify("Error updating password")}}}>Save</Btn></div>}</div>}
+          {changingPw===u.id&&<div style={{marginTop:8,display:"flex",gap:8,alignItems:"center"}}><input id={"pw-"+u.id} type="password" placeholder="New password" style={{flex:1,padding:"8px 12px",background:"#000",border:"1px solid rgba(255,255,255,0.08)",borderRadius:8,color:"#f0f0f0",fontSize:13,fontFamily:"inherit",outline:"none"}}/><Btn onClick={async()=>{const pw=document.getElementById("pw-"+u.id)?.value;if(!pw||pw.length<4){notify("Password must be at least 4 characters");return}const res=await db.saveUser({...u,password:pw});if(res?.ok){notify("Password updated for "+u.name);setChangingPw(null)}else{notify(res?.code==="signin"?"Sign out and sign in again, then try that once more":"Error updating password")}}}>Save</Btn></div>}</div>}
 
 
           {/* Clerk user info */}
