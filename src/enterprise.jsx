@@ -149,3 +149,89 @@ export function NetworkPage({ view, currentUser, pilotState, setPilotState, setP
   if (!pilotState.session) return <ConfirmPassword currentUser={currentUser} onDone={() => setPilotState(s => ({ ...s, session: true }))} />;
   return <JoinGate onSignedOut={signedOut}><NetworkFrame view={view} onSignedOut={signedOut} onGo={setPage} /></JoinGate>;
 }
+
+// DYFRENT issue 1488 >> the Network in Midwest's bell: what is waiting for this person on the Network, as counts only
+// (the server's bell op), each opening the tab where it is answered. Shown only to a person with a verified Network
+// session whom J has approved; anyone else gets nothing back and the bell stays hidden.
+export const BELL_EVERY_MS = 120000;
+export const BELL_ROWS = [
+  { key: "messages", page: "netmessages", one: "unread message", many: "unread messages" },
+  { key: "agents", page: "netmessages", one: "message from an agent", many: "messages from agents" },
+  { key: "requests", page: "network", one: "connection request", many: "connection requests" },
+  { key: "intros", page: "network", one: "introduction waiting on you", many: "introductions waiting on you" },
+  { key: "decide", page: "network", one: "reply to your work request", many: "replies to your work requests" },
+  { key: "work", page: "network", one: "work request that fits you", many: "work requests that fit you" },
+];
+// The badge counts what needs the person; work that fits them is listed but never nags.
+export const bellTotal = (c) => (c ? BELL_ROWS.filter(r => r.key !== "work").reduce((n, r) => n + (Number(c[r.key]) || 0), 0) : 0);
+const BELL_PATH = "M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0";
+
+export function NetworkBell({ pilotState, page, setPage }) {
+  const [counts, setCounts] = useState(null);
+  const [open, setOpen] = useState(false);
+  const [at, setAt] = useState({ top: 64, right: 16 });
+  const wrap = useRef(null);
+  const on = pilotState.checked && pilotState.pilot && pilotState.session;
+  const load = useRef(null);
+  load.current = async () => {
+    const r = await post({ op: "bell" });
+    setCounts(r.status === 200 && r.body.ok === true ? r.body : null);
+  };
+  useEffect(() => {
+    if (!on) { setCounts(null); return undefined; }
+    const tick = () => { if (typeof document === "undefined" || document.visibilityState !== "hidden") load.current(); };
+    tick();
+    const t = setInterval(tick, BELL_EVERY_MS);
+    const vis = () => { if (document.visibilityState === "visible") load.current(); };
+    document.addEventListener("visibilitychange", vis);
+    return () => { clearInterval(t); document.removeEventListener("visibilitychange", vis); };
+  }, [on]);
+  // Coming back from a Network tab: what was read there is no longer waiting.
+  const last = useRef(page);
+  useEffect(() => { const was = last.current; last.current = page; if (on && was !== page && Object.values(GO_PAGE).includes(was)) load.current(); }, [page, on]);
+  useEffect(() => {
+    if (!open) return undefined;
+    const away = (e) => { if (wrap.current && !wrap.current.contains(e.target)) setOpen(false); };
+    const esc = (e) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", away); document.addEventListener("touchstart", away); document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", away); document.removeEventListener("touchstart", away); document.removeEventListener("keydown", esc); };
+  }, [open]);
+  if (!on || !counts) return null;
+  const total = bellTotal(counts);
+  const rows = BELL_ROWS.filter(r => (Number(counts[r.key]) || 0) > 0);
+  const go = (p) => { setOpen(false); setPage(p); };   // setPage scrolls to the top itself
+  const label = total ? total + " waiting on the DYFRENT Network" : "DYFRENT Network";
+  return (
+    <div ref={wrap} style={{ position: "relative" }} data-network-bell={total}>
+      <button type="button" aria-label={label} title={label} aria-expanded={open} onClick={(e) => {
+          // Fixed to the viewport, kept 16px inside it, so it never runs off a phone screen.
+          const b = e.currentTarget.getBoundingClientRect();
+          const w = window.innerWidth, pw = Math.min(300, w - 32);
+          setAt({ top: Math.round(b.bottom + 8), right: Math.max(16, Math.round(Math.min(w - b.right, w - 16 - pw))) });
+          setOpen(o => !o); if (!open) load.current();
+        }}
+        style={{ position: "relative", width: 32, height: 32, borderRadius: "50%", border: "1px solid rgba(255,255,255,0.08)", background: open ? "rgba(45,212,191,0.08)" : "transparent", color: total ? "#2dd4bf" : "#737373", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0 }}>
+        <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={BELL_PATH} /></svg>
+        {total > 0 && <span data-network-bell-count style={{ position: "absolute", top: -4, right: -4, minWidth: 16, height: 16, padding: "0 4px", boxSizing: "border-box", borderRadius: 8, background: "#2dd4bf", color: "#000", fontSize: 10, fontWeight: 700, lineHeight: "16px", textAlign: "center", fontVariantNumeric: "tabular-nums" }}>{total > 99 ? "99+" : total}</span>}
+      </button>
+      {open && (
+        <div role="menu" data-network-bell-panel style={{ position: "fixed", top: at.top, right: at.right, zIndex: 10002, width: 300, maxWidth: "calc(100vw - 32px)", boxSizing: "border-box", padding: 8, background: "#111111", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 14, boxShadow: "0 16px 48px rgba(0,0,0,0.6)" }}>
+          <div style={{ fontSize: 10, letterSpacing: ".2em", textTransform: "uppercase", color: "#2dd4bf", padding: "8px 10px 6px" }}>DYFRENT Network</div>
+          {rows.map(r => {
+            const n = Number(counts[r.key]) || 0;
+            return (
+              <button key={r.key} type="button" role="menuitem" data-network-bell-row={r.key} onClick={() => go(r.page)}
+                style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", minHeight: 44, padding: "8px 10px", border: "none", borderRadius: 10, background: "transparent", color: "#f0f0f0", fontSize: 13, textAlign: "left", cursor: "pointer", fontFamily: "inherit" }}
+                onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.04)"; }} onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
+                <span style={{ minWidth: 24, color: r.key === "work" ? "#9a9a9a" : "#2dd4bf", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{n > 999 ? "999+" : n}</span>
+                <span style={{ flex: 1, minWidth: 0 }}>{n === 1 ? r.one : r.many}</span>
+              </button>
+            );
+          })}
+          {!rows.length && <div data-network-bell-empty style={{ fontSize: 13, color: "#9a9a9a", padding: "6px 10px 10px" }}>Nothing new on the Network.</div>}
+          <button type="button" role="menuitem" onClick={() => go("network")} style={{ display: "block", width: "100%", minHeight: 40, marginTop: 4, padding: "8px 10px", border: "none", borderTop: "1px solid rgba(255,255,255,0.06)", borderRadius: 0, background: "transparent", color: "#9a9a9a", fontSize: 12, textAlign: "left", cursor: "pointer", fontFamily: "inherit" }}>Open the Network</button>
+        </div>
+      )}
+    </div>
+  );
+}

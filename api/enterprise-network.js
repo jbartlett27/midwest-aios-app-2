@@ -14,6 +14,8 @@
 //   hello                         who the signed-in person is on the Network (DYFRENT answers from its own records)
 //   join    { ask? }              DYFRENT issue 1488: approved, pending, paused or none on the Network; ask: true asks J
 //                                 to approve this person (DYFRENT keeps them waiting, with no access, until he does)
+//   bell                          DYFRENT issue 1488: counts of what is waiting for the person on the Network (unread
+//                                 messages, agent messages, connection requests, introductions, work), never names
 //   call    { route, body }       one Network or Profile call from the frame: route net_team or profile_team
 //   connector { token, request }  server to server, from the Midwest AIOS MCP connector (midwest-aios-mcp), which
 //                                 holds no broker key: this server asks the connector who the person's own access
@@ -173,6 +175,25 @@ export function enterpriseBroker(env, deps = {}) {
         const st = ['approved', 'pending', 'paused', 'none'].includes(out.body.state) ? out.body.state : '';
         if (out.status !== 200 || out.body.ok !== true || !st) return say(out.status === 200 ? 503 : out.status, { ok: false, code: out.body.code || 'unavailable', error: out.body.error || 'The Network could not answer just now. Try again.' });
         return say(200, { ok: true, state: st, ...(typeof out.body.asked_at === 'string' ? { asked_at: out.body.asked_at } : {}) });
+      }
+      // DYFRENT issue 1488 >> the bell: what is waiting for this person on the Network, as counts only. Three reads
+      // DYFRENT already answers for the person (the Market tab's counts, their agents' unread lines, and, once they
+      // are listed, the Network tab's connection requests); no names, words or Midwest records cross. Reading the
+      // connection requests only after the person is listed keeps the bell from listing anyone who has never opened
+      // the Network (net_overview lists a person the first time they open it).
+      if (op === 'bell') {
+        const ask = (inner, payload) => signedCall(env, { subject: s.id, name: s.name, kind: 'net', op: inner, payload }, fetcher, now);
+        const [mk, wire] = await Promise.all([ask('net_mk_overview', {}), ask('net_wire_unread', { limit: 1 })]);
+        if (mk.status !== 200 || mk.body.ok !== true) return say(mk.status === 200 ? 503 : mk.status, { ok: false, code: mk.body.code || 'unavailable', error: mk.body.error || 'The Network could not answer just now.' });
+        const n = (v) => (Number.isInteger(v) && v > 0 ? Math.min(v, 999) : 0);
+        const c = plain(mk.body.counts) ? mk.body.counts : {};
+        let requests = 0;
+        if (mk.body.listed === true && mk.body.left !== true) {
+          const ov = await ask('net_overview', {});
+          if (ov.status === 200 && ov.body.ok === true && plain(ov.body.counts)) requests = n(ov.body.counts.incoming);
+        }
+        return say(200, { ok: true, messages: n(c.unread), agents: wire.status === 200 && wire.body.ok === true ? n(wire.body.unread) : 0,
+          requests, intros: n(c.intros), decide: n(c.to_decide), work: n(c.for_you) });
       }
       if (op === 'call') {
         const route = String(b.route || ''), body = plain(b.body) ? b.body : null;

@@ -23,6 +23,10 @@ const MUTANTS=[
   ['DYFRENT issue 1488: looking at the join state never asks','api/enterprise-network.js',"op: b.ask === true ? 'ask' : 'status'","op: 'ask'"],
   ['DYFRENT issue 1488: only an approved person gets the frame','src/enterprise.jsx',"if (st.state === \"approved\") return children;","if (st.state) return children;"],
   ['the connector relay asks only an https connector','api/enterprise-network.js',"return u.protocol === 'https:' && !u.username","return !u.username"],
+  ['DYFRENT issue 1488: the bell reads connection requests only once the person is listed','api/enterprise-network.js',"if (mk.body.listed === true && mk.body.left !== true) {","if (true) {"],
+  ['DYFRENT issue 1488: the bell hides when the Network does not answer for this person','src/enterprise.jsx',"setCounts(r.status === 200 && r.body.ok === true ? r.body : null);","setCounts(r.body);"],
+  ['DYFRENT issue 1488: work that fits you is listed but never counted on the badge','src/enterprise.jsx',".filter(r => r.key !== \"work\").reduce(",".reduce("],
+  ['DYFRENT issue 1488: the bell sends counts only, never what DYFRENT answered','api/enterprise-network.js',"return say(200, { ok: true, messages: n(c.unread),","return say(200, { ...mk.body, ok: true, messages: n(c.unread),"],
 ];
 const read=(f)=>{const t=fs.readFileSync('../../'+f,'utf8');if(mutantIdx<0||MUTANTS[mutantIdx][1]!==f)return t;assert.ok(t.includes(MUTANTS[mutantIdx][2]),'mutation anchor missing: '+MUTANTS[mutantIdx][0]);return t.replace(MUTANTS[mutantIdx][2],MUTANTS[mutantIdx][3]);};
 const bundle=async(file,platform)=>{const r=await build({stdin:{contents:read(file),resolveDir:'../../'+file.split('/').slice(0,-1).join('/'),sourcefile:file,loader:file.endsWith('.jsx')?'jsx':'js'},bundle:true,write:false,format:'esm',platform,external:['react','react-dom','node:crypto'],jsx:'transform'});const out='./.enterprise-'+platform+'.mjs';fs.writeFileSync(out,r.outputFiles[0].text);try{return await import(out+'?'+Date.now())}finally{fs.rmSync(out)}};
@@ -32,7 +36,7 @@ const B=await bundle('api/enterprise-network.js','node');
 const KEY='b'.repeat(40),SKEY='s'.repeat(40),NOW=Date.parse('2026-11-23T15:00:00Z');
 const env={ENTERPRISE_NETWORK_PREVIEW:'on',ENTERPRISE_INSTALLATION_ID:'midwest',ENTERPRISE_BROKER_KEY:KEY,ENTERPRISE_SESSION_KEY:SKEY,ENTERPRISE_PILOT_USERS:'USR-000,USR-001',ENTERPRISE_APP_ORIGIN:'https://midwestaios.com,https://www.midwestaios.com',ENTERPRISE_NETWORK_ENDPOINT:'https://www.dyfrent.app/api/mcp?s=enterprise'};
 const USERS=[{id:'USR-001',username:'maureen',password:'pw-maureen',name:'Maureen Welter',role:'admin'},{id:'USR-002',username:'dave',password:'pw-dave',name:'Dave Welter',role:'admin'}];
-let sent=[];const JOIN={'USR-001':'approved'};
+let sent=[];const JOIN={'USR-001':'approved'};const BELL_FAKE={};
 const fakeFetch=async(url,init={})=>{
   const u=new URL(url);
   if(u.hostname==='kogjthgceejpzxnekprr.supabase.co'){const name=decodeURIComponent((u.search.match(/username=eq\.([^&]*)/)||[])[1]||''),pw=decodeURIComponent((u.search.match(/password=eq\.([^&]*)/)||[])[1]||'');const row=USERS.find(x=>x.username===name&&x.password===pw);return {ok:true,status:200,json:async()=>row?[{id:row.id,name:row.name,role:row.role}]:[]};}
@@ -43,6 +47,7 @@ const fakeFetch=async(url,init={})=>{
     if(!good)return {status:401,json:async()=>({ok:false,code:'unauthorized'})};
     if(b.request.kind==='session')return {status:200,json:async()=>({ok:true,member:{name:b.request.name,role:'admin'}})};
     if(b.request.kind==='join'){const st=JOIN[b.request.subject]||'none';if(b.request.op==='ask'&&st==='none')JOIN[b.request.subject]='pending';return {status:200,json:async()=>({ok:true,state:b.request.op==='ask'&&st==='none'?'pending':st})};}
+    if(b.request.kind==='net'&&BELL_FAKE[b.request.op]){const f=BELL_FAKE[b.request.op];return {status:f.status||200,json:async()=>f.body};}
     return {status:200,json:async()=>({ok:true,echo:{kind:b.request.kind,op:b.request.op,subject:b.request.subject,payload:b.request.payload}})};}
   throw new Error('unexpected fetch '+url);
 };
@@ -110,6 +115,27 @@ sent=[];r=await call({op:'join',ask:'yes'},{cookie:maureen});
 assert.equal(sent[0].request.op,'status','only ask: true asks, nothing else does');
 sent=[];r=await call({op:'join',ask:true});
 assert.deepEqual([r.code,r.body.code,sent.length],[401,'signin',0],'join with no session: refused, nothing sent');
+// DYFRENT issue 1488 >> the bell: counts only, from three reads DYFRENT already answers for the person.
+Object.assign(BELL_FAKE,{net_mk_overview:{body:{ok:true,intros:[{name:'Somebody Else'}],counts:{unread:3,intros:1,to_decide:2,for_you:4,mine_open:9},listed:true,left:false}},
+  net_wire_unread:{body:{ok:true,unread:2,threads:[{subject:'secret words'}]}},net_overview:{body:{ok:true,incoming:[{name:'A Person'}],counts:{incoming:5,connections:40}}}});
+sent=[];r=await call({op:'bell'},{cookie:maureen});
+assert.deepEqual(r.body,{ok:true,messages:3,agents:2,requests:5,intros:1,decide:2,work:4},'the bell answers counts only: no names, no words, nothing else DYFRENT sent');
+assert.deepEqual(sent.map(x=>[x.request.subject,x.request.kind,x.request.op]).sort(),[['USR-001','net','net_mk_overview'],['USR-001','net','net_overview'],['USR-001','net','net_wire_unread']],'three signed reads, as Maureen');
+assert.ok(sent.every(x=>Object.keys(x.request).sort().join()==='kind,name,op,payload,subject'),'each read carries only what DYFRENT reads');
+BELL_FAKE.net_mk_overview.body={...BELL_FAKE.net_mk_overview.body,listed:false};
+sent=[];r=await call({op:'bell'},{cookie:maureen});
+assert.deepEqual([r.body.requests,r.body.messages,sent.map(x=>x.request.op).includes('net_overview')],[0,3,false],'someone who has never opened the Network is not read through net_overview (which would list them)');
+BELL_FAKE.net_mk_overview.body={...BELL_FAKE.net_mk_overview.body,listed:true,counts:{unread:-4,intros:'7',to_decide:2.5,for_you:5000}};BELL_FAKE.net_wire_unread={status:403,body:{ok:false,code:'forbidden'}};
+r=await call({op:'bell'},{cookie:maureen});
+assert.deepEqual(r.body,{ok:true,messages:0,agents:0,requests:5,intros:0,decide:0,work:999},'garbage counts read as nothing, huge ones are capped, and a refused agent read is zero');
+BELL_FAKE.net_mk_overview={status:403,body:{ok:false,code:'forbidden',error:'Your company Network access is unavailable.'}};
+r=await call({op:'bell'},{cookie:maureen});
+assert.deepEqual([r.code,r.body.ok,r.body.messages],[403,false,undefined],'a person DYFRENT does not answer for (not approved, paused) gets no counts');
+sent=[];r=await call({op:'bell'});
+assert.deepEqual([r.code,r.body.code,sent.length],[401,'signin',0],'the bell with no session: refused, nothing sent');
+r=await call({op:'bell'},{cookie:maureen,origin:'https://evil.example'});
+assert.equal(r.code,403,'another site cannot read the bell');
+for(const k of Object.keys(BELL_FAKE))delete BELL_FAKE[k];
 const openEnv={...env,ENTERPRISE_OPEN_REQUESTS:'on'};
 const openH=B.enterpriseBroker(openEnv,{fetch:relayFetch,now:()=>NOW});
 const ocall=async(body,{origin='https://midwestaios.com',cookie=''}={})=>{const res={code:0,headers:{},body:null,setHeader(k,v){this.headers[k]=v},status(c){this.code=c;return this},json(b){this.body=b;return this}};await openH({method:'POST',headers:{origin,cookie},body},res);return res;};
@@ -253,5 +279,46 @@ const root4=createRoot(document.getElementById('root'));uiJoin.fail=true;
 await act(async()=>root4.render(React.createElement(Host2,{view:'network'})));await flush();
 assert.deepEqual([document.querySelector('[data-network-join]')&&document.querySelector('[data-network-join]').dataset.networkJoin,!!document.querySelector('iframe')],['error',false],'when DYFRENT cannot answer: a Try again card, never the frame');
 await act(async()=>root4.unmount());
+// DYFRENT issue 1488 >> the Network in Midwest's bell.
+const bellFake={status:200,body:{ok:true,messages:3,agents:0,requests:1,intros:0,decide:0,work:4}};const bellPosts=[];
+globalThis.fetch=async(url,init)=>{const b=JSON.parse(init.body);bellPosts.push(b);return {status:bellFake.status,json:async()=>bellFake.body};};
+const bellWent=[];let setBellPage;
+function BellHost({st}){const [page,setPage]=React.useState('dashboard');setBellPage=setPage;return React.createElement(E.NetworkBell,{pilotState:st,page,setPage:p=>{bellWent.push(p);setPage(p);}});}
+const q=(sel)=>document.querySelector(sel);
+const root5=createRoot(document.getElementById('root'));
+await act(async()=>root5.render(React.createElement(BellHost,{st:{checked:true,pilot:true,session:false}})));await flush();
+assert.deepEqual([bellPosts.length,document.getElementById('root').innerHTML],[0,''],'no verified Network session: no bell and nothing asked');
+await act(async()=>root5.render(React.createElement(BellHost,{st:{checked:true,pilot:true,session:true}})));await flush();
+assert.deepEqual(bellPosts,[{op:'bell'}],'with a session the bell asks once for its counts');
+assert.equal(q('[data-network-bell-count]')&&q('[data-network-bell-count]').textContent,'4','the badge counts what needs the person (3 messages and 1 request), not the 4 work requests that fit them');
+assert.match(q('[data-network-bell] button').getAttribute('aria-label'),/^4 waiting on the DYFRENT Network$/,'the bell says what it counts');
+await act(async()=>{q('[data-network-bell] button').click()});await flush();
+assert.deepEqual([...document.querySelectorAll('[data-network-bell-row]')].map(b=>b.dataset.networkBellRow+':'+b.textContent),['messages:3unread messages','requests:1connection request','work:4work requests that fit you'],'the panel lists only what is waiting, singular and plural right');
+assert.ok(!/[\u2013\u2014]/.test(q('[data-network-bell]').textContent),'no em dash in the bell');
+assert.ok([...document.querySelectorAll('[data-network-bell-panel] button')].every(b=>parseInt(b.style.minHeight,10)>=40),'every row is a comfortable target');
+await act(async()=>{q('[data-network-bell-row="messages"]').click()});await flush();
+assert.deepEqual([bellWent.at(-1),!!q('[data-network-bell-panel]')],['netmessages',false],'unread messages open the Messages tab and close the panel');
+bellFake.body={ok:true,messages:0,agents:0,requests:0,intros:0,decide:0,work:0};const before=bellPosts.length;
+await act(async()=>setBellPage('dashboard'));await flush();
+assert.equal(bellPosts.length,before+1,'coming back from a Network tab reads the bell again');
+assert.equal(q('[data-network-bell-count]'),null,'nothing waiting: no badge');
+await act(async()=>{q('[data-network-bell] button').click()});await flush();
+assert.match(q('[data-network-bell-panel]').textContent,/Nothing new on the Network\./,'an empty panel says so');
+await act(async()=>{document.dispatchEvent(new window.KeyboardEvent('keydown',{key:'Escape'}))});await flush();
+assert.equal(q('[data-network-bell-panel]'),null,'Escape closes the panel');
+await act(async()=>{q('[data-network-bell] button').click()});await flush();
+await act(async()=>{document.body.dispatchEvent(new window.MouseEvent('mousedown',{bubbles:true}))});await flush();
+assert.equal(q('[data-network-bell-panel]'),null,'a click outside closes the panel');
+const quiet=bellPosts.length;
+await act(async()=>setBellPage('jobs'));await flush();
+assert.equal(bellPosts.length,quiet,'moving between Midwest pages asks nothing');
+await act(async()=>root5.unmount());
+bellFake.status=403;bellFake.body={ok:false,code:'forbidden'};
+const root6=createRoot(document.getElementById('root'));
+await act(async()=>root6.render(React.createElement(BellHost,{st:{checked:true,pilot:true,session:true}})));await flush();
+assert.equal(document.getElementById('root').innerHTML,'','a person DYFRENT does not answer for (waiting or paused) sees no bell');
+await act(async()=>root6.unmount());
+assert.equal(E.BELL_EVERY_MS,120000,'the bell reads every two minutes while the page is visible');
+assert.equal(E.bellTotal({messages:1,agents:2,requests:3,intros:4,decide:5,work:6}),15,'the badge adds everything but work that fits');
 console.error=origErr;
 console.log('PASS DYFRENT Network in Midwest: broker and tabs ('+(mutantIdx<0?'source':'mutant '+mutantIdx)+')');
