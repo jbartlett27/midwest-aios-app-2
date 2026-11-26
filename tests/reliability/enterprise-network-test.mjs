@@ -6,19 +6,22 @@ import {createHmac, createHash} from 'node:crypto';
 const mutantIdx=process.argv.includes('--mutant')?Number(process.argv[process.argv.indexOf('--mutant')+1]):-1;
 const MUTANTS=[
   ['only Midwest pages may ask the server','api/enterprise-network.js',"if (!appOrigins(env).includes(String((req.headers && req.headers.origin) || '')))","if (false)"],
-  ['a Network call needs a pilot session','api/enterprise-network.js',"if (!s || !pilot.includes(s.id)) return say(401","if (!s) return say(401"],
+  ['a Network call needs a pilot session','api/enterprise-network.js',"if (!s || !mayUse(env, s.id)) return say(401","if (!s) return say(401"],
   ['the session cookie is checked against its signature','api/enterprise-network.js',"if (!body || !sig || !same(sig, createHmac('sha256', key).update(body).digest('base64url'))) return null;","if (!body) return null;"],
   ['the session cookie is HttpOnly','api/enterprise-network.js',"; HttpOnly; Secure; SameSite=Strict","; Secure"],
-  ['only pilot logins get a session','api/enterprise-network.js',"if (!pilot.includes(u.id)) return say(200, { ok: false, pilot: false });",""],
+  ['only pilot logins get a session','api/enterprise-network.js',"if (!mayUse(env, u.id)) return say(200, { ok: false, pilot: false });",""],
   ['the relay answers only the DYFRENT frame','src/enterprise.jsx',"if (!f || e.source !== f.contentWindow || e.origin !== NETWORK_APP) return;","if (!f) return;"],
   ['the frame call cannot name another kind of op','api/enterprise-network.js',"if (!kind || !(kind === 'net' ? NET_OP : PROFILE_OP).test(inner))","if (!kind)"],
   ['an expired session is refused','api/enterprise-network.js',"|| s.e <= now) return null;",") return null;"],
   ['the frame can switch tabs (Open full profile)','src/enterprise.jsx',"if (p && m.view !== view && onGo) onGo(p); return;","return;"],
   ['the frame cannot switch to a page that is not one of the three','src/enterprise.jsx',"const p = GO_PAGE[m.view]; if (p &&","const p = GO_PAGE[m.view] || m.view; if (p &&"],
   ['the connector relay takes the person from the connector, never from the request','api/enterprise-network.js',"const request = kind === 'session' ? { subject: who.id, name: who.name, kind } : { subject: who.id, name: who.name, kind, op, payload };","const request = { ...q, subject: q.subject || who.id, name: who.name };"],
-  ['the connector relay only serves pilot logins','api/enterprise-network.js',"if (!pilotList(env).includes(who.id)) return say(403","if (false) return say(403"],
+  ['the connector relay only serves pilot logins','api/enterprise-network.js',"if (!mayUse(env, who.id)) return say(403","if (false) return say(403"],
   ['the connector relay sends only net_ and profile_ ops','api/enterprise-network.js',"else if (!((kind === 'net' && NET_OP.test(op)) || (kind === 'profile' && PROFILE_OP.test(op))) || !plain(payload))","else if (!plain(payload))"],
   ['the connector relay refuses a token the connector does not vouch for','api/enterprise-network.js',"const w = r.status === 200 ? await r.json() : null;","const w = { ok: true, nu: 'USR-001', nn: 'Maureen Welter' };"],
+  ['DYFRENT issue 1488: without open requests only the pilot list may use the Network','api/enterprise-network.js',"export function openRequests(env) { return env.ENTERPRISE_OPEN_REQUESTS === 'on'; }","export function openRequests(env) { return true; }"],
+  ['DYFRENT issue 1488: looking at the join state never asks','api/enterprise-network.js',"op: b.ask === true ? 'ask' : 'status'","op: 'ask'"],
+  ['DYFRENT issue 1488: only an approved person gets the frame','src/enterprise.jsx',"if (st.state === \"approved\") return children;","if (st.state) return children;"],
   ['the connector relay asks only an https connector','api/enterprise-network.js',"return u.protocol === 'https:' && !u.username","return !u.username"],
 ];
 const read=(f)=>{const t=fs.readFileSync('../../'+f,'utf8');if(mutantIdx<0||MUTANTS[mutantIdx][1]!==f)return t;assert.ok(t.includes(MUTANTS[mutantIdx][2]),'mutation anchor missing: '+MUTANTS[mutantIdx][0]);return t.replace(MUTANTS[mutantIdx][2],MUTANTS[mutantIdx][3]);};
@@ -29,7 +32,7 @@ const B=await bundle('api/enterprise-network.js','node');
 const KEY='b'.repeat(40),SKEY='s'.repeat(40),NOW=Date.parse('2026-11-23T15:00:00Z');
 const env={ENTERPRISE_NETWORK_PREVIEW:'on',ENTERPRISE_INSTALLATION_ID:'midwest',ENTERPRISE_BROKER_KEY:KEY,ENTERPRISE_SESSION_KEY:SKEY,ENTERPRISE_PILOT_USERS:'USR-000,USR-001',ENTERPRISE_APP_ORIGIN:'https://midwestaios.com,https://www.midwestaios.com',ENTERPRISE_NETWORK_ENDPOINT:'https://www.dyfrent.app/api/mcp?s=enterprise'};
 const USERS=[{id:'USR-001',username:'maureen',password:'pw-maureen',name:'Maureen Welter',role:'admin'},{id:'USR-002',username:'dave',password:'pw-dave',name:'Dave Welter',role:'admin'}];
-let sent=[];
+let sent=[];const JOIN={'USR-001':'approved'};
 const fakeFetch=async(url,init={})=>{
   const u=new URL(url);
   if(u.hostname==='kogjthgceejpzxnekprr.supabase.co'){const name=decodeURIComponent((u.search.match(/username=eq\.([^&]*)/)||[])[1]||''),pw=decodeURIComponent((u.search.match(/password=eq\.([^&]*)/)||[])[1]||'');const row=USERS.find(x=>x.username===name&&x.password===pw);return {ok:true,status:200,json:async()=>row?[{id:row.id,name:row.name,role:row.role}]:[]};}
@@ -39,6 +42,7 @@ const fakeFetch=async(url,init={})=>{
     const good=createHmac('sha256',KEY).update(text).digest('hex')===init.headers['X-Enterprise-Signature'];
     if(!good)return {status:401,json:async()=>({ok:false,code:'unauthorized'})};
     if(b.request.kind==='session')return {status:200,json:async()=>({ok:true,member:{name:b.request.name,role:'admin'}})};
+    if(b.request.kind==='join'){const st=JOIN[b.request.subject]||'none';if(b.request.op==='ask'&&st==='none')JOIN[b.request.subject]='pending';return {status:200,json:async()=>({ok:true,state:b.request.op==='ask'&&st==='none'?'pending':st})};}
     return {status:200,json:async()=>({ok:true,echo:{kind:b.request.kind,op:b.request.op,subject:b.request.subject,payload:b.request.payload}})};}
   throw new Error('unexpected fetch '+url);
 };
@@ -98,6 +102,31 @@ assert.deepEqual([r.code,sent.length],[401,0],'a validly signed session for a lo
 const expired='mw_net='+B.sealSession(env,{id:'USR-001',name:'Maureen'},NOW-13*3600*1000);
 r=await call({op:'hello'},{cookie:expired});
 assert.equal(r.code,401,'a session older than twelve hours is refused');
+
+// DYFRENT issue 1488: asking to join, and every login once ENTERPRISE_OPEN_REQUESTS is on.
+sent=[];r=await call({op:'join'},{cookie:maureen});
+assert.deepEqual([r.code,r.body.state,sent[0].request],[200,'approved',{subject:'USR-001',name:'Maureen Welter',kind:'join',op:'status'}],'join: Maureen is approved; the signed request carries only her id, name, the join kind and status');
+sent=[];r=await call({op:'join',ask:'yes'},{cookie:maureen});
+assert.equal(sent[0].request.op,'status','only ask: true asks, nothing else does');
+sent=[];r=await call({op:'join',ask:true});
+assert.deepEqual([r.code,r.body.code,sent.length],[401,'signin',0],'join with no session: refused, nothing sent');
+const openEnv={...env,ENTERPRISE_OPEN_REQUESTS:'on'};
+const openH=B.enterpriseBroker(openEnv,{fetch:relayFetch,now:()=>NOW});
+const ocall=async(body,{origin='https://midwestaios.com',cookie=''}={})=>{const res={code:0,headers:{},body:null,setHeader(k,v){this.headers[k]=v},status(c){this.code=c;return this},json(b){this.body=b;return this}};await openH({method:'POST',headers:{origin,cookie},body},res);return res;};
+r=await ocall({op:'status',user:'USR-002'});
+assert.deepEqual([r.body.pilot,r.body.session],[true,false],'open requests: Dave sees the tabs and is asked for his password');
+r=await ocall({op:'login',username:'dave',password:'pw-dave'});
+const dave=cookieOf(r);
+assert.deepEqual([r.body.ok,/^mw_net=/.test(dave)],[true,true],'open requests: Dave gets a verified Network session with his own Midwest password');
+sent=[];r=await ocall({op:'join'},{cookie:dave});
+assert.deepEqual([r.body.state,sent[0].request.subject,sent[0].request.op],['none','USR-002','status'],'Dave has not asked yet: none, and looking asks nothing');
+sent=[];r=await ocall({op:'join',ask:true},{cookie:dave});
+assert.deepEqual([r.body.state,sent[0].request.op,JOIN['USR-002']],['pending','ask','pending'],'Dave asks to join: pending, waiting for J');
+r=await ocall({op:'login',username:'dave',password:'wrong'});
+assert.equal(r.code,401,'open requests still need the right password');
+r=await ocall({op:'join',ask:true},{cookie:dave,origin:'https://evil.example'});
+assert.equal(r.code,403,'another site cannot ask to join for him');
+delete JOIN['USR-002'];
 r=await call({op:'hello'},{cookie:maureen,origin:'https://evil.example'});
 assert.equal(r.code,403,'a request from any other site is refused, even with the cookie');
 r=await call({op:'hello'},{cookie:maureen,origin:'https://www.midwestaios.com'});
@@ -154,9 +183,9 @@ assert.equal(r.code,403,'the browser ops still need a Midwest page');
 const dom=new JSDOM('<div id="root"></div>',{url:'https://midwestaios.com/'});
 Object.assign(globalThis,{window:dom.window,document:dom.window.document,HTMLElement:dom.window.HTMLElement,MessageEvent:dom.window.MessageEvent,IS_REACT_ACT_ENVIRONMENT:true});
 Object.defineProperty(globalThis,'navigator',{value:window.navigator,configurable:true});
-const posts=[];
+const posts=[];const uiJoin={state:'approved',fail:false};
 globalThis.fetch=async(url,init)=>{const b=JSON.parse(init.body);posts.push(b);
-  const answer=b.op==='status'?{ok:true,pilot:b.user==='USR-001',session:false}:b.op==='login'?(b.password==='pw-maureen'?{ok:true,pilot:true}:{ok:false,error:'That username and password did not match.'}):b.op==='hello'?{ok:true,member:{name:'Maureen Welter',role:'admin',key:'k'}}:{ok:true,echo:b};
+  const answer=b.op==='status'?{ok:true,pilot:b.user==='USR-001',session:false}:b.op==='login'?(b.password==='pw-maureen'?{ok:true,pilot:true}:{ok:false,error:'That username and password did not match.'}):b.op==='hello'?{ok:true,member:{name:'Maureen Welter',role:'admin',key:'k'}}:b.op==='join'?(uiJoin.fail?{ok:false,error:'The Network could not answer just now. Try again.'}:{ok:true,state:b.ask===true&&uiJoin.state==='none'?(uiJoin.state='pending'):uiJoin.state}):{ok:true,echo:b};
   return {status:b.op==='login'&&b.password!=='pw-maureen'?401:200,json:async()=>answer};};
 const req=createRequire(import.meta.url);const React=req('react');const {createRoot}=req('react-dom/client');const {act}=React;
 const origErr=console.error;console.error=(...a)=>{if(/act\(|not wrapped/.test(String(a[0])))return;origErr(...a)};
@@ -200,6 +229,29 @@ await fire({t:E.FRAME_PROTOCOL,kind:'go',id:'g3',view:'network'});
 await fire({t:E.FRAME_PROTOCOL,kind:'go',id:'g4',view:'jobs'});
 assert.deepEqual(went,['netprofile','netmessages'],'the frame can switch to the Profile or Messages tab (Open full profile), never to its own view, another page or from another origin');
 assert.equal(posts.length,sentBefore,'switching tabs calls nothing on the server');
+// DYFRENT issue 1488: a login J has not approved sees Ask to join, then Waiting; a paused one is told; only approved gets the frame.
+const pages={};function Host2({view}){const [st,setSt]=React.useState({checked:true,pilot:true,session:true});return React.createElement(E.NetworkPage,{view,currentUser:{id:'USR-002',username:'dave'},pilotState:st,setPilotState:setSt,setPage:()=>{}});}
 await act(async()=>root.unmount());
+const root2=createRoot(document.getElementById('root'));
+uiJoin.state='none';posts.length=0;
+await act(async()=>root2.render(React.createElement(Host2,{view:'network'})));await flush();
+assert.deepEqual([document.querySelector('[data-network-join]')&&document.querySelector('[data-network-join]').dataset.networkJoin,!!document.querySelector('iframe'),posts.map(p=>[p.op,p.ask])],['none',false,[['join',false]]],'not yet asked: the Join card, no frame, and looking asked nothing');
+assert.match(document.body.textContent,/Ask to join/,'the card offers Ask to join');
+assert.ok(!/[\u2013\u2014]/.test(document.body.textContent),'no em dash in the join card');
+await act(async()=>{document.querySelector('[data-network-ask]').click()});await flush();
+assert.deepEqual([posts[1]&&posts[1].ask,document.querySelector('[data-network-join]').dataset.networkJoin],[true,'pending'],'Ask to join sends one ask and shows Waiting for J');
+assert.match(document.body.textContent,/Waiting for J to approve you/,'the waiting card says who decides');
+uiJoin.state='approved';
+await act(async()=>{document.querySelector('[data-network-check]').click()});await flush();
+assert.ok(document.querySelector('iframe'),'once J approves, Check again opens the Network');
+await act(async()=>root2.unmount());
+const root3=createRoot(document.getElementById('root'));uiJoin.state='paused';
+await act(async()=>root3.render(React.createElement(Host2,{view:'network'})));await flush();
+assert.deepEqual([document.querySelector('[data-network-join]')&&document.querySelector('[data-network-join]').dataset.networkJoin,!!document.querySelector('iframe'),!!document.querySelector('button')],['paused',false,false],'a paused person is told, with no frame and nothing to press');
+await act(async()=>root3.unmount());
+const root4=createRoot(document.getElementById('root'));uiJoin.fail=true;
+await act(async()=>root4.render(React.createElement(Host2,{view:'network'})));await flush();
+assert.deepEqual([document.querySelector('[data-network-join]')&&document.querySelector('[data-network-join]').dataset.networkJoin,!!document.querySelector('iframe')],['error',false],'when DYFRENT cannot answer: a Try again card, never the frame');
+await act(async()=>root4.unmount());
 console.error=origErr;
 console.log('PASS DYFRENT Network in Midwest: broker and tabs ('+(mutantIdx<0?'source':'mutant '+mutantIdx)+')');
