@@ -174,8 +174,11 @@ export function NetworkBell({ pilotState, page, setPage, screen }) {
   // the panel; only the question and the screen's name are sent (the server's ask op fixes the recipient).
   const [mode, setMode] = useState("list");
   const [draft, setDraft] = useState("");
+  // The screen a question was started on travels with it, and a nonce makes a retry of the same question one message.
+  const draftOf = useRef({ screen: "", nonce: "" });
+  const askBox = useRef(null), doneBtn = useRef(null), sending = useRef(false);
   const [ask, setAsk] = useState({ busy: false, err: "", sent: "" });
-  const composing = useRef(false); composing.current = open && mode === "ask";
+  const composing = useRef(false); composing.current = open && mode === "ask" && !ask.sent;
   const shownScreen = String(screen || "").trim().slice(0, 40) || "Dashboard";
   const [at, setAt] = useState({ top: 64, right: 16 });
   const wrap = useRef(null);
@@ -215,9 +218,9 @@ export function NetworkBell({ pilotState, page, setPage, screen }) {
     // Placed once when opened: a scroll, resize or rotation, or a click into the Network frame (which never reaches this
     // page), closes it rather than leave it hanging away from the bell.
     // Not while writing to Jarvis: a phone's keyboard opening resizes and scrolls the page.
-    const shut = () => { if (!composing.current) setOpen(false); };
+    const shut = (e) => { if (!(composing.current && e && e.type !== "blur" && typeof document !== "undefined" && document.activeElement && document.activeElement.id === "network-ask-text")) setOpen(false); };
     document.addEventListener("mousedown", away); document.addEventListener("touchstart", away); document.addEventListener("keydown", esc);
-    window.addEventListener("resize", shut); window.addEventListener("blur", shut); document.addEventListener("scroll", shut, true);
+    window.addEventListener("resize", shut); window.addEventListener("blur", shut);   // blur: a click into the Network frame document.addEventListener("scroll", shut, true);
     const first = wrap.current && wrap.current.querySelector("[data-network-bell-panel] textarea, [data-network-bell-panel] button");
     if (first) first.focus();
     return () => {
@@ -229,14 +232,27 @@ export function NetworkBell({ pilotState, page, setPage, screen }) {
   const total = bellTotal(counts);
   const rows = BELL_ROWS.filter(r => (Number(counts[r.key]) || 0) > 0);
   const go = (p) => { setOpen(false); setMode("list"); setPage(p); };   // setPage scrolls to the top itself
+  const askScreen = draft.trim() && draftOf.current.screen ? draftOf.current.screen : shownScreen;
   const startAsk = () => { setAsk({ busy: false, err: "", sent: "" }); setMode("ask"); };
+  const write = (v) => {
+    if (!draft.trim() && v.trim()) draftOf.current = { screen: shownScreen, nonce: Math.random().toString(36).slice(2, 14) + Date.now().toString(36) };
+    setDraft(v);
+  };
   const send = async () => {
     const text = draft.trim();
-    if (!text || ask.busy) return;
+    if (!text || sending.current) return;
+    sending.current = true;
     setAsk({ busy: true, err: "", sent: "" });
-    const r = await post({ op: "ask", screen: shownScreen, text });
-    if (r.status === 200 && r.body.ok === true) { setDraft(""); setAsk({ busy: false, err: "", sent: shownScreen }); load.current(true); }
-    else setAsk({ busy: false, err: String(r.body.error || "Jarvis could not be reached just now. Try again.").slice(0, 160), sent: "" });
+    const r = await post({ op: "ask", screen: askScreen, text, nonce: draftOf.current.nonce });
+    sending.current = false;
+    if (r.status === 200 && r.body.ok === true) {
+      setDraft(""); draftOf.current = { screen: "", nonce: "" };
+      setAsk({ busy: false, err: "", sent: askScreen }); load.current(true);
+      setTimeout(() => { if (doneBtn.current) doneBtn.current.focus(); }, 0);
+    } else {
+      setAsk({ busy: false, err: String(r.body.error || "Jarvis could not be reached just now. Try again.").slice(0, 160), sent: "" });
+      setTimeout(() => { if (askBox.current) askBox.current.focus(); }, 0);
+    }
   };
   const label = total ? total + " waiting on the DYFRENT Network" : "DYFRENT Network";
   return (
@@ -247,6 +263,7 @@ export function NetworkBell({ pilotState, page, setPage, screen }) {
           const w = window.innerWidth, pw = Math.min(300, w - 32);
           setAt({ top: Math.round(b.bottom + 8), right: Math.max(16, Math.round(Math.min(w - b.right, w - 16 - pw))) });
           if (!open && !draft.trim()) setMode("list");   // an unsent question to Jarvis reopens where it was left
+          if (!open) setAsk(a => (a.busy ? a : { busy: false, err: "", sent: "" }));
           setOpen(o => !o); if (!open) load.current(true);
         }}
         style={{ position: "relative", width: 32, height: 32, borderRadius: "50%", border: "1px solid rgba(255,255,255,0.08)", background: open ? "rgba(45,212,191,0.08)" : "transparent", color: total ? "#2dd4bf" : "#737373", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0 }}>
@@ -257,18 +274,18 @@ export function NetworkBell({ pilotState, page, setPage, screen }) {
         <div id="network-bell-panel" role="region" aria-label="DYFRENT Network" data-network-bell-panel style={{ position: "fixed", top: at.top, right: at.right, zIndex: 10002, width: 300, maxWidth: "calc(100vw - 32px)", boxSizing: "border-box", padding: 8, background: "#111111", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 14, boxShadow: "0 16px 48px rgba(0,0,0,0.6)" }}>
           <div style={{ fontSize: 10, letterSpacing: ".2em", textTransform: "uppercase", color: "#2dd4bf", padding: "8px 10px 6px" }}>{mode === "ask" ? "Ask Jarvis" : "DYFRENT Network"}</div>
           {mode === "ask" && (ask.sent ? (
-            <div data-network-ask-sent style={{ padding: "2px 10px 8px" }}>
+            <div data-network-ask-sent role="status" style={{ padding: "2px 10px 8px" }}>
               <div style={{ fontSize: 13, color: "#f0f0f0", lineHeight: 1.5, marginBottom: 12 }}>Sent to Jarvis. The answer will arrive in Messages and on this bell.</div>
               <div style={{ display: "flex", gap: 8 }}>
-                <button type="button" onClick={() => { setMode("list"); setAsk({ busy: false, err: "", sent: "" }); }} style={{ flex: 1, minHeight: 40, borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "transparent", color: "#f0f0f0", fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Done</button>
+                <button ref={doneBtn} type="button" onClick={() => { setMode("list"); setAsk({ busy: false, err: "", sent: "" }); }} style={{ flex: 1, minHeight: 40, borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "transparent", color: "#f0f0f0", fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Done</button>
                 <button type="button" onClick={() => go("netmessages")} style={{ flex: 1, minHeight: 40, borderRadius: 10, border: "none", background: "#2dd4bf", color: "#000", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Open Messages</button>
               </div>
             </div>
           ) : (
             <div data-network-ask style={{ padding: "2px 10px 8px" }}>
-              <label htmlFor="network-ask-text" style={{ display: "block", fontSize: 13, color: "#f0f0f0", marginBottom: 8 }}>{"About the " + shownScreen + " screen"}</label>
-              <textarea id="network-ask-text" value={draft} maxLength={4000} rows={4} placeholder="What do you want to know or change?" disabled={ask.busy}
-                onChange={e => setDraft(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) send(); }}
+              <label htmlFor="network-ask-text" style={{ display: "block", fontSize: 13, color: "#f0f0f0", marginBottom: 8 }}>{"About the " + askScreen + " screen"}</label>
+              <textarea ref={askBox} id="network-ask-text" value={draft} maxLength={4000} rows={4} placeholder="What do you want to know or change?" readOnly={ask.busy} aria-busy={ask.busy}
+                onChange={e => write(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) send(); }}
                 style={{ width: "100%", boxSizing: "border-box", resize: "vertical", minHeight: 88, padding: "10px 12px", background: "#000", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, color: "#f0f0f0", fontSize: 16, lineHeight: 1.45, fontFamily: "inherit", outline: "none" }} />
               <div style={{ fontSize: 11.5, color: "#9a9a9a", lineHeight: 1.5, margin: "8px 0 10px" }}>Jarvis gets your question and the name of this screen, nothing else from Midwest.</div>
               {ask.err && <div role="alert" style={{ color: "#f87171", fontSize: 12.5, marginBottom: 10 }}>{ask.err}</div>}

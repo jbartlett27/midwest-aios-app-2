@@ -210,8 +210,12 @@ export function enterpriseBroker(env, deps = {}) {
         if (!JARVIS_SCREEN.test(screen)) return say(400, { ok: false, error: 'That screen could not be named.' });
         if (!text) return say(400, { ok: false, error: 'Write your question first.' });
         if (text.length > 4000) return say(413, { ok: false, error: 'That is too long. Keep it under 4,000 characters.' });
+        // A retry of the same question (a slow answer, a second press) is one message: DYFRENT keeps the first for the same
+        // ref. The page's nonce stays with its draft, so a new question, or the same words asked again later, is new.
+        const nonce = /^[a-z0-9]{8,40}$/.test(String(b.nonce || '')) ? String(b.nonce) : '';
+        const ref = 'mwask-' + createHash('sha256').update([s.id, screen, text, nonce].join('|')).digest('hex').slice(0, 40);
         const out = await signedCall(env, { subject: s.id, name: s.name, kind: 'net', op: 'net_wire_open',
-          payload: { to: [JARVIS], subject: 'Midwest: ' + screen, text: text + '\n\n(Asked from the ' + screen + ' screen in Midwest AIOS.)' } }, fetcher, now);
+          payload: { to: [JARVIS], subject: 'Midwest: ' + screen, text: text + '\n\n(Asked from the ' + screen + ' screen in Midwest AIOS.)', ref } }, fetcher, now);
         if (out.status !== 200 || out.body.ok !== true) return say(out.status === 200 ? 503 : out.status, { ok: false, code: out.body.code || 'unavailable', error: out.body.error || 'Jarvis could not be reached just now. Try again.' });
         const th = out.body.thread && typeof out.body.thread === 'object' ? out.body.thread.id : out.body.thread;
         return say(200, { ok: true, ...(typeof th === 'string' && /^awt-[A-Za-z0-9-]{1,64}$/.test(th) ? { thread: th } : {}) });
