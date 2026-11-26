@@ -30,6 +30,13 @@ const MUTANTS=[
   ['DYFRENT issue 1488: a passing failure keeps the bell where it was','src/enterprise.jsx',"else if (r.status === 401 || r.status === 403) setCounts(null);","else setCounts(null);"],
   ['DYFRENT issue 1488: the bell reads no connection requests for someone who left the Network','api/enterprise-network.js',"if (mk.body.listed === true && mk.body.left !== true) {","if (mk.body.listed === true) {"],
   ['DYFRENT issue 1488: the bell reads at most once each 20 seconds unless opened','src/enterprise.jsx',"if (busy.current || (!force && t - lastAt.current < BELL_GAP_MS)) return;","if (busy.current) return;"],
+  ['DYFRENT issue 1488: Ask Jarvis always goes to Jarvis, never where the page says','api/enterprise-network.js',"payload: { to: [JARVIS], subject:","payload: { to: Array.isArray(b.to) ? b.to : [JARVIS], subject:"],
+  ['DYFRENT issue 1488: Ask Jarvis names only a plain screen','api/enterprise-network.js',"if (!JARVIS_SCREEN.test(screen)) return say(400","if (!screen) return say(400"],
+  ['DYFRENT issue 1488: a phone keyboard opening does not close the question to Jarvis','src/enterprise.jsx',"const shut = (e) => { if (!(composing.current && e && e.type !== \"blur\"","const shut = (e) => { if (!(false && e && e.type !== \"blur\""],
+  ['DYFRENT issue 1488: one press of Send, one question','src/enterprise.jsx',"if (!text || sending.current) return;","if (!text) return;"],
+  ['DYFRENT issue 1488: a question over 4,000 characters is refused','api/enterprise-network.js',"if (text.length > 4000) return say(413","if (false) return say(413"],
+  ['DYFRENT issue 1488: a draft keeps the screen it was written about','src/enterprise.jsx',"const askScreen = draft.trim() && draftOf.current.screen ? draftOf.current.screen : shownScreen;","const askScreen = shownScreen;"],
+  ['DYFRENT issue 1488: a retry of the same draft is one message','api/enterprise-network.js',"update([s.id, screen, text, nonce].join('|'))","update([s.id, screen, text, nonce, Math.random()].join('|'))"],
 ];
 const read=(f)=>{const t=fs.readFileSync('../../'+f,'utf8');if(mutantIdx<0||MUTANTS[mutantIdx][1]!==f)return t;assert.ok(t.includes(MUTANTS[mutantIdx][2]),'mutation anchor missing: '+MUTANTS[mutantIdx][0]);return t.replace(MUTANTS[mutantIdx][2],MUTANTS[mutantIdx][3]);};
 const bundle=async(file,platform)=>{const r=await build({stdin:{contents:read(file),resolveDir:'../../'+file.split('/').slice(0,-1).join('/'),sourcefile:file,loader:file.endsWith('.jsx')?'jsx':'js'},bundle:true,write:false,format:'esm',platform,external:['react','react-dom','node:crypto'],jsx:'transform'});const out='./.enterprise-'+platform+'.mjs';fs.writeFileSync(out,r.outputFiles[0].text);try{return await import(out+'?'+Date.now())}finally{fs.rmSync(out)}};
@@ -145,6 +152,29 @@ sent=[];r=await call({op:'bell'});
 assert.deepEqual([r.code,r.body.code,sent.length],[401,'signin',0],'the bell with no session: refused, nothing sent');
 r=await call({op:'bell'},{cookie:maureen,origin:'https://evil.example'});
 assert.equal(r.code,403,'another site cannot read the bell');
+// DYFRENT issue 1488 >> Ask Jarvis about this screen.
+BELL_FAKE.net_wire_open={body:{ok:true,thread:'awt-0123456789abcdef',message:{body:'echo'},woke:true}};
+sent=[];r=await call({op:'ask',screen:'Job Records',text:'  Why is the PO column blank?  ',to:['@someone-else'],subject:'x',nonce:'abc12345xyz'},{cookie:maureen});
+assert.deepEqual(r.body,{ok:true,thread:'awt-0123456789abcdef'},'asking Jarvis answers ok and the conversation id, nothing else DYFRENT sent');
+assert.deepEqual(sent.map(x=>x.request),[{subject:'USR-001',name:'Maureen Welter',kind:'net',op:'net_wire_open',payload:{to:['@j-claude'],subject:'Midwest: Job Records',text:'Why is the PO column blank?\n\n(Asked from the Job Records screen in Midwest AIOS.)',ref:'mwask-'+createHash('sha256').update(['USR-001','Job Records','Why is the PO column blank?','abc12345xyz'].join('|')).digest('hex').slice(0,40)}}],'one signed message, as Maureen, to Jarvis only: her words and the screen name, whatever else the page sent');
+const refOfAsk=async(body)=>{sent=[];await call(body,{cookie:maureen});return sent[0].request.payload.ref;};
+const ref1=await refOfAsk({op:'ask',screen:'Tasks',text:'Same words',nonce:'nonce000aaa'});
+assert.match(ref1,/^mwask-[0-9a-f]{40}$/,'each question carries a ref DYFRENT accepts');
+assert.equal(await refOfAsk({op:'ask',screen:'Tasks',text:'Same words',nonce:'nonce000aaa'}),ref1,'a retry of the same draft is the same message (DYFRENT keeps the first)');
+assert.notEqual(await refOfAsk({op:'ask',screen:'Tasks',text:'Same words',nonce:'nonce000bbb'}),ref1,'the same words in a new draft are a new message');
+assert.equal(await refOfAsk({op:'ask',screen:'Tasks',text:'Same words',nonce:'BAD NONCE!'}),await refOfAsk({op:'ask',screen:'Tasks',text:'Same words'}),'an odd nonce is ignored');
+for(const [label,body,code] of [['an empty question',{op:'ask',screen:'Tasks',text:'   '},400],['a question over 4,000 characters',{op:'ask',screen:'Tasks',text:'x'.repeat(4001)},413],['a screen name that is not plain',{op:'ask',screen:'<img src=x>',text:'hi'},400],['a missing screen',{op:'ask',text:'hi'},400],['a screen name over 40 characters',{op:'ask',screen:'A'.repeat(41),text:'hi'},400]]){
+  sent=[];r=await call(body,{cookie:maureen});assert.deepEqual([r.code,sent.length],[code,0],label+' is refused before anything is sent');}
+sent=[];r=await call({op:'ask',screen:'Tasks',text:'hi'});
+assert.deepEqual([r.code,r.body.code,sent.length],[401,'signin',0],'asking with no session: refused, nothing sent');
+r=await call({op:'ask',screen:'Tasks',text:'hi'},{cookie:maureen,origin:'https://evil.example'});
+assert.equal(r.code,403,'another site cannot ask Jarvis for her');
+BELL_FAKE.net_wire_open={status:429,body:{ok:false,code:'cap',error:'You have sent a lot today. Try again tomorrow.'}};
+r=await call({op:'ask',screen:'Tasks',text:'hi'},{cookie:maureen});
+assert.deepEqual([r.code,r.body.error],[429,'You have sent a lot today. Try again tomorrow.'],'a refusal from DYFRENT comes back as said');
+BELL_FAKE.net_wire_open={body:{ok:true,thread:'not a thread id'}};
+r=await call({op:'ask',screen:'Tasks',text:'hi'},{cookie:maureen});
+assert.deepEqual(r.body,{ok:true},'an odd conversation id is not passed on');
 for(const k of Object.keys(BELL_FAKE))delete BELL_FAKE[k];
 const openEnv={...env,ENTERPRISE_OPEN_REQUESTS:'on'};
 const openH=B.enterpriseBroker(openEnv,{fetch:relayFetch,now:()=>NOW});
@@ -293,7 +323,7 @@ await act(async()=>root4.unmount());
 const bellFake={status:200,body:{ok:true,messages:3,agents:0,requests:1,intros:0,decide:0,work:4}};const bellPosts=[];
 globalThis.fetch=async(url,init)=>{const b=JSON.parse(init.body);bellPosts.push(b);return {status:bellFake.status,json:async()=>bellFake.body};};
 const bellWent=[];let setBellPage;
-function BellHost({st}){const [page,setPage]=React.useState('dashboard');setBellPage=setPage;return React.createElement(E.NetworkBell,{pilotState:st,page,setPage:p=>{bellWent.push(p);setPage(p);}});}
+function BellHost({st,screen}){const [page,setPage]=React.useState('dashboard');setBellPage=setPage;return React.createElement(E.NetworkBell,{pilotState:st,page,screen,setPage:p=>{bellWent.push(p);setPage(p);}});}
 const q=(sel)=>document.querySelector(sel);
 const root5=createRoot(document.getElementById('root'));
 await act(async()=>root5.render(React.createElement(BellHost,{st:{checked:true,pilot:true,session:false}})));await flush();
@@ -322,6 +352,60 @@ assert.equal(q('[data-network-bell-panel]'),null,'a click outside closes the pan
 const quiet=bellPosts.length;
 await act(async()=>setBellPage('jobs'));await flush();
 assert.equal(bellPosts.length,quiet,'moving between Midwest pages asks nothing');
+// Ask Jarvis about this screen, from the bell.
+await act(async()=>root5.render(React.createElement(BellHost,{st:{checked:true,pilot:true,session:true},screen:'Job Records'})));await flush();
+await act(async()=>{q('[data-network-bell] button').click()});await flush();
+assert.ok(q('[data-network-ask-open]'),'the panel offers Ask Jarvis about this screen');
+await act(async()=>{q('[data-network-ask-open]').click()});await flush();
+assert.match(q('[data-network-ask]').textContent,/About the Job Records screen/,'the question names the screen the person is on');
+assert.match(q('[data-network-ask]').textContent,/nothing else from Midwest/,'and says what Jarvis gets');
+assert.equal(document.activeElement&&document.activeElement.tagName,'TEXTAREA','the question box takes focus');
+assert.equal(q('[data-network-ask-send]').disabled,true,'nothing to send until something is written');
+const ta=q('#network-ask-text');const setTa=Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype,'value').set;
+await act(async()=>{setTa.call(ta,'Can this show the PO date?');ta.dispatchEvent(new window.Event('input',{bubbles:true}))});await flush();
+await act(async()=>{window.dispatchEvent(new window.Event('resize'))});await flush();
+assert.ok(q('[data-network-ask]'),'a phone keyboard opening (a resize) does not close the question');
+await act(async()=>{document.dispatchEvent(new window.KeyboardEvent('keydown',{key:'Escape'}))});await flush();
+await act(async()=>{q('[data-network-bell] button').click()});await flush();
+assert.equal(q('#network-ask-text')&&q('#network-ask-text').value,'Can this show the PO date?','closing the panel keeps the draft');
+bellFake.body={ok:false,error:'You have sent a lot today. Try again tomorrow.'};bellFake.status=429;
+let nAsk=bellPosts.length;
+await act(async()=>{q('[data-network-ask-send]').click()});await flush();
+const askPost=bellPosts.filter(x=>x.op==='ask').at(-1);
+assert.deepEqual([Object.keys(askPost).sort().join(),askPost.screen,askPost.text],['nonce,op,screen,text','Job Records','Can this show the PO date?'],'Send asks the server with the screen name, the words and the draft\'s nonce only');
+assert.match(askPost.nonce,/^[a-z0-9]{8,40}$/,'the nonce has the shape the server accepts');
+assert.equal(document.activeElement&&document.activeElement.id,'network-ask-text','after a refusal the question box has focus again');
+assert.match(q('[data-network-ask] [role=alert]').textContent,/sent a lot today/,'a refusal is shown');
+assert.equal(q('#network-ask-text').value,'Can this show the PO date?','and the words are not lost');
+bellFake.status=200;bellFake.body={ok:true,thread:'awt-1',messages:0,agents:0,requests:0,intros:0,decide:0,work:0};
+await act(async()=>{q('[data-network-ask-send]').click()});await flush();
+const nonceRetry=bellPosts.filter(x=>x.op==='ask').at(-1).nonce;
+assert.equal(nonceRetry,askPost.nonce,'the retry of the same draft carries the same nonce');
+assert.match(q('[data-network-ask-sent]').textContent,/Sent to Jarvis/,'sent: says where the answer will arrive');
+assert.equal(q('[data-network-ask-sent]').getAttribute('role'),'status','the sent note is announced');
+await flush();assert.match(document.activeElement&&document.activeElement.textContent||'',/Done/,'focus moves to Done');
+await act(async()=>{[...q('[data-network-ask-sent]').querySelectorAll('button')].find(x=>/Open Messages/.test(x.textContent)).click()});await flush();
+assert.deepEqual([bellWent.at(-1),!!q('[data-network-bell-panel]')],['netmessages',false],'Open Messages goes to the Messages tab');
+await act(async()=>{q('[data-network-bell] button').click()});await flush();
+await act(async()=>{q('[data-network-ask-open]').click()});await flush();
+assert.equal(q('#network-ask-text').value,'','after sending, the next question starts empty');
+// A draft keeps the screen it was started on.
+await act(async()=>{const t=q('#network-ask-text');setTa.call(t,'Where did my filter go?');t.dispatchEvent(new window.Event('input',{bubbles:true}))});await flush();
+await act(async()=>{document.dispatchEvent(new window.KeyboardEvent('keydown',{key:'Escape'}))});await flush();
+await act(async()=>root5.render(React.createElement(BellHost,{st:{checked:true,pilot:true,session:true},screen:'Tasks'})));await flush();
+await act(async()=>{q('[data-network-bell] button').click()});await flush();
+assert.match(q('[data-network-ask]').textContent,/About the Job Records screen/,'a draft started on Job Records still names Job Records on another screen');
+const asksBefore=bellPosts.filter(x=>x.op==='ask').length;
+await act(async()=>{const b=q('[data-network-ask-send]');b.click();b.click();});await flush();
+assert.equal(bellPosts.filter(x=>x.op==='ask').length,asksBefore+1,'a double press sends once');
+assert.equal(bellPosts.filter(x=>x.op==='ask').at(-1).screen,'Job Records','and is sent under the screen it was written about');
+await act(async()=>{[...q('[data-network-ask-sent]').querySelectorAll('button')].find(x=>/Done/.test(x.textContent)).click()});await flush();
+await act(async()=>{q('[data-network-ask-open]').click()});await flush();
+assert.match(q('[data-network-ask]').textContent,/About the Tasks screen/,'a new question names the screen the person is on now');
+await act(async()=>{window.dispatchEvent(new window.Event('blur'))});await flush();
+assert.equal(q('[data-network-bell-panel]'),null,'a click into the Network frame closes the panel even while asking');
+assert.ok(!/[\u2013\u2014]/.test(q('[data-network-bell]').textContent),'no em dash in Ask Jarvis');
+await act(async()=>{document.dispatchEvent(new window.KeyboardEvent('keydown',{key:'Escape'}))});await flush();
 bellFake.status=200;bellFake.body={ok:true,messages:2,agents:0,requests:0,intros:0,decide:0,work:0};
 let n0=bellPosts.length;
 await act(async()=>{q('[data-network-bell] button').click()});await flush();

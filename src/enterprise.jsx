@@ -167,9 +167,19 @@ export const BELL_ROWS = [
 export const bellTotal = (c) => (c ? BELL_ROWS.filter(r => r.key !== "work").reduce((n, r) => n + (Number(c[r.key]) || 0), 0) : 0);
 const BELL_PATH = "M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 01-3.46 0";
 
-export function NetworkBell({ pilotState, page, setPage }) {
+export function NetworkBell({ pilotState, page, setPage, screen }) {
   const [counts, setCounts] = useState(null);
   const [open, setOpen] = useState(false);
+  // DYFRENT issue 1488 >> Ask Jarvis about this screen: the panel turns into a short composer. The draft survives closing
+  // the panel; only the question and the screen's name are sent (the server's ask op fixes the recipient).
+  const [mode, setMode] = useState("list");
+  const [draft, setDraft] = useState("");
+  // The screen a question was started on travels with it, and a nonce makes a retry of the same question one message.
+  const draftOf = useRef({ screen: "", nonce: "" });
+  const askBox = useRef(null), doneBtn = useRef(null), sending = useRef(false);
+  const [ask, setAsk] = useState({ busy: false, err: "", sent: "" });
+  const composing = useRef(false); composing.current = open && mode === "ask" && !ask.sent;
+  const shownScreen = String(screen || "").trim().slice(0, 40) || "Dashboard";
   const [at, setAt] = useState({ top: 64, right: 16 });
   const wrap = useRef(null);
   const on = pilotState.checked && pilotState.pilot && pilotState.session;
@@ -207,20 +217,43 @@ export function NetworkBell({ pilotState, page, setPage }) {
     const esc = (e) => { if (e.key === "Escape") { setOpen(false); if (btn.current) btn.current.focus(); } };
     // Placed once when opened: a scroll, resize or rotation, or a click into the Network frame (which never reaches this
     // page), closes it rather than leave it hanging away from the bell.
-    const shut = () => setOpen(false);
+    // Not while writing to Jarvis: a phone's keyboard opening resizes and scrolls the page.
+    const shut = (e) => { if (!(composing.current && e && e.type !== "blur" && typeof document !== "undefined" && document.activeElement && document.activeElement.id === "network-ask-text")) setOpen(false); };
     document.addEventListener("mousedown", away); document.addEventListener("touchstart", away); document.addEventListener("keydown", esc);
-    window.addEventListener("resize", shut); window.addEventListener("blur", shut); document.addEventListener("scroll", shut, true);
-    const first = wrap.current && wrap.current.querySelector("[data-network-bell-panel] button");
+    window.addEventListener("resize", shut); window.addEventListener("blur", shut);   // blur: a click into the Network frame document.addEventListener("scroll", shut, true);
+    const first = wrap.current && wrap.current.querySelector("[data-network-bell-panel] textarea, [data-network-bell-panel] button");
     if (first) first.focus();
     return () => {
       document.removeEventListener("mousedown", away); document.removeEventListener("touchstart", away); document.removeEventListener("keydown", esc);
       window.removeEventListener("resize", shut); window.removeEventListener("blur", shut); document.removeEventListener("scroll", shut, true);
     };
-  }, [open]);
+  }, [open, mode]);
   if (!on || !counts) return null;
   const total = bellTotal(counts);
   const rows = BELL_ROWS.filter(r => (Number(counts[r.key]) || 0) > 0);
-  const go = (p) => { setOpen(false); setPage(p); };   // setPage scrolls to the top itself
+  const go = (p) => { setOpen(false); setMode("list"); setPage(p); };   // setPage scrolls to the top itself
+  const askScreen = draft.trim() && draftOf.current.screen ? draftOf.current.screen : shownScreen;
+  const startAsk = () => { setAsk({ busy: false, err: "", sent: "" }); setMode("ask"); };
+  const write = (v) => {
+    if (!draft.trim() && v.trim()) draftOf.current = { screen: shownScreen, nonce: Math.random().toString(36).slice(2, 14) + Date.now().toString(36) };
+    setDraft(v);
+  };
+  const send = async () => {
+    const text = draft.trim();
+    if (!text || sending.current) return;
+    sending.current = true;
+    setAsk({ busy: true, err: "", sent: "" });
+    const r = await post({ op: "ask", screen: askScreen, text, nonce: draftOf.current.nonce });
+    sending.current = false;
+    if (r.status === 200 && r.body.ok === true) {
+      setDraft(""); draftOf.current = { screen: "", nonce: "" };
+      setAsk({ busy: false, err: "", sent: askScreen }); load.current(true);
+      setTimeout(() => { if (doneBtn.current) doneBtn.current.focus(); }, 0);
+    } else {
+      setAsk({ busy: false, err: String(r.body.error || "Jarvis could not be reached just now. Try again.").slice(0, 160), sent: "" });
+      setTimeout(() => { if (askBox.current) askBox.current.focus(); }, 0);
+    }
+  };
   const label = total ? total + " waiting on the DYFRENT Network" : "DYFRENT Network";
   return (
     <div ref={wrap} style={{ position: "relative" }} data-network-bell={total}>
@@ -229,6 +262,8 @@ export function NetworkBell({ pilotState, page, setPage }) {
           const b = e.currentTarget.getBoundingClientRect();
           const w = window.innerWidth, pw = Math.min(300, w - 32);
           setAt({ top: Math.round(b.bottom + 8), right: Math.max(16, Math.round(Math.min(w - b.right, w - 16 - pw))) });
+          if (!open && !draft.trim()) setMode("list");   // an unsent question to Jarvis reopens where it was left
+          if (!open) setAsk(a => (a.busy ? a : { busy: false, err: "", sent: "" }));
           setOpen(o => !o); if (!open) load.current(true);
         }}
         style={{ position: "relative", width: 32, height: 32, borderRadius: "50%", border: "1px solid rgba(255,255,255,0.08)", background: open ? "rgba(45,212,191,0.08)" : "transparent", color: total ? "#2dd4bf" : "#737373", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", padding: 0 }}>
@@ -237,8 +272,34 @@ export function NetworkBell({ pilotState, page, setPage }) {
       </button>
       {open && (
         <div id="network-bell-panel" role="region" aria-label="DYFRENT Network" data-network-bell-panel style={{ position: "fixed", top: at.top, right: at.right, zIndex: 10002, width: 300, maxWidth: "calc(100vw - 32px)", boxSizing: "border-box", padding: 8, background: "#111111", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 14, boxShadow: "0 16px 48px rgba(0,0,0,0.6)" }}>
-          <div style={{ fontSize: 10, letterSpacing: ".2em", textTransform: "uppercase", color: "#2dd4bf", padding: "8px 10px 6px" }}>DYFRENT Network</div>
-          {rows.map(r => {
+          <div style={{ fontSize: 10, letterSpacing: ".2em", textTransform: "uppercase", color: "#2dd4bf", padding: "8px 10px 6px" }}>{mode === "ask" ? "Ask Jarvis" : "DYFRENT Network"}</div>
+          {mode === "ask" && (ask.sent ? (
+            <div data-network-ask-sent role="status" style={{ padding: "2px 10px 8px" }}>
+              <div style={{ fontSize: 13, color: "#f0f0f0", lineHeight: 1.5, marginBottom: 12 }}>Sent to Jarvis. The answer will arrive in Messages and on this bell.</div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button ref={doneBtn} type="button" onClick={() => { setMode("list"); setAsk({ busy: false, err: "", sent: "" }); }} style={{ flex: 1, minHeight: 40, borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "transparent", color: "#f0f0f0", fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Done</button>
+                <button type="button" onClick={() => go("netmessages")} style={{ flex: 1, minHeight: 40, borderRadius: 10, border: "none", background: "#2dd4bf", color: "#000", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Open Messages</button>
+              </div>
+            </div>
+          ) : (
+            <div data-network-ask style={{ padding: "2px 10px 8px" }}>
+              <label htmlFor="network-ask-text" style={{ display: "block", fontSize: 13, color: "#f0f0f0", marginBottom: 8 }}>{"About the " + askScreen + " screen"}</label>
+              <textarea ref={askBox} id="network-ask-text" value={draft} maxLength={4000} rows={4} placeholder="What do you want to know or change?" readOnly={ask.busy} aria-busy={ask.busy}
+                onChange={e => write(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) send(); }}
+                style={{ width: "100%", boxSizing: "border-box", resize: "vertical", minHeight: 88, padding: "10px 12px", background: "#000", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, color: "#f0f0f0", fontSize: 16, lineHeight: 1.45, fontFamily: "inherit", outline: "none" }} />
+              <div style={{ fontSize: 11.5, color: "#9a9a9a", lineHeight: 1.5, margin: "8px 0 10px" }}>Jarvis gets your question and the name of this screen, nothing else from Midwest.</div>
+              {ask.err && <div role="alert" style={{ color: "#f87171", fontSize: 12.5, marginBottom: 10 }}>{ask.err}</div>}
+              <div style={{ display: "flex", gap: 8 }}>
+                <button type="button" disabled={ask.busy} onClick={() => setMode("list")} style={{ flex: 1, minHeight: 40, borderRadius: 10, border: "1px solid rgba(255,255,255,0.12)", background: "transparent", color: "#f0f0f0", fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Back</button>
+                <button type="button" data-network-ask-send disabled={ask.busy || !draft.trim()} onClick={send} style={{ flex: 1, minHeight: 40, borderRadius: 10, border: "none", background: "#2dd4bf", color: "#000", fontWeight: 700, fontSize: 13, cursor: ask.busy || !draft.trim() ? "default" : "pointer", opacity: ask.busy || !draft.trim() ? 0.6 : 1, fontFamily: "inherit" }}>{ask.busy ? "Sending" : "Send"}</button>
+              </div>
+            </div>
+          ))}
+          {mode === "list" && <button type="button" data-network-ask-open onClick={startAsk}
+            style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", minHeight: 44, padding: "8px 10px", marginBottom: 2, border: "1px solid rgba(45,212,191,0.25)", borderRadius: 10, background: "rgba(45,212,191,0.06)", color: "#2dd4bf", fontSize: 13, fontWeight: 600, textAlign: "left", cursor: "pointer", fontFamily: "inherit" }}>
+            Ask Jarvis about this screen
+          </button>}
+          {mode === "list" && rows.map(r => {
             const n = Number(counts[r.key]) || 0;
             return (
               <button key={r.key} type="button" data-network-bell-row={r.key} onClick={() => go(r.page)}
@@ -249,8 +310,8 @@ export function NetworkBell({ pilotState, page, setPage }) {
               </button>
             );
           })}
-          {!rows.length && <div data-network-bell-empty style={{ fontSize: 13, color: "#9a9a9a", padding: "6px 10px 10px" }}>Nothing new on the Network.</div>}
-          <button type="button" onClick={() => go("network")} style={{ display: "block", width: "100%", minHeight: 40, marginTop: 4, padding: "8px 10px", border: "none", borderTop: "1px solid rgba(255,255,255,0.06)", borderRadius: 0, background: "transparent", color: "#9a9a9a", fontSize: 12, textAlign: "left", cursor: "pointer", fontFamily: "inherit" }}>Open the Network</button>
+          {mode === "list" && !rows.length && <div data-network-bell-empty style={{ fontSize: 13, color: "#9a9a9a", padding: "6px 10px 10px" }}>Nothing new on the Network.</div>}
+          {mode === "list" && <button type="button" onClick={() => go("network")} style={{ display: "block", width: "100%", minHeight: 40, marginTop: 4, padding: "8px 10px", border: "none", borderTop: "1px solid rgba(255,255,255,0.06)", borderRadius: 0, background: "transparent", color: "#9a9a9a", fontSize: 12, textAlign: "left", cursor: "pointer", fontFamily: "inherit" }}>Open the Network</button>}
         </div>
       )}
     </div>

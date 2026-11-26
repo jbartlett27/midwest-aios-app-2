@@ -16,6 +16,9 @@
 //                                 to approve this person (DYFRENT keeps them waiting, with no access, until he does)
 //   bell                          DYFRENT issue 1488: counts of what is waiting for the person on the Network (unread
 //                                 messages, agent messages, connection requests, introductions, work), never names
+//   ask     { screen, text }      DYFRENT issue 1488: Ask Jarvis about this screen. Sends the person's own question to
+//                                 Jarvis (@j-claude) as them, with the name of the Midwest screen they are on; nothing
+//                                 else from Midwest. The answer comes back in their Messages tab and on the bell.
 //   call    { route, body }       one Network or Profile call from the frame: route net_team or profile_team
 //   connector { token, request }  server to server, from the Midwest AIOS MCP connector (midwest-aios-mcp), which
 //                                 holds no broker key: this server asks the connector who the person's own access
@@ -39,6 +42,9 @@ const COOKIE = 'mw_net';
 const SESSION_MS = 12 * 60 * 60 * 1000;
 const VERSION = 'dyfrent.enterprise/1';
 const NET_OP = /^net_[a-z0-9_]{1,40}$/, PROFILE_OP = /^profile_[a-z0-9_]{1,40}$/;
+// DYFRENT issue 1488 >> Ask Jarvis: J's build agent on the Network, and the shape of a Midwest screen's name.
+export const JARVIS = '@j-claude';
+export const JARVIS_SCREEN = /^[A-Za-z0-9][A-Za-z0-9 &'.,()\/+-]{0,39}$/;
 const plain = v => !!v && typeof v === 'object' && !Array.isArray(v);
 const b64 = s => Buffer.from(s).toString('base64url');
 const same = (a, b) => { const x = Buffer.from(String(a || '')), y = Buffer.from(String(b || '')); return x.length === y.length && timingSafeEqual(x, y); };
@@ -196,6 +202,23 @@ export function enterpriseBroker(env, deps = {}) {
         }
         return say(200, { ok: true, messages: n(c.unread), agents: wire.status === 200 && wire.body.ok === true ? n(wire.body.unread) : 0,
           requests, intros: n(c.intros), decide: n(c.to_decide), work: n(c.for_you) });
+      }
+      // DYFRENT issue 1488 >> Ask Jarvis about this screen. The recipient is fixed here, never taken from the page, and
+      // only the person's own words and the screen's name cross (no record, id or figure from Midwest).
+      if (op === 'ask') {
+        const screen = String(b.screen || '').trim(), text = String(b.text || '').trim();
+        if (!JARVIS_SCREEN.test(screen)) return say(400, { ok: false, error: 'That screen could not be named.' });
+        if (!text) return say(400, { ok: false, error: 'Write your question first.' });
+        if (text.length > 4000) return say(413, { ok: false, error: 'That is too long. Keep it under 4,000 characters.' });
+        // A retry of the same question (a slow answer, a second press) is one message: DYFRENT keeps the first for the same
+        // ref. The page's nonce stays with its draft, so a new question, or the same words asked again later, is new.
+        const nonce = /^[a-z0-9]{8,40}$/.test(String(b.nonce || '')) ? String(b.nonce) : '';
+        const ref = 'mwask-' + createHash('sha256').update([s.id, screen, text, nonce].join('|')).digest('hex').slice(0, 40);
+        const out = await signedCall(env, { subject: s.id, name: s.name, kind: 'net', op: 'net_wire_open',
+          payload: { to: [JARVIS], subject: 'Midwest: ' + screen, text: text + '\n\n(Asked from the ' + screen + ' screen in Midwest AIOS.)', ref } }, fetcher, now);
+        if (out.status !== 200 || out.body.ok !== true) return say(out.status === 200 ? 503 : out.status, { ok: false, code: out.body.code || 'unavailable', error: out.body.error || 'Jarvis could not be reached just now. Try again.' });
+        const th = out.body.thread && typeof out.body.thread === 'object' ? out.body.thread.id : out.body.thread;
+        return say(200, { ok: true, ...(typeof th === 'string' && /^awt-[A-Za-z0-9-]{1,64}$/.test(th) ? { thread: th } : {}) });
       }
       if (op === 'call') {
         const route = String(b.route || ''), body = plain(b.body) ? b.body : null;
