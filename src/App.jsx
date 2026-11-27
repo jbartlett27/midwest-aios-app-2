@@ -1652,7 +1652,7 @@ function MidwestAIOSInner() {
 
 
   // Auth state
-  const [currentUser, setCurrentUser] = useState(()=>{try{return JSON.parse(sessionStorage.getItem("mw_user"))}catch{return null}});
+  const [currentUser, setCurrentUser] = useState(()=>{try{const u=JSON.parse(sessionStorage.getItem("mw_user"));if(u&&typeof u==="object"&&"password" in u){delete u.password;sessionStorage.setItem("mw_user",JSON.stringify(u))}return u}catch{return null}});// Nov 26 2026: a tab signed in before passwords moved to the server still held one here; it is dropped
   const [loginError, setLoginError] = useState("");
   const [showLegacyLogin, setShowLegacyLogin] = useState(true);
   // Clerk auth integration
