@@ -12,16 +12,26 @@
 //                                 nothing changes.
 //   logout                        clears the session cookie
 //   hello                         who the signed-in person is on the Network (DYFRENT answers from its own records)
+//   join    { ask? }              DYFRENT issue 1488: approved, pending, paused or none on the Network; ask: true asks J
+//                                 to approve this person (DYFRENT keeps them waiting, with no access, until he does)
+//   bell                          DYFRENT issue 1488: counts of what is waiting for the person on the Network (unread
+//                                 messages, agent messages, connection requests, introductions, work), never names
+//   ask     { screen, text }      DYFRENT issue 1488: Ask Jarvis about this screen. Sends the person's own question to
+//                                 Jarvis (@j-claude) as them, with the name of the Midwest screen they are on; nothing
+//                                 else from Midwest. The answer comes back in their Messages tab and on the bell.
 //   call    { route, body }       one Network or Profile call from the frame: route net_team or profile_team
 //   connector { token, request }  server to server, from the Midwest AIOS MCP connector (midwest-aios-mcp), which
 //                                 holds no broker key: this server asks the connector who the person's own access
 //                                 token speaks for (POST <ENTERPRISE_CONNECTOR_ORIGIN>/network-whois), checks the
 //                                 pilot list, and signs request { kind, op?, payload? } for that person. The subject
-//                                 always comes from the connector's answer, never from the request.
+//                                 always comes from the connector's answer, never from the request. A net call goes
+//                                 with app: 'connector' (DYFRENT issue 1488: the person's own Claude is their own agent);
+//                                 the frame's call never carries it.
 //
 // Settings (server only, never in the browser): ENTERPRISE_NETWORK_PREVIEW=on, ENTERPRISE_INSTALLATION_ID,
 // ENTERPRISE_BROKER_KEY (shared with DYFRENT), ENTERPRISE_SESSION_KEY (this server's own), ENTERPRISE_PILOT_USERS
-// (Midwest users.id, comma separated), ENTERPRISE_APP_ORIGIN (https://midwestaios.com,https://www.midwestaios.com), ENTERPRISE_NETWORK_ENDPOINT
+// (Midwest users.id, comma separated; with ENTERPRISE_OPEN_REQUESTS=on every login may open the tabs and ask to join,
+// and DYFRENT decides who is approved), ENTERPRISE_APP_ORIGIN (https://midwestaios.com,https://www.midwestaios.com), ENTERPRISE_NETWORK_ENDPOINT
 // (https://www.dyfrent.app/api/mcp?s=enterprise), and for the connector relay ENTERPRISE_CONNECTOR_ORIGIN
 // (https://midwest-aios-mcp.vercel.app; no secret).
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
@@ -34,6 +44,9 @@ const COOKIE = 'mw_net';
 const SESSION_MS = 12 * 60 * 60 * 1000;
 const VERSION = 'dyfrent.enterprise/1';
 const NET_OP = /^net_[a-z0-9_]{1,40}$/, PROFILE_OP = /^profile_[a-z0-9_]{1,40}$/;
+// DYFRENT issue 1488 >> Ask Jarvis: J's build agent on the Network, and the shape of a Midwest screen's name.
+export const JARVIS = '@j-claude';
+export const JARVIS_SCREEN = /^[A-Za-z0-9][A-Za-z0-9 &'.,()\/+-]{0,39}$/;
 const plain = v => !!v && typeof v === 'object' && !Array.isArray(v);
 const b64 = s => Buffer.from(s).toString('base64url');
 const same = (a, b) => { const x = Buffer.from(String(a || '')), y = Buffer.from(String(b || '')); return x.length === y.length && timingSafeEqual(x, y); };
@@ -44,6 +57,10 @@ export function appOrigins(env) {
 export function pilotList(env) {
   return String(env.ENTERPRISE_PILOT_USERS || '').split(',').map(s => s.trim()).filter(s => /^[A-Za-z0-9_.:@-]{1,128}$/.test(s));
 }
+// DYFRENT issue 1488: with ENTERPRISE_OPEN_REQUESTS=on every Midwest login may open the tabs and ask to join; J
+// approves each person on DYFRENT, which refuses anyone not approved. Without it only the pilot list may (as before).
+export function openRequests(env) { return env.ENTERPRISE_OPEN_REQUESTS === 'on'; }
+export function mayUse(env, id) { return openRequests(env) || pilotList(env).includes(String(id || '')); }
 export function sealSession(env, user, now) {
   const body = b64(JSON.stringify({ u: user.id, n: String(user.name || '').slice(0, 80), e: now + SESSION_MS }));
   return body + '.' + createHmac('sha256', env.ENTERPRISE_SESSION_KEY).update(body).digest('base64url');
@@ -104,8 +121,11 @@ async function connectorCall(env, b, fetcher, now, say) {
     if (plain(w) && w.ok === true && typeof w.nu === 'string' && /^[A-Za-z0-9_.:@-]{1,128}$/.test(w.nu)) who = { id: w.nu, name: String(w.nn || '').slice(0, 80) };
   } catch (e) { return say(503, { ok: false, error: 'The Network could not answer just now. Try again.' }); }
   if (!who) return say(401, { ok: false, code: 'signin', error: 'Network not connected for you yet. Remove and add the Midwest AIOS connector again and sign in with your Midwest login.' });
-  if (!pilotList(env).includes(who.id)) return say(403, { ok: false, code: 'pilot', error: 'Your Midwest login is not open on the DYFRENT Network yet. Ask J to add you.' });
-  const request = kind === 'session' ? { subject: who.id, name: who.name, kind } : { subject: who.id, name: who.name, kind, op, payload };
+  if (!mayUse(env, who.id)) return say(403, { ok: false, code: 'pilot', error: 'Your Midwest login is not open on the DYFRENT Network yet. Ask J to add you.' });
+  // DYFRENT issue 1488 >> app 'connector' tells DYFRENT this net call is from the person's own Claude (never from the
+  // page), so its Agent messages run as their own agent, "Maureen's Claude". DYFRENT decides which ops that covers.
+  const request = kind === 'session' ? { subject: who.id, name: who.name, kind }
+    : kind === 'net' ? { subject: who.id, name: who.name, kind, op, payload, app: 'connector' } : { subject: who.id, name: who.name, kind, op, payload };
   try { const out = await signedCall(env, request, fetcher, now); return say(out.status, out.body); }
   catch (e) { return say(503, { ok: false, error: 'The Network could not answer just now. Try again.' }); }
 }
@@ -127,13 +147,12 @@ export function enterpriseBroker(env, deps = {}) {
     if (b.op === 'connector') return connectorCall(env, b, fetcher, now, say);
     // Same origin only: a page on any other site can never ask this server for anything.
     if (!appOrigins(env).includes(String((req.headers && req.headers.origin) || ''))) return say(403, { ok: false, error: 'Open the Network from your Midwest dashboard.' });
-    const pilot = pilotList(env);
     const op = String(b.op || '');
 
     if (op === 'status') {
       const s = openSession(env, req.headers.cookie, now);
       const who = String(b.user || '');
-      return say(200, { ok: true, pilot: pilot.includes(who), session: !!(s && s.id === who && pilot.includes(s.id)) });
+      return say(200, { ok: true, pilot: mayUse(env, who), session: !!(s && s.id === who && mayUse(env, s.id)) });
     }
     if (op === 'logout') { res.setHeader('Set-Cookie', cookie('', 0)); return say(200, { ok: true }); }
     if (op === 'login') {
@@ -149,18 +168,64 @@ export function enterpriseBroker(env, deps = {}) {
       } catch (e) { return say(503, { ok: false, error: 'The sign-in check could not finish. Try again.' }); }
       if (!plain(u)) u = null;
       if (!u || typeof u.id !== 'string') return say(401, { ok: false, error: 'That username and password did not match.' });
-      if (!pilot.includes(u.id)) return say(200, { ok: false, pilot: false });
+      if (!mayUse(env, u.id)) return say(200, { ok: false, pilot: false });
       res.setHeader('Set-Cookie', cookie(sealSession(env, u, now), SESSION_MS / 1000));
       return say(200, { ok: true, pilot: true });
     }
 
     const s = openSession(env, req.headers.cookie, now);
-    if (!s || !pilot.includes(s.id)) return say(401, { ok: false, code: 'signin', error: 'Confirm your password to open the Network.' });
+    if (!s || !mayUse(env, s.id)) return say(401, { ok: false, code: 'signin', error: 'Confirm your password to open the Network.' });
     try {
       if (op === 'hello') {
         const out = await signedCall(env, { subject: s.id, name: s.name, kind: 'session' }, fetcher, now);
         if (out.status !== 200 || out.body.ok !== true || !plain(out.body.member)) return say(out.status === 200 ? 403 : out.status, { ok: false, code: out.body.code || 'unavailable', error: out.body.error || 'The Network could not answer just now.' });
         return say(200, { ok: true, member: { name: String(out.body.member.name || s.name), role: out.body.member.role === 'admin' ? 'admin' : 'member', key: createHash('sha256').update('mw:' + s.id).digest('hex').slice(0, 16) } });
+      }
+      // DYFRENT issue 1488: is this person approved on the Network, waiting, or paused; and asking to join. Only the
+      // person's own Midwest id and name cross, exactly as on every other call.
+      if (op === 'join') {
+        const out = await signedCall(env, { subject: s.id, name: s.name, kind: 'join', op: b.ask === true ? 'ask' : 'status' }, fetcher, now);
+        const st = ['approved', 'pending', 'paused', 'none'].includes(out.body.state) ? out.body.state : '';
+        if (out.status !== 200 || out.body.ok !== true || !st) return say(out.status === 200 ? 503 : out.status, { ok: false, code: out.body.code || 'unavailable', error: out.body.error || 'The Network could not answer just now. Try again.' });
+        return say(200, { ok: true, state: st, ...(typeof out.body.asked_at === 'string' ? { asked_at: out.body.asked_at } : {}) });
+      }
+      // DYFRENT issue 1488 >> the bell: what is waiting for this person on the Network, as counts only. Three reads
+      // DYFRENT already answers for the person (the Market tab's counts, their agents' unread lines, and, once they
+      // are listed, the Network tab's connection requests); no names, words or Midwest records cross. Reading the
+      // connection requests only after the person is listed keeps the bell from listing anyone who has never opened
+      // the Network (net_overview lists a person the first time they open it).
+      if (op === 'bell') {
+        const ask = (inner, payload) => signedCall(env, { subject: s.id, name: s.name, kind: 'net', op: inner, payload }, fetcher, now);
+        const [mk, wire] = await Promise.all([ask('net_mk_overview', {}), ask('net_wire_unread', { limit: 1 })]);
+        if (mk.status !== 200 || mk.body.ok !== true) return say(mk.status === 200 ? 503 : mk.status, { ok: false, code: mk.body.code || 'unavailable', error: mk.body.error || 'The Network could not answer just now.' });
+        const n = (v) => (Number.isInteger(v) && v > 0 ? Math.min(v, 999) : 0);
+        const c = plain(mk.body.counts) ? mk.body.counts : {};
+        let requests = 0;
+        // Deliberately conservative: someone who later hid themselves (unlisted) shows no connection requests here rather
+        // than risk listing anyone; they still see them on the Network tab.
+        if (mk.body.listed === true && mk.body.left !== true) {
+          const ov = await ask('net_overview', {});
+          if (ov.status === 200 && ov.body.ok === true && plain(ov.body.counts)) requests = n(ov.body.counts.incoming);
+        }
+        return say(200, { ok: true, messages: n(c.unread), agents: wire.status === 200 && wire.body.ok === true ? n(wire.body.unread) : 0,
+          requests, intros: n(c.intros), decide: n(c.to_decide), work: n(c.for_you) });
+      }
+      // DYFRENT issue 1488 >> Ask Jarvis about this screen. The recipient is fixed here, never taken from the page, and
+      // only the person's own words and the screen's name cross (no record, id or figure from Midwest).
+      if (op === 'ask') {
+        const screen = String(b.screen || '').trim(), text = String(b.text || '').trim();
+        if (!JARVIS_SCREEN.test(screen)) return say(400, { ok: false, error: 'That screen could not be named.' });
+        if (!text) return say(400, { ok: false, error: 'Write your question first.' });
+        if (text.length > 4000) return say(413, { ok: false, error: 'That is too long. Keep it under 4,000 characters.' });
+        // A retry of the same question (a slow answer, a second press) is one message: DYFRENT keeps the first for the same
+        // ref. The page's nonce stays with its draft, so a new question, or the same words asked again later, is new.
+        const nonce = /^[a-z0-9]{8,40}$/.test(String(b.nonce || '')) ? String(b.nonce) : '';
+        const ref = 'mwask-' + createHash('sha256').update([s.id, screen, text, nonce].join('|')).digest('hex').slice(0, 40);
+        const out = await signedCall(env, { subject: s.id, name: s.name, kind: 'net', op: 'net_wire_open',
+          payload: { to: [JARVIS], subject: 'Midwest: ' + screen, text: text + '\n\n(Asked from the ' + screen + ' screen in Midwest AIOS.)', ref } }, fetcher, now);
+        if (out.status !== 200 || out.body.ok !== true) return say(out.status === 200 ? 503 : out.status, { ok: false, code: out.body.code || 'unavailable', error: out.body.error || 'Jarvis could not be reached just now. Try again.' });
+        const th = out.body.thread && typeof out.body.thread === 'object' ? out.body.thread.id : out.body.thread;
+        return say(200, { ok: true, ...(typeof th === 'string' && /^awt-[A-Za-z0-9-]{1,64}$/.test(th) ? { thread: th } : {}) });
       }
       if (op === 'call') {
         const route = String(b.route || ''), body = plain(b.body) ? b.body : null;
@@ -176,5 +241,8 @@ export function enterpriseBroker(env, deps = {}) {
     return say(400, { ok: false, error: 'Unknown request.' });
   };
 }
+
+// A connector's listen for agent messages waits up to 10 s inside the 20 s call to DYFRENT: room for it on every plan.
+export const config = { maxDuration: 30 };
 
 export default function handler(req, res) { return enterpriseBroker(process.env)(req, res); }
